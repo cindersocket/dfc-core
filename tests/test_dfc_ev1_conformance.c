@@ -2,11 +2,13 @@
 // DesfirePiccSimulatorTests (EV1-native command subset).
 
 #include "dfc_virtual_picc_test_helpers.h"
+#include "dfc_der.h"
 
 #include <string.h>
 
 static void blank_picc(DfcCredential* credential, uint8_t picc_key_settings_1) {
     memset(credential, 0, sizeof(*credential));
+    credential->card.generation = DfcGenerationEv1;
     credential->uid_len = DFC_DESFIRE_UID_LEN;
     memcpy(
         credential->uid,
@@ -318,6 +320,10 @@ static MunitResult test_create_duplicate_file(const MunitParameter params[], voi
     const uint8_t create_file[] = {
         0x90, 0xCD, 0x00, 0x00, 0x07, 0x01, 0x00, 0xEE, 0xEE, 0x04, 0x00, 0x00, 0x00};
     assert_status(session, create_file, sizeof(create_file), DFC_STATUS_OK);
+    munit_assert_uint32(credential.files[0].declared_size, ==, 4);
+    munit_assert_true(credential.files[0].contents_complete);
+    size_t encoded_size = 0;
+    munit_assert_int(dfc_der_encoded_size(&credential, &encoded_size), ==, DfcDerOk);
     assert_status(session, create_file, sizeof(create_file), DFC_STATUS_DUPLICATE_ERROR);
 
     dfc_virtual_picc_session_free(session);

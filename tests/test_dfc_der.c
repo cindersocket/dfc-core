@@ -84,7 +84,9 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     rec->max_records = 5;
     rec->record_count = 2;
     rec->contents_complete = true;
-    munit_assert_true(dfc_file_resize(&src, rec, 8));
+    // The emulator reserves the whole record-file capacity in its pool. Only
+    // current records belong in DFCB, not the unused backing bytes.
+    munit_assert_true(dfc_file_resize(&src, rec, 20));
     memcpy(dfc_file_data(&src, rec), "\x01\x02\x03\x04\x05\x06\x07\x08", 8);
 
     uint8_t buf[DFC_DER_MAX_SIZE];
@@ -379,7 +381,31 @@ static MunitResult test_capacity(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static MunitResult test_padded_length(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential = {0};
+    build_basic(&credential);
+    uint8_t buffer[DFC_DER_MAX_SIZE] = {0};
+    size_t length = 0;
+    munit_assert_int(dfc_der_encode(&credential, buffer, sizeof(buffer), &length), ==, DfcDerOk);
+    munit_assert_size(dfc_der_length(buffer, sizeof(buffer)), ==, length);
+    munit_assert_size(dfc_der_length(buffer, length), ==, length);
+    for(size_t i = 0; i < length; i++) {
+        munit_assert_size(dfc_der_length(buffer, i), ==, 0);
+    }
+    munit_assert_size(dfc_der_length(NULL, sizeof(buffer)), ==, 0);
+    buffer[0] = 0x30;
+    munit_assert_size(dfc_der_length(buffer, sizeof(buffer)), ==, 0);
+    const uint8_t nonminimal[] = {0x60, 0x81, 0x01, 0x00};
+    const uint8_t indefinite[] = {0x60, 0x80, 0x00, 0x00};
+    munit_assert_size(dfc_der_length(nonminimal, sizeof(nonminimal)), ==, 0);
+    munit_assert_size(dfc_der_length(indefinite, sizeof(indefinite)), ==, 0);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+    {"/padded-length", test_padded_length, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/round-trip", test_round_trip, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/picc-level-file", test_picc_level_file, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/rejections", test_rejections, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},

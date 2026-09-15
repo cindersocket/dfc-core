@@ -12,21 +12,22 @@ It is suitable for hosted systems and freestanding C targets.
 
 ## Requirements
 
-Use a C11 compiler, tiny-aes-c, and tiny-des-c. See [Integration](docs/integration.md)
-for dependency setup and compiler options.
+Use a C11 compiler and select either mbedTLS 3.x or
+[tiny-crypto-c](https://github.com/mistial-dev/tiny-crypto-c). See
+[Integration](docs/integration.md) for compiler options.
 
 ## Run the tests
 
-With the dependencies checked out beside this repository:
+With mbedTLS 3.x installed:
 
 ```sh
 make -C tests test
 ```
 
-For other dependency locations, set `TINY_AES_DIR` and `TINY_DES_DIR`:
+With tiny-crypto-c checked out:
 
 ```sh
-make -C tests test TINY_AES_DIR=/path/to/tiny-aes-c TINY_DES_DIR=/path/to/tiny-des-c
+make -C tests test CRYPTO_BACKEND=tiny TINY_CRYPTO_DIR=/path/to/tiny-crypto-c
 ```
 
 Run the suite under a sanitizer. AddressSanitizer and UndefinedBehaviorSanitizer

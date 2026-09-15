@@ -304,7 +304,18 @@ static uint8_t file_effective_comm_settings(const DfcFile* file, bool write) {
 }
 
 static size_t allocated_file_bytes(const DfcCredential* credential) {
-    return credential->file_pool_used;
+    size_t used = 0;
+    for(size_t i = 0; i < credential->num_files; i++) {
+        const DfcFile* file = &credential->files[i];
+        if(file->type == DFC_FILE_TYPE_STANDARD_DATA ||
+           file->type == DFC_FILE_TYPE_BACKUP_DATA) {
+            used += file->declared_size;
+        } else if(file->type == DFC_FILE_TYPE_LINEAR_RECORD ||
+                  file->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
+            used += (size_t)file->record_size * file->max_records;
+        }
+    }
+    return used;
 }
 
 static void clear_pending_chain(DfcEmulator* emulator) {
@@ -410,21 +421,19 @@ static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf*
 }
 
 static void handle_free_mem(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
-    // Report remaining shared pool (device-bound), capped by advertised EV1 capacity.
-    size_t pool_free = dfc_credential_file_pool_free(emulator->credential);
+    // The command reports the emulated card's logical storage. The host build's
+    // backing-pool limit is an implementation detail and may be much smaller.
     size_t used = allocated_file_bytes(emulator->credential);
     size_t advertised_capacity =
         emulator->credential->card.generation == DfcGenerationEv3 &&
                 emulator->credential->card.storage == DfcStorage4KByteCount ?
             DFC_EV3_4K_FREE_MEMORY_BYTES :
             DFC_EV1_PICC_STORAGE_BYTES;
-    size_t capacity =
-        DFC_FILE_POOL_SIZE < advertised_capacity ? DFC_FILE_POOL_SIZE : advertised_capacity;
-    uint32_t free_bytes = (uint32_t)pool_free;
-    if(used >= capacity) {
+    uint32_t free_bytes = 0;
+    if(used >= advertised_capacity) {
         free_bytes = 0;
-    } else if(capacity - used < free_bytes) {
-        free_bytes = (uint32_t)(capacity - used);
+    } else {
+        free_bytes = (uint32_t)(advertised_capacity - used);
     }
     uint8_t free_mem[3] = {
         (uint8_t)(free_bytes & 0xFF),
@@ -1885,7 +1894,7 @@ static void handle_create_std_data_file(
         file->has_iso_file_id = true;
         file->iso_file_id = iso_file_id;
     }
-    if(!dfc_file_resize(credential, file, file_size)) {
+    if(!dfc_file_set_data_size(credential, file, file_size)) {
         (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;

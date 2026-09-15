@@ -323,6 +323,7 @@ static void body_records(Writer* w, const void* p) {
     const DfcFile* f = x->file;
     const uint8_t* known = dfc_file_data_const(x->c, f);
     size_t count = f->record_size ? f->data_len / f->record_size : 0;
+    if(count > f->record_count) count = f->record_count;
     for(size_t i = 0; i < count; i++) {
         w_tlv(w, TAG_OCTETS, known + i * f->record_size, f->record_size);
     }
@@ -734,8 +735,11 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
             if(f->record_count > f->max_records) return DfcDerMalformed;
             if(f->data_len % f->record_size != 0) return DfcDerMalformed;
             size_t stored = f->data_len / f->record_size;
-            if(stored > f->record_count) return DfcDerMalformed;
-            if(f->contents_complete && stored != f->record_count) return DfcDerMalformed;
+            bool reserved = stored == f->max_records;
+            if(stored > f->record_count && !reserved) return DfcDerMalformed;
+            if(f->contents_complete && stored != f->record_count && !reserved) {
+                return DfcDerMalformed;
+            }
             if(f->type == FILE_TYPE_CYCLIC && f->max_records < 2) return DfcDerMalformed;
         }
         if(f->has_iso_file_id) {
@@ -838,6 +842,15 @@ static bool r_tlv(Slice* s, Tlv* out) {
     s->p += hdr + n;
     s->len -= hdr + n;
     return true;
+}
+
+size_t dfc_der_length(const uint8_t* data, size_t capacity) {
+    if(!data) return 0;
+    Slice input = {data, capacity};
+    Tlv tlv;
+    if(!r_tlv(&input, &tlv) || tlv.tag != TAG_CREDENTIAL) return 0;
+    size_t length = capacity - input.len;
+    return length <= DFC_DER_MAX_SIZE ? length : 0;
 }
 
 // Components of one SEQUENCE, keyed by identifier octet, with declaration order

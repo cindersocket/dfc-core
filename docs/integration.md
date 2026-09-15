@@ -31,28 +31,28 @@ port/host/dfc_port_host.c
 port/host/dfc_bytebuf_host.c
 ```
 
-## 3. Add the crypto libraries
+## 3. Select a crypto backend
 
-Fetch both repositories:
-
-```sh
-git clone https://github.com/mistial-dev/tiny-aes-c.git
-git clone https://github.com/mistial-dev/tiny-des-c.git
-```
-
-Compile `aes.c` from tiny-aes-c and `des.c` from tiny-des-c. Add both repository
-roots to the include path for `<aes.h>` and `<des.h>`.
-
-Use these compiler options for DFC and both libraries:
+For mbedTLS 3.x, compile with:
 
 ```sh
--DAES128=1 -DAES192=0 -DAES256=0 -DAES_ENABLE_CBC=1 -DAES_ENABLE_CTR=0 \
--DDES_ENABLE_ECB=1 -DDES_ENABLE_CBC=1 -DDES_ENABLE_CTR=0 -DDES_ENABLE_TDES=1 \
--I/path/to/tiny-aes-c -I/path/to/tiny-des-c
+-DDFC_CRYPTO_BACKEND_MBEDTLS=1
 ```
 
-The configuration macros must match across DFC and the library sources because
-they affect context layouts. DFC requires AES-128.
+Link `libmbedcrypto`, or compile the target's mbedTLS AES and DES sources.
+mbedTLS 4 removed DES, so DFC requires mbedTLS 3.x.
+
+For tiny-crypto-c, compile `src/aes.c`, `src/des.c`, and `src/common.c` and use:
+
+```sh
+-DDFC_CRYPTO_BACKEND_TINY=1 -I/path/to/tiny-crypto-c/src \
+-DTC_ENABLE_AES=1 -DTC_AES_ENABLE_CBC=1 -DTC_AES_ENABLE_CTR=0 \
+-DTC_ENABLE_DES=1 -DTC_DES_ENABLE_ECB=1 -DTC_DES_ENABLE_CBC=1 \
+-DTC_DES_ENABLE_CTR=0 -DTC_DES_ENABLE_TDES=1 -DTC_ENABLE_SHA256=0
+```
+
+Select exactly one backend. The tiny-crypto-c feature macros must match across
+DFC and the library sources because they affect context layouts.
 
 ## 4. Select a feature profile
 
