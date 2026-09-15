@@ -873,7 +873,7 @@ static bool
     for(size_t i = 0; i < order_len; i++) out->tags[i] = order[i];
 
     size_t cursor = 0;
-    Tlv tlv;
+    Tlv tlv = {0};
     while(body.len > 0) {
         if(!r_tlv(&body, &tlv)) return false;
         size_t idx = order_len;

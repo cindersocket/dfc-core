@@ -4,34 +4,30 @@ on:
   push:
   pull_request:
 
-# Run both tiny libraries with pinned revisions, plain and under sanitizers.
+# Run both crypto backends, plain and under sanitizers.
 jobs:
   unit:
-    name: Unit suite${{ matrix.sanitize && format(' ({0})', matrix.sanitize) || '' }}
+    name: Unit suite (${{ matrix.backend }}${{ matrix.sanitize && format(', {0}', matrix.sanitize) || '' }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { sanitize: "", cc: gcc }
-          - { sanitize: "address,undefined", cc: gcc }
-          - { sanitize: "memory", cc: clang }
+          - { backend: mbedtls, sanitize: "", cc: gcc }
+          - { backend: mbedtls, sanitize: "address,undefined", cc: gcc }
+          - { backend: tiny, sanitize: "", cc: gcc }
+          - { backend: tiny, sanitize: "address,undefined", cc: gcc }
+          - { backend: tiny, sanitize: "memory", cc: clang }
     steps:
       - uses: actions/checkout@v4
       - name: Install the toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential clang libclang-rt-18-dev
-      - name: Fetch tiny-aes-c
+          sudo apt-get install -y --no-install-recommends build-essential clang libclang-rt-18-dev libmbedtls-dev
+      - name: Fetch tiny-crypto-c
         uses: actions/checkout@v4
         with:
-          repository: mistial-dev/tiny-aes-c
-          ref: 4258d2aebf19d581571dc80e609b7b3f256ccdf4
-          path: dependencies/tiny-aes-c
-      - name: Fetch tiny-des-c
-        uses: actions/checkout@v4
-        with:
-          repository: mistial-dev/tiny-des-c
-          ref: f960831f4da27149525383ef0b9d11938e95faf3
-          path: dependencies/tiny-des-c
-      - run: make -C tests test TINY_AES_DIR=../dependencies/tiny-aes-c TINY_DES_DIR=../dependencies/tiny-des-c CC=${{ matrix.cc }} SANITIZE=${{ matrix.sanitize }}
+          repository: mistial-dev/tiny-crypto-c
+          ref: 180b054706bc951c0105e44ab3015028a66a7e3a
+          path: dependencies/tiny-crypto-c
+      - run: make -C tests test CRYPTO_BACKEND=${{ matrix.backend }} TINY_CRYPTO_DIR=../dependencies/tiny-crypto-c CC=${{ matrix.cc }} SANITIZE=${{ matrix.sanitize }}
