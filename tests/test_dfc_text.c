@@ -14,6 +14,19 @@ static void log_detail(const DfcTextError* detail) {
     munit_logf(MUNIT_LOG_INFO, "line %u: %s", (unsigned)detail->line, detail->message);
 }
 
+static void assert_written_v5(const char* input, size_t input_len, const char* output) {
+    static char expected[DFC_TEXT_MAX_SIZE];
+    munit_assert_size(input_len, <, sizeof(expected));
+    memcpy(expected, input, input_len);
+    expected[input_len] = '\0';
+    char* version = strstr(expected, "Version: 4");
+    munit_assert_not_null(version);
+    version[9] = '5';
+    size_t output_len = strlen(output);
+    munit_assert_size(output_len, ==, input_len);
+    munit_assert_memory_equal(output_len, output, expected);
+}
+
 
 // The smaller worked example, which exercises the
 // canonical omissions: no ATS, no SAK, no random ID, no PICC files.
@@ -106,8 +119,7 @@ static MunitResult test_transaction_mac_round_trip(const MunitParameter params[]
     static char out[DFC_TEXT_MAX_SIZE];
     size_t out_len = 0;
     munit_assert_int(dfc_text_write(&c, out, sizeof(out), &out_len), ==, DfcTextOk);
-    munit_assert_size(out_len, ==, len);
-    munit_assert_memory_equal(out_len, out, TMAC);
+    assert_written_v5(TMAC, len, out);
 
     // The model survives a trip through the binary encoding as well.
     static uint8_t der[DFC_DER_MAX_SIZE];
@@ -116,7 +128,7 @@ static MunitResult test_transaction_mac_round_trip(const MunitParameter params[]
     static DfcCredential back;
     munit_assert_int(dfc_der_decode(&back, der, der_len), ==, DfcDerOk);
     munit_assert_int(dfc_text_write(&back, out, sizeof(out), &out_len), ==, DfcTextOk);
-    munit_assert_memory_equal(out_len, out, TMAC);
+    assert_written_v5(TMAC, len, out);
     return MUNIT_OK;
 }
 
@@ -139,8 +151,7 @@ static MunitResult test_minimal_round_trip(const MunitParameter params[], void* 
     static char out[DFC_TEXT_MAX_SIZE];
     size_t out_len = 0;
     munit_assert_int(dfc_text_write(&c, out, sizeof(out), &out_len), ==, DfcTextOk);
-    munit_assert_size(out_len, ==, len);
-    munit_assert_memory_equal(out_len, out, MINIMAL);
+    assert_written_v5(MINIMAL, len, out);
 
     // Comments and blank lines are insignificant, and a reader accepts any order
     // among recognised keys, so neither changes the model.
@@ -240,7 +251,14 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
         mutate("Filetype: DFC Credential", "Filetype: Something Else", &detail),
         ==,
         DfcTextMalformed);
-    munit_assert_int(mutate("Version: 4", "Version: 5", &detail), ==, DfcTextUnsupported);
+    munit_assert_int(mutate("Version: 4", "Version: 6", &detail), ==, DfcTextUnsupported);
+    munit_assert_int(
+        mutate(
+            "Card Storage: 2048\n",
+            "Card Storage: 2048\nCard Hardware Version: 04 01 01 12 00 18 05\n",
+            &detail),
+        ==,
+        DfcTextMalformed);
 
     // A boolean shall be 0 or 1, and an integer carries no leading zeros.
     munit_assert_int(
@@ -270,6 +288,79 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static MunitResult test_v5_version_overrides(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static DfcCredential c;
+    DfcTextError detail = {0};
+    const char* input =
+        "Version: 5\n"
+        "Card Hardware Version: 04 01 01 12 00 18 05\n"
+        "Card Software Version: 04 01 01 02 01 18 05\n";
+    const char* version = strstr(MINIMAL, "Version: 4\n");
+    munit_assert_not_null(version);
+    static char text[sizeof(MINIMAL) + 128];
+    size_t head = (size_t)(version - MINIMAL);
+    int written = snprintf(
+        text,
+        sizeof(text),
+        "%.*s%s%s",
+        (int)head,
+        MINIMAL,
+        input,
+        version + strlen("Version: 4\n"));
+    munit_assert_int(written, >, 0);
+    DfcTextStatus st = dfc_text_parse(&c, text, (size_t)written, &detail);
+    if(st != DfcTextOk) log_detail(&detail);
+    munit_assert_int(st, ==, DfcTextOk);
+    munit_assert_true(c.card.has_hardware_version);
+    munit_assert_memory_equal(
+        7, c.card.hardware_version, ((uint8_t[]){0x04, 0x01, 0x01, 0x12, 0x00, 0x18, 0x05}));
+    munit_assert_true(c.card.has_software_version);
+    munit_assert_memory_equal(
+        7, c.card.software_version, ((uint8_t[]){0x04, 0x01, 0x01, 0x02, 0x01, 0x18, 0x05}));
+
+    static char out[DFC_TEXT_MAX_SIZE];
+    size_t out_len = 0;
+    munit_assert_int(dfc_text_write(&c, out, sizeof(out), &out_len), ==, DfcTextOk);
+    munit_assert_not_null(strstr(out, "Version: 5\n"));
+    munit_assert_not_null(strstr(out, "Card Hardware Version: 04 01 01 12 00 18 05\n"));
+    munit_assert_not_null(strstr(out, "Card Software Version: 04 01 01 02 01 18 05\n"));
+    return MUNIT_OK;
+}
+
+static MunitResult test_v5_rejects_short_version_override(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcTextError detail = {0};
+    const char* version = strstr(MINIMAL, "Version: 4\n");
+    munit_assert_not_null(version);
+    static char text[sizeof(MINIMAL) + 64];
+    int written = snprintf(
+        text,
+        sizeof(text),
+        "%.*sVersion: 5\nCard Hardware Version: 04 01 01 12 00 18\n%s",
+        (int)(version - MINIMAL),
+        MINIMAL,
+        version + strlen("Version: 4\n"));
+    munit_assert_int(written, >, 0);
+    static DfcCredential c;
+    munit_assert_int(dfc_text_parse(&c, text, (size_t)written, &detail), ==, DfcTextMalformed);
+    munit_assert_size(detail.line, ==, 3);
+
+    written = snprintf(
+        text,
+        sizeof(text),
+        "%.*sVersion: 5\nCard Software Version: 04 01 01 02 01 18\n%s",
+        (int)(version - MINIMAL),
+        MINIMAL,
+        version + strlen("Version: 4\n"));
+    munit_assert_int(written, >, 0);
+    munit_assert_int(dfc_text_parse(&c, text, (size_t)written, &detail), ==, DfcTextMalformed);
+    munit_assert_size(detail.line, ==, 3);
+    return MUNIT_OK;
+}
+
 static MunitResult test_writer_capacity(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -293,6 +384,13 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/rejections", test_rejections, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/v5-version-overrides", test_v5_version_overrides, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/v5-short-version-override",
+     test_v5_rejects_short_version_override,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/writer-capacity", test_writer_capacity, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };

@@ -739,7 +739,7 @@ static MunitResult test_wrapped_get_version_returns_detection_frame(
         ==,
         DfcVirtualPiccStatusOk);
 
-    uint8_t expected[] = {0x04, 0x01, 0x01, 0x01, 0x00, 0x1A, 0x05, 0x91, 0xAF};
+    uint8_t expected[] = {0x04, 0x01, 0x01, 0x01, 0x00, 0x16, 0x05, 0x91, 0xAF};
     munit_assert_size(response_len, ==, sizeof(expected));
     munit_assert_memory_equal(sizeof(expected), response, expected);
 

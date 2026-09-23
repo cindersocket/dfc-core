@@ -151,6 +151,72 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     munit_assert_size(again_len, ==, len);
     munit_assert_memory_equal(len, again, buf);
 
+    // A v4 value without v5-only card fields remains readable, and encoding
+    // that model upgrades it to v5.
+    uint8_t legacy[DFC_DER_MAX_SIZE];
+    memcpy(legacy, buf, len);
+    bool downgraded = false;
+    for(size_t i = 0; i + 2 < len; i++) {
+        if(legacy[i] == 0x80 && legacy[i + 1] == 0x01 && legacy[i + 2] == 5) {
+            legacy[i + 2] = 4;
+            downgraded = true;
+            break;
+        }
+    }
+    munit_assert_true(downgraded);
+    DfcCredential from_v4;
+    memset(&from_v4, 0, sizeof(from_v4));
+    munit_assert_int(dfc_der_decode(&from_v4, legacy, len), ==, DfcDerOk);
+    size_t upgraded_len = 0;
+    uint8_t upgraded[DFC_DER_MAX_SIZE];
+    munit_assert_int(
+        dfc_der_encode(&from_v4, upgraded, sizeof(upgraded), &upgraded_len), ==, DfcDerOk);
+    bool is_v5 = false;
+    for(size_t i = 0; i + 2 < upgraded_len; i++) {
+        if(upgraded[i] == 0x80 && upgraded[i + 1] == 0x01 && upgraded[i + 2] == 5) {
+            is_v5 = true;
+            break;
+        }
+    }
+    munit_assert_true(is_v5);
+
+    return MUNIT_OK;
+}
+
+static MunitResult test_version_override_round_trip(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential src;
+    memset(&src, 0, sizeof(src));
+    build_basic(&src);
+    src.card.has_hardware_version = true;
+    memcpy(src.card.hardware_version, "\x04\x01\x01\x12\x00\x18\x05", 7);
+    src.card.has_software_version = true;
+    memcpy(src.card.software_version, "\x04\x01\x01\x02\x01\x18\x05", 7);
+
+    uint8_t buf[DFC_DER_MAX_SIZE];
+    size_t len = 0;
+    munit_assert_int(dfc_der_encode(&src, buf, sizeof(buf), &len), ==, DfcDerOk);
+    DfcCredential dst;
+    memset(&dst, 0, sizeof(dst));
+    munit_assert_int(dfc_der_decode(&dst, buf, len), ==, DfcDerOk);
+    munit_assert_true(dst.card.has_hardware_version);
+    munit_assert_memory_equal(7, dst.card.hardware_version, src.card.hardware_version);
+    munit_assert_true(dst.card.has_software_version);
+    munit_assert_memory_equal(7, dst.card.software_version, src.card.software_version);
+
+    uint8_t malformed[DFC_DER_MAX_SIZE];
+    memcpy(malformed, buf, len);
+    bool found = false;
+    for(size_t i = 0; i + 1 < len; i++) {
+        if(malformed[i] == 0x85 && malformed[i + 1] == 0x07) {
+            malformed[i + 1] = 0x06;
+            found = true;
+            break;
+        }
+    }
+    munit_assert_true(found);
+    munit_assert_int(dfc_der_decode(&dst, malformed, len), ==, DfcDerMalformed);
     return MUNIT_OK;
 }
 
@@ -217,16 +283,16 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     trailing[good_len] = 0x00;
     munit_assert_int(dfc_der_decode(&dst, trailing, good_len + 1), ==, DfcDerMalformed);
 
-    // Version 5 is a later version, so unsupported rather than malformed.
-    uint8_t v5[DFC_DER_MAX_SIZE];
-    memcpy(v5, good, good_len);
+    // Version 6 is later than this implementation, so unsupported rather than malformed.
+    uint8_t v6[DFC_DER_MAX_SIZE];
+    memcpy(v6, good, good_len);
     for(size_t i = 0; i + 2 < good_len; i++) {
-        if(v5[i] == 0x80 && v5[i + 1] == 0x01 && v5[i + 2] == DFC_FORMAT_VERSION) {
-            v5[i + 2] = DFC_FORMAT_VERSION + 1;
+        if(v6[i] == 0x80 && v6[i + 1] == 0x01 && v6[i + 2] == DFC_FORMAT_VERSION) {
+            v6[i + 2] = DFC_FORMAT_VERSION + 1;
             break;
         }
     }
-    munit_assert_int(dfc_der_decode(&dst, v5, good_len), ==, DfcDerUnsupported);
+    munit_assert_int(dfc_der_decode(&dst, v6, good_len), ==, DfcDerUnsupported);
 
     // An explicit FALSE for a DEFAULT FALSE component is non-canonical.
     DfcCredential explicit_false = src;
@@ -407,6 +473,12 @@ static MunitResult test_padded_length(const MunitParameter params[], void* data)
 static MunitTest tests[] = {
     {"/padded-length", test_padded_length, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/round-trip", test_round_trip, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/version-override-round-trip",
+     test_version_override_round_trip,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/picc-level-file", test_picc_level_file, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/rejections", test_rejections, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/model-validation", test_model_validation, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},

@@ -142,6 +142,11 @@ typedef struct {
     uint32_t storage;
     // The UID itself lives on DfcCredential; this records where it came from.
     DfcUidProvenance uid_provenance;
+    // Optional seven-octet GetVersion response overrides.
+    bool has_hardware_version;
+    uint8_t hardware_version[7];
+    bool has_software_version;
+    uint8_t software_version[7];
 } DfcCard;
 
 typedef struct {
