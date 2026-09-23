@@ -4272,13 +4272,17 @@ bool dfc_emulator_handle_command(
             emulator->awaiting_step2) {
             handle_authenticate_step2(emulator, buffer, buffer_len, tx_buffer, dfc);
         } else if(emulator->get_version_frame != 0) {
+            if(emulator->secure_messaging) {
+                dfc_secure_messaging_update_ev1_command(
+                    emulator->secure_messaging, cmd, buffer + 1, buffer_len - 1);
+            }
             if(buffer_len != 1) {
                 clear_pending_chain(emulator);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             } else {
                 handle_get_version_continuation(emulator, tx_buffer);
-                apply_ev1_response_secure_messaging(emulator, DFC_CMD_GET_VERSION, tx_buffer);
             }
+            apply_ev1_response_secure_messaging(emulator, DFC_CMD_GET_VERSION, tx_buffer);
         } else if(emulator->pending_chain_len > emulator->pending_chain_offset) {
             handle_pending_chain_continuation(emulator, tx_buffer);
         } else {
