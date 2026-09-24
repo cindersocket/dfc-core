@@ -372,15 +372,17 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     wrong->type = 0x05;
     munit_assert_int(dfc_der_encode(&early, buf, sizeof(buf), &len), ==, DfcDerMalformed);
 
-    // An EV3 feature on an EV2 credential is malformed for the same reason.
+    // An originality signature is available from EV2 onward.
     DfcCredential ev2;
     memset(&ev2, 0, sizeof(ev2));
     build_basic(&ev2);
     ev2.card.generation = DfcGenerationEv2;
     ev2.picc_has_static_signature = true;
-    munit_assert_int(dfc_der_encode(&ev2, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+    munit_assert_int(dfc_der_encode(&ev2, buf, sizeof(buf), &len), ==, DfcDerOk);
     ev2.card.generation = DfcGenerationEv3;
     munit_assert_int(dfc_der_encode(&ev2, buf, sizeof(buf), &len), ==, DfcDerOk);
+    ev2.card.generation = DfcGenerationEv1;
+    munit_assert_int(dfc_der_encode(&ev2, buf, sizeof(buf), &len), ==, DfcDerMalformed);
 
     // complete with contents shorter than the declared size.
     DfcCredential short_complete;

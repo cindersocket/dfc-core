@@ -673,7 +673,7 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
     has_ev2 = has_ev2 || c->picc_has_dam_keys;
 #endif
 #if DFC_ENABLE_STATIC_SIGNATURE
-    has_ev3 = has_ev3 || c->picc_has_static_signature;
+    has_ev2 = has_ev2 || c->picc_has_static_signature;
 #endif
 #if DFC_ENABLE_PROXIMITY_CHECK
     has_ev3 = has_ev3 || c->picc_has_proximity_key;
