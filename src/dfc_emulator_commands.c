@@ -1156,6 +1156,10 @@ static void handle_read_signature(
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer) {
+    if(emulator->credential->card.generation < DfcGenerationEv2) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
+        return;
+    }
     if(buffer_len != 2) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
@@ -1387,7 +1391,12 @@ static void handle_authenticate_ev2_start(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
         return;
     }
-    if(apdu_len < 2 || (non_first && !emulator->ev2_session_active)) {
+    if((non_first && apdu_len != 2) || (!non_first && apdu_len < 3) ||
+       (!non_first && apdu_len != (size_t)3 + apdu[2])) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+        return;
+    }
+    if(non_first && !emulator->ev2_session_active) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
@@ -1414,7 +1423,7 @@ static void handle_authenticate_ev2_start(
         dfc_random_fill(
             emulator->ev2_transaction_identifier,
             DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
-#if DFC_ENABLE_TRANSACTION_TIMER
+#if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
         DfcApplication* app = dfc_emulator_current_app(emulator);
         if(app && app->has_capability_data) {
             memcpy(
@@ -1425,8 +1434,20 @@ static void handle_authenticate_ev2_start(
 #endif
         {
             memset(emulator->ev2_card_capabilities, 0, sizeof(emulator->ev2_card_capabilities));
+            if(emulator->selected_application == DfcEmulatorSelectedApplicationPicc &&
+               emulator->credential->picc_has_ev2_capabilities) {
+                memcpy(
+                    emulator->ev2_card_capabilities,
+                    emulator->credential->picc_ev2_capabilities,
+                    DFC_EV2_CAPABILITY_LENGTH);
+            }
         }
         memset(emulator->ev2_reader_capabilities, 0, sizeof(emulator->ev2_reader_capabilities));
+        size_t reader_capability_len = apdu[2];
+        if(reader_capability_len > DFC_EV2_CAPABILITY_LENGTH) {
+            reader_capability_len = DFC_EV2_CAPABILITY_LENGTH;
+        }
+        memcpy(emulator->ev2_reader_capabilities, apdu + 3, reader_capability_len);
     }
 
     uint8_t iv[DFC_AES_KEY_LENGTH] = {0};

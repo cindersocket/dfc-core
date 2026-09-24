@@ -69,13 +69,15 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_file_pool test_dfc_key_pool test_dfc_der test_dfc_profile test_dfc_text \
 	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture
 
+TESTS += test_dfc_ev2_capabilities test_dfc_static_signature
+
 # Debugging tools that drive the engine from a workstation.
 TOOLS := dfc_probe_apdu dfc_virtual_picc_host
 
 # Check that each reduced build profile compiles cleanly.
 PROFILES := minimal_ev1 full_ev1 full_ev2 minimal_ev3
 
-.PHONY: test test-backends profile-builds clean
+.PHONY: test test-backends test-ev2-profile profile-builds clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
 # cannot pass by omitting the translation unit it should have exercised.
@@ -85,8 +87,14 @@ $(TESTS): %: %.c dfc_virtual_picc_test_helpers.c $(COMMON)
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: $(TESTS) $(TOOLS) profile-builds
+test: $(TESTS) $(TOOLS) profile-builds test-ev2-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
+
+test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
+	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV2 -o $@ $^ $(LDFLAGS)
+
+test-ev2-profile: test_dfc_static_signature_ev2
+	./test_dfc_static_signature_ev2
 
 test-backends:
 	@$(MAKE) clean
@@ -104,4 +112,4 @@ profile-builds:
 	done
 
 clean:
-	rm -rf $(TESTS) $(TOOLS) *.dSYM
+	rm -rf $(TESTS) $(TOOLS) test_dfc_static_signature_ev2 *.dSYM

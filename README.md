@@ -56,6 +56,22 @@ Use `src/dfc_build_config.h` to select a feature profile. A reduced profile
 rejects a known feature when the profile does not support that feature. It does
 not silently discard data.
 
+## EV2 credential fields
+
+`PICC EV2 Card Capabilities:` holds six card capability bytes. During
+`AuthenticateEV2First` at PICC level, the emulator returns these bytes after
+the transaction identifier and rotated reader random. It then returns the
+reader capability bytes from the command, padded with zeros to six bytes.
+The supplied length must match the command data; bytes beyond the first six
+are accepted as future extensions and are not echoed. An absent field yields
+six zero card capability bytes. At application level, application capability
+data takes the card capability slot when present.
+
+`Card Static Signature:` holds a 56-byte originality signature read from a
+card. The full EV2 and EV3 profiles return it through `Read_Sig` (`0x3C`,
+address `0x00`). The emulator returns the stored bytes; it does not create or
+verify a signature. Omit the field when no signature is available.
+
 ## License
 
 DFC core is licensed under the GNU General Public License, version 2 or (at
