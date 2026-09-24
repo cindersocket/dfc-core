@@ -69,6 +69,8 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_file_pool test_dfc_key_pool test_dfc_der test_dfc_profile test_dfc_text \
 	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture
 
+TESTS += test_dfc_ev2_capabilities
+
 # Debugging tools that drive the engine from a workstation.
 TOOLS := dfc_probe_apdu dfc_virtual_picc_host
 
