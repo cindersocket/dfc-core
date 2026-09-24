@@ -1156,6 +1156,10 @@ static void handle_read_signature(
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer) {
+    if(emulator->credential->card.generation < DfcGenerationEv2) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
+        return;
+    }
     if(buffer_len != 2) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
