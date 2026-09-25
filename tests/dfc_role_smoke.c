@@ -8,6 +8,9 @@
 #if DFC_ENABLE_EMULATOR
 #include "dfc_virtual_picc.h"
 #endif
+#if DFC_ENABLE_READER
+#include "dfc_reader.h"
+#endif
 
 typedef void (*DfcRoleEntry)(void);
 
@@ -26,6 +29,10 @@ static const DfcRoleEntry entries[] = {
 #if DFC_ENABLE_EMULATOR
     (DfcRoleEntry)dfc_virtual_picc_session_alloc,
     (DfcRoleEntry)dfc_virtual_picc_iso_dep_exchange,
+#endif
+#if DFC_ENABLE_READER
+    (DfcRoleEntry)dfc_command_encode_raw,
+    (DfcRoleEntry)dfc_reader_step,
 #endif
 };
 

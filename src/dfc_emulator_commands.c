@@ -1,5 +1,6 @@
 #include "dfc_emulator_i.h"
 #include "dfc_ev2.h"
+#include "dfc_ev2_crypto.h"
 
 #if DFC_ENABLE_EMULATOR
 
@@ -1330,56 +1331,12 @@ static void handle_verify_proximity_check(
 #endif
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
-static void ev2_rotate_left(const uint8_t input[DFC_EV2_RANDOM_LENGTH], uint8_t output[DFC_EV2_RANDOM_LENGTH]) {
-    memcpy(output, input + 1, DFC_EV2_RANDOM_LENGTH - 1);
-    output[DFC_EV2_RANDOM_LENGTH - 1] = input[0];
-}
-
-static void ev2_build_session_vector(
-    uint8_t label_high,
-    uint8_t label_low,
-    const uint8_t random_a[DFC_EV2_RANDOM_LENGTH],
-    const uint8_t random_b[DFC_EV2_RANDOM_LENGTH],
-    uint8_t vector[DFC_EV2_SESSION_VECTOR_LENGTH]) {
-    memset(vector, 0, DFC_EV2_SESSION_VECTOR_LENGTH);
-    vector[0] = label_high;
-    vector[1] = label_low;
-    vector[2] = DFC_EV2_DERIVATION_COUNTER_HIGH;
-    vector[3] = DFC_EV2_DERIVATION_COUNTER_LOW;
-    vector[4] = DFC_EV2_DERIVATION_LENGTH_HIGH;
-    vector[5] = DFC_EV2_DERIVATION_LENGTH_LOW;
-    memcpy(vector + 6, random_a, 2);
-    for(size_t i = 0; i < 6; i++) vector[8 + i] = random_a[2 + i] ^ random_b[i];
-    memcpy(vector + 14, random_b + 6, 10);
-    memcpy(vector + 24, random_a + 8, 8);
-}
-
 static bool ev2_derive_session_keys(DfcEmulator* emulator) {
-    uint8_t vector[DFC_EV2_SESSION_VECTOR_LENGTH];
-    ev2_build_session_vector(
-        DFC_EV2_ENCRYPTION_LABEL_HIGH,
-        DFC_EV2_ENCRYPTION_LABEL_LOW,
-        emulator->ev2_random_a,
-        emulator->ev2_random_b,
-        vector);
-    if(!aes_cmac(
-           emulator->ev2_static_key,
-           DFC_AES_KEY_LENGTH,
-           vector,
-           sizeof(vector),
-           emulator->ev2_session_encryption_key))
-        return false;
-    ev2_build_session_vector(
-        DFC_EV2_MAC_LABEL_HIGH,
-        DFC_EV2_MAC_LABEL_LOW,
-        emulator->ev2_random_a,
-        emulator->ev2_random_b,
-        vector);
-    return aes_cmac(
+    return dfc_ev2_derive_session_keys(
         emulator->ev2_static_key,
-        DFC_AES_KEY_LENGTH,
-        vector,
-        sizeof(vector),
+        emulator->ev2_random_a,
+        emulator->ev2_random_b,
+        emulator->ev2_session_encryption_key,
         emulator->ev2_session_mac_key);
 }
 
@@ -1480,7 +1437,7 @@ static void handle_authenticate_ev2_continuation(
         apdu + 1,
         clear);
     uint8_t rotated_b[DFC_EV2_RANDOM_LENGTH];
-    ev2_rotate_left(emulator->ev2_random_b, rotated_b);
+    dfc_ev2_rotate_left(emulator->ev2_random_b, rotated_b);
     if(memcmp(clear + DFC_EV2_RANDOM_LENGTH, rotated_b, sizeof(rotated_b)) != 0) {
         emulator->ev2_authentication_pending = false;
         emulator->ev2_session_active = false;
@@ -1496,7 +1453,7 @@ static void handle_authenticate_ev2_continuation(
     }
 
     uint8_t rotated_a[DFC_EV2_RANDOM_LENGTH];
-    ev2_rotate_left(emulator->ev2_random_a, rotated_a);
+    dfc_ev2_rotate_left(emulator->ev2_random_a, rotated_a);
     uint8_t response[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH] = {0};
     size_t response_len = DFC_EV2_RANDOM_LENGTH;
     if(emulator->ev2_authentication_non_first) {
@@ -1532,6 +1489,14 @@ static void handle_authenticate_ev2_continuation(
 }
 #endif
 
+// A 3K3DES key answers ISO authentication with sixteen-octet challenges over
+// its eight-octet block, which is what its session-key derivation reads.
+static size_t auth_challenge_length(uint8_t cipher, size_t key_len) {
+    if(cipher == DFC_CMD_AUTHENTICATE_AES) return 16;
+    if(cipher == DFC_CMD_AUTHENTICATE_ISO && key_len == 24) return 16;
+    return 8;
+}
+
 static void handle_authenticate_step1(
     DfcEmulator* emulator,
     uint8_t cipher,
@@ -1553,29 +1518,29 @@ static void handle_authenticate_step1(
         return;
     }
 
-    size_t block_size = dfc_block_size_for_cipher(cipher);
-    dfc_random_fill(emulator->rnd_b, block_size);
-
-    uint8_t iv[16];
-    memset(iv, 0, sizeof(iv));
-    uint8_t encrypted[16];
     uint8_t factory[DFC_MAX_KEY_LEN];
     size_t key_len = 0;
     const uint8_t* key =
         emulator_auth_key(emulator, key_no, factory, sizeof(factory), &key_len);
+    size_t challenge_len = auth_challenge_length(cipher, key_len);
+    dfc_random_fill(emulator->rnd_b, challenge_len);
+
+    uint8_t iv[16];
+    memset(iv, 0, sizeof(iv));
+    uint8_t encrypted[16];
     if(cipher == DFC_CMD_AUTHENTICATE_AES) {
-        dfc_worker_aes_cbc_encrypt(key, key_len, iv, block_size, emulator->rnd_b, encrypted);
+        dfc_worker_aes_cbc_encrypt(key, key_len, iv, challenge_len, emulator->rnd_b, encrypted);
     } else {
-        dfc_worker_des_cbc_encrypt(key, key_len, iv, block_size, emulator->rnd_b, encrypted);
+        dfc_worker_des_cbc_encrypt(key, key_len, iv, challenge_len, emulator->rnd_b, encrypted);
     }
-    memcpy(emulator->enc_rnd_b, encrypted, block_size);
+    memcpy(emulator->enc_rnd_b, encrypted, challenge_len);
 
     emulator->auth_cipher = cipher;
     emulator->auth_key_no = key_no;
     emulator->awaiting_step2 = true;
 
     dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
-    dfc_bytebuf_append_bytes(tx_buffer, encrypted, block_size);
+    dfc_bytebuf_append_bytes(tx_buffer, encrypted, challenge_len);
 }
 
 static void handle_authenticate_step2(
@@ -1587,53 +1552,55 @@ static void handle_authenticate_step2(
     uint8_t cipher = emulator->auth_cipher;
     size_t block_size = dfc_block_size_for_cipher(cipher);
 
-    if(!emulator->awaiting_step2 || apdu_len < 1 + block_size * 2) {
+    uint8_t factory[DFC_MAX_KEY_LEN];
+    size_t key_len = 0;
+    const uint8_t* key = emulator_auth_key(
+        emulator, emulator->auth_key_no, factory, sizeof(factory), &key_len);
+    size_t challenge_len = auth_challenge_length(cipher, key_len);
+
+    if(!emulator->awaiting_step2 || apdu_len < 1 + challenge_len * 2) {
         DFC_LOG_W(TAG, "Authenticate step 2: unexpected frame");
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         emulator->awaiting_step2 = false;
         return;
     }
 
-    uint8_t factory[DFC_MAX_KEY_LEN];
-    size_t key_len = 0;
-    const uint8_t* key = emulator_auth_key(
-        emulator, emulator->auth_key_no, factory, sizeof(factory), &key_len);
-
+    // ISO and AES chain from the last block of the challenge this card sent.
     uint8_t iv[16];
     memset(iv, 0, sizeof(iv));
     if(cipher != DFC_CMD_AUTHENTICATE_LEGACY) {
-        memcpy(iv, emulator->enc_rnd_b, block_size);
+        memcpy(iv, emulator->enc_rnd_b + challenge_len - block_size, block_size);
     }
 
     uint8_t plain[32];
     if(cipher == DFC_CMD_AUTHENTICATE_AES) {
-        dfc_worker_aes_cbc_decrypt(key, key_len, iv, block_size * 2, apdu + 1, plain);
+        dfc_worker_aes_cbc_decrypt(key, key_len, iv, challenge_len * 2, apdu + 1, plain);
     } else if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        d40_receive_plain(key, key_len, apdu + 1, block_size * 2, plain);
+        d40_receive_plain(key, key_len, apdu + 1, challenge_len * 2, plain);
     } else {
-        dfc_worker_des_cbc_decrypt(key, key_len, iv, block_size * 2, apdu + 1, plain);
+        dfc_worker_des_cbc_decrypt(key, key_len, iv, challenge_len * 2, apdu + 1, plain);
     }
 
     uint8_t* rnd_a = plain;
-    uint8_t* rnd_b_rot = plain + block_size;
+    uint8_t* rnd_b_rot = plain + challenge_len;
 
     uint8_t expected_rnd_b_rot[16];
-    memcpy(expected_rnd_b_rot, emulator->rnd_b, block_size);
-    dfc_rotate_left(expected_rnd_b_rot, block_size);
+    memcpy(expected_rnd_b_rot, emulator->rnd_b, challenge_len);
+    dfc_rotate_left(expected_rnd_b_rot, challenge_len);
 
     emulator->awaiting_step2 = false;
 
-    if(memcmp(rnd_b_rot, expected_rnd_b_rot, block_size) != 0) {
+    if(memcmp(rnd_b_rot, expected_rnd_b_rot, challenge_len) != 0) {
         DFC_LOG_W(TAG, "Authenticate step 2: RndB' mismatch");
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
 
-    memcpy(emulator->rnd_a, rnd_a, block_size);
+    memcpy(emulator->rnd_a, rnd_a, challenge_len);
 
     uint8_t rnd_a_rot[16];
-    memcpy(rnd_a_rot, rnd_a, block_size);
-    dfc_rotate_left(rnd_a_rot, block_size);
+    memcpy(rnd_a_rot, rnd_a, challenge_len);
+    dfc_rotate_left(rnd_a_rot, challenge_len);
 
     if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
         memset(iv, 0, sizeof(iv));
@@ -1641,9 +1608,9 @@ static void handle_authenticate_step2(
 
     uint8_t encrypted[16];
     if(cipher == DFC_CMD_AUTHENTICATE_AES) {
-        dfc_worker_aes_cbc_encrypt(key, key_len, iv, block_size, rnd_a_rot, encrypted);
+        dfc_worker_aes_cbc_encrypt(key, key_len, iv, challenge_len, rnd_a_rot, encrypted);
     } else {
-        dfc_worker_des_cbc_encrypt(key, key_len, iv, block_size, rnd_a_rot, encrypted);
+        dfc_worker_des_cbc_encrypt(key, key_len, iv, challenge_len, rnd_a_rot, encrypted);
     }
 
     uint8_t session_key[DFC_MAX_KEY_LEN];
@@ -1658,7 +1625,7 @@ static void handle_authenticate_step2(
         dfc_secure_messaging_alloc(cipher, session_key, session_key_len, NULL);
 
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-    dfc_bytebuf_append_bytes(tx_buffer, encrypted, block_size);
+    dfc_bytebuf_append_bytes(tx_buffer, encrypted, challenge_len);
 
     if(dfc) {
         dfc_port_notify(dfc, DfcEventAuthenticated);
