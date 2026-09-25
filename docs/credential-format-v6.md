@@ -97,6 +97,13 @@ A build that omits an enabled command reports the credential as unsupported;
 it does not remove the command from a v6 mask. A preferred command outside its
 mask, or more than one preferred command, is malformed.
 
+For a 2TDEA PICC, `ISO` and `ISO7816` may be supported while `D40` is disabled.
+For an AES application, `AES`, `EV2First`, `EV2NonFirst`, and `ISO7816` may be
+supported together. Native `ISO` uses a TDEA key and is invalid in that AES
+mask. The physical EV3 test card returned `91 AE` to native `ISO` on an AES
+application; its successful ISO 7816 AES exchange is captured separately in
+the conformance corpus.
+
 Proximity uses `80` key, `81` option, `82` published time, and optional `83` bitrate. Virtual-card state uses `80` through `87` in the text-field order. DAM state uses `80` authentication, `81` MAC, and `82` encryption keys.
 
 Key sets use `80` key count, `81` maximum key size, `82` settings, and `A3` ordered sets. A set uses `80` number, `81` version, `82` key type, `83` initialized, and `A4` ordered keys. Applications with key sets omit the ordinary `A6` key list. Applications without key sets omit `A8`.

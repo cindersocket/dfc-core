@@ -426,6 +426,30 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
     policy.apps[0].has_preferred_auth_command = false;
 
+    DfcCredential requested;
+    memset(&requested, 0, sizeof(requested));
+    build_basic(&requested);
+    requested.card.generation = DfcGenerationEv3;
+    requested.picc_has_auth_commands = true;
+    requested.picc_auth_commands = DFC_AUTH_COMMAND_ISO_NATIVE | DFC_AUTH_COMMAND_ISO7816;
+    requested.picc_has_preferred_auth_command = true;
+    requested.picc_preferred_auth_command = DFC_AUTH_COMMAND_ISO_NATIVE;
+    requested.apps[0].has_auth_commands = true;
+    requested.apps[0].auth_commands = DFC_AUTH_COMMAND_AES | DFC_AUTH_COMMAND_EV2_FIRST |
+                                       DFC_AUTH_COMMAND_EV2_NON_FIRST | DFC_AUTH_COMMAND_ISO7816;
+    requested.apps[0].has_preferred_auth_command = true;
+    requested.apps[0].preferred_auth_command = DFC_AUTH_COMMAND_AES;
+    DfcDerStatus requested_status =
+        (dfc_credential_compiled_auth_commands() & DFC_AUTH_COMMAND_ISO7816) ?
+            DfcDerOk : DfcDerUnsupported;
+    munit_assert_int(dfc_der_validate_model(&requested), ==, requested_status);
+    requested.picc_auth_commands = DFC_AUTH_COMMAND_ISO_NATIVE;
+    requested.apps[0].auth_commands |= DFC_AUTH_COMMAND_ISO_NATIVE;
+    munit_assert_int(dfc_der_validate_model(&requested), ==, DfcDerMalformed);
+    requested.apps[0].auth_commands &= (uint8_t)~DFC_AUTH_COMMAND_ISO_NATIVE;
+    requested.picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    munit_assert_int(dfc_der_validate_model(&requested), ==, DfcDerMalformed);
+
     uint8_t unavailable = DFC_AUTH_COMMAND_ALL &
                           (uint8_t)~dfc_credential_compiled_auth_commands();
     if(unavailable) {

@@ -675,6 +675,10 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
         ((c->picc_has_auth_commands ? picc_commands :
           dfc_credential_possible_auth_commands(c->picc_key_settings_2, c->card.generation)) &
          c->picc_preferred_auth_command) == 0)) return DfcDerMalformed;
+    uint8_t picc_allowed = dfc_credential_possible_auth_commands(
+                               c->picc_key_settings_2, c->card.generation) |
+                           DFC_AUTH_COMMAND_ISO7816;
+    if(picc_commands & (uint8_t)~picc_allowed) return DfcDerMalformed;
     if(picc_commands & (uint8_t)~dfc_credential_compiled_auth_commands()) {
         return DfcDerUnsupported;
     }
@@ -722,6 +726,10 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
             ((a->has_auth_commands ? commands :
               dfc_credential_possible_auth_commands(a->key_settings_2, c->card.generation)) &
              a->preferred_auth_command) == 0)) return DfcDerMalformed;
+        uint8_t allowed = dfc_credential_possible_auth_commands(
+                              a->key_settings_2, c->card.generation) |
+                          DFC_AUTH_COMMAND_ISO7816;
+        if(commands & (uint8_t)~allowed) return DfcDerMalformed;
         if(commands & (uint8_t)~dfc_credential_compiled_auth_commands()) {
             return DfcDerUnsupported;
         }
@@ -738,20 +746,6 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
                                                DFC_SM_DISABLE_EV2_CHAINED_WRITE))) {
             return DfcDerMalformed;
         }
-        uint8_t allowed = DFC_AUTH_COMMAND_ISO7816;
-        switch(a->key_settings_2 & DFC_KEY_TYPE_MASK) {
-        case DFC_KEY_TYPE_AES:
-            allowed |= DFC_AUTH_COMMAND_AES | DFC_AUTH_COMMAND_EV2_FIRST |
-                       DFC_AUTH_COMMAND_EV2_NON_FIRST;
-            break;
-        case DFC_KEY_TYPE_3K3DES:
-            allowed |= DFC_AUTH_COMMAND_ISO_NATIVE;
-            break;
-        default:
-            allowed |= DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE;
-            break;
-        }
-        if(commands & (uint8_t)~allowed) return DfcDerMalformed;
         (void)a;
 #if DFC_ENABLE_KEY_SETS
         has_ev2 = has_ev2 || a->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT;
