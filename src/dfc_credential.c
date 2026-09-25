@@ -24,7 +24,7 @@ uint8_t dfc_credential_compiled_auth_commands(void) {
     return commands;
 }
 
-uint8_t dfc_credential_default_auth_commands(uint8_t key_settings_2, DfcGeneration generation) {
+uint8_t dfc_credential_possible_auth_commands(uint8_t key_settings_2, DfcGeneration generation) {
     uint8_t commands;
     switch(key_settings_2 & DFC_KEY_TYPE_MASK) {
     case DFC_KEY_TYPE_AES:
@@ -39,7 +39,12 @@ uint8_t dfc_credential_default_auth_commands(uint8_t key_settings_2, DfcGenerati
         commands = DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE;
         break;
     }
-    return commands & dfc_credential_compiled_auth_commands();
+    return commands;
+}
+
+uint8_t dfc_credential_default_auth_commands(uint8_t key_settings_2, DfcGeneration generation) {
+    return dfc_credential_possible_auth_commands(key_settings_2, generation) &
+           dfc_credential_compiled_auth_commands();
 }
 
 uint8_t dfc_credential_picc_auth_commands(const DfcCredential* credential) {

@@ -668,15 +668,18 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
     if(c->picc_ats_len > DFC_PICC_ATS_MAX) return DfcDerMalformed;
     uint8_t picc_commands = dfc_credential_picc_auth_commands(c);
     if(picc_commands & (uint8_t)~DFC_AUTH_COMMAND_ALL) return DfcDerMalformed;
-    if(!c->picc_has_auth_commands && c->picc_has_preferred_auth_command &&
-       !(dfc_credential_compiled_auth_commands() & c->picc_preferred_auth_command)) {
-        return DfcDerUnsupported;
-    }
     if(c->picc_has_preferred_auth_command &&
        (c->picc_preferred_auth_command == 0 ||
         (c->picc_preferred_auth_command & (c->picc_preferred_auth_command - 1u)) != 0 ||
-        (picc_commands & c->picc_preferred_auth_command) == 0)) return DfcDerMalformed;
+        (c->picc_preferred_auth_command & DFC_AUTH_COMMAND_ALL) == 0 ||
+        ((c->picc_has_auth_commands ? picc_commands :
+          dfc_credential_possible_auth_commands(c->picc_key_settings_2, c->card.generation)) &
+         c->picc_preferred_auth_command) == 0)) return DfcDerMalformed;
     if(picc_commands & (uint8_t)~dfc_credential_compiled_auth_commands()) {
+        return DfcDerUnsupported;
+    }
+    if(c->picc_has_preferred_auth_command &&
+       !(dfc_credential_compiled_auth_commands() & c->picc_preferred_auth_command)) {
         return DfcDerUnsupported;
     }
     if(c->card.generation < DfcGenerationEv2 &&
@@ -712,15 +715,18 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
         const DfcApplication* a = &c->apps[i];
         uint8_t commands = dfc_credential_app_auth_commands(c, a);
         if(commands & (uint8_t)~DFC_AUTH_COMMAND_ALL) return DfcDerMalformed;
-        if(!a->has_auth_commands && a->has_preferred_auth_command &&
-           !(dfc_credential_compiled_auth_commands() & a->preferred_auth_command)) {
-            return DfcDerUnsupported;
-        }
         if(a->has_preferred_auth_command &&
            (a->preferred_auth_command == 0 ||
             (a->preferred_auth_command & (a->preferred_auth_command - 1u)) != 0 ||
-            (commands & a->preferred_auth_command) == 0)) return DfcDerMalformed;
+            (a->preferred_auth_command & DFC_AUTH_COMMAND_ALL) == 0 ||
+            ((a->has_auth_commands ? commands :
+              dfc_credential_possible_auth_commands(a->key_settings_2, c->card.generation)) &
+             a->preferred_auth_command) == 0)) return DfcDerMalformed;
         if(commands & (uint8_t)~dfc_credential_compiled_auth_commands()) {
+            return DfcDerUnsupported;
+        }
+        if(a->has_preferred_auth_command &&
+           !(dfc_credential_compiled_auth_commands() & a->preferred_auth_command)) {
             return DfcDerUnsupported;
         }
         if(c->card.generation < DfcGenerationEv2 &&

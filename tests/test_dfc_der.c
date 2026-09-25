@@ -413,6 +413,18 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerOk);
     policy.picc_preferred_auth_command = DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE;
     munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.picc_has_auth_commands = false;
+    policy.picc_preferred_auth_command = 0x80;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.picc_preferred_auth_command = DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.picc_has_auth_commands = true;
+    policy.picc_auth_commands = DFC_AUTH_COMMAND_D40;
+    policy.picc_has_preferred_auth_command = false;
+    policy.apps[0].has_preferred_auth_command = true;
+    policy.apps[0].preferred_auth_command = DFC_AUTH_COMMAND_D40;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.apps[0].has_preferred_auth_command = false;
 
     uint8_t unavailable = DFC_AUTH_COMMAND_ALL &
                           (uint8_t)~dfc_credential_compiled_auth_commands();

@@ -263,6 +263,7 @@ void dfc_credential_init_blank(DfcCredential* dfc_credential);
 // The singular command fields are retained for existing C callers. A v6 mask
 // takes precedence whenever its corresponding has_auth_commands flag is set.
 uint8_t dfc_credential_default_auth_commands(uint8_t key_settings_2, DfcGeneration generation);
+uint8_t dfc_credential_possible_auth_commands(uint8_t key_settings_2, DfcGeneration generation);
 uint8_t dfc_credential_compiled_auth_commands(void);
 uint8_t dfc_credential_picc_auth_commands(const DfcCredential* credential);
 uint8_t dfc_credential_app_auth_commands(const DfcCredential* credential, const DfcApplication* app);
