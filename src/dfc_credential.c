@@ -4,6 +4,56 @@
 
 #define TAG "DfcCredential"
 
+uint8_t dfc_credential_compiled_auth_commands(void) {
+    uint8_t commands = 0;
+#if DFC_ENABLE_AUTH_D40
+    commands |= DFC_AUTH_COMMAND_D40;
+#endif
+#if DFC_ENABLE_AUTH_ISO
+    commands |= DFC_AUTH_COMMAND_ISO_NATIVE;
+#endif
+#if DFC_ENABLE_AUTH_AES
+    commands |= DFC_AUTH_COMMAND_AES;
+#endif
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    commands |= DFC_AUTH_COMMAND_EV2_FIRST | DFC_AUTH_COMMAND_EV2_NON_FIRST;
+#endif
+#if DFC_ENABLE_ISO7816_AUTH
+    commands |= DFC_AUTH_COMMAND_ISO7816;
+#endif
+    return commands;
+}
+
+uint8_t dfc_credential_default_auth_commands(uint8_t key_settings_2, DfcGeneration generation) {
+    uint8_t commands;
+    switch(key_settings_2 & DFC_KEY_TYPE_MASK) {
+    case DFC_KEY_TYPE_AES:
+        commands = DFC_AUTH_COMMAND_AES |
+                   (generation >= DfcGenerationEv2 ?
+                        DFC_AUTH_COMMAND_EV2_FIRST | DFC_AUTH_COMMAND_EV2_NON_FIRST : 0);
+        break;
+    case DFC_KEY_TYPE_3K3DES:
+        commands = DFC_AUTH_COMMAND_ISO_NATIVE;
+        break;
+    default:
+        commands = DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE;
+        break;
+    }
+    return commands & dfc_credential_compiled_auth_commands();
+}
+
+uint8_t dfc_credential_picc_auth_commands(const DfcCredential* credential) {
+    if(credential->picc_has_auth_commands) return credential->picc_auth_commands;
+    return dfc_credential_default_auth_commands(
+        credential->picc_key_settings_2, credential->card.generation);
+}
+
+uint8_t dfc_credential_app_auth_commands(const DfcCredential* credential, const DfcApplication* app) {
+    if(app->has_auth_commands) return app->auth_commands;
+    return dfc_credential_default_auth_commands(app->key_settings_2,
+                                                credential->card.generation);
+}
+
 void dfc_credential_reset_application(DfcApplication* app) {
     if(!app) return;
     memset(app, 0, sizeof(DfcApplication));
@@ -624,6 +674,10 @@ void dfc_credential_copy_model(DfcCredential* credential, const DfcCredential* l
     credential->picc_key_settings_1 = loaded->picc_key_settings_1;
     credential->picc_key_settings_2 = loaded->picc_key_settings_2;
     credential->picc_auth_command = loaded->picc_auth_command;
+    credential->picc_has_auth_commands = loaded->picc_has_auth_commands;
+    credential->picc_auth_commands = loaded->picc_auth_commands;
+    credential->picc_has_preferred_auth_command = loaded->picc_has_preferred_auth_command;
+    credential->picc_preferred_auth_command = loaded->picc_preferred_auth_command;
     credential->picc_key_offset = loaded->picc_key_offset;
     memcpy(
         credential->picc_key_versions,
@@ -866,4 +920,3 @@ size_t dfc_credential_key_length(uint8_t key_settings_2) {
 bool dfc_credential_uid_is_detectable(DfcCredential* credential) {
     return dfc_desfire_uid_is_detectable(credential->uid, credential->uid_len);
 }
-

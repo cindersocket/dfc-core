@@ -135,6 +135,8 @@ internal static unsafe class CredentialMarshaller
     private static DfcPicc ToPicc(NativePicc p, List<DfcKey> keys, List<DfcFile> files) =>
         new(p.KeySettings1, p.KeySettings2, (DfcAuthenticationMode)p.AuthCommand, keys, files)
         {
+            SupportedAuthenticationCommands = p.HasAuthCommands != 0 ? (DfcAuthenticationCommands)p.AuthCommands : null,
+            PreferredAuthenticationCommand = p.HasPreferredAuthCommand != 0 ? (DfcAuthenticationCommands)p.PreferredAuthCommand : null,
             RandomId = p.RandomId != 0,
             FormatDisabled = p.FormatDisabled != 0,
             Ats = p.AtsLen > 0 ? Copy(p.Ats, p.AtsLen) : null,
@@ -199,6 +201,9 @@ internal static unsafe class CredentialMarshaller
             files
         )
         {
+            SupportedAuthenticationCommands = a.HasAuthCommands != 0 ? (DfcAuthenticationCommands)a.AuthCommands : null,
+            PreferredAuthenticationCommand = a.HasPreferredAuthCommand != 0 ? (DfcAuthenticationCommands)a.PreferredAuthCommand : null,
+            SecureMessagingDisable = a.HasSmDisable != 0 ? a.SmDisable : null,
             IsoFileId = a.HasIsoFileId != 0 ? a.IsoFileId : null,
             DfName = a.DfNameLen > 0 ? Copy(a.DfName, (int)a.DfNameLen) : null,
             KeySets = keySets,
@@ -461,6 +466,16 @@ internal static unsafe class CredentialMarshaller
         p.KeySettings1 = picc.KeySettings1;
         p.KeySettings2 = picc.KeySettings2;
         p.AuthCommand = (byte)picc.AuthenticationMode;
+        if (picc.SupportedAuthenticationCommands is { } commands)
+        {
+            p.HasAuthCommands = 1;
+            p.AuthCommands = (byte)commands;
+        }
+        if (picc.PreferredAuthenticationCommand is { } preferred)
+        {
+            p.HasPreferredAuthCommand = 1;
+            p.PreferredAuthCommand = (byte)preferred;
+        }
         p.RandomId = Flag(picc.RandomId);
         p.FormatDisabled = Flag(picc.FormatDisabled);
         var ok = true;
@@ -547,6 +562,21 @@ internal static unsafe class CredentialMarshaller
         a.KeySettings1 = app.KeySettings1;
         a.KeySettings2 = app.KeySettings2;
         a.AuthCommand = (byte)app.AuthenticationMode;
+        if (app.SupportedAuthenticationCommands is { } commands)
+        {
+            a.HasAuthCommands = 1;
+            a.AuthCommands = (byte)commands;
+        }
+        if (app.PreferredAuthenticationCommand is { } preferred)
+        {
+            a.HasPreferredAuthCommand = 1;
+            a.PreferredAuthCommand = (byte)preferred;
+        }
+        if (app.SecureMessagingDisable is { } smDisable)
+        {
+            a.HasSmDisable = 1;
+            a.SmDisable = smDisable;
+        }
         var activeKeys = app.KeySets is { } sets && sets.Sets.Count > 0 ? sets.Sets[0].Keys : app.Keys;
         a.NumKeys = (uint)activeKeys.Count;
         a.KeyLen = activeKeys.Count > 0 ? (uint)activeKeys[0].Value.Length : KeyLengthFor(app.KeySettings2);

@@ -1,5 +1,6 @@
 namespace Dfc.Credentials;
 
+using System;
 using System.Collections.Generic;
 
 /// <summary>Card generation a credential describes.</summary>
@@ -28,10 +29,10 @@ public enum DfcUidProvenance
     Unknown = 2,
 }
 
-/// <summary>The authentication a key set answers; the value is the command that starts it.</summary>
+/// <summary>A native authentication command used by v4 and v5 credentials.</summary>
 public enum DfcAuthenticationMode : byte
 {
-    /// <summary>Legacy DES authentication.</summary>
+    /// <summary>D40 DES authentication.</summary>
     D40 = 0x0A,
 
     /// <summary>ISO authentication with DES, 2K3DES or 3K3DES.</summary>
@@ -39,6 +40,26 @@ public enum DfcAuthenticationMode : byte
 
     /// <summary>AES authentication.</summary>
     Aes = 0xAA,
+}
+
+/// <summary>Authentication commands a card or application accepts.</summary>
+[Flags]
+public enum DfcAuthenticationCommands : byte
+{
+    /// <summary>No authentication command.</summary>
+    None = 0,
+    /// <summary>Native D40.</summary>
+    D40 = 0x01,
+    /// <summary>Native ISO.</summary>
+    IsoNative = 0x02,
+    /// <summary>Native AES.</summary>
+    Aes = 0x04,
+    /// <summary>EV2 First.</summary>
+    Ev2First = 0x08,
+    /// <summary>EV2 NonFirst.</summary>
+    Ev2NonFirst = 0x10,
+    /// <summary>Standard ISO 7816 mutual authentication.</summary>
+    Iso7816 = 0x20,
 }
 
 /// <summary>Communication mode of a file: how its data travels under a session.</summary>
@@ -101,7 +122,7 @@ public sealed record DfcDamKeys(byte[] AuthenticationKey, byte[] MacKey, byte[] 
 /// <summary>The master application and card-wide settings.</summary>
 /// <param name="KeySettings1">Key settings 1.</param>
 /// <param name="KeySettings2">Key settings 2: key type and count.</param>
-/// <param name="AuthenticationMode">The authentication the PICC keys answer.</param>
+/// <param name="AuthenticationMode">The v4/v5 preferred native command.</param>
 /// <param name="Keys">PICC keys, slot 0 first.</param>
 /// <param name="Files">PICC-level files.</param>
 public sealed record DfcPicc(
@@ -112,6 +133,11 @@ public sealed record DfcPicc(
     IReadOnlyList<DfcFile> Files
 )
 {
+    /// <summary>Enabled authentication commands; null derives them from the key type and generation.</summary>
+    public DfcAuthenticationCommands? SupportedAuthenticationCommands { get; init; }
+
+    /// <summary>One enabled command preferred by clients; null leaves the choice to the client.</summary>
+    public DfcAuthenticationCommands? PreferredAuthenticationCommand { get; init; }
     /// <summary>Whether anticollision presents a random UID.</summary>
     public bool RandomId { get; init; }
 
@@ -159,7 +185,7 @@ public sealed record DfcDelegation(ushort SlotNumber, byte SlotVersion, ushort Q
 /// <param name="Aid">The AID, most significant octet first, as the text encoding writes it.</param>
 /// <param name="KeySettings1">Key settings 1.</param>
 /// <param name="KeySettings2">Key settings 2: key type and count.</param>
-/// <param name="AuthenticationMode">The authentication the application's keys answer.</param>
+/// <param name="AuthenticationMode">The v4/v5 preferred native command.</param>
 /// <param name="Keys">Keys of the active set, slot 0 first.</param>
 /// <param name="Files">The application's files.</param>
 public sealed record DfcApplication(
@@ -171,6 +197,15 @@ public sealed record DfcApplication(
     IReadOnlyList<DfcFile> Files
 )
 {
+    /// <summary>Enabled authentication commands; null derives them from the key type and generation.</summary>
+    public DfcAuthenticationCommands? SupportedAuthenticationCommands { get; init; }
+
+    /// <summary>One enabled command preferred by clients; null leaves the choice to the client.</summary>
+    public DfcAuthenticationCommands? PreferredAuthenticationCommand { get; init; }
+
+    /// <summary>Application secure messaging disable bits, when configured.</summary>
+    public byte? SecureMessagingDisable { get; init; }
+
     /// <summary>ISO file identifier.</summary>
     public ushort? IsoFileId { get; init; }
 

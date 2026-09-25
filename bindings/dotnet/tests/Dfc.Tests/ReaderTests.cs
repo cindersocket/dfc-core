@@ -92,6 +92,43 @@ public sealed class ReaderTests
     }
 
     [Test]
+    public async Task Iso7816MutualAuthentication_UsesEnabledPiccKey()
+    {
+        var credential = Fixtures.Credential(DfcGeneration.Ev3);
+        credential = credential with
+        {
+            Picc = credential.Picc with
+            {
+                SupportedAuthenticationCommands = DfcAuthenticationCommands.D40 |
+                    DfcAuthenticationCommands.IsoNative | DfcAuthenticationCommands.Iso7816,
+                PreferredAuthenticationCommand = DfcAuthenticationCommands.Iso7816,
+            },
+        };
+        using var picc = Fixtures.Picc(credential);
+        Assert.That(picc.ExportCredential().Picc.SupportedAuthenticationCommands,
+            Is.EqualTo(credential.Picc.SupportedAuthenticationCommands));
+        using var reader = new DfcReader(picc);
+        Fixtures.Ok(await reader.AuthenticateIso7816Async(
+            0, DfcIso7816AuthAlgorithm.Tdea2, new byte[16]));
+        Assert.That(reader.IsAuthenticated, Is.True);
+    }
+
+    [Test]
+    public void PreferredAuthentication_MustBeEnabled()
+    {
+        var credential = Fixtures.Credential(DfcGeneration.Ev3);
+        credential = credential with
+        {
+            Picc = credential.Picc with
+            {
+                SupportedAuthenticationCommands = DfcAuthenticationCommands.D40,
+                PreferredAuthenticationCommand = DfcAuthenticationCommands.Aes,
+            },
+        };
+        Assert.That(DfcVirtualPicc.Create(credential).IsFailure, Is.True);
+    }
+
+    [Test]
     public async Task WrongKey_FailsWithCardStatusAndClearsSession()
     {
         using var picc = Fixtures.Picc(Fixtures.Credential());
