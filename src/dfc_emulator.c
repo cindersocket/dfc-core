@@ -39,36 +39,37 @@ DfcApplication* dfc_emulator_current_app(DfcEmulator* emulator) {
     return dfc_credential_get_application(emulator->credential, emulator->selected_app_index);
 }
 
-// Which Authenticate variants this level answers. This is the engine's only
-// decision point about acceptable authentication modes, and so the only place a
-// secure-messaging disable flag could take effect.
-//
-// credential->picc_sm_disable is deliberately not consulted. The format carries
-// the octet and both codecs preserve it, but section 1.1 assigns it no bit
-// layout, so there is no defined mapping from any of its bits to a cipher this
-// function could subtract. Acting on a guessed layout would refuse
-// authentications a real card accepts, which is worse than carrying the octet
-// inert. It is therefore stored, round-tripped and reported, and takes effect
-// nowhere until the format defines what the bits mean.
 bool dfc_emulator_accepts_auth_cipher(DfcEmulator* emulator, uint8_t cipher) {
-    uint8_t key_settings_2;
     DfcApplication* app = dfc_emulator_current_app(emulator);
-    if(app) {
-        key_settings_2 = app->key_settings_2;
-    } else {
-        key_settings_2 = emulator->credential->picc_key_settings_2;
-    }
-
-    switch(key_settings_2 & DFC_KEY_TYPE_MASK) {
-    case DFC_KEY_TYPE_AES:
-        return cipher == DFC_CMD_AUTHENTICATE_AES;
-    case DFC_KEY_TYPE_3K3DES:
-        return cipher == DFC_CMD_AUTHENTICATE_ISO;
-    case DFC_KEY_TYPE_DES_2K3DES:
+    uint8_t commands = app ? dfc_credential_app_auth_commands(emulator->credential, app) :
+                             dfc_credential_picc_auth_commands(emulator->credential);
+    uint8_t disabled = emulator->credential->picc_has_sm_disable ?
+                           emulator->credential->picc_sm_disable : 0;
+    if(app && app->has_sm_disable) disabled |= app->sm_disable;
+    uint8_t bit;
+    switch(cipher) {
+    case DFC_CMD_AUTHENTICATE_LEGACY:
+        bit = DFC_AUTH_COMMAND_D40;
+        if(disabled & DFC_SM_DISABLE_D40) return false;
+        break;
+    case DFC_CMD_AUTHENTICATE_ISO:
+        bit = DFC_AUTH_COMMAND_ISO_NATIVE;
+        if(disabled & DFC_SM_DISABLE_EV1) return false;
+        break;
+    case DFC_CMD_AUTHENTICATE_AES:
+        bit = DFC_AUTH_COMMAND_AES;
+        if(disabled & DFC_SM_DISABLE_EV1) return false;
+        break;
+    case DFC_CMD_AUTHENTICATE_EV2_FIRST:
+        bit = DFC_AUTH_COMMAND_EV2_FIRST;
+        break;
+    case DFC_CMD_AUTHENTICATE_EV2_NON_FIRST:
+        bit = DFC_AUTH_COMMAND_EV2_NON_FIRST;
+        break;
     default:
-        // Single DES / 2K3DES accept both legacy D40 and ISO mutual auth.
-        return cipher == DFC_CMD_AUTHENTICATE_LEGACY || cipher == DFC_CMD_AUTHENTICATE_ISO;
+        return false;
     }
+    return (commands & bit) != 0;
 }
 
 size_t dfc_emulator_key_len(DfcEmulator* emulator) {
@@ -106,6 +107,18 @@ static void dfc_emulator_clear_pending_value_transactions(DfcEmulator* emulator)
 
 void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->awaiting_step2 = false;
+#if DFC_ENABLE_ISO7816_AUTH
+    emulator->iso_auth_phase = 0;
+    emulator->iso_auth_challenge_len = 0;
+    emulator->iso_auth_key_no = 0;
+    emulator->iso_auth_cipher = 0;
+    emulator->iso_auth_reference = 0;
+    emulator->iso_auth_key_len = 0;
+    memset(emulator->iso_auth_card_first, 0, sizeof(emulator->iso_auth_card_first));
+    memset(emulator->iso_auth_host_first, 0, sizeof(emulator->iso_auth_host_first));
+    memset(emulator->iso_auth_external_iv, 0, sizeof(emulator->iso_auth_external_iv));
+    memset(emulator->iso_auth_key, 0, sizeof(emulator->iso_auth_key));
+#endif
     emulator->auth_cipher = 0;
     emulator->auth_key_no = 0;
     emulator->get_version_frame = 0;

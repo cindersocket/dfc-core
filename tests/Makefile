@@ -95,7 +95,7 @@ ROLE_FORBIDDEN_target := dfc_text_ dfc_reader_ dfc_command_
 ROLE_FORBIDDEN_host := dfc_emulator_ dfc_virtual_picc_
 ROLE_FORBIDDEN_simulator :=
 
-.PHONY: test test-backends test-ev2-profile profile-builds role-builds clean
+.PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
 # cannot pass by omitting the translation unit it should have exercised.
@@ -105,7 +105,7 @@ $(TESTS): %: %.c dfc_virtual_picc_test_helpers.c $(COMMON)
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: $(TESTS) $(TOOLS) profile-builds role-builds test-ev2-profile
+test: $(TESTS) $(TOOLS) profile-builds role-builds test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 
 test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
@@ -113,6 +113,12 @@ test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test
 
 test-ev2-profile: test_dfc_static_signature_ev2
 	./test_dfc_static_signature_ev2
+
+test_dfc_der_no_iso: test_dfc_der.c dfc_virtual_picc_test_helpers.c $(COMMON)
+	$(CC) $(CFLAGS) -DDFC_ENABLE_ISO7816_AUTH=0 -o $@ $^ $(LDFLAGS)
+
+test-auth-profile: test_dfc_der_no_iso
+	./test_dfc_der_no_iso /dfc_der/model-validation
 
 test-backends:
 	@$(MAKE) clean
@@ -150,4 +156,4 @@ role-builds:
 	done; done
 
 clean:
-	rm -rf $(TESTS) $(TOOLS) test_dfc_static_signature_ev2 *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)

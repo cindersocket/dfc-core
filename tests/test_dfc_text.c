@@ -14,17 +14,18 @@ static void log_detail(const DfcTextError* detail) {
     munit_logf(MUNIT_LOG_INFO, "line %u: %s", (unsigned)detail->line, detail->message);
 }
 
-static void assert_written_v5(const char* input, size_t input_len, const char* output) {
-    static char expected[DFC_TEXT_MAX_SIZE];
-    munit_assert_size(input_len, <, sizeof(expected));
-    memcpy(expected, input, input_len);
-    expected[input_len] = '\0';
-    char* version = strstr(expected, "Version: 4");
-    munit_assert_not_null(version);
-    version[9] = '5';
-    size_t output_len = strlen(output);
-    munit_assert_size(output_len, ==, input_len);
-    munit_assert_memory_equal(output_len, output, expected);
+static void assert_written_v6(const char* output) {
+    munit_assert_not_null(strstr(output, "Version: 6\n"));
+    munit_assert_not_null(strstr(output, "PICC Authentication Commands: D40, ISO\n"));
+    munit_assert_not_null(strstr(output, "Application 00 Authentication Commands: AES"));
+    static DfcCredential decoded;
+    static char again[DFC_TEXT_MAX_SIZE];
+    DfcTextError detail = {0};
+    munit_assert_int(dfc_text_parse(&decoded, output, strlen(output), &detail), ==, DfcTextOk);
+    size_t again_len = 0;
+    munit_assert_int(dfc_text_write(&decoded, again, sizeof(again), &again_len), ==, DfcTextOk);
+    munit_assert_size(again_len, ==, strlen(output));
+    munit_assert_memory_equal(again_len, again, output);
 }
 
 
@@ -119,7 +120,7 @@ static MunitResult test_transaction_mac_round_trip(const MunitParameter params[]
     static char out[DFC_TEXT_MAX_SIZE];
     size_t out_len = 0;
     munit_assert_int(dfc_text_write(&c, out, sizeof(out), &out_len), ==, DfcTextOk);
-    assert_written_v5(TMAC, len, out);
+    assert_written_v6(out);
 
     // The model survives a trip through the binary encoding as well.
     static uint8_t der[DFC_DER_MAX_SIZE];
@@ -128,7 +129,7 @@ static MunitResult test_transaction_mac_round_trip(const MunitParameter params[]
     static DfcCredential back;
     munit_assert_int(dfc_der_decode(&back, der, der_len), ==, DfcDerOk);
     munit_assert_int(dfc_text_write(&back, out, sizeof(out), &out_len), ==, DfcTextOk);
-    assert_written_v5(TMAC, len, out);
+    assert_written_v6(out);
     return MUNIT_OK;
 }
 
@@ -151,7 +152,7 @@ static MunitResult test_minimal_round_trip(const MunitParameter params[], void* 
     static char out[DFC_TEXT_MAX_SIZE];
     size_t out_len = 0;
     munit_assert_int(dfc_text_write(&c, out, sizeof(out), &out_len), ==, DfcTextOk);
-    assert_written_v5(MINIMAL, len, out);
+    assert_written_v6(out);
 
     // Comments and blank lines are insignificant, and a reader accepts any order
     // among recognised keys, so neither changes the model.
@@ -285,7 +286,7 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
         mutate("Filetype: DFC Credential", "Filetype: Something Else", &detail),
         ==,
         DfcTextMalformed);
-    munit_assert_int(mutate("Version: 4", "Version: 6", &detail), ==, DfcTextUnsupported);
+    munit_assert_int(mutate("Version: 4", "Version: 7", &detail), ==, DfcTextUnsupported);
     munit_assert_int(
         mutate(
             "Card Storage: 2048\n",
@@ -357,7 +358,7 @@ static MunitResult test_v5_version_overrides(const MunitParameter params[], void
     static char out[DFC_TEXT_MAX_SIZE];
     size_t out_len = 0;
     munit_assert_int(dfc_text_write(&c, out, sizeof(out), &out_len), ==, DfcTextOk);
-    munit_assert_not_null(strstr(out, "Version: 5\n"));
+    munit_assert_not_null(strstr(out, "Version: 6\n"));
     munit_assert_not_null(strstr(out, "Card Hardware Version: 04 01 01 12 00 18 05\n"));
     munit_assert_not_null(strstr(out, "Card Software Version: 04 01 01 02 01 18 05\n"));
     return MUNIT_OK;

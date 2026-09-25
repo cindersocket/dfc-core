@@ -149,6 +149,11 @@ typedef struct {
     size_t auth_challenge_len;
     uint8_t auth_random_a[DFC_EV2_RANDOM_LENGTH];
     uint8_t auth_random_b[DFC_EV2_RANDOM_LENGTH];
+#if DFC_ENABLE_ISO7816_AUTH
+    uint8_t auth_random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+    uint8_t auth_reference;
+    uint8_t auth_algorithm;
+#endif
     uint8_t auth_iv[16];
     bool auth_first;
     uint8_t auth_capabilities[DFC_EV2_CAPABILITY_LENGTH];
@@ -179,6 +184,21 @@ DfcReaderStatus dfc_reader_authenticate_begin(
     size_t key_len,
     const uint8_t* random_a,
     size_t random_a_len);
+
+#if DFC_ENABLE_ISO7816_AUTH
+// Standard ISO 7816 mutual authentication uses two caller-supplied challenges.
+// The key reference is 0x00-0x0D at PICC level or 0x80-0x8D in an application.
+DfcReaderStatus dfc_reader_authenticate_iso7816_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    uint8_t key_reference,
+    const uint8_t* key,
+    size_t key_len,
+    uint8_t algorithm,
+    const uint8_t* random_first,
+    const uint8_t* random_second,
+    size_t random_len);
+#endif
 
 // EV2 authentication with a 16-octet AES key. The first authentication opens a
 // transaction and may carry six octets of reader capabilities; a non-first one

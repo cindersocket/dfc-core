@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 // Raised whenever a struct below or a function's meaning changes.
-#define DFC_FFI_ABI_VERSION 2
+#define DFC_FFI_ABI_VERSION 3
 
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
@@ -181,6 +181,10 @@ typedef struct {
     uint8_t dam_auth_key[16];
     uint8_t dam_mac_key[16];
     uint8_t dam_encryption_key[16];
+    uint8_t has_auth_commands;
+    uint8_t auth_commands;
+    uint8_t has_preferred_auth_command;
+    uint8_t preferred_auth_command;
 } DfcFfiPiccSettings;
 
 typedef struct {
@@ -208,6 +212,12 @@ typedef struct {
     uint8_t capability_data[10];
     uint8_t delegated;
     uint8_t delegated_slot_version;
+    uint8_t has_auth_commands;
+    uint8_t auth_commands;
+    uint8_t has_preferred_auth_command;
+    uint8_t preferred_auth_command;
+    uint8_t has_sm_disable;
+    uint8_t sm_disable;
 } DfcFfiApplication;
 
 // The owner of a PICC-level file.
@@ -444,6 +454,17 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_authenticate_begin(
     size_t key_len,
     const uint8_t* random_a,
     size_t random_a_len);
+// ISO 7816 GetChallenge/ExternalAuthenticate/InternalAuthenticate.
+DFC_FFI_EXPORT int32_t dfc_ffi_reader_authenticate_iso7816_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint8_t key_reference,
+    const uint8_t* key,
+    size_t key_len,
+    uint8_t algorithm,
+    const uint8_t* random_first,
+    const uint8_t* random_second,
+    size_t random_len);
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_authenticate_ev2_begin(
     DfcFfiReaderExchange* exchange,
     DfcFfiReaderSession* session,

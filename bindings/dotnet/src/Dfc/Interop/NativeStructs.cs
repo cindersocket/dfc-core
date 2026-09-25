@@ -123,6 +123,10 @@ internal unsafe struct NativePicc
     public fixed byte DamAuthKey[16];
     public fixed byte DamMacKey[16];
     public fixed byte DamEncryptionKey[16];
+    public byte HasAuthCommands;
+    public byte AuthCommands;
+    public byte HasPreferredAuthCommand;
+    public byte PreferredAuthCommand;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -151,6 +155,12 @@ internal unsafe struct NativeApplication
     public fixed byte CapabilityData[10];
     public byte Delegated;
     public byte DelegatedSlotVersion;
+    public byte HasAuthCommands;
+    public byte AuthCommands;
+    public byte HasPreferredAuthCommand;
+    public byte PreferredAuthCommand;
+    public byte HasSmDisable;
+    public byte SmDisable;
 }
 
 [StructLayout(LayoutKind.Sequential)]

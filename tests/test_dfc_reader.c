@@ -75,6 +75,9 @@ static DfcApplication*
     DfcApplication* app = dfc_credential_create_application_desfire_order(c, aid, 0x0F, ks2);
     munit_assert_not_null(app);
     app->auth_command = auth;
+    app->has_auth_commands = true;
+    app->auth_commands = dfc_credential_default_auth_commands(ks2, c->card.generation) |
+                         DFC_AUTH_COMMAND_ISO7816;
     memcpy(dfc_credential_key(c, app, 0), key0, app->key_len);
     size_t index = dfc_credential_application_index(c, app);
     add_data_file(c, index, FilePlain, DFC_COMM_PLAIN, 32);
@@ -465,6 +468,50 @@ static MunitResult test_iso_session(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+#if DFC_ENABLE_ISO7816_AUTH
+static MunitResult test_iso7816_mutual_authentication(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const struct {
+        const uint8_t* aid;
+        const uint8_t* key;
+        size_t key_len;
+        uint8_t algorithm;
+        size_t challenge_len;
+    } cases[] = {
+        {AID_ISO, TDES_KEY_0, sizeof(TDES_KEY_0), DFC_ISO7816_AUTH_ALGORITHM_2TDEA,
+         DFC_ISO7816_AUTH_CHALLENGE_2TDEA},
+        {AID_3K, TDES3_KEY_0, sizeof(TDES3_KEY_0), DFC_ISO7816_AUTH_ALGORITHM_3TDEA,
+         DFC_ISO7816_AUTH_CHALLENGE_LONG},
+        {AID_AES, AES_KEY_0, sizeof(AES_KEY_0), DFC_ISO7816_AUTH_ALGORITHM_AES,
+         DFC_ISO7816_AUTH_CHALLENGE_LONG},
+    };
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        static Link link;
+        link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+        select_app(&link, cases[i].aid);
+        uint8_t first[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+        uint8_t second[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+        for(size_t j = 0; j < cases[i].challenge_len; j++) {
+            first[j] = (uint8_t)(0xA0 + j);
+            second[j] = (uint8_t)(0xB0 + j);
+        }
+        DfcReaderExchange ex;
+        munit_assert_int(dfc_reader_authenticate_iso7816_begin(
+            &ex, &link.session, DFC_ISO7816_AUTH_APP_REFERENCE,
+            cases[i].key, cases[i].key_len, cases[i].algorithm,
+            first, second, cases[i].challenge_len), ==, DfcReaderOk);
+        munit_assert_int(run(&link, &ex), ==, DfcReaderOk);
+        munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
+        DfcCommand command;
+        munit_assert_int(dfc_command_get_key_settings(&command), ==, DfcCommandOk);
+        munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+        link_close(&link);
+    }
+    return MUNIT_OK;
+}
+#endif
+
 static MunitResult test_3k3des_session(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -851,6 +898,8 @@ static MunitResult test_delegated_application(const MunitParameter params[], voi
     // EV2 authentication at the PICC level needs an AES master key.
     c->picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
     c->picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
+    c->picc_has_auth_commands = true;
+    c->picc_auth_commands = DFC_AUTH_COMMAND_AES | DFC_AUTH_COMMAND_EV2_FIRST;
     munit_assert_true(dfc_credential_keys_resize(c, NULL, 1, 16));
     c->picc_has_dam_keys = true;
     memcpy(c->picc_dam_auth_key, dam_auth, 16);
@@ -886,6 +935,9 @@ static MunitResult test_delegated_application(const MunitParameter params[], voi
 static MunitTest tests[] = {
     {"/aes-session", test_aes_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/iso-session", test_iso_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+#if DFC_ENABLE_ISO7816_AUTH
+    {"/iso7816-mutual-authentication", test_iso7816_mutual_authentication, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+#endif
     {"/3k3des-session", test_3k3des_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/d40-session", test_d40_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/native-framing", test_native_framing, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},

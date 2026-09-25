@@ -18,6 +18,19 @@ typedef struct {
     uint8_t rnd_b[16];
     uint8_t enc_rnd_b[16]; // ciphertext PICC sent in step 1, needed to chain the IV in step 2
     bool awaiting_step2;
+#if DFC_ENABLE_ISO7816_AUTH
+    // 0 idle, 1 challenge issued, 2 external authentication succeeded.
+    uint8_t iso_auth_phase;
+    uint8_t iso_auth_challenge_len;
+    uint8_t iso_auth_key_no;
+    uint8_t iso_auth_cipher;
+    uint8_t iso_auth_reference;
+    uint8_t iso_auth_card_first[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+    uint8_t iso_auth_host_first[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+    uint8_t iso_auth_external_iv[DFC_AES_KEY_LENGTH];
+    uint8_t iso_auth_key[DFC_MAX_KEY_LEN];
+    size_t iso_auth_key_len;
+#endif
     uint8_t get_version_frame;
     // Chained native response residual (after the first frame).
     uint8_t pending_chain[DFC_EMULATOR_CHAIN_BUFFER_SIZE];

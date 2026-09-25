@@ -150,6 +150,23 @@ static const uint8_t* emulator_auth_key(
     return factory;
 }
 
+#if DFC_ENABLE_SPECIAL_KEY_STATUS
+static bool picc_disabled_special_key(DfcEmulator* emulator, uint8_t key_no) {
+    if(emulator->selected_application != DfcEmulatorSelectedApplicationPicc) return false;
+    if(key_no == DFC_DAM_AUTH_KEY_NUMBER) {
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        return !emulator->credential->picc_has_dam_keys;
+#else
+        return true;
+#endif
+    }
+    if(key_no == DFC_VC_CONFIGURATION_KEY_NUMBER) {
+        return true;
+    }
+    return false;
+}
+#endif
+
 static bool allows_free_directory_access(uint8_t key_settings_1) {
     return (key_settings_1 & DFC_KS1_FREE_DIRECTORY_ACCESS) != 0;
 }
@@ -790,6 +807,12 @@ static void handle_get_key_version(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
+#if DFC_ENABLE_SPECIAL_KEY_STATUS
+    if(picc_disabled_special_key(emulator, key_no)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+#endif
     if(key_no >= emulator_num_keys(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
@@ -1556,8 +1579,16 @@ static void handle_authenticate_ev2_start(
         return;
     }
     uint8_t key_no = apdu[1];
+#if DFC_ENABLE_SPECIAL_KEY_STATUS
+    if(picc_disabled_special_key(emulator, key_no)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+#endif
     if(!is_available_authentication_key(emulator, key_no) ||
-       !emulator_accepts_auth_cipher(emulator, DFC_CMD_AUTHENTICATE_AES)) {
+       !emulator_accepts_auth_cipher(
+           emulator, non_first ? DFC_CMD_AUTHENTICATE_EV2_NON_FIRST :
+                                 DFC_CMD_AUTHENTICATE_EV2_FIRST)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
@@ -1699,6 +1730,13 @@ static void handle_authenticate_step1(
     const uint8_t* apdu,
     DfcByteBuf* tx_buffer) {
     uint8_t key_no = apdu[1];
+
+#if DFC_ENABLE_SPECIAL_KEY_STATUS
+    if(picc_disabled_special_key(emulator, key_no)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+#endif
 
     if(key_no >= emulator_num_keys(emulator)) {
         DFC_LOG_W(TAG, "Authenticate: key_no %u beyond the key count", key_no);
@@ -1993,6 +2031,10 @@ static void handle_create_application(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
+    app->has_auth_commands = true;
+    app->auth_commands = dfc_credential_default_auth_commands(
+        key_settings_2, credential->card.generation) |
+        (DFC_ENABLE_ISO7816_AUTH ? DFC_AUTH_COMMAND_ISO7816 : 0);
 #if DFC_ENABLE_KEY_SETS
     if(has_key_sets) {
         if(!dfc_credential_key_sets_resize(

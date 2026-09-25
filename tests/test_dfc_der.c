@@ -151,19 +151,35 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     munit_assert_size(again_len, ==, len);
     munit_assert_memory_equal(len, again, buf);
 
-    // A v4 value without v5-only card fields remains readable, and encoding
-    // that model upgrades it to v5.
+    // The same EV1 card expressed in v4 uses scalar authentication modes.
+    // Re-encoding a decoded v4 card upgrades it to the current format.
     uint8_t legacy[DFC_DER_MAX_SIZE];
     memcpy(legacy, buf, len);
     bool downgraded = false;
     for(size_t i = 0; i + 2 < len; i++) {
-        if(legacy[i] == 0x80 && legacy[i + 1] == 0x01 && legacy[i + 2] == 5) {
+        if(legacy[i] == 0x80 && legacy[i + 1] == 0x01 && legacy[i + 2] == DFC_FORMAT_VERSION) {
             legacy[i + 2] = 4;
             downgraded = true;
             break;
         }
     }
     munit_assert_true(downgraded);
+    bool changed_picc_auth = false;
+    bool changed_app_auth = false;
+    for(size_t i = 0; i + 2 < len; i++) {
+        if(!changed_picc_auth && legacy[i] == 0x82 && legacy[i + 1] == 0x01 &&
+           legacy[i + 2] == (DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE)) {
+            legacy[i + 2] = 0; // v4 D40 enum
+            changed_picc_auth = true;
+        }
+        if(!changed_app_auth && legacy[i] == 0x85 && legacy[i + 1] == 0x01 &&
+           legacy[i + 2] == DFC_AUTH_COMMAND_AES) {
+            legacy[i + 2] = 2; // v4 AES enum
+            changed_app_auth = true;
+        }
+    }
+    munit_assert_true(changed_picc_auth);
+    munit_assert_true(changed_app_auth);
     DfcCredential from_v4;
     memset(&from_v4, 0, sizeof(from_v4));
     munit_assert_int(dfc_der_decode(&from_v4, legacy, len), ==, DfcDerOk);
@@ -171,14 +187,15 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     uint8_t upgraded[DFC_DER_MAX_SIZE];
     munit_assert_int(
         dfc_der_encode(&from_v4, upgraded, sizeof(upgraded), &upgraded_len), ==, DfcDerOk);
-    bool is_v5 = false;
+    bool is_v6 = false;
     for(size_t i = 0; i + 2 < upgraded_len; i++) {
-        if(upgraded[i] == 0x80 && upgraded[i + 1] == 0x01 && upgraded[i + 2] == 5) {
-            is_v5 = true;
+        if(upgraded[i] == 0x80 && upgraded[i + 1] == 0x01 &&
+           upgraded[i + 2] == DFC_FORMAT_VERSION) {
+            is_v6 = true;
             break;
         }
     }
-    munit_assert_true(is_v5);
+    munit_assert_true(is_v6);
 
     return MUNIT_OK;
 }
@@ -383,6 +400,67 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     munit_assert_int(dfc_der_encode(&ev2, buf, sizeof(buf), &len), ==, DfcDerOk);
     ev2.card.generation = DfcGenerationEv1;
     munit_assert_int(dfc_der_encode(&ev2, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+
+    DfcCredential policy;
+    memset(&policy, 0, sizeof(policy));
+    build_basic(&policy);
+    policy.picc_has_auth_commands = true;
+    policy.picc_auth_commands = DFC_AUTH_COMMAND_D40;
+    policy.picc_has_preferred_auth_command = true;
+    policy.picc_preferred_auth_command = DFC_AUTH_COMMAND_ISO_NATIVE;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.picc_preferred_auth_command = DFC_AUTH_COMMAND_D40;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerOk);
+    policy.picc_preferred_auth_command = DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.picc_has_auth_commands = false;
+    policy.picc_preferred_auth_command = 0x80;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.picc_preferred_auth_command = DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.picc_has_auth_commands = true;
+    policy.picc_auth_commands = DFC_AUTH_COMMAND_D40;
+    policy.picc_has_preferred_auth_command = false;
+    policy.apps[0].has_preferred_auth_command = true;
+    policy.apps[0].preferred_auth_command = DFC_AUTH_COMMAND_D40;
+    munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+    policy.apps[0].has_preferred_auth_command = false;
+
+    DfcCredential requested;
+    memset(&requested, 0, sizeof(requested));
+    build_basic(&requested);
+    requested.card.generation = DfcGenerationEv3;
+    requested.picc_has_auth_commands = true;
+    requested.picc_auth_commands = DFC_AUTH_COMMAND_ISO_NATIVE | DFC_AUTH_COMMAND_ISO7816;
+    requested.picc_has_preferred_auth_command = true;
+    requested.picc_preferred_auth_command = DFC_AUTH_COMMAND_ISO_NATIVE;
+    requested.apps[0].has_auth_commands = true;
+    requested.apps[0].auth_commands = DFC_AUTH_COMMAND_AES | DFC_AUTH_COMMAND_EV2_FIRST |
+                                       DFC_AUTH_COMMAND_EV2_NON_FIRST | DFC_AUTH_COMMAND_ISO7816;
+    requested.apps[0].has_preferred_auth_command = true;
+    requested.apps[0].preferred_auth_command = DFC_AUTH_COMMAND_AES;
+    DfcDerStatus requested_status =
+        (dfc_credential_compiled_auth_commands() & DFC_AUTH_COMMAND_ISO7816) ?
+            DfcDerOk : DfcDerUnsupported;
+    munit_assert_int(dfc_der_validate_model(&requested), ==, requested_status);
+    requested.picc_auth_commands = DFC_AUTH_COMMAND_ISO_NATIVE;
+    requested.apps[0].auth_commands |= DFC_AUTH_COMMAND_ISO_NATIVE;
+    munit_assert_int(dfc_der_validate_model(&requested), ==, DfcDerMalformed);
+    requested.apps[0].auth_commands &= (uint8_t)~DFC_AUTH_COMMAND_ISO_NATIVE;
+    requested.picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    munit_assert_int(dfc_der_validate_model(&requested), ==, DfcDerMalformed);
+
+    uint8_t unavailable = DFC_AUTH_COMMAND_ALL &
+                          (uint8_t)~dfc_credential_compiled_auth_commands();
+    if(unavailable) {
+        uint8_t disabled_command = unavailable & (uint8_t)(0u - unavailable);
+        policy.picc_has_preferred_auth_command = true;
+        policy.picc_preferred_auth_command = disabled_command;
+        munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerMalformed);
+        policy.picc_has_preferred_auth_command = false;
+        policy.picc_auth_commands = disabled_command;
+        munit_assert_int(dfc_der_validate_model(&policy), ==, DfcDerUnsupported);
+    }
 
     // complete with contents shorter than the declared size.
     DfcCredential short_complete;

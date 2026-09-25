@@ -287,6 +287,10 @@ int32_t dfc_ffi_credential_get_picc(const DfcFfiCredential* credential, DfcFfiPi
     out->key_settings_1 = c->picc_key_settings_1;
     out->key_settings_2 = c->picc_key_settings_2;
     out->auth_command = c->picc_auth_command;
+    out->has_auth_commands = c->picc_has_auth_commands;
+    out->auth_commands = c->picc_auth_commands;
+    out->has_preferred_auth_command = c->picc_has_preferred_auth_command;
+    out->preferred_auth_command = c->picc_preferred_auth_command;
     out->random_id = c->picc_random_id;
     out->format_disabled = c->picc_format_disabled;
     out->ats_len = (uint8_t)c->picc_ats_len;
@@ -362,6 +366,12 @@ int32_t dfc_ffi_credential_get_application(
     out->key_settings_1 = a->key_settings_1;
     out->key_settings_2 = a->key_settings_2;
     out->auth_command = a->auth_command;
+    out->has_auth_commands = a->has_auth_commands;
+    out->auth_commands = a->auth_commands;
+    out->has_preferred_auth_command = a->has_preferred_auth_command;
+    out->preferred_auth_command = a->preferred_auth_command;
+    out->has_sm_disable = a->has_sm_disable;
+    out->sm_disable = a->sm_disable;
     out->num_keys = (uint32_t)a->num_keys;
     out->key_len = (uint32_t)a->key_len;
 #if DFC_ENABLE_KEY_SETS
@@ -567,6 +577,10 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
     c->picc_key_settings_1 = p->key_settings_1;
     c->picc_key_settings_2 = p->key_settings_2;
     c->picc_auth_command = p->auth_command;
+    c->picc_has_auth_commands = p->has_auth_commands != 0;
+    c->picc_auth_commands = p->auth_commands;
+    c->picc_has_preferred_auth_command = p->has_preferred_auth_command != 0;
+    c->picc_preferred_auth_command = p->preferred_auth_command;
     c->picc_random_id = p->random_id != 0;
     c->picc_format_disabled = p->format_disabled != 0;
     c->picc_ats_len = p->ats_len;
@@ -671,6 +685,12 @@ int32_t dfc_ffi_credential_add_application(
     app->key_settings_1 = a->key_settings_1;
     app->key_settings_2 = a->key_settings_2;
     app->auth_command = a->auth_command;
+    app->has_auth_commands = a->has_auth_commands != 0;
+    app->auth_commands = a->auth_commands;
+    app->has_preferred_auth_command = a->has_preferred_auth_command != 0;
+    app->preferred_auth_command = a->preferred_auth_command;
+    app->has_sm_disable = a->has_sm_disable != 0;
+    app->sm_disable = a->sm_disable;
     app->key_len = a->key_len;
 
     if(a->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
@@ -889,6 +909,8 @@ int32_t dfc_ffi_picc_create(
     DfcFfiPicc** out) {
     if(!credential || !out) return DFC_FFI_INVALID_ARGUMENT;
     *out = NULL;
+    DfcDerStatus valid = dfc_der_validate_model(&credential->model);
+    if(valid != DfcDerOk) return valid;
     DfcFfiPicc* picc = calloc(1, sizeof(*picc));
     if(!picc) return DFC_FFI_OUT_OF_MEMORY;
     dfc_credential_copy_model(&picc->model, &credential->model);
@@ -1120,6 +1142,33 @@ int32_t dfc_ffi_reader_authenticate_begin(
         key_len,
         random_a,
         random_a_len);
+}
+
+int32_t dfc_ffi_reader_authenticate_iso7816_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint8_t key_reference,
+    const uint8_t* key,
+    size_t key_len,
+    uint8_t algorithm,
+    const uint8_t* random_first,
+    const uint8_t* random_second,
+    size_t random_len) {
+    if(!exchange || !session) return DFC_FFI_INVALID_ARGUMENT;
+#if DFC_ENABLE_ISO7816_AUTH
+    return dfc_reader_authenticate_iso7816_begin(
+        &exchange->exchange, &session->session, key_reference, key, key_len,
+        algorithm, random_first, random_second, random_len);
+#else
+    (void)key_reference;
+    (void)key;
+    (void)key_len;
+    (void)algorithm;
+    (void)random_first;
+    (void)random_second;
+    (void)random_len;
+    return DfcReaderUnsupported;
+#endif
 }
 
 int32_t dfc_ffi_reader_authenticate_ev2_begin(

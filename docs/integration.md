@@ -70,6 +70,13 @@ Example:
 You can override individual `DFC_ENABLE_*` macros. The header checks invalid
 feature combinations during compilation.
 
+`DFC_ENABLE_ISO7816_AUTH` controls standard ISO 7816 mutual authentication
+and defaults to the profile's ISO 7816 support. Set it to `0` when a small
+target does not need that command sequence. `DFC_ENABLE_SPECIAL_KEY_STATUS`
+controls EV3 responses for disabled DAM and virtual-card key slots; it defaults
+on only in the full EV3 profile. Static IC signatures use
+`DFC_ENABLE_STATIC_SIGNATURE` and do not require symmetric originality keys.
+
 ## 5. Select a build role
 
 Set `DFC_BUILD_ROLE` to choose which parts of the library a build carries. The

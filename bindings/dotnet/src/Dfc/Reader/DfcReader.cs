@@ -26,7 +26,7 @@ public enum DfcSessionKind
     /// <summary>Not authenticated.</summary>
     None = 0,
 
-    /// <summary>Legacy DES.</summary>
+    /// <summary>D40 DES authentication.</summary>
     D40 = 0x0A,
 
     /// <summary>ISO.</summary>
@@ -37,6 +37,17 @@ public enum DfcSessionKind
 
     /// <summary>EV2 secure messaging.</summary>
     Ev2 = 0x71,
+}
+
+/// <summary>The key algorithm for standard ISO 7816 mutual authentication.</summary>
+public enum DfcIso7816AuthAlgorithm : byte
+{
+    /// <summary>Two-key Triple DES.</summary>
+    Tdea2 = 0x02,
+    /// <summary>Three-key Triple DES.</summary>
+    Tdea3 = 0x04,
+    /// <summary>AES-128.</summary>
+    Aes = 0x09,
 }
 
 /// <summary>A reader session's state.</summary>
@@ -239,7 +250,7 @@ public sealed class DfcReader : IDisposable
             ? command.Error
             : await ExchangeAsync(command.Value, mode, null, cancellationToken).ConfigureAwait(false);
 
-    /// <summary>Legacy, ISO or AES authentication with one key.</summary>
+    /// <summary>D40, native ISO or native AES authentication with one key.</summary>
     public async Task<UnitResult<DfcProtocolError>> AuthenticateAsync(
         DfcAuthenticationMode mode,
         byte keyNo,
@@ -280,6 +291,37 @@ public sealed class DfcReader : IDisposable
         }
     }
 
+    /// <summary>Runs standard ISO 7816 mutual authentication with a PICC or application key reference.</summary>
+    public async Task<UnitResult<DfcProtocolError>> AuthenticateIso7816Async(
+        byte keyReference,
+        DfcIso7816AuthAlgorithm algorithm,
+        ReadOnlyMemory<byte> key,
+        CancellationToken cancellationToken = default)
+    {
+        var challengeLength = algorithm == DfcIso7816AuthAlgorithm.Tdea2 ? 8 : 16;
+        var randomFirst = new byte[challengeLength];
+        var randomSecond = new byte[challengeLength];
+        random.Fill(randomFirst);
+        random.Fill(randomSecond);
+        int status;
+        unsafe
+        {
+            fixed (byte* k = key.Span)
+            fixed (byte* first = randomFirst)
+            fixed (byte* second = randomSecond)
+            {
+                status = Native.dfc_ffi_reader_authenticate_iso7816_begin(
+                    ExchangeRaw, SessionRaw, keyReference, k, (nuint)key.Length,
+                    (byte)algorithm, first, second, (nuint)challengeLength);
+            }
+        }
+        CryptographicZero(randomFirst);
+        CryptographicZero(randomSecond);
+        if (status != 0) return Failure<DfcResponse>(status).Error;
+        var result = await RunAsync(cancellationToken).ConfigureAwait(false);
+        return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
+    }
+
     /// <summary>EV2 first authentication with a 16-octet AES key, optionally carrying six octets of reader capabilities.</summary>
     public Task<UnitResult<DfcProtocolError>> AuthenticateEv2FirstAsync(
         byte keyNo,
@@ -296,7 +338,7 @@ public sealed class DfcReader : IDisposable
     ) => AuthenticateEv2Async(false, keyNo, key, ReadOnlyMemory<byte>.Empty, cancellationToken);
 
     /// <summary>
-    /// ChangeKey under a legacy, ISO or AES session. <paramref name="currentKey" /> is needed unless the key is the
+    /// ChangeKey under a D40, native ISO or native AES session. <paramref name="currentKey" /> is needed unless the key is the
     /// authenticated one; changing that one ends the session.
     /// </summary>
     public async Task<UnitResult<DfcProtocolError>> ChangeKeyAsync(

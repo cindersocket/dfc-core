@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 internal static unsafe partial class Native
 {
     internal const string Library = "libdfc";
-    internal const uint AbiVersion = 2;
+    internal const uint AbiVersion = 3;
 
     internal const int InvalidArgument = -1;
     internal const int BufferTooSmall = -2;
@@ -222,6 +222,18 @@ internal static unsafe partial class Native
         nuint keyLength,
         byte* randomA,
         nuint randomALength);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_reader_authenticate_iso7816_begin(
+        nint exchange,
+        nint session,
+        byte keyReference,
+        byte* key,
+        nuint keyLength,
+        byte algorithm,
+        byte* randomFirst,
+        byte* randomSecond,
+        nuint randomLength);
 
     [LibraryImport(Library)]
     internal static partial int dfc_ffi_reader_authenticate_ev2_begin(

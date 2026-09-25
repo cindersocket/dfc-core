@@ -10,6 +10,7 @@ enum {
     KindCommand = 1,
     KindAuthenticate,
     KindAuthenticateEv2,
+    KindAuthenticateIso7816,
 };
 
 enum {
@@ -20,6 +21,7 @@ enum {
     PhaseResponse,
     PhaseAuthChallenge,
     PhaseAuthConfirmation,
+    PhaseAuthExternal,
     PhaseDone,
 };
 
@@ -349,6 +351,43 @@ DfcReaderStatus dfc_reader_authenticate_begin(
     return DfcReaderOk;
 }
 
+#if DFC_ENABLE_ISO7816_AUTH
+DfcReaderStatus dfc_reader_authenticate_iso7816_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    uint8_t key_reference,
+    const uint8_t* key,
+    size_t key_len,
+    uint8_t algorithm,
+    const uint8_t* random_first,
+    const uint8_t* random_second,
+    size_t random_len) {
+    if(!exchange || !session || !key || !random_first || !random_second) return DfcReaderInvalid;
+    if((key_reference & (uint8_t)~(DFC_ISO7816_AUTH_APP_REFERENCE |
+                                   DFC_ISO7816_AUTH_KEY_NUMBER_MASK)) != 0)
+        return DfcReaderInvalid;
+    bool aes = algorithm == DFC_ISO7816_AUTH_ALGORITHM_AES;
+    bool tdea3 = algorithm == DFC_ISO7816_AUTH_ALGORITHM_3TDEA;
+    bool tdea2 = algorithm == DFC_ISO7816_AUTH_ALGORITHM_2TDEA;
+    if((aes && (key_len != DFC_AES_KEY_LENGTH || random_len != DFC_ISO7816_AUTH_CHALLENGE_LONG)) ||
+       (tdea3 && (key_len != DFC_MAX_KEY_LEN || random_len != DFC_ISO7816_AUTH_CHALLENGE_LONG)) ||
+       (tdea2 && (key_len != DFC_AES_KEY_LENGTH || random_len != DFC_ISO7816_AUTH_CHALLENGE_2TDEA)) ||
+       (!aes && !tdea3 && !tdea2)) return DfcReaderInvalid;
+    begin_common(exchange, session, DfcReaderFramingIso7816);
+    exchange->kind = KindAuthenticateIso7816;
+    exchange->auth_cipher = aes ? DFC_CMD_AUTHENTICATE_AES : DFC_CMD_AUTHENTICATE_ISO;
+    exchange->auth_algorithm = algorithm;
+    exchange->auth_reference = key_reference;
+    exchange->auth_key_no = key_reference & DFC_ISO7816_AUTH_KEY_NUMBER_MASK;
+    memcpy(exchange->auth_key, key, key_len);
+    exchange->auth_key_len = key_len;
+    exchange->auth_challenge_len = random_len;
+    memcpy(exchange->auth_random_a, random_first, random_len);
+    memcpy(exchange->auth_random_second, random_second, random_len);
+    return DfcReaderOk;
+}
+#endif
+
 DfcReaderStatus dfc_reader_authenticate_ev2_begin(
     DfcReaderExchange* exchange,
     DfcReaderSession* session,
@@ -397,6 +436,103 @@ static DfcReaderStatus fail_auth(DfcReaderExchange* ex, DfcReaderStatus status) 
     ex->phase = PhaseDone;
     return status;
 }
+
+#if DFC_ENABLE_ISO7816_AUTH
+enum {
+    IsoApduHeaderLength = 5,
+    IsoApduStatusLength = 2,
+    IsoApduLeLength = 1,
+};
+
+static DfcReaderStatus emit_iso_auth_apdu(
+    const uint8_t* apdu, size_t length, uint8_t* out, size_t capacity, size_t* out_len) {
+    if(capacity < length) return DfcReaderBufferTooSmall;
+    memcpy(out, apdu, length);
+    *out_len = length;
+    return DfcReaderPending;
+}
+
+static bool iso_auth_answer_ok(const uint8_t* answer, size_t length, size_t expected_data) {
+    return answer && length == expected_data + IsoApduStatusLength &&
+           answer[length - IsoApduStatusLength] == DFC_ISO7816_SW_OK_HI &&
+           answer[length - 1] == DFC_ISO7816_SW_OK_LO;
+}
+
+static DfcReaderStatus step_authenticate_iso7816(
+    DfcReaderExchange* ex, const uint8_t* response, size_t response_len,
+    uint8_t* out, size_t cap, size_t* out_len) {
+    size_t challenge = ex->auth_challenge_len;
+    size_t block = block_size(ex->auth_cipher);
+    if(ex->phase == PhaseStart) {
+        const uint8_t apdu[IsoApduHeaderLength] = {
+            DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_GET_CHALLENGE,
+            0, 0, (uint8_t)challenge};
+        ex->phase = PhaseAuthChallenge;
+        return emit_iso_auth_apdu(apdu, sizeof(apdu), out, cap, out_len);
+    }
+    if(!response || response_len < IsoApduStatusLength) return fail_auth(ex, DfcReaderProtocolError);
+    ex->status = response[response_len - 1];
+    if(response[response_len - 2] != DFC_ISO7816_SW_OK_HI ||
+       ex->status != DFC_ISO7816_SW_OK_LO) return fail_auth(ex, DfcReaderCardError);
+
+    if(ex->phase == PhaseAuthChallenge) {
+        if(!iso_auth_answer_ok(response, response_len, challenge))
+            return fail_auth(ex, DfcReaderProtocolError);
+        memcpy(ex->auth_random_b, response, challenge);
+        uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];
+        memcpy(clear, ex->auth_random_a, challenge);
+        memcpy(clear + challenge, ex->auth_random_b, challenge);
+        uint8_t apdu[IsoApduHeaderLength + sizeof(clear)];
+        apdu[0] = DFC_ISO7816_CLA_STANDARD;
+        apdu[1] = DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE;
+        apdu[2] = ex->auth_algorithm;
+        apdu[3] = ex->auth_reference;
+        apdu[4] = (uint8_t)(challenge * 2);
+        uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+        cbc_encrypt(ex->auth_cipher, ex->auth_key, ex->auth_key_len,
+                    iv, clear, challenge * 2, apdu + IsoApduHeaderLength);
+        memcpy(ex->auth_iv, apdu + IsoApduHeaderLength + challenge * 2 - block, block);
+        ex->phase = PhaseAuthExternal;
+        return emit_iso_auth_apdu(apdu, IsoApduHeaderLength + challenge * 2, out, cap, out_len);
+    }
+    if(ex->phase == PhaseAuthExternal) {
+        if(!iso_auth_answer_ok(response, response_len, 0))
+            return fail_auth(ex, DfcReaderProtocolError);
+        uint8_t apdu[IsoApduHeaderLength + DFC_ISO7816_AUTH_CHALLENGE_LONG + IsoApduLeLength];
+        apdu[0] = DFC_ISO7816_CLA_STANDARD;
+        apdu[1] = DFC_ISO7816_INS_INTERNAL_AUTHENTICATE;
+        apdu[2] = ex->auth_algorithm;
+        apdu[3] = ex->auth_reference;
+        apdu[4] = (uint8_t)challenge;
+        memcpy(apdu + IsoApduHeaderLength, ex->auth_random_second, challenge);
+        apdu[IsoApduHeaderLength + challenge] = 0;
+        ex->phase = PhaseAuthConfirmation;
+        return emit_iso_auth_apdu(apdu,
+                                  IsoApduHeaderLength + challenge + IsoApduLeLength,
+                                  out, cap, out_len);
+    }
+    if(ex->phase != PhaseAuthConfirmation) return DfcReaderInvalid;
+    if(!iso_auth_answer_ok(response, response_len, challenge * 2))
+        return fail_auth(ex, DfcReaderProtocolError);
+    uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];
+    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+    memcpy(iv, ex->auth_iv, block);
+    cbc_decrypt(ex->auth_cipher, ex->auth_key, ex->auth_key_len,
+                iv, response, challenge * 2, clear);
+    if(!ct_equal(clear + challenge, ex->auth_random_second, challenge))
+        return fail_auth(ex, DfcReaderIntegrityError);
+    uint8_t session_key[DFC_MAX_KEY_LEN];
+    size_t session_key_len = 0;
+    dfc_derive_session_key(ex->auth_cipher, ex->auth_key, ex->auth_key_len,
+                           ex->auth_random_a, clear, session_key, &session_key_len);
+    open_legacy_session(ex->session, ex->auth_cipher, ex->auth_key_no,
+                        session_key, session_key_len);
+    wipe(session_key, sizeof(session_key));
+    wipe(ex->auth_key, sizeof(ex->auth_key));
+    ex->phase = PhaseDone;
+    return DfcReaderOk;
+}
+#endif
 
 static DfcReaderStatus step_authenticate(
     DfcReaderExchange* ex,
@@ -1262,6 +1398,11 @@ DfcReaderStatus dfc_reader_step(
     switch(exchange->kind) {
     case KindAuthenticate:
         return step_authenticate(exchange, response, response_len, out, out_cap, out_len);
+#if DFC_ENABLE_ISO7816_AUTH
+    case KindAuthenticateIso7816:
+        return step_authenticate_iso7816(exchange, response, response_len,
+                                         out, out_cap, out_len);
+#endif
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     case KindAuthenticateEv2:
         return step_authenticate_ev2(exchange, response, response_len, out, out_cap, out_len);
