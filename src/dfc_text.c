@@ -93,6 +93,7 @@ typedef struct {
     // recognised (rule 4).
     size_t total;
     size_t consumed;
+    size_t last_claimed_line;
     uint8_t seen[TRACKED_LINES / 8];
     bool tracked;
 
@@ -267,6 +268,10 @@ static bool lookup(P* p, const char* key, Line* out, bool claim) {
         found = true;
     }
     if(found && claim) {
+        if(out->number <= p->last_claimed_line) {
+            return fail(p, out->number, "%s: out of order", key);
+        }
+        p->last_claimed_line = out->number;
         p->consumed++;
         mark_seen(p, out->number);
     }
@@ -1603,6 +1608,12 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
     w_line_uint(w, "Card Storage", c->card.storage);
     w_line_hex(w, "UID", c->uid, c->uid_len);
     w_line_str(w, "UID Provenance", PROVENANCE_NAMES[c->card.uid_provenance]);
+#if DFC_ENABLE_STATIC_SIGNATURE
+    if(c->picc_has_static_signature) {
+        w_line_hex(
+            w, "Card Static Signature", c->picc_static_signature, sizeof(c->picc_static_signature));
+    }
+#endif
     if(c->card.has_hardware_version) {
         w_line_hex(w, "Card Hardware Version", c->card.hardware_version,
                    sizeof(c->card.hardware_version));
@@ -1611,12 +1622,6 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
         w_line_hex(w, "Card Software Version", c->card.software_version,
                    sizeof(c->card.software_version));
     }
-#if DFC_ENABLE_STATIC_SIGNATURE
-    if(c->picc_has_static_signature) {
-        w_line_hex(
-            w, "Card Static Signature", c->picc_static_signature, sizeof(c->picc_static_signature));
-    }
-#endif
 
     w_line_hex(w, "PICC Key Settings 1", &c->picc_key_settings_1, 1);
     w_line_hex(w, "PICC Key Settings 2", &c->picc_key_settings_2, 1);
@@ -1747,11 +1752,6 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
         st = write_files(w, c, prefix, i);
         if(st != DfcTextOk) return st;
 
-        if(a->has_sm_disable) {
-            snprintf(key, sizeof(key), "%s SM Disable", prefix);
-            w_line_hex(w, key, &a->sm_disable, 1);
-        }
-
 #if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
         if(a->has_capability_data) {
             snprintf(key, sizeof(key), "%s Capability Data", prefix);
@@ -1770,6 +1770,10 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
             w_line_uint(w, key, a->delegated_free_blocks);
         }
 #endif
+        if(a->has_sm_disable) {
+            snprintf(key, sizeof(key), "%s SM Disable", prefix);
+            w_line_hex(w, key, &a->sm_disable, 1);
+        }
     }
     return DfcTextOk;
 }
