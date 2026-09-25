@@ -7,6 +7,7 @@
 #   make test-backends  all unit suites with mbedTLS, then tiny-crypto-c
 #   make test SANITIZE=address,undefined       under ASan and UBSan (gcc or clang)
 #   make test CC=clang SANITIZE=memory         under MSan (clang, Linux only)
+#   make test RELEASE=1 optimised with NDEBUG, as a shipped library is built
 #
 # Executable names do not encode the sanitizer, so run make clean
 # between configurations.
@@ -16,6 +17,13 @@ PORT  := ../port
 HOST  := ../port/host
 
 CFLAGS  += -std=c11 -Wall -Wextra -I$(CORE) -I$(PORT) -I$(HOST) -Imunit
+
+# A release build compiles assertions out. The suite must pass either way, so
+# no assertion may carry an effect the engine depends on.
+RELEASE ?=
+ifneq ($(strip $(RELEASE)),)
+CFLAGS  += -DNDEBUG -O2
+endif
 
 CRYPTO_BACKEND  ?= mbedtls
 TINY_CRYPTO_DIR ?= ../../tiny-crypto-c

@@ -20,7 +20,9 @@ static void des_ecb_crypt(
     size_t key_len,
     const uint8_t input[8],
     uint8_t output[8]) {
-    DFC_ASSERT(dfc_crypto_des_ecb(encrypt, key, key_len, input, output));
+    bool ok = dfc_crypto_des_ecb(encrypt, key, key_len, input, output);
+    DFC_ASSERT(ok);
+    DFC_UNUSED(ok);
 }
 
 void dfc_emulator_d40_receive_plain(

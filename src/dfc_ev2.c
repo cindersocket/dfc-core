@@ -1,8 +1,8 @@
 #include "dfc_ev2.h"
 
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-
 #include <string.h>
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
 
 enum {
     DfcEv2FileCommandHeaderLength = 7,
