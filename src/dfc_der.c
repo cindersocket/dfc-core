@@ -183,6 +183,8 @@ static bool file_is_data(uint8_t type) {
     return type == FILE_TYPE_STANDARD || type == FILE_TYPE_BACKUP;
 }
 
+#if DFC_ENABLE_DER_ENCODER
+
 static bool file_is_record(uint8_t type) {
     return type == FILE_TYPE_LINEAR || type == FILE_TYPE_CYCLIC;
 }
@@ -642,6 +644,8 @@ static void body_credential(Writer* w, const void* p) {
     w_constructed(w, CRED_APPS, body_apps, x);
 }
 
+#endif // DFC_ENABLE_DER_ENCODER
+
 // Reject a model that would encode into something a conforming decoder refuses,
 // so an invalid credential cannot leave this process.
 DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
@@ -780,6 +784,8 @@ DfcDerStatus dfc_der_validate_model(const DfcCredential* c) {
     return DfcDerOk;
 }
 
+#if DFC_ENABLE_DER_ENCODER
+
 DfcDerStatus dfc_der_encoded_size(const DfcCredential* credential, size_t* len) {
     if(!credential || !len) return DfcDerMalformed;
     DfcDerStatus st = dfc_der_validate_model(credential);
@@ -813,6 +819,10 @@ DfcDerStatus
     *len = w.len;
     return DfcDerOk;
 }
+
+#endif // DFC_ENABLE_DER_ENCODER
+
+#if DFC_ENABLE_DER_DECODER
 
 // ------------------------------------------------------------------ reader ---
 
@@ -1787,5 +1797,7 @@ DfcDerStatus dfc_der_decode(DfcCredential* credential, const uint8_t* in, size_t
     credential->dirty = false;
     return DfcDerOk;
 }
+
+#endif // DFC_ENABLE_DER_DECODER
 
 #endif // DFC_ENABLE_BINARY_CODEC

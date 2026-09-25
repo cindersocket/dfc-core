@@ -1,6 +1,8 @@
 #include "dfc_virtual_picc.h"
 #include "dfc_ev2.h"
 
+#if DFC_ENABLE_EMULATOR
+
 #define TAG "DfcVirtualPicc"
 
 static const uint8_t DfcVirtualPiccProtocol[] = {0x02, 0x02};
@@ -1011,3 +1013,5 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
 
     return DfcVirtualPiccStatusProtocolError;
 }
+
+#endif // DFC_ENABLE_EMULATOR

@@ -1,5 +1,7 @@
 #include "dfc_emulator_i.h"
 
+#if DFC_ENABLE_EMULATOR
+
 DfcEmulator* dfc_emulator_alloc(DfcCredential* credential) {
     if(!credential) return NULL;
 
@@ -109,6 +111,15 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->get_version_frame = 0;
     emulator->pending_chain_len = 0;
     emulator->pending_chain_offset = 0;
+    emulator->pending_chain_frame = 0;
+    emulator->pending_chain_last = 0;
+    emulator->pending_chain_chunk_count = 0;
+    emulator->pending_chain_chunk_index = 0;
+    emulator->command_chain_active = false;
+    emulator->command_chain_len = 0;
+    emulator->command_chain_expected = 0;
+    emulator->df_names_pending = false;
+    emulator->df_names_next = 0;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
     emulator->delegated_creation_pending = false;
     emulator->delegated_creation_header_length = 0;
@@ -199,3 +210,5 @@ void dfc_emulator_advance_time(DfcEmulator* emulator, uint32_t elapsed_milliseco
     DFC_UNUSED(elapsed_milliseconds);
 #endif
 }
+
+#endif // DFC_ENABLE_EMULATOR

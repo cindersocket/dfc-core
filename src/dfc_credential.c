@@ -2,9 +2,6 @@
 
 #include <stdio.h>
 
-#include "dfc_der.h"
-#include "dfc_text.h"
-
 #define TAG "DfcCredential"
 
 void dfc_credential_reset_application(DfcApplication* app) {

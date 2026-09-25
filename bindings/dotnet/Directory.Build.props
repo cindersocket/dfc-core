@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Where the CMake build put the native library, for local builds and tests. -->
+    <DfcNativeDirectory Condition="'$(DfcNativeDirectory)' == ''">$(MSBuildThisFileDirectory)../../build</DfcNativeDirectory>
+  </PropertyGroup>
+</Project>

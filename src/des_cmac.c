@@ -5,8 +5,8 @@
 
 #define TAG "DESCMAC"
 
-static uint8_t zeroes[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-static uint8_t Rb[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1b};
+static const uint8_t zeroes[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t Rb[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1b};
 
 static void des_cmac_padBlock(uint8_t* block, size_t len) {
     block[len] = 0x80;
@@ -17,7 +17,7 @@ static void des_cmac_padBlock(uint8_t* block, size_t len) {
 static bool des_cmac_block_cipher(
     uint8_t* key,
     size_t key_len,
-    uint8_t* plain,
+    const uint8_t* plain,
     size_t plain_len,
     uint8_t* enc) {
     uint8_t iv[BLOCK_SIZE];
@@ -37,7 +37,7 @@ static void des_cmac_bitShiftLeft(uint8_t* input, uint8_t* output, size_t len) {
 }
 
 // x = a ^ b
-static void des_cmac_xor(uint8_t* a, uint8_t* b, uint8_t* x, size_t len) {
+static void des_cmac_xor(const uint8_t* a, const uint8_t* b, uint8_t* x, size_t len) {
     for(size_t i = 0; i < len; i++) {
         x[i] = a[i] ^ b[i];
     }
@@ -70,9 +70,9 @@ bool des_cmac_with_iv(
     uint8_t* cmac) {
     uint8_t subkey1[BLOCK_SIZE] = {0};
     uint8_t subkey2[BLOCK_SIZE] = {0};
-    uint8_t blockCount = (message_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    size_t blockCount = (message_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
     bool lastBlockCompleteFlag;
-    uint8_t lastBlockIndex;
+    size_t lastBlockIndex;
     uint8_t lastBlock[BLOCK_SIZE] = {0};
 
     if(key_len != 8 && key_len != 16 && key_len != 24) {

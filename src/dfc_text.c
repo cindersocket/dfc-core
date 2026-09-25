@@ -8,6 +8,10 @@
 
 #if DFC_ENABLE_TEXT_CODEC
 
+bool dfc_credential_content_is_binary(const uint8_t* content, size_t len) {
+    return content && len > 0 && content[0] == DFC_DER_CREDENTIAL_TAG;
+}
+
 #define TYPE_STANDARD 0x00u
 #define TYPE_BACKUP   0x01u
 #define TYPE_VALUE    0x02u
@@ -1674,6 +1678,30 @@ DfcTextStatus dfc_text_write(const DfcCredential* credential, char* out, size_t 
     if(w.len < cap) out[w.len] = '\0';
     *len = w.len;
     return DfcTextOk;
+}
+
+DfcTextStatus dfc_credential_load(
+    DfcCredential* credential,
+    const uint8_t* content,
+    size_t len,
+    DfcTextError* detail) {
+    if(detail) {
+        detail->line = 0;
+        detail->message[0] = '\0';
+    }
+    if(!credential || (!content && len > 0)) return DfcTextMalformed;
+    if(dfc_credential_content_is_binary(content, len)) {
+        DfcDerStatus st = dfc_der_decode(credential, content, len);
+        if(st != DfcDerOk && detail) {
+            snprintf(
+                detail->message,
+                sizeof(detail->message),
+                "binary credential is %s",
+                dfc_der_status_name(st));
+        }
+        return st;
+    }
+    return dfc_text_parse(credential, (const char*)content, len, detail);
 }
 
 #endif // DFC_ENABLE_TEXT_CODEC
