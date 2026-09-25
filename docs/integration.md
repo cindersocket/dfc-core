@@ -111,7 +111,35 @@ Storage for the credential model is fixed at compile time. Override
 `DFC_FILE_POOL_SIZE`, `DFC_KEY_POOL_SIZE`, `DFC_MAX_APPS`, `DFC_MAX_FILES`, and
 `DFC_MAX_KEYS` in the same way to trade memory against card capacity.
 
-## 6. Verify the integration
+## 6. Build the shared library
+
+The CMake build produces the core as a static archive, `dfc_core`, and as the
+shared library `dfc`. The shared library carries the flat interface in
+`ffi/dfc_ffi.h` for foreign runtimes and a platform port that draws randomness
+from the operating system or from a callback per virtual PICC:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build
+```
+
+These cache variables select the build:
+
+| Variable | Default | Values |
+|---|---|---|
+| `DFC_ROLE` | `simulator` | `target`, `host`, `simulator` |
+| `DFC_PROFILE` | `full_ev3` | `minimal_ev1`, `full_ev1`, `full_ev2`, `full_ev3`, `minimal_ev3` |
+| `DFC_CRYPTO` | `tiny` | `tiny` fetches tiny-crypto-c at a pinned commit; `mbedtls` uses an installed mbedTLS 3.x |
+| `DFC_TINY_CRYPTO_DIR` | empty | A local tiny-crypto-c checkout to build from instead |
+| `DFC_HOST_CAPACITY` | `ON` | Sizes the credential model for a workstation |
+
+The interface uses fixed layouts and opaque handles only, so a binding does not
+depend on the features or pool sizes a library was built with.
+`dfc_ffi_capabilities` reports both, and `dfc_ffi_struct_sizes` lets a binding
+check its declarations against the library it loaded.
+
+## 7. Verify the integration
 
 Run the host tests before you build for the target:
 

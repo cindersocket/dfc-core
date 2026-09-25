@@ -7,3 +7,4 @@ tests/test_*
 __pycache__/
 *.pyc
 tests/role-build/
+/build*/
