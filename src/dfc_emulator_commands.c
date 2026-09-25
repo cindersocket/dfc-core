@@ -3619,6 +3619,17 @@ static bool handle_read_data(
     uint8_t payload[DFC_SM_MAX_SIZE];
     size_t payload_len = read_len;
     const uint8_t* file_bytes = dfc_file_data_const(emulator->credential, file);
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    // Backup reads keep showing the committed image until CommitTransaction.
+    if(file->type == DFC_FILE_TYPE_BACKUP_DATA &&
+       emulator->transaction_snapshot_active &&
+       emulator->transaction_snapshot_app_index == emulator->selected_app_index &&
+       file->data_offset != DFC_FILE_POOL_NONE &&
+       file->data_offset <= emulator->transaction_snapshot_pool_length &&
+       file->data_len <= emulator->transaction_snapshot_pool_length - file->data_offset) {
+        file_bytes = emulator->transaction_snapshot_pool + file->data_offset;
+    }
+#endif
 #if DFC_ENABLE_SDM
     if(file->sdm_enabled && !emulator->secure_messaging && !emulator->ev2_session_active) {
         if(!emulator->sdm_read_cache_valid && file->sdm_has_counter_limit &&
