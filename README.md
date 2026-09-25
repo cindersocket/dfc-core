@@ -7,8 +7,13 @@ DFC core is a portable DESFire-compatible engine. It provides these parts:
 - `.dfcb` binary encoding and decoding
 - Secure messaging
 - A virtual card emulator
+- A reader: a command encoder and secure messaging for every session kind
+- A flat interface for foreign runtimes, and a .NET library over it
 
-It is suitable for hosted systems and freestanding C targets.
+It is suitable for hosted systems and freestanding C targets. A build role
+selects the parts one product carries. A card carries the emulator and the
+`.dfcb` codec. A host-side client carries the reader and both encodings. A
+simulator carries everything.
 
 ## Requirements
 
@@ -71,6 +76,23 @@ data takes the card capability slot when present.
 card. The full EV2 and EV3 profiles return it through `Read_Sig` (`0x3C`,
 address `0x00`). The emulator returns the stored bytes; it does not create or
 verify a signature. Omit the field when no signature is available.
+
+## Build the shared library
+
+The CMake build produces the core as a static archive and as a shared library
+that exports `ffi/dfc_ffi.h`:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build
+```
+
+## Use it from .NET
+
+`bindings/dotnet` holds the `Dfc` library, which runs every rule in native code.
+It provides the credential records and codec, `DfcVirtualPicc` and
+`DfcReader`. See its [README](bindings/dotnet/README.md).
 
 ## License
 

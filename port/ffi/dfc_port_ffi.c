@@ -20,6 +20,7 @@
 #else
 #include <errno.h>
 #include <sys/random.h>
+#include <sys/types.h>
 #endif
 
 #if defined(_MSC_VER)

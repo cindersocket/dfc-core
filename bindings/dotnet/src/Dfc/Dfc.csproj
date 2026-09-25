@@ -7,10 +7,15 @@
     <Version>1.1.0</Version>
     <Description>DESFire-compatible credentials, virtual card and reader for .NET, over the native DFC core.</Description>
     <PackageLicenseExpression>GPL-2.0-or-later</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="CSharpFunctionalExtensions" Version="3.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
   <!-- A packed library carries every platform's native build under runtimes/. -->
