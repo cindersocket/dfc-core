@@ -12,8 +12,11 @@ DFC core is a portable DESFire-compatible engine. It provides these parts:
 
 See the [changelog](CHANGELOG.md) for release notes.
 The [credential format specification](docs/credential-format-v6.md) defines
-`.dfc` and `.dfcb` versions 4 through 6. See the
-[migration guide](docs/credential-migration.md) when updating stored credentials.
+`.dfc` and `.dfcb` versions 4 through 6. The
+[full v6 schema](docs/credential-schema-v6.md) lists every field and binary
+tag. Start with the [v6 example credentials](examples/credentials/README.md),
+then use the [migration guide](docs/credential-migration.md) when updating
+stored credentials.
 
 It is suitable for hosted systems and freestanding C targets. A build role
 selects the parts one product carries. A card carries the emulator and the
