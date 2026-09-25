@@ -338,6 +338,7 @@ static void clear_pending_chain(DfcEmulator* emulator) {
     emulator->pending_chain_len = 0;
     emulator->pending_chain_offset = 0;
     emulator->pending_chain_frame = 0;
+    emulator->pending_chain_last = 0;
     emulator->df_names_pending = false;
     emulator->df_names_next = 0;
     emulator->get_version_frame = 0;
@@ -366,44 +367,65 @@ static void append_status_payload(
     }
 }
 
-// Payload a single chained frame may carry. Under an authenticated session the
-// frames land on a cipher-block boundary: 56 octets for DES and 48 for AES.
-// Without one, a listing splits between whole entries of `entry` octets.
-static size_t ev1_frame_payload(const DfcEmulator* emulator, size_t entry) {
-    if(!emulator->secure_messaging) {
-        if(entry == 0) entry = 1;
-        return (DFC_EV1_MAX_FRAME_PAYLOAD / entry) * entry;
+// Payload a single chained frame may carry. A secured answer is one blob, split
+// on a cipher-block boundary: 56 octets for DES and 48 for AES. An unsecured
+// answer (no session, or a legacy session on a plain file) carries 59 octets
+// and splits only between whole entries of `entry` octets.
+static size_t ev1_frame_payload(const DfcEmulator* emulator, size_t entry, bool secured) {
+    if(secured) {
+        size_t block =
+            emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
+        return (DFC_EV1_MAX_FRAME_PAYLOAD / block) * block;
     }
-    size_t block =
-        emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
-    return (DFC_EV1_MAX_FRAME_PAYLOAD / block) * block;
+    if(entry == 0) entry = 1;
+    return (DFC_EV1_MAX_FRAME_PAYLOAD / entry) * entry;
 }
 
 // `entry` is the size of one listing entry, so no frame splits one; 1 for data.
-static void emit_payload_with_chaining(
+// `comm` is the communication mode the answer is returned under: an enciphered
+// file's records come back enciphered, and a legacy session secures by that mode.
+static void emit_payload_with_chaining_comm(
     DfcEmulator* emulator,
     DfcByteBuf* tx_buffer,
     uint8_t cmd,
     const uint8_t* payload,
     size_t payload_len,
-    size_t entry) {
+    size_t entry,
+    uint8_t comm) {
     clear_pending_chain(emulator);
 
-    // A chained response carries one CMAC, over the whole logical response, on
-    // the final frame - so secure the response first and split the result.
-    // Intermediate frames then carry data only.
+    // Secure the whole answer once, then split the result; intermediate frames
+    // carry secured octets and the final frame carries the MAC where there is one.
     uint8_t secured[DFC_SM_MAX_SIZE];
-    if(emulator->secure_messaging &&
-       dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
+    bool ev1 = emulator->secure_messaging &&
+               dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd);
+    bool legacy = emulator->secure_messaging && !ev1;
+    bool is_secured = false;
+    if(ev1 && comm == DFC_COMM_ENCIPHERED) {
+        payload_len = dfc_secure_messaging_generate_response(
+            emulator->secure_messaging, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, payload, payload_len, secured);
+        payload = secured;
+        is_secured = true;
+    } else if(ev1) {
         payload_len = dfc_secure_messaging_generate_ev1_response(
             emulator->secure_messaging, DFC_STATUS_OK, payload, payload_len, secured);
         payload = secured;
-        emulator->response_secured = true;
+        is_secured = true;
+    } else if(legacy && comm != DFC_COMM_PLAIN) {
+        payload_len = dfc_secure_messaging_generate_response(
+            emulator->secure_messaging, comm, DFC_STATUS_OK, payload, payload_len, secured);
+        payload = secured;
+        is_secured = true;
     }
+    if(is_secured) emulator->response_secured = true;
 
-    size_t frame = ev1_frame_payload(emulator, entry);
+    size_t frame = ev1_frame_payload(emulator, entry, is_secured);
+    // A secured answer runs its final frame to the wire limit, carrying the MAC
+    // after the last block; an unsecured one ends on a whole entry.
+    size_t last = is_secured ? DFC_EV1_MAX_FRAME_PAYLOAD : frame;
     emulator->pending_chain_frame = frame;
-    if(payload_len <= frame) {
+    emulator->pending_chain_last = last;
+    if(payload_len <= last) {
         append_status_payload(tx_buffer, DFC_STATUS_OK, payload, payload_len);
         return;
     }
@@ -418,6 +440,18 @@ static void emit_payload_with_chaining(
     append_status_payload(tx_buffer, DFC_CMD_ADDITIONAL_FRAME, payload, frame);
 }
 
+// Most answers are returned plain or under the session default; a file read
+// passes its own communication mode through the *_comm form above.
+static void emit_payload_with_chaining(
+    DfcEmulator* emulator,
+    DfcByteBuf* tx_buffer,
+    uint8_t cmd,
+    const uint8_t* payload,
+    size_t payload_len,
+    size_t entry) {
+    emit_payload_with_chaining_comm(emulator, tx_buffer, cmd, payload, payload_len, entry, DFC_COMM_PLAIN);
+}
+
 static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     if(emulator->pending_chain_offset >= emulator->pending_chain_len) {
         clear_pending_chain(emulator);
@@ -426,15 +460,14 @@ static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf*
     }
 
     size_t frame = emulator->pending_chain_frame ? emulator->pending_chain_frame :
-                                                   ev1_frame_payload(emulator, 1);
+                                                   ev1_frame_payload(emulator, 1, false);
+    size_t last = emulator->pending_chain_last ? emulator->pending_chain_last : frame;
     size_t remaining = emulator->pending_chain_len - emulator->pending_chain_offset;
-    size_t chunk = remaining > frame ? frame : remaining;
+    bool final_frame = remaining <= last;
+    size_t chunk = final_frame ? remaining : frame;
     // These octets were secured as one response before being split.
     if(emulator->secure_messaging) emulator->response_secured = true;
-    uint8_t status =
-        (emulator->pending_chain_offset + chunk >= emulator->pending_chain_len) ?
-            DFC_STATUS_OK :
-            DFC_CMD_ADDITIONAL_FRAME;
+    uint8_t status = final_frame ? DFC_STATUS_OK : DFC_CMD_ADDITIONAL_FRAME;
     append_status_payload(
         tx_buffer,
         status,
@@ -3512,6 +3545,17 @@ static void handle_get_file_counters(
 }
 #endif
 
+#if DFC_ENABLE_RECORD_FILES
+static size_t unwrap_write_payload(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    size_t header_len,
+    uint8_t comm,
+    uint8_t* out,
+    size_t out_cap);
+#endif
+
 static void handle_write_data(
     DfcEmulator* emulator,
     const uint8_t* apdu,
@@ -3643,14 +3687,29 @@ static void handle_write_record(
 
     uint32_t offset = read_uint24_le(apdu + 2);
     uint32_t write_len = read_uint24_le(apdu + 5);
-    if(apdu_len != (size_t)write_len + 8 || offset + write_len > file->record_size) {
+    uint8_t comm = file_effective_comm_settings(file, true);
+    uint8_t record_data[DFC_SM_MAX_SIZE];
+    size_t clear_len =
+        unwrap_write_payload(emulator, apdu, apdu_len, 7, comm, record_data, sizeof(record_data));
+    if(clear_len == SIZE_MAX) {
+        dfc_emulator_reset_session(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        return;
+    }
+    if(clear_len != write_len || offset + write_len > file->record_size) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
+    // A linear file with no room left refuses the write. Measured against a
+    // genuine EV1: the status is the boundary error, not out of memory.
     if(file->record_count >= file->max_records && file->type == DFC_FILE_TYPE_LINEAR_RECORD) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
+    // A cyclic file keeps one record in reserve, so it holds one fewer than its
+    // declared size, measured against a genuine EV1.
+    size_t cyclic_capacity =
+        file->max_records > 0 ? (size_t)file->max_records - 1 : 0;
 
     uint8_t* data = dfc_file_data(emulator->credential, file);
     if(!data) {
@@ -3662,19 +3721,80 @@ static void handle_write_record(
         return;
     }
     size_t record_index = file->record_count;
-    if(file->record_count >= file->max_records) {
-        size_t retained_len = (size_t)(file->max_records - 1) * file->record_size;
+    if(file->type == DFC_FILE_TYPE_CYCLIC_RECORD && file->record_count >= cyclic_capacity) {
+        size_t retained_len = (cyclic_capacity - 1) * file->record_size;
         memmove(data, data + file->record_size, retained_len);
-        record_index = file->max_records - 1;
+        record_index = cyclic_capacity - 1;
+        file->record_count = (uint32_t)cyclic_capacity;
     } else {
         file->record_count++;
     }
     memset(data + record_index * file->record_size, 0, file->record_size);
-    memcpy(data + record_index * file->record_size + offset, apdu + 8, write_len);
+    memcpy(data + record_index * file->record_size + offset, record_data, write_len);
     file->transaction_pending = true;
     dfc_credential_mark_dirty(emulator->credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
+
+#if DFC_ENABLE_RECORD_FILES
+// Unwraps the payload of a command that carries a clear header and a written
+// body, under the session's communication mode. `header_len` is the octet count
+// after the command byte that precede the body. Returns the cleartext body
+// length, or SIZE_MAX when an integrity check fails. A command reaching this
+// carries its own command CMAC update, so it must be listed as deferred in the
+// dispatcher.
+static size_t unwrap_write_payload(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    size_t header_len,
+    uint8_t comm,
+    uint8_t* out,
+    size_t out_cap) {
+    size_t cmd_header = 1 + header_len;
+    if(apdu_len < cmd_header) return SIZE_MAX;
+    const uint8_t* wrapped = apdu + cmd_header;
+    size_t wrapped_len = apdu_len - cmd_header;
+    if(!emulator->secure_messaging) {
+        if(wrapped_len > out_cap) return SIZE_MAX;
+        memcpy(out, wrapped, wrapped_len);
+        return wrapped_len;
+    }
+    bool ev1_sm = dfc_secure_messaging_applies_ev1(emulator->secure_messaging, apdu[0]);
+    if(ev1_sm && comm == DFC_COMM_MAC &&
+       dfc_secure_messaging_ev1_transmits_command_mac(apdu[0])) {
+        size_t clear_body = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
+            emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1);
+        if(clear_body == SIZE_MAX || clear_body < header_len) return SIZE_MAX;
+        size_t data_len = clear_body - header_len;
+        if(data_len > out_cap) return SIZE_MAX;
+        if(data_len) memcpy(out, apdu + cmd_header, data_len);
+        return data_len;
+    }
+    if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
+        size_t data_len = dfc_secure_messaging_verify_command(
+            emulator->secure_messaging, DFC_COMM_ENCIPHERED, apdu, cmd_header, wrapped, wrapped_len, out);
+        if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
+        return data_len;
+    }
+    if(ev1_sm) {
+        if(wrapped_len > out_cap) return SIZE_MAX;
+        memcpy(out, wrapped, wrapped_len);
+        dfc_secure_messaging_update_ev1_command(
+            emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1);
+        return wrapped_len;
+    }
+    if(comm == DFC_COMM_PLAIN) {
+        if(wrapped_len > out_cap) return SIZE_MAX;
+        memcpy(out, wrapped, wrapped_len);
+        return wrapped_len;
+    }
+    size_t data_len = dfc_secure_messaging_verify_command(
+        emulator->secure_messaging, comm, apdu, cmd_header, wrapped, wrapped_len, out);
+    if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
+    return data_len;
+}
+#endif
 
 static void handle_read_records(
     DfcEmulator* emulator,
@@ -3706,21 +3826,24 @@ static void handle_read_records(
     }
     const uint8_t* data = dfc_file_data_const(emulator->credential, file);
     uint8_t payload[DFC_WORKER_MAX_BUFFER_SIZE];
+    // Record number 0 is the newest, so a range starts `first_record` back from
+    // the newest, but the answer lists that range oldest first. Measured on a
+    // genuine EV1: writing A1, B2, C3 in turn and reading all returns A1 B2 C3.
     for(size_t output_index = 0; output_index < count; output_index++) {
-        size_t record_number = first_record + output_index;
-        size_t stored_index = file->record_count - record_number - 1;
+        size_t stored_index = file->record_count - first_record - count + output_index;
         memcpy(
             payload + output_index * file->record_size,
             data + stored_index * file->record_size,
             file->record_size);
     }
-    emit_payload_with_chaining(
+    emit_payload_with_chaining_comm(
         emulator,
         tx_buffer,
         DFC_CMD_READ_RECORDS,
         payload,
         count * file->record_size,
-        1);
+        1,
+        file_effective_comm_settings(file, false));
 }
 
 static void handle_update_record(
@@ -3747,7 +3870,22 @@ static void handle_update_record(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
-    if(apdu_len != DFC_UPDATE_RECORD_HEADER_SIZE + write_length) {
+    uint8_t comm = file_effective_comm_settings(file, true);
+    uint8_t update_data[DFC_SM_MAX_SIZE];
+    size_t clear_len = unwrap_write_payload(
+        emulator,
+        apdu,
+        apdu_len,
+        DFC_UPDATE_RECORD_HEADER_SIZE - 1,
+        comm,
+        update_data,
+        sizeof(update_data));
+    if(clear_len == SIZE_MAX) {
+        dfc_emulator_reset_session(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        return;
+    }
+    if(clear_len != write_length) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
@@ -3757,10 +3895,7 @@ static void handle_update_record(
         return;
     }
     size_t stored_index = file->record_count - record_number - 1;
-    memcpy(
-        data + stored_index * file->record_size + offset,
-        apdu + DFC_UPDATE_RECORD_HEADER_SIZE,
-        write_length);
+    memcpy(data + stored_index * file->record_size + offset, update_data, write_length);
     file->transaction_pending = true;
     dfc_credential_mark_dirty(emulator->credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
@@ -4019,7 +4154,8 @@ bool dfc_emulator_handle_command(
     // (MAC-on-wire or Full decrypt).
     bool defer_ev1_cmd_cmac = cmd == DFC_CMD_CHANGE_KEY || cmd == DFC_CMD_WRITE_DATA ||
                               cmd == DFC_CMD_CREDIT || cmd == DFC_CMD_DEBIT ||
-                              cmd == DFC_CMD_LIMITED_CREDIT;
+                              cmd == DFC_CMD_LIMITED_CREDIT || cmd == DFC_CMD_WRITE_RECORD ||
+                              cmd == DFC_CMD_UPDATE_RECORD || cmd == DFC_CMD_UPDATE_RECORD_ISO;
     if(emulator->secure_messaging &&
        dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd) &&
        !defer_ev1_cmd_cmac) {
@@ -4361,6 +4497,7 @@ bool dfc_emulator_handle_command(
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_write_record(emulator, buffer, buffer_len, tx_buffer);
+        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_READ_RECORDS:
         if(buffer_len != 8) {
@@ -4378,10 +4515,12 @@ bool dfc_emulator_handle_command(
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_update_record(emulator, buffer, buffer_len, tx_buffer);
+        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_CLEAR_RECORD_FILE:
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_clear_record_file(emulator, buffer, buffer_len, tx_buffer);
+        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #endif
     default:

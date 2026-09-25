@@ -154,6 +154,9 @@ void dfc_secure_messaging_update_ev1_command(
 bool dfc_secure_messaging_ev1_transmits_command_mac(uint8_t cmd) {
     switch(cmd) {
     case DFC_CMD_WRITE_DATA:
+    case DFC_CMD_WRITE_RECORD:
+    case DFC_CMD_UPDATE_RECORD:
+    case DFC_CMD_UPDATE_RECORD_ISO:
     case DFC_CMD_CREDIT:
     case DFC_CMD_DEBIT:
     case DFC_CMD_LIMITED_CREDIT:

@@ -26,6 +26,9 @@ typedef struct {
     // Octets each further frame of the pending chain carries: whole entries of
     // a listing, or whole cipher blocks under secure messaging.
     size_t pending_chain_frame;
+    // Largest a final frame may carry. A secured answer keeps its MAC on the
+    // last frame, so its final frame runs to the full limit above the block size.
+    size_t pending_chain_last;
     // GetDFNames answers one application per frame; the next one to send.
     bool df_names_pending;
     size_t df_names_next;
