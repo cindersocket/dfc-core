@@ -759,7 +759,7 @@ public sealed class DfcReader : IDisposable
     {
         if (status != 0)
         {
-            throw new OutOfMemoryException("The native reader could not be allocated.");
+            throw new InsufficientMemoryException("The native reader could not be allocated.");
         }
     }
 
