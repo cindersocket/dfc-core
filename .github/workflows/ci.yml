@@ -44,7 +44,7 @@ jobs:
           - { rid: linux-x64, os: ubuntu-24.04, file: build/libdfc.so, test: true }
           - { rid: linux-arm64, os: ubuntu-24.04-arm, file: build/libdfc.so, test: true }
           - { rid: osx-arm64, os: macos-14, file: build/libdfc.dylib, test: true }
-          - { rid: osx-x64, os: macos-13, file: build/libdfc.dylib, test: true }
+          - { rid: osx-x64, os: macos-15-intel, file: build/libdfc.dylib, test: true }
           - { rid: win-x64, os: windows-2022, file: build/Release/dfc.dll, test: true }
           - { rid: win-arm64, os: windows-2022, file: build/Release/dfc.dll, test: false, arch: "-A ARM64" }
     steps:
