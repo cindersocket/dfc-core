@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 tests/role-build/
 /build*/
+bindings/dotnet/**/bin/
+bindings/dotnet/**/obj/
+bindings/dotnet/src/Dfc/runtimes/
