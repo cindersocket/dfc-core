@@ -4,7 +4,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsAotCompatible>true</IsAotCompatible>
     <PackageId>Dfc</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Description>DESFire-compatible credentials, virtual card and reader for .NET, over the native DFC core.</Description>
     <PackageLicenseExpression>GPL-2.0-or-later</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

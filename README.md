@@ -10,6 +10,8 @@ DFC core is a portable DESFire-compatible engine. It provides these parts:
 - A reader with command encoding and secure messaging
 - A flat interface for foreign runtimes, and a .NET library over it
 
+See the [changelog](CHANGELOG.md) for release notes.
+
 It is suitable for hosted systems and freestanding C targets. A build role
 selects the parts one product carries. A card carries the emulator and the
 `.dfcb` codec. A host-side client carries the reader and both encodings. A
