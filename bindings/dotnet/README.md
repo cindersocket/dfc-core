@@ -40,7 +40,8 @@ Build the native library first. The tests load it from `build/` at the root of
 the repository:
 
 ```sh
-cmake -S ../.. -B ../../build -DCMAKE_BUILD_TYPE=Release
+cmake -S ../.. -B ../../build -DCMAKE_BUILD_TYPE=Release \
+  -DDFC_ROLE=simulator -DDFC_PROFILE=full_ev3 -DDFC_CRYPTO=tiny
 cmake --build ../../build
 dotnet test Dfc.sln -c Release
 ```

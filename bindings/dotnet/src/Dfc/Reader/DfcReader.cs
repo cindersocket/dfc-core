@@ -531,7 +531,7 @@ public sealed class DfcReader : IDisposable
         }
 
         var expected = ProximityMac(key.Span, fromCard: true, published, transcriptBytes);
-        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expected, verify.Value.Data)
+        return NativeCrypto.FixedTimeEquals(expected, verify.Value.Data)
             ? new DfcProximityCheckResult(published, longest)
             : new DfcProtocolError(DfcProtocolErrorKind.Integrity, "The card's proximity-check MAC did not verify.");
     }
@@ -753,8 +753,7 @@ public sealed class DfcReader : IDisposable
         return mac;
     }
 
-    private static void CryptographicZero(byte[] buffer) =>
-        System.Security.Cryptography.CryptographicOperations.ZeroMemory(buffer);
+    private static void CryptographicZero(byte[] buffer) => NativeCrypto.Zero(buffer);
 
     private static void Allocate(int status)
     {

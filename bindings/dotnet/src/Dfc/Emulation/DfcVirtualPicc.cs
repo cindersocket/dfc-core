@@ -3,7 +3,6 @@ namespace Dfc.Emulation;
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpFunctionalExtensions;
@@ -322,7 +321,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         {
             // An exception cannot cross into native code, and a card must never
             // answer with a predictable challenge.
-            RandomNumberGenerator.Fill(destination);
+            NativeCrypto.Fill(destination);
         }
     }
 

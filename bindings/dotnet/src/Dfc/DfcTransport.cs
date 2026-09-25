@@ -1,10 +1,10 @@
 namespace Dfc;
 
 using System;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpFunctionalExtensions;
+using Dfc.Interop;
 
 /// <summary>What went wrong in an exchange with a card.</summary>
 public enum DfcProtocolErrorKind
@@ -76,7 +76,7 @@ public sealed class DfcSystemRandomSource : IDfcRandomSource
     public static DfcSystemRandomSource Instance { get; } = new();
 
     /// <inheritdoc />
-    public void Fill(Span<byte> destination) => RandomNumberGenerator.Fill(destination);
+    public void Fill(Span<byte> destination) => NativeCrypto.Fill(destination);
 }
 
 /// <summary>A fixed sequence of octets, for tests that replay a recorded session.</summary>

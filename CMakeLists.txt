@@ -25,11 +25,23 @@ set(DFC_CRYPTO "tiny" CACHE STRING "Crypto backend: tiny (tiny-crypto-c) or mbed
 set_property(CACHE DFC_CRYPTO PROPERTY STRINGS tiny mbedtls)
 set(DFC_TINY_CRYPTO_DIR "" CACHE PATH
     "A tiny-crypto-c checkout to build from; empty fetches the pinned release")
-option(DFC_BUILD_SHARED "Build the shared library with the flat interface" ON)
-option(DFC_BUILD_TESTS "Build the smoke test for the shared library" ON)
+if(DFC_ROLE STREQUAL "target")
+    set(DFC_DEFAULT_BUILD_SHARED OFF)
+else()
+    set(DFC_DEFAULT_BUILD_SHARED ON)
+endif()
+option(DFC_BUILD_SHARED "Build the shared library with the flat interface" ${DFC_DEFAULT_BUILD_SHARED})
+option(DFC_BUILD_TESTS "Build the smoke test for the shared library" ${DFC_BUILD_SHARED})
 # Workstation sizes for the credential model. A device build keeps the small
 # defaults in dfc_common.h.
-option(DFC_HOST_CAPACITY "Size the credential model for a workstation" ON)
+if(DFC_ROLE STREQUAL "target")
+    set(DFC_DEFAULT_HOST_CAPACITY OFF)
+else()
+    set(DFC_DEFAULT_HOST_CAPACITY ON)
+endif()
+option(DFC_HOST_CAPACITY "Size the credential model for a workstation" ${DFC_DEFAULT_HOST_CAPACITY})
+set(DFC_FEATURE_DEFINITIONS "" CACHE STRING
+    "Semicolon-separated DFC_ENABLE_* overrides, each ending in =0 or =1")
 
 string(TOUPPER "${DFC_ROLE}" DFC_ROLE_UPPER)
 string(TOUPPER "${DFC_PROFILE}" DFC_PROFILE_UPPER)
@@ -57,13 +69,30 @@ set(DFC_CORE_SOURCES
 set(DFC_DEFINITIONS
     DFC_BUILD_ROLE=DFC_ROLE_${DFC_ROLE_UPPER}
     DFC_BUILD_PROFILE=DFC_PROFILE_${DFC_PROFILE_UPPER})
-if(DFC_HOST_CAPACITY)
-    list(APPEND DFC_DEFINITIONS
-        DFC_MAX_FILES=512
-        DFC_FILE_POOL_SIZE=65536
-        DFC_KEY_POOL_SIZE=16384
-        DFC_MAX_FILE_DATA=8192)
-endif()
+foreach(DFC_FEATURE_DEFINITION IN LISTS DFC_FEATURE_DEFINITIONS)
+    if(NOT DFC_FEATURE_DEFINITION MATCHES "^DFC_ENABLE_[A-Z0-9_]+=[01]$")
+        message(FATAL_ERROR "Invalid feature override: ${DFC_FEATURE_DEFINITION}")
+    endif()
+    list(APPEND DFC_DEFINITIONS ${DFC_FEATURE_DEFINITION})
+endforeach()
+set(DFC_HOST_MAX_FILES 512)
+set(DFC_HOST_FILE_POOL_SIZE 65536)
+set(DFC_HOST_KEY_POOL_SIZE 16384)
+set(DFC_HOST_MAX_FILE_DATA 8192)
+foreach(DFC_CAPACITY IN ITEMS
+        DFC_MAX_APPS DFC_MAX_FILES DFC_MAX_KEYS DFC_FILE_POOL_SIZE
+        DFC_KEY_POOL_SIZE DFC_MAX_FILE_DATA)
+    string(REGEX REPLACE "^DFC_" "" DFC_CAPACITY_SUFFIX "${DFC_CAPACITY}")
+    set(${DFC_CAPACITY} "" CACHE STRING "Override ${DFC_CAPACITY} for this build")
+    if(NOT "${${DFC_CAPACITY}}" STREQUAL "")
+        if(NOT "${${DFC_CAPACITY}}" MATCHES "^[1-9][0-9]*$")
+            message(FATAL_ERROR "${DFC_CAPACITY} must be a positive integer")
+        endif()
+        list(APPEND DFC_DEFINITIONS ${DFC_CAPACITY}=${${DFC_CAPACITY}})
+    elseif(DFC_HOST_CAPACITY AND DEFINED DFC_HOST_${DFC_CAPACITY_SUFFIX})
+        list(APPEND DFC_DEFINITIONS ${DFC_CAPACITY}=${DFC_HOST_${DFC_CAPACITY_SUFFIX}})
+    endif()
+endforeach()
 
 # ------------------------------------------------------------------ crypto ---
 

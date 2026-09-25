@@ -30,11 +30,12 @@ extern "C" {
 #endif
 
 // Raised whenever a struct below or a function's meaning changes.
-#define DFC_FFI_ABI_VERSION 1
+#define DFC_FFI_ABI_VERSION 2
 
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
 // DfcVirtualPiccStatus, reader functions a DfcReaderStatus.
+#define DFC_FFI_OK 0
 #define DFC_FFI_INVALID_ARGUMENT (-1)
 #define DFC_FFI_BUFFER_TOO_SMALL (-2)
 #define DFC_FFI_OUT_OF_MEMORY    (-3)
@@ -88,6 +89,11 @@ typedef struct {
 } DfcFfiCapabilities;
 
 DFC_FFI_EXPORT uint32_t dfc_ffi_abi_version(void);
+// Uses the platform generator directly, even while a scripted PICC callback is active.
+DFC_FFI_EXPORT int32_t dfc_ffi_random_fill(uint8_t* out, size_t len);
+DFC_FFI_EXPORT bool dfc_ffi_fixed_time_equal(
+    const uint8_t* left, const uint8_t* right, size_t len);
+DFC_FFI_EXPORT void dfc_ffi_secure_zero(void* buffer, size_t len);
 DFC_FFI_EXPORT void dfc_ffi_capabilities(DfcFfiCapabilities* out);
 
 // Sizes of the structs below as this library lays them out, for a binding to

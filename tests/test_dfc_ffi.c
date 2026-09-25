@@ -141,6 +141,17 @@ static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
 
 int main(void) {
     CHECK(dfc_ffi_abi_version() == DFC_FFI_ABI_VERSION);
+    enum { RandomSampleLength = 16 };
+    uint8_t random_bytes[RandomSampleLength];
+    CHECK(dfc_ffi_random_fill(random_bytes, sizeof(random_bytes)) == DFC_FFI_OK);
+    CHECK(dfc_ffi_random_fill(NULL, sizeof(random_bytes)) == DFC_FFI_INVALID_ARGUMENT);
+    uint8_t same_bytes[RandomSampleLength];
+    memcpy(same_bytes, random_bytes, sizeof(same_bytes));
+    CHECK(dfc_ffi_fixed_time_equal(random_bytes, same_bytes, sizeof(same_bytes)));
+    same_bytes[0] ^= 1;
+    CHECK(!dfc_ffi_fixed_time_equal(random_bytes, same_bytes, sizeof(same_bytes)));
+    dfc_ffi_secure_zero(random_bytes, sizeof(random_bytes));
+    for(size_t index = 0; index < sizeof(random_bytes); index++) CHECK(random_bytes[index] == 0);
     DfcFfiCapabilities caps;
     dfc_ffi_capabilities(&caps);
     CHECK(caps.emulator && caps.reader && caps.text_codec);

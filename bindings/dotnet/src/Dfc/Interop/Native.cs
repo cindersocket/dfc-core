@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 internal static unsafe partial class Native
 {
     internal const string Library = "dfc";
-    internal const uint AbiVersion = 1;
+    internal const uint AbiVersion = 2;
 
     internal const int InvalidArgument = -1;
     internal const int BufferTooSmall = -2;
@@ -64,6 +64,16 @@ internal static unsafe partial class Native
 
     [LibraryImport(Library)]
     internal static partial uint dfc_ffi_abi_version();
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_random_fill(byte* output, nuint length);
+
+    [LibraryImport(Library)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    internal static partial bool dfc_ffi_fixed_time_equal(byte* left, byte* right, nuint length);
+
+    [LibraryImport(Library)]
+    internal static partial void dfc_ffi_secure_zero(byte* buffer, nuint length);
 
     [LibraryImport(Library)]
     internal static partial void dfc_ffi_capabilities(NativeCapabilities* output);

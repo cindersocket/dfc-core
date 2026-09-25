@@ -57,7 +57,7 @@ jobs:
           path: dependencies/tiny-crypto-c
       - name: Configure
         shell: bash
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDFC_TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" ${{ matrix.arch }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDFC_ROLE=simulator -DDFC_PROFILE=full_ev3 -DDFC_CRYPTO=tiny -DDFC_TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" ${{ matrix.arch }}
       - name: Build
         run: cmake --build build --config Release
       - name: Smoke test

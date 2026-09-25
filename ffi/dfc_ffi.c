@@ -71,6 +71,23 @@ uint32_t dfc_ffi_abi_version(void) {
     return DFC_FFI_ABI_VERSION;
 }
 
+int32_t dfc_ffi_random_fill(uint8_t* out, size_t len) {
+    if(len > 0 && !out) return DFC_FFI_INVALID_ARGUMENT;
+    if(len > 0) dfc_ffi_port_system_random(out, len);
+    return DFC_FFI_OK;
+}
+
+bool dfc_ffi_fixed_time_equal(const uint8_t* left, const uint8_t* right, size_t len) {
+    if(len > 0 && (!left || !right)) return false;
+    volatile uint8_t difference = 0;
+    for(size_t index = 0; index < len; index++) difference |= left[index] ^ right[index];
+    return difference == 0;
+}
+
+void dfc_ffi_secure_zero(void* buffer, size_t len) {
+    if(buffer) wipe(buffer, len);
+}
+
 void dfc_ffi_capabilities(DfcFfiCapabilities* out) {
     if(!out) return;
     memset(out, 0, sizeof(*out));

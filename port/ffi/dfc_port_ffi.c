@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -37,18 +38,24 @@ void dfc_ffi_port_set_random(DfcFfiRandomCallback random, void* context) {
     current_context = context;
 }
 
-static void system_random(uint8_t* buf, size_t len) {
+void dfc_ffi_port_system_random(uint8_t* buf, size_t len) {
 #if defined(_WIN32)
-    NTSTATUS status =
-        BCryptGenRandom(NULL, buf, (ULONG)len, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
-    DFC_ASSERT(status == 0);
-    DFC_UNUSED(status);
+    size_t filled = 0;
+    while(filled < len) {
+        size_t remaining = len - filled;
+        ULONG count = (ULONG)(remaining > ULONG_MAX ? ULONG_MAX : remaining);
+        NTSTATUS status =
+            BCryptGenRandom(NULL, buf + filled, count, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+        if(status != 0) abort();
+        filled += count;
+    }
 #elif defined(__APPLE__)
     arc4random_buf(buf, len);
 #else
     size_t filled = 0;
     while(filled < len) {
         ssize_t n = getrandom(buf + filled, len - filled, 0);
+        if(n == 0) abort();
         if(n < 0) {
             if(errno == EINTR) continue;
             // No source at all is not survivable: a predictable challenge would
@@ -66,7 +73,7 @@ void dfc_random_fill(uint8_t* buf, size_t len) {
         current_random(current_context, buf, len);
         return;
     }
-    system_random(buf, len);
+    dfc_ffi_port_system_random(buf, len);
 }
 
 void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {

@@ -183,11 +183,11 @@ static bool file_is_data(uint8_t type) {
     return type == FILE_TYPE_STANDARD || type == FILE_TYPE_BACKUP;
 }
 
+#if DFC_ENABLE_DER_ENCODER
+
 static bool file_is_record(uint8_t type) {
     return type == FILE_TYPE_LINEAR || type == FILE_TYPE_CYCLIC;
 }
-
-#if DFC_ENABLE_DER_ENCODER
 
 // ------------------------------------------------------------------ writer ---
 

@@ -132,7 +132,31 @@ These cache variables select the build:
 | `DFC_PROFILE` | `full_ev3` | `minimal_ev1`, `full_ev1`, `full_ev2`, `full_ev3`, `minimal_ev3` |
 | `DFC_CRYPTO` | `tiny` | `tiny` fetches tiny-crypto-c at a pinned commit; `mbedtls` uses an installed mbedTLS 3.x |
 | `DFC_TINY_CRYPTO_DIR` | empty | A local tiny-crypto-c checkout to build from instead |
-| `DFC_HOST_CAPACITY` | `ON` | Sizes the credential model for a workstation |
+| `DFC_HOST_CAPACITY` | `OFF` for target, `ON` otherwise | Sizes the credential model for a workstation |
+| `DFC_BUILD_SHARED` | `OFF` for target, `ON` otherwise | Builds the flat interface shared library |
+| `DFC_FEATURE_DEFINITIONS` | empty | Semicolon-separated `DFC_ENABLE_*` values ending in `=0` or `=1` |
+| `DFC_MAX_APPS`, `DFC_MAX_FILES`, `DFC_MAX_KEYS`, `DFC_FILE_POOL_SIZE`, `DFC_KEY_POOL_SIZE`, `DFC_MAX_FILE_DATA` | profile defaults | Set fixed model and transfer buffers for the device |
+
+For a small embedded card build with only the binary decoder:
+
+```sh
+cmake -S . -B build-target -DDFC_ROLE=target -DDFC_PROFILE=minimal_ev1 \
+  -DDFC_CRYPTO=tiny -DDFC_FEATURE_DEFINITIONS=DFC_ENABLE_DER_ENCODER=0 \
+  -DDFC_MAX_FILE_DATA=512
+cmake --build build-target
+```
+
+For a reader-only mobile native library:
+
+```sh
+cmake -S . -B build-mobile -DDFC_ROLE=host -DDFC_PROFILE=full_ev3 \
+  -DDFC_CRYPTO=tiny -DDFC_HOST_CAPACITY=OFF -DDFC_BUILD_TESTS=OFF
+cmake --build build-mobile
+```
+
+The .NET package uses a simulator-role native library so it can expose both
+reader and virtual-card APIs. Its native builds use tiny-crypto-c. A host-role
+library is suitable when an app only uses the reader.
 
 The interface uses fixed layouts and opaque handles only, so a binding does not
 depend on the features or pool sizes a library was built with.
