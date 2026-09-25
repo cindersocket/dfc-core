@@ -154,8 +154,7 @@ static MunitResult test_minimal_round_trip(const MunitParameter params[], void* 
     munit_assert_int(dfc_text_write(&c, out, sizeof(out), &out_len), ==, DfcTextOk);
     assert_written_v6(out);
 
-    // Comments and blank lines are insignificant, and a reader accepts any order
-    // among recognised keys, so neither changes the model.
+    // Comments and blank lines do not disturb canonical field order.
     static char shuffled[sizeof(MINIMAL) + 64];
     snprintf(
         shuffled,
@@ -328,23 +327,26 @@ static MunitResult test_v5_version_overrides(const MunitParameter params[], void
     (void)data;
     static DfcCredential c;
     DfcTextError detail = {0};
-    const char* input =
-        "Version: 5\n"
+    const char* overrides =
         "Card Hardware Version: 04 01 01 12 00 18 05\n"
         "Card Software Version: 04 01 01 02 01 18 05\n";
     const char* version = strstr(MINIMAL, "Version: 4\n");
     munit_assert_not_null(version);
+    const char* picc = strstr(MINIMAL, "PICC Key Settings 1:");
+    munit_assert_not_null(picc);
     static char text[sizeof(MINIMAL) + 128];
     size_t head = (size_t)(version - MINIMAL);
+    size_t card_len = (size_t)(picc - MINIMAL);
     int written = snprintf(
         text,
         sizeof(text),
         "%.*s%s%s",
-        (int)head,
+        (int)card_len,
         MINIMAL,
-        input,
-        version + strlen("Version: 4\n"));
+        overrides,
+        picc);
     munit_assert_int(written, >, 0);
+    text[head + strlen("Version: ")] = '5';
     DfcTextStatus st = dfc_text_parse(&c, text, (size_t)written, &detail);
     if(st != DfcTextOk) log_detail(&detail);
     munit_assert_int(st, ==, DfcTextOk);

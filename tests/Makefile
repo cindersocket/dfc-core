@@ -75,6 +75,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_virtual_picc_mutation_vectors test_dfc_virtual_picc_multi_app_vectors \
 	test_dfc_virtual_picc_value_vectors test_dfc_ev1_conformance \
 	test_dfc_file_pool test_dfc_key_pool test_dfc_der test_dfc_profile test_dfc_text \
+	test_dfc_examples \
 	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader
 

@@ -36,10 +36,10 @@ Canonical text order is: header; card fields; PICC key settings, commands,
 optional preference, key count and keys, optional ID/activation settings,
 optional EV2 feature groups, and PICC files; application count; then each
 application's identity, key settings, commands, optional preference, ordinary
-keys or key sets, files, optional SM disable, capability data, and delegated
-state. Inside a file, its common fields precede its type-specific contents;
+keys or key sets, files, capability data, delegated state, and optional SM
+disable. Inside a file, its common fields precede its type-specific contents;
 SDM follows data contents. The example files show the exact line spelling and
-placement.
+placement. A reader rejects recognized fields placed outside this order.
 
 ## Root and card
 
