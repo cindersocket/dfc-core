@@ -117,6 +117,8 @@ typedef struct {
     uint8_t frame[DFC_READER_MAX_COMMAND];
     size_t frame_len;
     size_t frame_offset;
+    // When set, the first frame carries only this many octets.
+    size_t first_frame_len;
     // Clear command head for an EV1 encrypted read's CRC, kept per exchange.
     uint8_t command_head[16];
     size_t command_head_len;
@@ -214,6 +216,73 @@ DfcReaderStatus dfc_reader_change_key_cryptogram(
     const uint8_t* current_key,
     bool aes_key,
     uint8_t new_version,
+    uint8_t* out,
+    size_t out_cap,
+    size_t* out_len);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// ChangeKeyEV2 for an AES key set, as a command to run with
+// dfc_reader_exchange_begin, which encrypts its data field. `current_key` is
+// required unless the key is the authenticated one in key set 0; changing that
+// one ends the session.
+DfcReaderStatus dfc_reader_change_key_ev2_command(
+    const DfcReaderSession* session,
+    uint8_t key_set_no,
+    uint8_t key_no,
+    const uint8_t new_key[DFC_AES_KEY_LENGTH],
+    const uint8_t* current_key,
+    uint8_t new_version,
+    DfcCommand* command);
+
+// CreateDelegatedApplication under an EV2 session opened with the DAM
+// authentication key. The initial key is encrypted under the DAM encryption
+// key and MACed under the DAM MAC key; `random_prefix` pads it. Run it with
+// dfc_reader_step.
+DfcReaderStatus dfc_reader_create_delegated_application_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    const DfcCommandCreateDelegatedApplication* app,
+    const uint8_t dam_encryption_key[DFC_AES_KEY_LENGTH],
+    const uint8_t dam_mac_key[DFC_AES_KEY_LENGTH],
+    const uint8_t random_prefix[DFC_DELEGATED_RANDOM_PREFIX_LENGTH],
+    const uint8_t* initial_key,
+    size_t initial_key_len,
+    uint8_t initial_version);
+#endif
+
+// The proximity-check MAC over the parameters PrepareProximityCheck published
+// and the transcript of every round (the card's octets, then the reader's, per
+// round). `from_card` selects the card's answer to VerifyProximityCheck rather
+// than the reader's command.
+bool dfc_reader_proximity_check_mac(
+    const uint8_t key[DFC_AES_KEY_LENGTH],
+    bool from_card,
+    const uint8_t* published,
+    size_t published_len,
+    const uint8_t* transcript,
+    size_t transcript_len,
+    uint8_t mac[DFC_WIRE_MAC_LENGTH]);
+
+// Virtual-card selection: an ISO SELECT by installation identifier, the
+// decrypted challenge and clear data from the card's answer, and the EXTERNAL
+// AUTHENTICATE that proves the reader holds the select MAC key.
+DfcReaderStatus dfc_reader_virtual_card_select_apdu(
+    const uint8_t* installation_id,
+    size_t installation_id_len,
+    uint8_t* out,
+    size_t out_cap,
+    size_t* out_len);
+DfcReaderStatus dfc_reader_virtual_card_open(
+    const uint8_t select_encryption_key[DFC_AES_KEY_LENGTH],
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t challenge[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH],
+    uint8_t clear_data[DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH]);
+DfcReaderStatus dfc_reader_virtual_card_authenticate_apdu(
+    const uint8_t select_mac_key[DFC_AES_KEY_LENGTH],
+    const uint8_t challenge[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH],
+    const uint8_t clear_data[DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH],
     uint8_t* out,
     size_t out_cap,
     size_t* out_len);

@@ -627,6 +627,12 @@ static bool invalidates_session(const DfcReaderSession* session, const DfcComman
         return true;
     case DFC_CMD_CHANGE_KEY:
         return command->data_len > 0 && (command->data[0] & 0x3F) == (session->key_no & 0x3F);
+    case DFC_CMD_CHANGE_KEY_EV2:
+        // Key set 0 holds the keys in use, so changing the authenticated one
+        // there ends the session.
+        return session->auth_mode == DFC_READER_AUTH_EV2 && command->data_len > 1 &&
+               (command->data[0] & DFC_KEY_SET_NUMBER_MASK) == 0 &&
+               command->data[1] == session->key_no;
     default:
         return false;
     }
@@ -913,8 +919,11 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
     DfcReaderSession* session = ex->session;
     uint8_t status = ex->status;
 
-    if(ex->special_success) return finish_command(ex, DfcReaderOk);
-    if(status != DFC_STATUS_OK) return card_error(ex);
+    // A special success carries no EV1 MAC, but an EV2 card still MACs it and
+    // counts the command.
+    bool ev2_plan = ex->response_plan == PlanEv2Mac || ex->response_plan == PlanEv2MacDecrypt;
+    if(ex->special_success && !ev2_plan) return finish_command(ex, DfcReaderOk);
+    if(status != DFC_STATUS_OK && !ex->special_success) return card_error(ex);
     if(ex->invalidates_session) {
         dfc_reader_session_clear(session);
         return finish_command(ex, DfcReaderOk);
@@ -1022,7 +1031,9 @@ static DfcReaderStatus emit_command_frame(
     size_t cap,
     size_t* out_len) {
     size_t remaining = ex->frame_len - ex->frame_offset;
-    size_t chunk = remaining > DFC_COMMAND_MAX_DATA ? DFC_COMMAND_MAX_DATA : remaining;
+    size_t limit = ex->frame_offset == 0 && ex->first_frame_len ? ex->first_frame_len :
+                                                                   DFC_COMMAND_MAX_DATA;
+    size_t chunk = remaining > limit ? limit : remaining;
     uint8_t ins = ex->frame_offset == 0 ? ex->ins : DFC_CMD_ADDITIONAL_FRAME;
     DfcReaderStatus st = emit(ex, ins, ex->frame + ex->frame_offset, chunk, out, cap, out_len);
     if(st != DfcReaderPending) return finish_command(ex, st);
@@ -1207,6 +1218,220 @@ DfcReaderStatus dfc_reader_change_key_cryptogram(
         padded,
         out);
     *out_len = padded;
+    return DfcReaderOk;
+}
+
+// AES CMAC truncated to the odd-indexed octets, as every EV2-era MAC is.
+static void wire_mac_8(const uint8_t key[16], const uint8_t* input, size_t len, uint8_t out[8]) {
+    uint8_t full[DFC_AES_CMAC_LENGTH];
+    aes_cmac((uint8_t*)key, DFC_AES_KEY_LENGTH, (uint8_t*)input, len, full);
+    for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++) out[i] = full[i * 2 + 1];
+}
+
+// ------------------------------------------------------------ EV2 keys ---
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+DfcReaderStatus dfc_reader_change_key_ev2_command(
+    const DfcReaderSession* session,
+    uint8_t key_set_no,
+    uint8_t key_no,
+    const uint8_t new_key[DFC_AES_KEY_LENGTH],
+    const uint8_t* current_key,
+    uint8_t new_version,
+    DfcCommand* command) {
+    if(!session || !new_key || !command || session->auth_mode != DFC_READER_AUTH_EV2) {
+        return DfcReaderInvalid;
+    }
+    bool same = (key_set_no & DFC_KEY_SET_NUMBER_MASK) == 0 && key_no == session->key_no;
+    if(!same && !current_key) return DfcReaderInvalid;
+    uint8_t clear[DFC_AES_KEY_LENGTH + 1 + 4];
+    size_t len = 0;
+    for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++) {
+        clear[len++] = same ? new_key[i] : (uint8_t)(new_key[i] ^ current_key[i]);
+    }
+    clear[len++] = new_version;
+    if(!same) {
+        put_le32(clear + len, crc32_extend(0xFFFFFFFFu, new_key, DFC_AES_KEY_LENGTH));
+        len += 4;
+    }
+    DfcCommandStatus st = dfc_command_change_key_ev2(command, key_set_no, key_no, clear, len);
+    wipe(clear, sizeof(clear));
+    return st == DfcCommandOk ? DfcReaderOk : DfcReaderInvalid;
+}
+
+// ----------------------------------------------------- delegated apps ---
+
+
+DfcReaderStatus dfc_reader_create_delegated_application_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    const DfcCommandCreateDelegatedApplication* app,
+    const uint8_t dam_encryption_key[DFC_AES_KEY_LENGTH],
+    const uint8_t dam_mac_key[DFC_AES_KEY_LENGTH],
+    const uint8_t random_prefix[DFC_DELEGATED_RANDOM_PREFIX_LENGTH],
+    const uint8_t* initial_key,
+    size_t initial_key_len,
+    uint8_t initial_version) {
+    if(!exchange || !session || !app || !dam_encryption_key || !dam_mac_key || !random_prefix ||
+       !initial_key || initial_key_len == 0 ||
+       initial_key_len > DFC_DELEGATED_DEFAULT_KEY_LENGTH ||
+       session->auth_mode != DFC_READER_AUTH_EV2) {
+        return DfcReaderInvalid;
+    }
+    DfcCommand header;
+    if(dfc_command_create_delegated_application(&header, app) != DfcCommandOk) {
+        return DfcReaderInvalid;
+    }
+
+    // The initial key travels encrypted under the DAM key, beside a MAC that
+    // binds it to the header.
+    uint8_t key_data[DFC_DELEGATED_ENCRYPTED_KEY_LENGTH] = {0};
+    memcpy(key_data, random_prefix, DFC_DELEGATED_RANDOM_PREFIX_LENGTH);
+    memcpy(key_data + DFC_DELEGATED_RANDOM_PREFIX_LENGTH, initial_key, initial_key_len);
+    key_data[DFC_DELEGATED_ENCRYPTED_KEY_LENGTH - 1] = initial_version;
+    uint8_t body[DFC_DELEGATED_CREATE_HEADER_LENGTH - 1 + DFC_DELEGATED_ENCRYPTED_KEY_LENGTH +
+                 DFC_DELEGATED_MAC_LENGTH];
+    size_t body_len = 0;
+    memcpy(body, header.data, header.data_len);
+    body_len += header.data_len;
+    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+    dfc_worker_aes_cbc_encrypt(
+        dam_encryption_key, DFC_AES_KEY_LENGTH, iv, sizeof(key_data), key_data, body + body_len);
+    wipe(key_data, sizeof(key_data));
+    body_len += DFC_DELEGATED_ENCRYPTED_KEY_LENGTH;
+
+    uint8_t dam_input[1 + sizeof(body)];
+    dam_input[0] = DFC_CMD_CREATE_DELEGATED_APPLICATION;
+    memcpy(dam_input + 1, body, body_len);
+    wire_mac_8(dam_mac_key, dam_input, 1 + body_len, body + body_len);
+    body_len += DFC_DELEGATED_MAC_LENGTH;
+
+    uint8_t mac[DFC_WIRE_MAC_LENGTH];
+    if(!dfc_ev2_mac(
+           session->ev2_mac_key,
+           DFC_CMD_CREATE_DELEGATED_APPLICATION,
+           session->ev2_command_counter,
+           session->ev2_transaction_identifier,
+           body,
+           body_len,
+           NULL,
+           0,
+           mac)) {
+        return DfcReaderBufferTooSmall;
+    }
+
+    begin_common(exchange, session, framing);
+    exchange->kind = KindCommand;
+    exchange->ins = DFC_CMD_CREATE_DELEGATED_APPLICATION;
+    exchange->response_plan = PlanEv2Mac;
+    // The header goes alone, and the card asks for the rest.
+    exchange->first_frame_len = header.data_len;
+    if(!set_frame(exchange, body, body_len, mac, sizeof(mac))) return DfcReaderBufferTooSmall;
+    return DfcReaderOk;
+}
+#endif
+
+// ---------------------------------------------------- proximity check ---
+
+bool dfc_reader_proximity_check_mac(
+    const uint8_t key[DFC_AES_KEY_LENGTH],
+    bool from_card,
+    const uint8_t* published,
+    size_t published_len,
+    const uint8_t* transcript,
+    size_t transcript_len,
+    uint8_t mac[DFC_WIRE_MAC_LENGTH]) {
+    if(!key || !mac || (!published && published_len) || (!transcript && transcript_len))
+        return false;
+    uint8_t input[1 + 4 + DFC_PROXIMITY_TRANSCRIPT_MAX];
+    if(published_len > 4 || transcript_len > DFC_PROXIMITY_TRANSCRIPT_MAX) return false;
+    size_t len = 0;
+    input[len++] = from_card ? DFC_STATUS_SPECIAL_SUCCESS : DFC_CMD_VERIFY_PROXIMITY_CHECK;
+    if(published_len) memcpy(input + len, published, published_len);
+    len += published_len;
+    if(transcript_len) memcpy(input + len, transcript, transcript_len);
+    len += transcript_len;
+    wire_mac_8(key, input, len, mac);
+    return true;
+}
+
+// ------------------------------------------------------- virtual card ---
+
+#define VC_FCI_TAG 0x6F
+#define VC_FCI_LENGTH 0x22
+#define VC_DATA_TAG 0x85
+#define VC_DATA_LENGTH 0x20
+
+DfcReaderStatus dfc_reader_virtual_card_select_apdu(
+    const uint8_t* installation_id,
+    size_t installation_id_len,
+    uint8_t* out,
+    size_t out_cap,
+    size_t* out_len) {
+    if(!installation_id || !out || !out_len || installation_id_len == 0 ||
+       installation_id_len > DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH) {
+        return DfcReaderInvalid;
+    }
+    size_t needed = 5 + installation_id_len + 1;
+    if(needed > out_cap) return DfcReaderBufferTooSmall;
+    out[0] = DFC_ISO7816_CLA_STANDARD;
+    out[1] = DFC_ISO7816_INS_SELECT;
+    out[2] = DFC_ISO7816_SELECT_BY_DF_NAME;
+    out[3] = 0x00;
+    out[4] = (uint8_t)installation_id_len;
+    memcpy(out + 5, installation_id, installation_id_len);
+    out[5 + installation_id_len] = 0x00;
+    *out_len = needed;
+    return DfcReaderOk;
+}
+
+DfcReaderStatus dfc_reader_virtual_card_open(
+    const uint8_t select_encryption_key[DFC_AES_KEY_LENGTH],
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t challenge[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH],
+    uint8_t clear_data[DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH]) {
+    const size_t cryptogram_len = DFC_VIRTUAL_CARD_CHALLENGE_LENGTH + DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH;
+    if(!select_encryption_key || !response || !challenge || !clear_data) return DfcReaderInvalid;
+    if(response_len != 4 + cryptogram_len + 2) return DfcReaderProtocolError;
+    if(response[response_len - 2] != DFC_ISO7816_SW_OK_HI ||
+       response[response_len - 1] != DFC_ISO7816_SW_OK_LO) {
+        return DfcReaderCardError;
+    }
+    if(response[0] != VC_FCI_TAG || response[1] != VC_FCI_LENGTH || response[2] != VC_DATA_TAG ||
+       response[3] != VC_DATA_LENGTH) {
+        return DfcReaderProtocolError;
+    }
+    uint8_t clear[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH + DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH];
+    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+    dfc_worker_aes_cbc_decrypt(
+        select_encryption_key, DFC_AES_KEY_LENGTH, iv, cryptogram_len, response + 4, clear);
+    memcpy(challenge, clear, DFC_VIRTUAL_CARD_CHALLENGE_LENGTH);
+    memcpy(clear_data, clear + DFC_VIRTUAL_CARD_CHALLENGE_LENGTH, DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH);
+    wipe(clear, sizeof(clear));
+    return DfcReaderOk;
+}
+
+DfcReaderStatus dfc_reader_virtual_card_authenticate_apdu(
+    const uint8_t select_mac_key[DFC_AES_KEY_LENGTH],
+    const uint8_t challenge[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH],
+    const uint8_t clear_data[DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH],
+    uint8_t* out,
+    size_t out_cap,
+    size_t* out_len) {
+    if(!select_mac_key || !challenge || !clear_data || !out || !out_len) return DfcReaderInvalid;
+    if(out_cap < 5 + DFC_WIRE_MAC_LENGTH) return DfcReaderBufferTooSmall;
+    uint8_t input[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH + DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH];
+    memcpy(input, challenge, DFC_VIRTUAL_CARD_CHALLENGE_LENGTH);
+    memcpy(input + DFC_VIRTUAL_CARD_CHALLENGE_LENGTH, clear_data, DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH);
+    out[0] = DFC_ISO7816_CLA_STANDARD;
+    out[1] = DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE;
+    out[2] = 0x00;
+    out[3] = 0x00;
+    out[4] = DFC_WIRE_MAC_LENGTH;
+    wire_mac_8(select_mac_key, input, sizeof(input), out + 5);
+    *out_len = 5 + DFC_WIRE_MAC_LENGTH;
     return DfcReaderOk;
 }
 
