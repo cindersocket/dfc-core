@@ -170,6 +170,40 @@ static MunitResult test_minimal_round_trip(const MunitParameter params[], void* 
     return MUNIT_OK;
 }
 
+// One loader takes either encoding and tells them apart by the first octet, so
+// a host can hand it whatever file it was given.
+static MunitResult test_load_either_encoding(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static DfcCredential from_text;
+    static DfcCredential from_binary;
+    static uint8_t octets[DFC_DER_MAX_SIZE];
+    DfcTextError detail = {0};
+
+    DfcTextStatus st = dfc_credential_load(
+        &from_text, (const uint8_t*)MINIMAL, sizeof(MINIMAL) - 1, &detail);
+    if(st != DfcTextOk) log_detail(&detail);
+    munit_assert_int(st, ==, DfcTextOk);
+    munit_assert_false(
+        dfc_credential_content_is_binary((const uint8_t*)MINIMAL, sizeof(MINIMAL) - 1));
+
+    size_t octets_len = 0;
+    munit_assert_int(dfc_der_encode(&from_text, octets, sizeof(octets), &octets_len), ==, DfcDerOk);
+    munit_assert_true(dfc_credential_content_is_binary(octets, octets_len));
+    munit_assert_int(dfc_credential_load(&from_binary, octets, octets_len, &detail), ==, DfcTextOk);
+    munit_assert_size(from_binary.num_apps, ==, from_text.num_apps);
+    munit_assert_size(from_binary.num_files, ==, from_text.num_files);
+
+    // A truncated binary credential fails as binary, and says so.
+    st = dfc_credential_load(&from_binary, octets, octets_len - 1, &detail);
+    munit_assert_int(st, ==, DfcTextMalformed);
+    munit_assert_size(detail.line, ==, 0);
+    munit_assert_not_null(strstr(detail.message, "binary"));
+
+    munit_assert_int(dfc_credential_load(&from_binary, NULL, 0, &detail), !=, DfcTextOk);
+    return MUNIT_OK;
+}
+
 // A mutated copy of MINIMAL, so every rejection differs from an accepted
 // document in exactly one way.
 static DfcTextStatus mutate(const char* find, const char* replace, DfcTextError* detail) {
@@ -392,6 +426,7 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/writer-capacity", test_writer_capacity, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/load-either-encoding", test_load_either_encoding, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

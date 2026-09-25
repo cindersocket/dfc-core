@@ -11,7 +11,9 @@ dfc-core/src
 dfc-core/port
 ```
 
-Compile all `.c` files in `dfc-core/src`.
+Compile all `.c` files in `dfc-core/src`. Each file compiles to nothing when
+the build role or profile leaves its feature out, so the source list never
+changes with the configuration.
 
 ## 2. Add a platform port
 
@@ -68,7 +70,48 @@ Example:
 You can override individual `DFC_ENABLE_*` macros. The header checks invalid
 feature combinations during compilation.
 
-## 5. Verify the integration
+## 5. Select a build role
+
+Set `DFC_BUILD_ROLE` to choose which parts of the library a build carries. The
+role is independent of the profile: the profile selects a card generation, and
+the role selects the halves of the library.
+
+| Role | Carries | Use |
+|---|---|---|
+| `DFC_ROLE_TARGET` | Emulator, `.dfcb` decoder and encoder | The card itself, on a device |
+| `DFC_ROLE_HOST` | Reader, command encoder, `.dfc` and `.dfcb` | A client that drives a card |
+| `DFC_ROLE_SIMULATOR` | Everything | A workstation that runs the card and drives it |
+
+The default value is `DFC_ROLE_SIMULATOR`.
+
+A target never parses text. A host compiles `.dfc` to `.dfcb` with
+`dfc_text_parse` and `dfc_der_encode`, then loads the octets onto the target,
+which reads them with `dfc_der_decode`. A target that never dumps its
+credential can also drop the encoder:
+
+```sh
+-DDFC_BUILD_ROLE=DFC_ROLE_TARGET -DDFC_ENABLE_DER_ENCODER=0
+```
+
+These macros override single parts of a role:
+
+| Macro | Part |
+|---|---|
+| `DFC_ENABLE_EMULATOR` | The card emulator and the virtual PICC |
+| `DFC_ENABLE_READER` | The reader session and the command encoder |
+| `DFC_ENABLE_DER_DECODER` | `dfc_der_decode` and `dfc_der_length` |
+| `DFC_ENABLE_DER_ENCODER` | `dfc_der_encode` and `dfc_der_encoded_size` |
+| `DFC_ENABLE_TEXT_CODEC` | `dfc_text_*` and `dfc_credential_load`. It requires both directions of `.dfcb` |
+| `DFC_ENABLE_BINARY_CODEC` | Both directions of `.dfcb` at once. It is kept for older builds |
+
+A declaration is visible only when its part is built, so a call into an omitted
+part fails at compile time.
+
+Storage for the credential model is fixed at compile time. Override
+`DFC_FILE_POOL_SIZE`, `DFC_KEY_POOL_SIZE`, `DFC_MAX_APPS`, `DFC_MAX_FILES`, and
+`DFC_MAX_KEYS` in the same way to trade memory against card capacity.
+
+## 6. Verify the integration
 
 Run the host tests before you build for the target:
 

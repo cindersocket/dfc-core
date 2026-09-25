@@ -1,6 +1,8 @@
 #include "dfc_emulator_i.h"
 #include "dfc_ev2.h"
 
+#if DFC_ENABLE_EMULATOR
+
 #define TAG                          DFC_EMULATOR_TAG
 #define ISO14443_4A_CID_MASK         DFC_ISO14443_4A_CID_MASK
 #define ISO14443_4A_NAD_MASK         DFC_ISO14443_4A_NAD_MASK
@@ -4372,3 +4374,5 @@ bool dfc_emulator_handle_command(
         return true;
     }
 }
+
+#endif // DFC_ENABLE_EMULATOR

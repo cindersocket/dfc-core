@@ -1,5 +1,7 @@
 #include "dfc_emulator_i.h"
 
+#if DFC_ENABLE_EMULATOR
+
 uint32_t dfc_emulator_read_uint24_le(const uint8_t* data) {
     return (uint32_t)data[0] | ((uint32_t)data[1] << 8) | ((uint32_t)data[2] << 16);
 }
@@ -61,3 +63,5 @@ uint32_t dfc_emulator_crc32(const uint8_t* data, size_t len) {
     }
     return crc;
 }
+
+#endif // DFC_ENABLE_EMULATOR

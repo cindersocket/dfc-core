@@ -60,6 +60,8 @@ typedef struct {
     size_t iso_file_index;
 } DfcVirtualPiccSession;
 
+#if DFC_ENABLE_EMULATOR
+
 DfcVirtualPiccSession* dfc_virtual_picc_session_alloc(DfcCredential* credential);
 void dfc_virtual_picc_session_free(DfcVirtualPiccSession* session);
 
@@ -93,3 +95,5 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len);
+
+#endif // DFC_ENABLE_EMULATOR

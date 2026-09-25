@@ -104,6 +104,8 @@ typedef struct {
 } DfcEmulator;
 
 
+#if DFC_ENABLE_EMULATOR
+
 DfcEmulator* dfc_emulator_alloc(DfcCredential* credential);
 
 void dfc_emulator_free(DfcEmulator* dfc_emulator);
@@ -130,3 +132,5 @@ bool dfc_emulator_handle_command(
     size_t buffer_len,
     DfcByteBuf* tx_buffer,
     void* context);
+
+#endif // DFC_ENABLE_EMULATOR

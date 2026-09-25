@@ -1,5 +1,7 @@
 #include "dfc_emulator_i.h"
 
+#if DFC_ENABLE_EMULATOR
+
 DfcEmulator* dfc_emulator_alloc(DfcCredential* credential) {
     if(!credential) return NULL;
 
@@ -199,3 +201,5 @@ void dfc_emulator_advance_time(DfcEmulator* emulator, uint32_t elapsed_milliseco
     DFC_UNUSED(elapsed_milliseconds);
 #endif
 }
+
+#endif // DFC_ENABLE_EMULATOR

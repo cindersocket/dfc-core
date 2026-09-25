@@ -85,7 +85,16 @@ TOOLS := dfc_probe_apdu dfc_virtual_picc_host
 # Check that each reduced build profile compiles cleanly.
 PROFILES := minimal_ev1 full_ev1 full_ev2 minimal_ev3
 
-.PHONY: test test-backends test-ev2-profile profile-builds clean
+# Link each build role under every profile, then prove from the symbol table
+# that a role carries none of the parts it omits.
+ROLES := target host simulator
+ROLE_PROFILES := $(PROFILES) full_ev3
+ROLE_DIR := role-build
+ROLE_FORBIDDEN_target := dfc_text_ dfc_reader_ dfc_command_
+ROLE_FORBIDDEN_host := dfc_emulator_ dfc_virtual_picc_
+ROLE_FORBIDDEN_simulator :=
+
+.PHONY: test test-backends test-ev2-profile profile-builds role-builds clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
 # cannot pass by omitting the translation unit it should have exercised.
@@ -95,7 +104,7 @@ $(TESTS): %: %.c dfc_virtual_picc_test_helpers.c $(COMMON)
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: $(TESTS) $(TOOLS) profile-builds test-ev2-profile
+test: $(TESTS) $(TOOLS) profile-builds role-builds test-ev2-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 
 test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
@@ -119,5 +128,25 @@ profile-builds:
 		echo ok; \
 	done
 
+role-builds:
+	@echo "=== build roles link ==="
+	@for r in $(ROLES); do for p in $(ROLE_PROFILES); do \
+		printf "  %-10s %-14s " "$$r" "$$p"; \
+		d=$(ROLE_DIR)/$$r-$$p; rm -rf $$d; mkdir -p $$d; \
+		flags="-DDFC_BUILD_ROLE=DFC_ROLE_$$(echo $$r | tr a-z A-Z) -DDFC_BUILD_PROFILE=DFC_PROFILE_$$(echo $$p | tr a-z A-Z)"; \
+		for src in $(CORE_SRC); do \
+			$(CC) $(CFLAGS) $$flags -c $$src -o $$d/$$(basename $$src .c).o || exit 1; \
+		done; \
+		$(CC) $(CFLAGS) $$flags -o $$d/smoke dfc_role_smoke.c $$d/*.o $(HOST_SRC) $(CRYPTO_SRC) $(LDFLAGS) || exit 1; \
+		case $$r in target) forbidden="$(ROLE_FORBIDDEN_target)";; host) forbidden="$(ROLE_FORBIDDEN_host)";; *) forbidden="$(ROLE_FORBIDDEN_simulator)";; esac; \
+		for sym in $$forbidden; do \
+			if nm -g $$d/*.o | grep -E " T _?$$sym" >/dev/null; then \
+				echo "carries $$sym"; exit 1; \
+			fi; \
+		done; \
+		./$$d/smoke || exit 1; \
+		echo "ok ($$(cat $$d/*.o | wc -c | tr -d ' ') object bytes)"; \
+	done; done
+
 clean:
-	rm -rf $(TESTS) $(TOOLS) test_dfc_static_signature_ev2 *.dSYM
+	rm -rf $(TESTS) $(TOOLS) test_dfc_static_signature_ev2 *.dSYM $(ROLE_DIR)

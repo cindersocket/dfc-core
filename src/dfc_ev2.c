@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#if DFC_ENABLE_EMULATOR
+
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
 
 enum {
@@ -351,3 +353,5 @@ bool dfc_ev2_protect_response(
 }
 
 #endif
+
+#endif // DFC_ENABLE_EMULATOR

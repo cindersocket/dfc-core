@@ -98,11 +98,63 @@
 #define DFC_ENABLE_STATIC_SIGNATURE DFC_PROFILE_INCLUDES_EV2
 #endif
 
-#ifndef DFC_ENABLE_TEXT_CODEC
-#define DFC_ENABLE_TEXT_CODEC 1
+// Select one role. A role chooses which halves of the library a build carries,
+// independently of the profile, which chooses the card generation.
+//
+//   target     the card itself: emulator plus the .dfcb codec it loads and
+//              dumps credentials with. No text codec and no reader.
+//   host       a reader-side client: reader, command encoder and both
+//              credential encodings, so it can compile .dfc to .dfcb before
+//              loading a target. No emulator.
+//   simulator  everything, for workstations that run the card and drive it.
+//
+// A build without an explicit role is a simulator, which is every part.
+#define DFC_ROLE_TARGET    1
+#define DFC_ROLE_HOST      2
+#define DFC_ROLE_SIMULATOR 3
+
+#ifndef DFC_BUILD_ROLE
+#define DFC_BUILD_ROLE DFC_ROLE_SIMULATOR
+#endif
+
+#if DFC_BUILD_ROLE < DFC_ROLE_TARGET || DFC_BUILD_ROLE > DFC_ROLE_SIMULATOR
+#error "DFC_BUILD_ROLE is not a supported role"
+#endif
+
+#ifndef DFC_ENABLE_EMULATOR
+#define DFC_ENABLE_EMULATOR (DFC_BUILD_ROLE != DFC_ROLE_HOST)
+#endif
+#ifndef DFC_ENABLE_READER
+#define DFC_ENABLE_READER (DFC_BUILD_ROLE != DFC_ROLE_TARGET)
+#endif
+
+// DFC_ENABLE_BINARY_CODEC predates the split between the two directions of the
+// .dfcb codec. Setting it still sets both.
+#ifdef DFC_ENABLE_BINARY_CODEC
+#ifndef DFC_ENABLE_DER_DECODER
+#define DFC_ENABLE_DER_DECODER DFC_ENABLE_BINARY_CODEC
+#endif
+#ifndef DFC_ENABLE_DER_ENCODER
+#define DFC_ENABLE_DER_ENCODER DFC_ENABLE_BINARY_CODEC
+#endif
+#endif
+#ifndef DFC_ENABLE_DER_DECODER
+#define DFC_ENABLE_DER_DECODER 1
+#endif
+// A target that never dumps its credential can drop the encoder.
+#ifndef DFC_ENABLE_DER_ENCODER
+#define DFC_ENABLE_DER_ENCODER 1
 #endif
 #ifndef DFC_ENABLE_BINARY_CODEC
-#define DFC_ENABLE_BINARY_CODEC 1
+#define DFC_ENABLE_BINARY_CODEC (DFC_ENABLE_DER_DECODER || DFC_ENABLE_DER_ENCODER)
+#endif
+#ifndef DFC_ENABLE_TEXT_CODEC
+#define DFC_ENABLE_TEXT_CODEC (DFC_BUILD_ROLE != DFC_ROLE_TARGET)
+#endif
+// The flat, handle-based interface foreign runtimes bind to. It needs a hosted
+// C library, so a build asks for it explicitly.
+#ifndef DFC_ENABLE_FFI
+#define DFC_ENABLE_FFI 0
 #endif
 
 #if DFC_ENABLE_GENERATION_EV2 && !DFC_ENABLE_GENERATION_EV1
@@ -129,6 +181,15 @@
 #if DFC_ENABLE_STATIC_SIGNATURE && !DFC_ENABLE_GENERATION_EV2 && !DFC_ENABLE_GENERATION_EV3
 #error "Static signature requires EV2 or EV3 generation support"
 #endif
+#if DFC_ENABLE_TEXT_CODEC && !(DFC_ENABLE_DER_DECODER && DFC_ENABLE_DER_ENCODER)
+#error "The text codec requires both directions of the binary codec"
+#endif
+#if !DFC_ENABLE_EMULATOR && !DFC_ENABLE_READER
+#error "A build needs the emulator, the reader, or both"
+#endif
+#if DFC_ENABLE_FFI && !DFC_ENABLE_DER_DECODER
+#error "The FFI interface requires the binary decoder"
+#endif
 
 enum {
     DfcStorage2KByteCount = 2048,
@@ -154,6 +215,14 @@ typedef struct {
     unsigned int transaction_timer : 1;
     unsigned int application_capability_data : 1;
     unsigned int static_signature : 1;
+    unsigned int auth_d40 : 1;
+    unsigned int auth_iso : 1;
+    unsigned int auth_aes : 1;
+    unsigned int emulator : 1;
+    unsigned int reader : 1;
+    unsigned int der_decoder : 1;
+    unsigned int der_encoder : 1;
+    unsigned int text_codec : 1;
 } DfcBuildCapabilities;
 
 static inline DfcBuildCapabilities dfc_build_capabilities(void) {
@@ -175,5 +244,13 @@ static inline DfcBuildCapabilities dfc_build_capabilities(void) {
         .transaction_timer = DFC_ENABLE_TRANSACTION_TIMER,
         .application_capability_data = DFC_ENABLE_APPLICATION_CAPABILITY_DATA,
         .static_signature = DFC_ENABLE_STATIC_SIGNATURE,
+        .auth_d40 = DFC_ENABLE_AUTH_D40,
+        .auth_iso = DFC_ENABLE_AUTH_ISO,
+        .auth_aes = DFC_ENABLE_AUTH_AES,
+        .emulator = DFC_ENABLE_EMULATOR,
+        .reader = DFC_ENABLE_READER,
+        .der_decoder = DFC_ENABLE_DER_DECODER,
+        .der_encoder = DFC_ENABLE_DER_ENCODER,
+        .text_codec = DFC_ENABLE_TEXT_CODEC,
     };
 }

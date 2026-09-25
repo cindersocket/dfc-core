@@ -6,3 +6,4 @@ tests/test_*
 *.dSYM/
 __pycache__/
 *.pyc
+tests/role-build/
