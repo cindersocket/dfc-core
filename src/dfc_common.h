@@ -178,7 +178,9 @@ extern const uint8_t DFC_ISO_AID[7];
 #define DFC_MAX_KEY_SETS             16
 #define DFC_ADDITIONAL_KEY_SET_COUNT (DFC_MAX_KEY_SETS - 1)
 #define DFC_EV1_PICC_STORAGE_BYTES   (8 * 1024)
-#define DFC_EV1_MAX_FRAME_PAYLOAD    54
+// Octets one answer frame carries, whether the command came wrapped or native.
+// Under secure messaging a frame carries the whole cipher blocks that fit.
+#define DFC_EV1_MAX_FRAME_PAYLOAD    59
 
 // Key Settings 2 crypto-suite bits (upper nibble) and ISO FID enable (bit 5)
 #define DFC_KEY_TYPE_DES_2K3DES 0x00

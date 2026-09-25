@@ -348,9 +348,10 @@ static MunitResult test_command_during_response_chaining(const MunitParameter pa
     const uint8_t read[] = {
         0x90, 0xBD, 0x00, 0x00, 0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     exchange(session, read, sizeof(read), response, sizeof(response), &response_len);
-    munit_assert_size(response_len, ==, 56);
-    munit_assert_uint8(response[54], ==, 0x91);
-    munit_assert_uint8(response[55], ==, 0xAF);
+    // One frame of DFC_EV1_MAX_FRAME_PAYLOAD octets, then 91 AF.
+    munit_assert_size(response_len, ==, DFC_EV1_MAX_FRAME_PAYLOAD + 2);
+    munit_assert_uint8(response[DFC_EV1_MAX_FRAME_PAYLOAD], ==, 0x91);
+    munit_assert_uint8(response[DFC_EV1_MAX_FRAME_PAYLOAD + 1], ==, 0xAF);
 
     const uint8_t get_file_ids[] = {0x90, 0x6F, 0x00, 0x00, 0x00};
     assert_status(session, get_file_ids, sizeof(get_file_ids), DFC_STATUS_COMMAND_ABORTED);
@@ -892,7 +893,7 @@ static MunitResult test_get_iso_file_ids_chains_when_many(
     void* data) {
     (void)params;
     (void)data;
-#if DFC_MAX_FILES < 28
+#if DFC_MAX_FILES < 32
     return MUNIT_SKIP;
 #else
     DfcCredential credential;
@@ -903,8 +904,9 @@ static MunitResult test_get_iso_file_ids_chains_when_many(
     const uint8_t select_app[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03, 0x00};
     assert_status(session, select_app, sizeof(select_app), DFC_STATUS_OK);
 
-    // 28 files × 2-byte FID = 56 > DFC_EV1_MAX_FRAME_PAYLOAD (54) → AF + remainder.
-    for(uint8_t n = 0; n < 28; n++) {
+    // 32 files x 2-octet FID = 64 octets. A frame carries whole identifiers, as
+    // many as fit in DFC_EV1_MAX_FRAME_PAYLOAD (59): 29 of them, 58 octets.
+    for(uint8_t n = 0; n < 32; n++) {
         DfcFile* file = dfc_credential_create_file(&credential, 0, n);
         munit_assert_not_null(file);
         file->type = 0x00;
@@ -921,14 +923,14 @@ static MunitResult test_get_iso_file_ids_chains_when_many(
     exchange(session, get_iso, sizeof(get_iso), response, sizeof(response), &response_len);
     munit_assert_uint8(response[response_len - 2], ==, 0x91);
     munit_assert_uint8(response[response_len - 1], ==, DFC_CMD_ADDITIONAL_FRAME);
-    munit_assert_size(response_len, ==, DFC_EV1_MAX_FRAME_PAYLOAD + 2);
+    munit_assert_size(response_len, ==, 58 + 2);
 
     const uint8_t af[] = {0x90, 0xAF, 0x00, 0x00, 0x00};
     exchange(session, af, sizeof(af), response, sizeof(response), &response_len);
     munit_assert_uint8(response[response_len - 2], ==, 0x91);
     munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
-    // Remaining: 56 - 54 = 2 bytes (one FID).
-    munit_assert_size(response_len, ==, 2 + 2);
+    // The remaining three identifiers.
+    munit_assert_size(response_len, ==, 6 + 2);
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;

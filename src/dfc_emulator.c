@@ -111,6 +111,9 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->get_version_frame = 0;
     emulator->pending_chain_len = 0;
     emulator->pending_chain_offset = 0;
+    emulator->pending_chain_frame = 0;
+    emulator->df_names_pending = false;
+    emulator->df_names_next = 0;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
     emulator->delegated_creation_pending = false;
     emulator->delegated_creation_header_length = 0;

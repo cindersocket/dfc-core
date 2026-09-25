@@ -337,6 +337,9 @@ static bool has_card_file_capacity(const DfcCredential* credential, size_t alloc
 static void clear_pending_chain(DfcEmulator* emulator) {
     emulator->pending_chain_len = 0;
     emulator->pending_chain_offset = 0;
+    emulator->pending_chain_frame = 0;
+    emulator->df_names_pending = false;
+    emulator->df_names_next = 0;
     emulator->get_version_frame = 0;
 }
 
@@ -348,7 +351,7 @@ static bool has_pending_additional_work(const DfcEmulator* emulator) {
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
            emulator->ev2_authentication_pending ||
 #endif
-           emulator->get_version_frame != 0 ||
+           emulator->get_version_frame != 0 || emulator->df_names_pending ||
            emulator->pending_chain_len > emulator->pending_chain_offset;
 }
 
@@ -364,21 +367,26 @@ static void append_status_payload(
 }
 
 // Payload a single chained frame may carry. Under an authenticated session the
-// frames land on a cipher-block boundary, which is 48 octets for both the DES
-// and the AES block sizes.
-static size_t ev1_frame_payload(const DfcEmulator* emulator) {
-    if(!emulator->secure_messaging) return DFC_EV1_MAX_FRAME_PAYLOAD;
+// frames land on a cipher-block boundary: 56 octets for DES and 48 for AES.
+// Without one, a listing splits between whole entries of `entry` octets.
+static size_t ev1_frame_payload(const DfcEmulator* emulator, size_t entry) {
+    if(!emulator->secure_messaging) {
+        if(entry == 0) entry = 1;
+        return (DFC_EV1_MAX_FRAME_PAYLOAD / entry) * entry;
+    }
     size_t block =
         emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
     return (DFC_EV1_MAX_FRAME_PAYLOAD / block) * block;
 }
 
+// `entry` is the size of one listing entry, so no frame splits one; 1 for data.
 static void emit_payload_with_chaining(
     DfcEmulator* emulator,
     DfcByteBuf* tx_buffer,
     uint8_t cmd,
     const uint8_t* payload,
-    size_t payload_len) {
+    size_t payload_len,
+    size_t entry) {
     clear_pending_chain(emulator);
 
     // A chained response carries one CMAC, over the whole logical response, on
@@ -393,7 +401,8 @@ static void emit_payload_with_chaining(
         emulator->response_secured = true;
     }
 
-    size_t frame = ev1_frame_payload(emulator);
+    size_t frame = ev1_frame_payload(emulator, entry);
+    emulator->pending_chain_frame = frame;
     if(payload_len <= frame) {
         append_status_payload(tx_buffer, DFC_STATUS_OK, payload, payload_len);
         return;
@@ -416,7 +425,8 @@ static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf*
         return;
     }
 
-    size_t frame = ev1_frame_payload(emulator);
+    size_t frame = emulator->pending_chain_frame ? emulator->pending_chain_frame :
+                                                   ev1_frame_payload(emulator, 1);
     size_t remaining = emulator->pending_chain_len - emulator->pending_chain_offset;
     size_t chunk = remaining > frame ? frame : remaining;
     // These octets were secured as one response before being split.
@@ -455,12 +465,46 @@ static void handle_free_mem(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     dfc_bytebuf_append_bytes(tx_buffer, free_mem, sizeof(free_mem));
 }
 
+// The next GetDFNames record, one application per frame: AID, little-endian
+// ISO file ID and DF name, for each application with an ISO file ID.
+static void handle_df_names_continuation(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
+    const DfcCredential* credential = emulator->credential;
+    size_t index = emulator->df_names_next;
+    while(index < credential->num_apps && !credential->apps[index].has_iso_file_id) index++;
+    if(index >= credential->num_apps) {
+        clear_pending_chain(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+        return;
+    }
+    size_t next = index + 1;
+    while(next < credential->num_apps && !credential->apps[next].has_iso_file_id) next++;
+    bool more = next < credential->num_apps;
+    const DfcApplication* app = &credential->apps[index];
+    dfc_bytebuf_append_byte(tx_buffer, more ? DFC_CMD_ADDITIONAL_FRAME : DFC_STATUS_OK);
+    dfc_bytebuf_append_byte(tx_buffer, app->aid[2]);
+    dfc_bytebuf_append_byte(tx_buffer, app->aid[1]);
+    dfc_bytebuf_append_byte(tx_buffer, app->aid[0]);
+    dfc_bytebuf_append_byte(tx_buffer, (uint8_t)(app->iso_file_id & 0xFF));
+    dfc_bytebuf_append_byte(tx_buffer, (uint8_t)(app->iso_file_id >> 8));
+    dfc_bytebuf_append_bytes(tx_buffer, app->iso_aid, app->iso_aid_len);
+    emulator->df_names_pending = more;
+    emulator->df_names_next = next;
+}
+
 static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     if(emulator->selected_application != DfcEmulatorSelectedApplicationPicc) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
     if(!require_directory_access(emulator, tx_buffer)) return;
+
+    // Without a session each application goes in a frame of its own.
+    if(!emulator->secure_messaging) {
+        clear_pending_chain(emulator);
+        emulator->df_names_next = 0;
+        handle_df_names_continuation(emulator, tx_buffer);
+        return;
+    }
 
     // Records contain the AID, the little-endian ISO file ID, and the DF name.
     // An application is listed when it carries an ISO file ID; the DF name is
@@ -481,7 +525,7 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     }
 
     emit_payload_with_chaining(
-        emulator, tx_buffer, DFC_CMD_GET_DF_NAMES, records, records_len);
+        emulator, tx_buffer, DFC_CMD_GET_DF_NAMES, records, records_len, 1);
 }
 
 static void handle_get_card_uid(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
@@ -907,7 +951,7 @@ static void handle_get_iso_file_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer
         }
     }
     emit_payload_with_chaining(
-        emulator, tx_buffer, DFC_CMD_GET_ISO_FILE_IDS, fids, fids_len);
+        emulator, tx_buffer, DFC_CMD_GET_ISO_FILE_IDS, fids, fids_len, 2);
 }
 
 static void
@@ -1639,13 +1683,15 @@ static void handle_get_application_ids(DfcEmulator* emulator, DfcByteBuf* tx_buf
     }
     if(!require_directory_access(emulator, tx_buffer)) return;
 
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    uint8_t aids[DFC_MAX_APPS * 3];
+    size_t aids_len = 0;
     for(size_t i = 0; i < emulator->credential->num_apps; i++) {
         const DfcApplication* app = &emulator->credential->apps[i];
-        dfc_bytebuf_append_byte(tx_buffer, app->aid[2]);
-        dfc_bytebuf_append_byte(tx_buffer, app->aid[1]);
-        dfc_bytebuf_append_byte(tx_buffer, app->aid[0]);
+        aids[aids_len++] = app->aid[2];
+        aids[aids_len++] = app->aid[1];
+        aids[aids_len++] = app->aid[0];
     }
+    emit_payload_with_chaining(emulator, tx_buffer, DFC_CMD_GET_APPLICATION_IDS, aids, aids_len, 3);
 }
 
 static bool iso_file_id_in_use(const DfcCredential* credential, uint16_t iso_file_id) {
@@ -3428,7 +3474,7 @@ static bool handle_read_data(
     } else {
         // EV1 plain/MAC (session CMAC on response) or unauthenticated free-access plain.
         emit_payload_with_chaining(
-            emulator, tx_buffer, DFC_CMD_READ_DATA, payload, payload_len);
+            emulator, tx_buffer, DFC_CMD_READ_DATA, payload, payload_len, 1);
     }
 
     if(dfc && payload_len > 0) {
@@ -3673,7 +3719,8 @@ static void handle_read_records(
         tx_buffer,
         DFC_CMD_READ_RECORDS,
         payload,
-        count * file->record_size);
+        count * file->record_size,
+        1);
 }
 
 static void handle_update_record(
@@ -4273,6 +4320,8 @@ bool dfc_emulator_handle_command(
                 handle_get_version_continuation(emulator, tx_buffer);
             }
             apply_ev1_response_secure_messaging(emulator, DFC_CMD_GET_VERSION, tx_buffer);
+        } else if(emulator->df_names_pending) {
+            handle_df_names_continuation(emulator, tx_buffer);
         } else if(emulator->pending_chain_len > emulator->pending_chain_offset) {
             handle_pending_chain_continuation(emulator, tx_buffer);
         } else {

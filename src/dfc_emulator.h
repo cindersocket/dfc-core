@@ -19,10 +19,16 @@ typedef struct {
     uint8_t enc_rnd_b[16]; // ciphertext PICC sent in step 1, needed to chain the IV in step 2
     bool awaiting_step2;
     uint8_t get_version_frame;
-    // Chained native response residual (after first 54-byte frame).
+    // Chained native response residual (after the first frame).
     uint8_t pending_chain[DFC_WORKER_MAX_BUFFER_SIZE];
     size_t pending_chain_len;
     size_t pending_chain_offset;
+    // Octets each further frame of the pending chain carries: whole entries of
+    // a listing, or whole cipher blocks under secure messaging.
+    size_t pending_chain_frame;
+    // GetDFNames answers one application per frame; the next one to send.
+    bool df_names_pending;
+    size_t df_names_next;
     bool data_written; // set on any successful WriteData this emulation session
     // Set when a handler has already applied response secure messaging, so the
     // dispatcher's pass leaves the frame alone. A chained response is secured
