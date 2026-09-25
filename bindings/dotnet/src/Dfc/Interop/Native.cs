@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 // out of the way; the public types above this layer own the safety.
 internal static unsafe partial class Native
 {
-    internal const string Library = "dfc";
+    internal const string Library = "libdfc";
     internal const uint AbiVersion = 2;
 
     internal const int InvalidArgument = -1;

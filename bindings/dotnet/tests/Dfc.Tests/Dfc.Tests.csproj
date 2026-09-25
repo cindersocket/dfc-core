@@ -20,8 +20,8 @@
   <ItemGroup>
     <DfcNative Include="$(DfcNativeDirectory)/libdfc.dylib" Condition="Exists('$(DfcNativeDirectory)/libdfc.dylib')" />
     <DfcNative Include="$(DfcNativeDirectory)/libdfc.so" Condition="Exists('$(DfcNativeDirectory)/libdfc.so')" />
-    <DfcNative Include="$(DfcNativeDirectory)/dfc.dll" Condition="Exists('$(DfcNativeDirectory)/dfc.dll')" />
-    <DfcNative Include="$(DfcNativeDirectory)/Release/dfc.dll" Condition="Exists('$(DfcNativeDirectory)/Release/dfc.dll')" />
+    <DfcNative Include="$(DfcNativeDirectory)/libdfc.dll" Condition="Exists('$(DfcNativeDirectory)/libdfc.dll')" />
+    <DfcNative Include="$(DfcNativeDirectory)/Release/libdfc.dll" Condition="Exists('$(DfcNativeDirectory)/Release/libdfc.dll')" />
     <None Include="@(DfcNative)" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

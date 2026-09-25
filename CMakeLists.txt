@@ -170,7 +170,11 @@ if(DFC_BUILD_SHARED)
         # (dfc_command_*) as well as the flat interface.
         set_target_properties(dfc PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
     endif()
+    # libdfc on every platform. On Windows a plain dfc.dll collides with the
+    # managed Dfc.dll beside it: file names ignore case there, and the loader
+    # hands back the already-loaded assembly instead of the native library.
     set_target_properties(dfc PROPERTIES
+        PREFIX "lib"
         C_VISIBILITY_PRESET default
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR})
