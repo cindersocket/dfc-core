@@ -381,13 +381,16 @@ static size_t ev1_frame_payload(
     const DfcEmulator* emulator,
     size_t entry,
     bool block_aligned) {
+    size_t limit = emulator->credential->card.generation == DfcGenerationEv3 ?
+                       DFC_EV3_MAX_RESPONSE_PAYLOAD :
+                                                                           DFC_EV1_MAX_FRAME_PAYLOAD;
     if(block_aligned) {
         size_t block =
             emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
-        return (DFC_EV1_MAX_FRAME_PAYLOAD / block) * block;
+        return (limit / block) * block;
     }
     if(entry == 0) entry = 1;
-    return (DFC_EV1_MAX_FRAME_PAYLOAD / entry) * entry;
+    return (limit / entry) * entry;
 }
 
 // `entry` is the size of one listing entry, so no frame splits one; 1 for data.
@@ -400,7 +403,8 @@ static void emit_payload_with_chaining_comm(
     const uint8_t* payload,
     size_t payload_len,
     size_t entry,
-    uint8_t comm) {
+    uint8_t comm,
+    bool length_unknown) {
     clear_pending_chain(emulator);
 
     // Secure the whole answer once, then split the result; intermediate frames
@@ -413,9 +417,19 @@ static void emit_payload_with_chaining_comm(
     bool is_secured = false;
     bool block_aligned = false;
     if(ev1 && comm == DFC_COMM_ENCIPHERED) {
-        payload_len = dfc_secure_messaging_generate_response(
-            emulator->secure_messaging, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, payload, payload_len, secured);
-        payload = secured;
+        uint8_t* out = secured;
+        if(payload_len + DFC_SM_MAX_CIPHER_BLOCK_SIZE > sizeof(secured)) {
+            if(payload_len + DFC_SM_MAX_CIPHER_BLOCK_SIZE > sizeof(emulator->pending_chain)) {
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+                return;
+            }
+            out = emulator->pending_chain;
+            secured_in_pending = true;
+        }
+        payload_len = dfc_secure_messaging_generate_response_with_length_marker(
+            emulator->secure_messaging, DFC_COMM_ENCIPHERED, DFC_STATUS_OK,
+            payload, payload_len, out, length_unknown);
+        payload = out;
         is_secured = true;
         block_aligned = true;
     } else if(ev1) {
@@ -441,17 +455,42 @@ static void emit_payload_with_chaining_comm(
         is_secured = true;
         block_aligned = comm == DFC_COMM_ENCIPHERED;
     } else if(legacy && comm != DFC_COMM_PLAIN) {
-        payload_len = dfc_secure_messaging_generate_response(
-            emulator->secure_messaging, comm, DFC_STATUS_OK, payload, payload_len, secured);
-        payload = secured;
+        uint8_t* out = secured;
+        if(payload_len + DFC_SM_MAX_CIPHER_BLOCK_SIZE > sizeof(secured)) {
+            if(payload_len + DFC_SM_MAX_CIPHER_BLOCK_SIZE > sizeof(emulator->pending_chain)) {
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+                return;
+            }
+            out = emulator->pending_chain;
+            secured_in_pending = true;
+        }
+        payload_len = dfc_secure_messaging_generate_response_with_length_marker(
+            emulator->secure_messaging, comm, DFC_STATUS_OK,
+            payload, payload_len, out, length_unknown);
+        payload = out;
         is_secured = true;
     }
     if(is_secured) emulator->response_secured = true;
 
+    if((ev1 || (legacy && comm != DFC_COMM_PLAIN)) &&
+       (cmd == DFC_CMD_READ_DATA || cmd == DFC_CMD_READ_RECORDS)) {
+        block_aligned = true;
+    }
+
     size_t frame = ev1_frame_payload(emulator, entry, block_aligned);
+    // The EV3 card caps the ISO file-ID list at 27 two-octet entries per frame.
+    if(cmd == DFC_CMD_GET_ISO_FILE_IDS &&
+       emulator->credential->card.generation == DfcGenerationEv3 &&
+       frame > DFC_EV3_ISO_FIDS_PER_FRAME * DFC_ISO_FID_SIZE) {
+        frame = DFC_EV3_ISO_FIDS_PER_FRAME * DFC_ISO_FID_SIZE;
+    }
     // A secured answer runs its final frame to the wire limit, carrying the MAC
     // after the last block; an unsecured one ends on a whole entry.
-    size_t last = is_secured ? DFC_EV1_MAX_FRAME_PAYLOAD : frame;
+    size_t last = is_secured ?
+                      (emulator->credential->card.generation == DfcGenerationEv3 ?
+                           DFC_EV3_MAX_RESPONSE_PAYLOAD :
+                           DFC_EV1_MAX_FRAME_PAYLOAD) :
+                      frame;
     emulator->pending_chain_frame = frame;
     emulator->pending_chain_last = last;
     if(payload_len <= last) {
@@ -484,7 +523,8 @@ static void emit_payload_with_chaining(
     const uint8_t* payload,
     size_t payload_len,
     size_t entry) {
-    emit_payload_with_chaining_comm(emulator, tx_buffer, cmd, payload, payload_len, entry, DFC_COMM_PLAIN);
+    emit_payload_with_chaining_comm(
+        emulator, tx_buffer, cmd, payload, payload_len, entry, DFC_COMM_PLAIN, false);
 }
 
 static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
@@ -3603,14 +3643,12 @@ static bool handle_read_data(
     uint8_t comm = file_effective_comm_settings(file, false);
     bool encrypted = emulator->secure_messaging && comm == DFC_COMM_ENCIPHERED;
     bool legacy_mac = emulator->secure_messaging && !ev1_sm && comm == DFC_COMM_MAC;
-    if((encrypted || legacy_mac) &&
-       (read_len > sizeof(payload) - 16 || read_len > DFC_SM_MAX_SIZE - 16)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
-        return true;
-    }
-    if(emulator->secure_messaging && !ev1_sm && payload_len > sizeof(payload)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
-        return true;
+    if(read_len > sizeof(payload) - DFC_SM_MAX_CIPHER_BLOCK_SIZE &&
+       (encrypted || legacy_mac || (emulator->secure_messaging && !ev1_sm))) {
+        emit_payload_with_chaining_comm(
+            emulator, tx_buffer, DFC_CMD_READ_DATA,
+            file_bytes + offset, read_len, 1, comm, requested_len == 0);
+        return false;
     }
     if((encrypted || legacy_mac || (emulator->secure_messaging && !ev1_sm)) && payload_len > 0) {
         memcpy(payload, file_bytes + offset, payload_len);
@@ -3618,25 +3656,27 @@ static bool handle_read_data(
     bool apply_ev1_cmac = true;
     if(emulator->secure_messaging && !ev1_sm) {
         // D40: file-level plain / MAC / enciphered wrapping.
-        size_t wrapped_len = dfc_secure_messaging_generate_response(
+        size_t wrapped_len = dfc_secure_messaging_generate_response_with_length_marker(
             emulator->secure_messaging,
             comm,
             DFC_STATUS_OK,
             payload,
             payload_len,
-            payload);
+            payload,
+            requested_len == 0);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         dfc_bytebuf_append_bytes(tx_buffer, payload, wrapped_len);
     } else if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
         // EV1 Full: Status || Enc(RespData||CRC32||pad). Last CT block becomes IV.
         // No trailing CMAC on the encrypted response (EV3 Fig. Full option b).
-        size_t wrapped_len = dfc_secure_messaging_generate_response(
+        size_t wrapped_len = dfc_secure_messaging_generate_response_with_length_marker(
             emulator->secure_messaging,
             DFC_COMM_ENCIPHERED,
             DFC_STATUS_OK,
             payload,
             payload_len,
-            payload);
+            payload,
+            requested_len == 0);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         dfc_bytebuf_append_bytes(tx_buffer, payload, wrapped_len);
         apply_ev1_cmac = false;
@@ -3702,12 +3742,6 @@ static void handle_write_data(
     const uint8_t* apdu,
     size_t apdu_len,
     DfcByteBuf* tx_buffer) {
-    // This handler unwraps into fixed scratch storage. Chaining reassembles
-    // the command first, so bound the logical size before any copy or CMAC.
-    if(apdu_len > DFC_SM_MAX_SIZE) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return;
-    }
     uint8_t file_no = apdu[1];
     DfcFile* file = dfc_credential_find_file_in_app(
         emulator->credential, emulator->selected_app_index, file_no);
@@ -3717,6 +3751,13 @@ static void handle_write_data(
     }
     if(!file_allows_write(file, emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, file_access_refusal_status(file, true));
+        return;
+    }
+    uint8_t comm = file_effective_comm_settings(file, true);
+    if(apdu_len > DFC_EMULATOR_CHAIN_BUFFER_SIZE ||
+       (apdu_len > DFC_SM_MAX_SIZE && comm == DFC_COMM_ENCIPHERED &&
+        apdu_len - 8 > DFC_SM_MAX_CRYPTO_SIZE)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
 
@@ -3732,28 +3773,26 @@ static void handle_write_data(
     size_t wrapped_len = apdu_len - 8;
 
     uint8_t out[DFC_SM_MAX_SIZE];
+    const uint8_t* clear = out;
     size_t out_len = wrapped_len;
     if(emulator->secure_messaging) {
         bool ev1_sm = dfc_secure_messaging_applies_ev1(
             emulator->secure_messaging, DFC_CMD_WRITE_DATA);
-        uint8_t comm = file_effective_comm_settings(file, true);
-
         if(ev1_sm && comm == DFC_COMM_MAC &&
            dfc_secure_messaging_ev1_transmits_command_mac(DFC_CMD_WRITE_DATA)) {
             // Option b: MACt covers Cmd||FileNo||Offset||Len||Data (whole body after Cmd).
-            size_t body_len = apdu_len - 1;
-            size_t clear_body = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
-                emulator->secure_messaging, DFC_CMD_WRITE_DATA, apdu + 1, body_len);
+            size_t clear_body =
+                dfc_secure_messaging_verify_ev1_transmitted_command_mac_full(
+                    emulator->secure_messaging, apdu, apdu_len);
             if(clear_body == SIZE_MAX || clear_body < 7) {
                 dfc_emulator_reset_session(emulator);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
                 return;
             }
             out_len = clear_body - 7;
-            if(out_len > 0) {
-                memcpy(out, apdu + 8, out_len);
-            }
+            clear = wrapped;
         } else if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
+            uint8_t* target = wrapped_len > sizeof(out) ? emulator->pending_chain : out;
             out_len = dfc_secure_messaging_verify_command(
                 emulator->secure_messaging,
                 DFC_COMM_ENCIPHERED,
@@ -3761,7 +3800,8 @@ static void handle_write_data(
                 8,
                 wrapped,
                 wrapped_len,
-                out);
+                target);
+            clear = target;
             if(out_len == 0 && wrapped_len > 0) {
                 dfc_emulator_reset_session(emulator);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
@@ -3770,26 +3810,40 @@ static void handle_write_data(
             // IV left as last CT block for response MACt(RC).
         } else if(ev1_sm) {
             // Plain (or free-access Full demoted to plain): CMAC updates IV only.
-            memcpy(out, wrapped, wrapped_len);
-            dfc_secure_messaging_update_ev1_command(
-                emulator->secure_messaging, DFC_CMD_WRITE_DATA, apdu + 1, apdu_len - 1);
+            if(wrapped_len > sizeof(out)) {
+                clear = wrapped;
+            } else {
+                memcpy(out, wrapped, wrapped_len);
+            }
+            dfc_secure_messaging_update_ev1_command_full(
+                emulator->secure_messaging, apdu, apdu_len);
         } else {
             // D40 file comm modes.
-            out_len = dfc_secure_messaging_verify_command(
-                emulator->secure_messaging,
-                comm,
-                apdu,
-                8,
-                wrapped,
-                wrapped_len,
-                out);
+            if(comm == DFC_COMM_PLAIN && wrapped_len > sizeof(out)) {
+                clear = wrapped;
+            } else {
+                uint8_t* target = wrapped_len > sizeof(out) ? emulator->pending_chain : out;
+                out_len = dfc_secure_messaging_verify_command(
+                    emulator->secure_messaging,
+                    comm,
+                    apdu,
+                    8,
+                    wrapped,
+                    wrapped_len,
+                    target);
+                clear = target;
+            }
             if(out_len == 0 && wrapped_len > 0 && comm != DFC_COMM_PLAIN) {
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
                 return;
             }
         }
     } else {
-        memcpy(out, wrapped, wrapped_len);
+        if(wrapped_len > sizeof(out)) {
+            clear = wrapped;
+        } else {
+            memcpy(out, wrapped, wrapped_len);
+        }
     }
 
     if(out_len != declared_len) {
@@ -3808,7 +3862,7 @@ static void handle_write_data(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
             return;
         }
-        memcpy(file_bytes + offset, out, out_len);
+        memcpy(file_bytes + offset, clear, out_len);
     }
     if(file->type == DFC_FILE_TYPE_BACKUP_DATA) file->transaction_pending = true;
     emulator->data_written = true;
@@ -4028,11 +4082,6 @@ static void handle_read_records(
     // order, even though record number zero names the newest one.
     size_t payload_len = count * file->record_size;
     uint8_t comm = file_effective_comm_settings(file, false);
-    if(emulator->secure_messaging && comm != DFC_COMM_PLAIN &&
-       payload_len > DFC_SM_MAX_SIZE - 16) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
-        return;
-    }
     size_t stored_index = record_count - first_record - count;
     emit_payload_with_chaining_comm(
         emulator,
@@ -4041,7 +4090,8 @@ static void handle_read_records(
         data + stored_index * file->record_size,
         payload_len,
         1,
-        comm);
+        comm,
+        requested_records == 0);
 }
 
 static void handle_update_record(
@@ -4410,6 +4460,10 @@ static bool begin_or_reject_command_chain(
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer) {
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(emulator->ev2_session_active &&
+       buffer_len < DFC_EV1_MAX_FRAME_PAYLOAD + 1) return false;
+#endif
     size_t expected = chained_write_expected_len(emulator, buffer[0], buffer, buffer_len);
     if(expected == SIZE_MAX) return false;
     if(expected == 0 || buffer_len > DFC_EV1_MAX_FRAME_PAYLOAD + 1 || buffer_len > expected) {
@@ -4417,9 +4471,6 @@ static bool begin_or_reject_command_chain(
         return true;
     }
     if(buffer_len == expected) return false;
-    if(buffer_len != DFC_EV1_MAX_FRAME_PAYLOAD + 1) {
-        return false;
-    }
     memcpy(emulator->command_chain, buffer, buffer_len);
     emulator->command_chain_active = true;
     emulator->command_chain_len = buffer_len;
@@ -4453,8 +4504,8 @@ bool dfc_emulator_handle_command(
         }
         size_t continuation_len = buffer_len - 1;
         size_t remaining = emulator->command_chain_expected - emulator->command_chain_len;
-        if(continuation_len > DFC_EV1_MAX_FRAME_PAYLOAD || continuation_len > remaining ||
-           (continuation_len < DFC_EV1_MAX_FRAME_PAYLOAD && continuation_len != remaining)) {
+        if(continuation_len == 0 || continuation_len > DFC_EV1_MAX_FRAME_PAYLOAD ||
+           continuation_len > remaining) {
             emulator->command_chain_active = false;
             emulator->command_chain_len = 0;
             emulator->command_chain_expected = 0;

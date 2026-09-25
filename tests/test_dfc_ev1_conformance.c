@@ -848,10 +848,12 @@ static MunitResult test_ev1_write_data_mac_requires_transmitted_cmac(
     uint8_t response[64];
     size_t response_len = 0;
 
-    // Write without MACt must fail integrity and drop auth.
-    const uint8_t write_no_mac[] = {
-        0x90, 0x3D, 0x00, 0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x11, 0x22, 0x00};
-    exchange(session, write_no_mac, sizeof(write_no_mac), response, sizeof(response), &response_len);
+    // A complete write carrying a wrong MACt fails integrity and drops auth.
+    const uint8_t write_bad_mac[] = {
+        0x90, 0x3D, 0x00, 0x00, 0x11,
+        0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x11, 0x22,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    exchange(session, write_bad_mac, sizeof(write_bad_mac), response, sizeof(response), &response_len);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_INTEGRITY_ERROR}));
     munit_assert_null(session->emulator->secure_messaging);
 
@@ -931,6 +933,17 @@ static MunitResult test_get_iso_file_ids_chains_when_many(
     munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
     // The remaining three identifiers.
     munit_assert_size(response_len, ==, 6 + 2);
+
+    // The measured EV3 card limits this list to 27 identifiers per frame.
+    credential.card.generation = DfcGenerationEv3;
+    exchange(session, get_iso, sizeof(get_iso), response, sizeof(response), &response_len);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_CMD_ADDITIONAL_FRAME);
+    munit_assert_size(response_len, ==,
+                      DFC_EV3_ISO_FIDS_PER_FRAME * DFC_ISO_FID_SIZE + 2);
+    exchange(session, af, sizeof(af), response, sizeof(response), &response_len);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
+    munit_assert_size(response_len, ==,
+                      (32 - DFC_EV3_ISO_FIDS_PER_FRAME) * DFC_ISO_FID_SIZE + 2);
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;

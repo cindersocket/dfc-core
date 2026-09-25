@@ -1084,7 +1084,8 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
     case PlanD40Mac: {
         if(ex->data_len == 0 && ex->response_plan != PlanD40Mac) return finish_command(ex, DfcReaderOk);
         uint8_t comm = ex->response_plan == PlanD40Mac ? DFC_COMM_MAC : DFC_COMM_ENCIPHERED;
-        if(ex->data_len > DFC_SM_MAX_SIZE) return finish_command(ex, DfcReaderBufferTooSmall);
+        if(ex->data_len > DFC_SM_MAX_CRYPTO_SIZE)
+            return finish_command(ex, DfcReaderBufferTooSmall);
         clear_len = dfc_secure_messaging_unwrap(&session->sm, comm, status, ex->data, ex->data_len, clear);
         if(clear_len == 0 && ex->data_len > 0 && !(comm == DFC_COMM_MAC && ex->data_len == 4)) {
             dfc_reader_session_clear(session);

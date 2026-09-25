@@ -181,6 +181,9 @@ extern const uint8_t DFC_ISO_AID[7];
 // Octets one answer frame carries, whether the command came wrapped or native.
 // Under secure messaging a frame carries the whole cipher blocks that fit.
 #define DFC_EV1_MAX_FRAME_PAYLOAD    59
+#define DFC_EV3_MAX_RESPONSE_PAYLOAD 58
+#define DFC_EV3_ISO_FIDS_PER_FRAME   27
+#define DFC_ISO_FID_SIZE            2
 
 // Key Settings 2 crypto-suite bits (upper nibble) and ISO FID enable (bit 5)
 #define DFC_KEY_TYPE_DES_2K3DES 0x00

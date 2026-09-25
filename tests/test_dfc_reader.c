@@ -39,6 +39,7 @@ enum {
 };
 
 #define LONG_FILE_SIZE 100
+#define D40_LONG_READ_SIZE 300
 
 typedef struct {
     DfcCredential credential;
@@ -348,6 +349,12 @@ static MunitResult test_streamed_secure_record(const MunitParameter params[], vo
     DfcCommand command;
     munit_assert_int(dfc_command_commit_transaction(&command), ==, DfcCommandOk);
     munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(dfc_command_read_records(&command, 7, 0, 1, false), ==, DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_ENCIPHERED, &ex), ==, DfcReaderOk);
+    size_t read_len = 0;
+    const uint8_t* read_data = dfc_reader_result_data(&ex, &read_len);
+    munit_assert_size(read_len, ==, sizeof(written));
+    munit_assert_memory_equal(read_len, read_data, written);
     link_close(&link);
     return MUNIT_OK;
 }
@@ -480,6 +487,19 @@ static MunitResult test_d40_session(const MunitParameter params[], void* data) {
     munit_assert_int(authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
     munit_assert_uint8(link.session.auth_mode, ==, DFC_CMD_AUTHENTICATE_LEGACY);
     exercise_files(&link);
+    DfcApplication* app =
+        dfc_credential_find_application_desfire_order(&link.credential, AID_D40);
+    munit_assert_not_null(app);
+    size_t app_index = dfc_credential_application_index(&link.credential, app);
+    DfcFile* long_file =
+        dfc_credential_find_file_in_app(&link.credential, app_index, FileLong);
+    munit_assert_not_null(long_file);
+    munit_assert_true(dfc_file_resize(&link.credential, long_file, D40_LONG_READ_SIZE));
+    uint8_t* long_bytes = dfc_file_data(&link.credential, long_file);
+    for(size_t index = 0; index < D40_LONG_READ_SIZE; index++) {
+        long_bytes[index] = (uint8_t)(FileLong * 0x10 + index);
+    }
+    read_file(&link, FileLong, DFC_COMM_MAC, 0, D40_LONG_READ_SIZE);
     link_close(&link);
     return MUNIT_OK;
 }
