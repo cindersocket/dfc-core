@@ -47,7 +47,7 @@ A key set records its number, active state, roll state, key type, and ordered ke
 
 A file records its number, type, communication mode, access rights, optional ISO identifier, and type-specific state. Supported types are standard data, backup data, value, linear record, cyclic record, and transaction MAC.
 
-Generation-specific settings are explicit tagged values. EV2 state includes secure-channel capabilities, key-set state, transaction-MAC state, reader identifiers, and virtual-card state. EV3 state adds secure dynamic messaging, transaction timers, file counters, proximity-check configuration, and a copyable static IC signature.
+Generation-specific settings are explicit tagged values. EV2 state includes secure-channel capabilities, key-set state, transaction-MAC state, reader identifiers, virtual-card state, and a copyable static IC signature. EV3 state adds secure dynamic messaging, transaction timers, file counters, and proximity-check configuration.
 
 Unknown enum values, tags, commands, or generation-specific fields are malformed. A generation cannot contain a feature introduced by a later generation.
 
@@ -112,7 +112,7 @@ Delegated state uses `80` slot, `81` version, `82` quota, and `83` free blocks. 
 
 SDM uses `80` options, `81` access rights, optional `82` through `89` values in the text-field order, and required `8A` read counter. Integers are non-negative canonical DER integers. Constructed fields use canonical DER lengths and field order.
 
-EV2 fields require EV2 or EV3. Proximity, SDM, and static-signature fields require EV3. A reduced implementation must reject a recognized disabled feature as unsupported. It must not discard the field.
+EV2 fields, including the static signature, require EV2 or EV3. Proximity and SDM require EV3. A reduced implementation must reject a recognized disabled feature as unsupported. It must not discard the field.
 
 ## Wire vectors
 
