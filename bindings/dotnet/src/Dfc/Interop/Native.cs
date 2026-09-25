@@ -237,6 +237,21 @@ internal static unsafe partial class Native
         int headerLength);
 
     [LibraryImport(Library)]
+    internal static partial int dfc_ffi_reader_write_data_begin(
+        nint exchange, nint session, uint framing, byte fileNumber, uint offset,
+        byte* data, nuint dataLength, byte commMode);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_reader_write_record_begin(
+        nint exchange, nint session, uint framing, byte fileNumber, uint offset,
+        byte* data, nuint dataLength, byte commMode);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_reader_update_record_begin(
+        nint exchange, nint session, uint framing, byte fileNumber, uint recordNumber,
+        uint offset, byte* data, nuint dataLength, byte commMode);
+
+    [LibraryImport(Library)]
     internal static partial int dfc_ffi_reader_create_delegated_application_begin(
         nint exchange,
         nint session,

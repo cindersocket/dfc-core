@@ -70,9 +70,9 @@ bool des_cmac_with_iv(
     uint8_t* cmac) {
     uint8_t subkey1[BLOCK_SIZE] = {0};
     uint8_t subkey2[BLOCK_SIZE] = {0};
-    uint8_t blockCount = (message_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    size_t blockCount = (message_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
     bool lastBlockCompleteFlag;
-    uint8_t lastBlockIndex;
+    size_t lastBlockIndex;
     uint8_t lastBlock[BLOCK_SIZE] = {0};
 
     if(key_len != 8 && key_len != 16 && key_len != 24) {

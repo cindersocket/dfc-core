@@ -177,6 +177,181 @@ static void assert_file_bytes(const uint8_t* data, size_t len, uint8_t number, s
     for(size_t i = 0; i < len; i++) munit_assert_uint8(data[i], ==, (uint8_t)(number * 0x10 + offset + i));
 }
 
+static MunitResult test_native_command_chaining(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+        ==,
+        DfcReaderOk);
+
+    uint8_t bytes[LONG_FILE_SIZE];
+    for(size_t i = 0; i < sizeof(bytes); i++) bytes[i] = (uint8_t)(0xA0 + i);
+    DfcCommand command;
+    DfcReaderExchange ex;
+    munit_assert_int(
+        dfc_command_write_data(&command, FileLong, 0, bytes, sizeof(bytes)), ==, DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_MAC, &ex), ==, DfcReaderOk);
+
+    DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, FileLong);
+    munit_assert_not_null(file);
+    munit_assert_memory_equal(sizeof(bytes), dfc_file_data(&link.credential, file), bytes);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static MunitResult test_authenticated_directory_framing(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+
+    for(size_t i = link.credential.num_apps; i < DFC_MAX_APPS; i++) {
+        uint8_t aid[3] = {(uint8_t)(0x40 + i), 0x55, 0x66};
+        DfcApplication* app = dfc_credential_create_application_desfire_order(
+            &link.credential, aid, 0x0F, DFC_KEY_TYPE_AES | 1);
+        munit_assert_not_null(app);
+    }
+    for(size_t i = 0; i < link.credential.num_apps; i++) {
+        DfcApplication* app = &link.credential.apps[i];
+        app->has_iso_file_id = true;
+        app->iso_file_id = (uint16_t)(0xE100 + i);
+        app->iso_aid_len = 16;
+        for(size_t n = 0; n < app->iso_aid_len; n++) app->iso_aid[n] = (uint8_t)(i + n);
+    }
+
+    munit_assert_true(dfc_credential_keys_resize(&link.credential, NULL, 1, 16));
+    link.credential.picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    link.credential.picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
+    memcpy(dfc_credential_key(&link.credential, NULL, 0), AES_KEY_0, sizeof(AES_KEY_0));
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+        ==,
+        DfcReaderOk);
+
+    DfcCommand command;
+    DfcReaderExchange ex;
+    munit_assert_int(dfc_command_get_application_ids(&command), ==, DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    size_t length = 0;
+    dfc_reader_result_data(&ex, &length);
+    munit_assert_size(length, ==, DFC_MAX_APPS * 3);
+
+    munit_assert_int(dfc_command_get_df_names(&command), ==, DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    const uint8_t* names = dfc_reader_result_data(&ex, &length);
+    munit_assert_size(length, ==, DFC_MAX_APPS * 21);
+    for(size_t i = 0; i < DFC_MAX_APPS; i++) {
+        munit_assert_uint8(names[i * 21 + 5], ==, (uint8_t)i);
+    }
+
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static MunitResult test_long_plain_read(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+    add_data_file(&link.credential, 0, 7, DFC_COMM_PLAIN, 300);
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+        ==,
+        DfcReaderOk);
+
+    DfcCommand command;
+    DfcReaderExchange ex;
+    munit_assert_int(dfc_command_read_data(&command, 7, 0, 300), ==, DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    size_t length = 0;
+    const uint8_t* clear = dfc_reader_result_data(&ex, &length);
+    munit_assert_size(length, ==, 300);
+    assert_file_bytes(clear, length, 7, 0);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static MunitResult test_streamed_secure_write(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+    add_data_file(&link.credential, 0, 7, DFC_COMM_ENCIPHERED, 300);
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+        ==,
+        DfcReaderOk);
+
+    uint8_t written[300];
+    for(size_t i = 0; i < sizeof(written); i++) written[i] = (uint8_t)(i ^ 0xA5);
+    DfcReaderExchange ex;
+    munit_assert_int(
+        dfc_reader_write_data_begin(
+            &ex,
+            &link.session,
+            link.framing,
+            7,
+            0,
+            written,
+            sizeof(written),
+            DFC_COMM_ENCIPHERED),
+        ==,
+        DfcReaderOk);
+    munit_assert_int(run(&link, &ex), ==, DfcReaderOk);
+    DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, 7);
+    munit_assert_not_null(file);
+    munit_assert_memory_equal(sizeof(written), dfc_file_data(&link.credential, file), written);
+
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static MunitResult test_streamed_secure_record(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+    DfcFile* file = dfc_credential_create_file(&link.credential, 0, 7);
+    munit_assert_not_null(file);
+    file->type = DFC_FILE_TYPE_LINEAR_RECORD;
+    file->comm_settings = DFC_COMM_ENCIPHERED;
+    file->access_rights = 0x0000;
+    file->record_size = 300;
+    file->max_records = 2;
+    munit_assert_true(dfc_file_resize(&link.credential, file, 600));
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+        ==,
+        DfcReaderOk);
+
+    uint8_t written[300];
+    for(size_t i = 0; i < sizeof(written); i++) written[i] = (uint8_t)(i ^ 0x5A);
+    DfcReaderExchange ex;
+    munit_assert_int(
+        dfc_reader_write_record_begin(
+            &ex, &link.session, link.framing, 7, 0, written, sizeof(written), DFC_COMM_ENCIPHERED),
+        ==,
+        DfcReaderOk);
+    munit_assert_int(run(&link, &ex), ==, DfcReaderOk);
+    munit_assert_uint32(file->record_count, ==, 1);
+    munit_assert_memory_equal(sizeof(written), dfc_file_data(&link.credential, file), written);
+
+    DfcCommand command;
+    munit_assert_int(dfc_command_commit_transaction(&command), ==, DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
 static void read_file(Link* link, uint8_t number, uint8_t comm, uint32_t offset, uint32_t length) {
     DfcCommand command;
     DfcReaderExchange ex;
@@ -694,6 +869,31 @@ static MunitTest tests[] = {
     {"/3k3des-session", test_3k3des_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/d40-session", test_d40_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/native-framing", test_native_framing, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/native-command-chaining",
+     test_native_command_chaining,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/authenticated-directory-framing",
+     test_authenticated_directory_framing,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/long-plain-read", test_long_plain_read, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/streamed-secure-write",
+     test_streamed_secure_write,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/streamed-secure-record",
+     test_streamed_secure_record,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/get-version-under-session", test_get_version_under_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/wrong-key-clears-session", test_wrong_key_clears_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/change-key", test_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},

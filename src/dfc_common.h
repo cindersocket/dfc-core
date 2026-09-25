@@ -256,6 +256,12 @@ extern const uint8_t DFC_ISO_AID[7];
 #ifndef DFC_MAX_FILE_DATA
 #define DFC_MAX_FILE_DATA 2048
 #endif
+
+// Largest logical response or incoming native command the emulator retains.
+// The extra block covers the longest command header, CRC, padding and MAC.
+#ifndef DFC_EMULATOR_CHAIN_BUFFER_SIZE
+#define DFC_EMULATOR_CHAIN_BUFFER_SIZE (DFC_MAX_FILE_DATA + 32)
+#endif
 // Shared key-material pool. Every application and the PICC record allocate a
 // slice of num_keys * stored key length here, so the worst case is charged once
 // for the credential instead of reserved per application.

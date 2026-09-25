@@ -39,7 +39,7 @@
 // Largest response, after reassembling every additional frame, one exchange
 // collects.
 #ifndef DFC_READER_MAX_RESPONSE
-#define DFC_READER_MAX_RESPONSE 512
+#define DFC_READER_MAX_RESPONSE 600
 #endif
 // Largest secured command field, before an EV2 exchange splits it into frames.
 #ifndef DFC_READER_MAX_COMMAND
@@ -102,6 +102,17 @@ typedef struct {
     uint8_t header_len;
 } DfcReaderOptions;
 
+typedef struct {
+    const uint8_t* data;
+    size_t length;
+    size_t offset;
+    uint32_t base_offset;
+    uint32_t record_number;
+    uint8_t file_number;
+    uint8_t comm_mode;
+    uint8_t kind;
+} DfcReaderStream;
+
 // One operation in flight. Treat the fields as private.
 typedef struct {
     DfcReaderSession* session;
@@ -119,6 +130,9 @@ typedef struct {
     size_t frame_offset;
     // When set, the first frame carries only this many octets.
     size_t first_frame_len;
+    // When set, every continuation carries at most this many octets.
+    size_t command_frame_len;
+    DfcReaderStream stream;
     // Clear command head for an EV1 encrypted read's CRC, kept per exchange.
     uint8_t command_head[16];
     size_t command_head_len;
@@ -188,6 +202,38 @@ DfcReaderStatus dfc_reader_exchange_begin(
     DfcReaderFraming framing,
     const DfcCommand* command,
     const DfcReaderOptions* options);
+
+// Write a caller-owned payload in bounded commands. The caller must keep
+// `data` valid until dfc_reader_step stops returning DfcReaderPending. Record
+// writes reuse the same uncommitted record; the caller commits or aborts it.
+DfcReaderStatus dfc_reader_write_data_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode);
+DfcReaderStatus dfc_reader_write_record_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode);
+DfcReaderStatus dfc_reader_update_record_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode);
 
 // Advance an operation. Pass NULL and 0 on the first call, then each answer.
 // Returns DfcReaderPending with the next frame in `out`, DfcReaderOk when the

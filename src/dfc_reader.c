@@ -51,6 +51,14 @@ enum {
 #define CHANGE_KEY_HEADER           1
 
 #define WRAPPED_SW1 0x91
+#define DFC_READER_STREAM_CHUNK 152
+
+enum {
+    StreamNone = 0,
+    StreamWriteData,
+    StreamWriteRecord,
+    StreamUpdateRecord,
+};
 
 const char* dfc_reader_status_name(DfcReaderStatus status) {
     switch(status) {
@@ -644,6 +652,11 @@ static bool is_special_success(uint8_t ins, uint8_t status) {
            ins == DFC_CMD_PROXIMITY_CHECK || ins == DFC_CMD_VERIFY_PROXIMITY_CHECK;
 }
 
+static bool uses_native_command_chaining(uint8_t ins) {
+    return ins == DFC_CMD_WRITE_DATA || ins == DFC_CMD_WRITE_RECORD ||
+           ins == DFC_CMD_UPDATE_RECORD;
+}
+
 static bool set_frame(DfcReaderExchange* ex, const uint8_t* a, size_t a_len, const uint8_t* b, size_t b_len) {
     if(a_len > sizeof(ex->frame) || b_len > sizeof(ex->frame) - a_len) return false;
     if(a_len) memcpy(ex->frame, a, a_len);
@@ -870,7 +883,136 @@ DfcReaderStatus dfc_reader_exchange_begin(
 #endif
     }
     if(st != DfcReaderOk) exchange->phase = PhaseDone;
+    if(st == DfcReaderOk && session->auth_mode != DFC_READER_AUTH_EV2 &&
+       uses_native_command_chaining(command->ins) &&
+       exchange->frame_len > DFC_EV1_MAX_FRAME_PAYLOAD) {
+        exchange->first_frame_len = DFC_EV1_MAX_FRAME_PAYLOAD;
+        exchange->command_frame_len = DFC_EV1_MAX_FRAME_PAYLOAD;
+    }
     return st;
+}
+
+static DfcReaderStatus begin_stream_chunk(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    const DfcReaderStream* stream) {
+    size_t remaining = stream->length - stream->offset;
+    size_t chunk = remaining > DFC_READER_STREAM_CHUNK ? DFC_READER_STREAM_CHUNK : remaining;
+    uint32_t offset = stream->base_offset + (uint32_t)stream->offset;
+    const uint8_t* data = chunk ? stream->data + stream->offset : NULL;
+    DfcCommand command;
+    DfcCommandStatus encoded;
+    switch(stream->kind) {
+    case StreamWriteData:
+        encoded = dfc_command_write_data(&command, stream->file_number, offset, data, chunk);
+        break;
+    case StreamWriteRecord:
+        encoded = dfc_command_write_record(
+            &command, stream->file_number, offset, data, chunk, false);
+        break;
+    case StreamUpdateRecord:
+        encoded = dfc_command_update_record(
+            &command,
+            stream->file_number,
+            stream->record_number,
+            offset,
+            data,
+            chunk,
+            false);
+        break;
+    default:
+        return DfcReaderInvalid;
+    }
+    if(encoded != DfcCommandOk) return DfcReaderInvalid;
+    DfcReaderOptions options = {.comm_mode = stream->comm_mode};
+    DfcReaderStatus status = dfc_reader_exchange_begin(
+        exchange, session, framing, &command, &options);
+    if(status == DfcReaderOk) {
+        exchange->stream = *stream;
+        exchange->stream.offset += chunk;
+    }
+    return status;
+}
+
+static DfcReaderStatus begin_stream(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    uint8_t kind,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    if(!exchange || !session || (!data && data_len) ||
+       (comm_mode != DFC_COMM_PLAIN && comm_mode != DFC_COMM_MAC &&
+        comm_mode != DFC_COMM_ENCIPHERED) ||
+       offset > DFC_COMMAND_UINT24_MAX || data_len > DFC_MAX_FILE_DATA ||
+       data_len > DFC_COMMAND_UINT24_MAX - offset ||
+       record_number > DFC_COMMAND_UINT24_MAX) {
+        return DfcReaderInvalid;
+    }
+    DfcReaderStream stream = {
+        .data = data,
+        .length = data_len,
+        .base_offset = offset,
+        .record_number = record_number,
+        .file_number = file_number,
+        .comm_mode = comm_mode,
+        .kind = kind,
+    };
+    return begin_stream_chunk(exchange, session, framing, &stream);
+}
+
+DfcReaderStatus dfc_reader_write_data_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    return begin_stream(
+        exchange, session, framing, StreamWriteData, file_number, 0, offset, data, data_len, comm_mode);
+}
+
+DfcReaderStatus dfc_reader_write_record_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    return begin_stream(
+        exchange, session, framing, StreamWriteRecord, file_number, 0, offset, data, data_len, comm_mode);
+}
+
+DfcReaderStatus dfc_reader_update_record_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    return begin_stream(
+        exchange,
+        session,
+        framing,
+        StreamUpdateRecord,
+        file_number,
+        record_number,
+        offset,
+        data,
+        data_len,
+        comm_mode);
 }
 
 static DfcReaderStatus finish_command(DfcReaderExchange* ex, DfcReaderStatus status) {
@@ -1031,8 +1173,12 @@ static DfcReaderStatus emit_command_frame(
     size_t cap,
     size_t* out_len) {
     size_t remaining = ex->frame_len - ex->frame_offset;
-    size_t limit = ex->frame_offset == 0 && ex->first_frame_len ? ex->first_frame_len :
-                                                                   DFC_COMMAND_MAX_DATA;
+    size_t limit;
+    if(ex->frame_offset == 0 && ex->first_frame_len) {
+        limit = ex->first_frame_len;
+    } else {
+        limit = ex->command_frame_len ? ex->command_frame_len : DFC_COMMAND_MAX_DATA;
+    }
     size_t chunk = remaining > limit ? limit : remaining;
     uint8_t ins = ex->frame_offset == 0 ? ex->ins : DFC_CMD_ADDITIONAL_FRAME;
     DfcReaderStatus st = emit(ex, ins, ex->frame + ex->frame_offset, chunk, out, cap, out_len);
@@ -1050,8 +1196,8 @@ static DfcReaderStatus step_command(
     size_t cap,
     size_t* out_len) {
     if(ex->phase == PhaseStart) {
-        // Only an EV2 command may need more than one frame.
-        if(ex->frame_len > DFC_COMMAND_MAX_DATA && ex->session->auth_mode != DFC_READER_AUTH_EV2) {
+        if(ex->frame_len > DFC_COMMAND_MAX_DATA && ex->first_frame_len == 0 &&
+           ex->session->auth_mode != DFC_READER_AUTH_EV2) {
             return finish_command(ex, DfcReaderBufferTooSmall);
         }
         return emit_command_frame(ex, out, cap, out_len);
@@ -1120,7 +1266,18 @@ DfcReaderStatus dfc_reader_step(
         return step_authenticate_ev2(exchange, response, response_len, out, out_cap, out_len);
 #endif
     case KindCommand:
-        return step_command(exchange, response, response_len, out, out_cap, out_len);
+    {
+        DfcReaderStatus status = step_command(exchange, response, response_len, out, out_cap, out_len);
+        if(status != DfcReaderOk || exchange->stream.kind == StreamNone ||
+           exchange->stream.offset >= exchange->stream.length) {
+            return status;
+        }
+        DfcReaderStream stream = exchange->stream;
+        status = begin_stream_chunk(
+            exchange, exchange->session, exchange->framing, &stream);
+        if(status != DfcReaderOk) return status;
+        return step_command(exchange, NULL, 0, out, out_cap, out_len);
+    }
     default:
         return DfcReaderInvalid;
     }

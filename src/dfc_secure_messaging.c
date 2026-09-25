@@ -211,6 +211,25 @@ size_t dfc_secure_messaging_generate_ev1_response(
     return plain_len + truncated_len;
 }
 
+size_t dfc_secure_messaging_generate_ev1_response_in_place(
+    DfcSecureMessaging* sm,
+    uint8_t status,
+    uint8_t* buffer,
+    size_t plain_len,
+    size_t capacity) {
+    size_t full_mac_len = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
+    size_t truncated_len = DFC_MIN((size_t)8, full_mac_len);
+    if(!buffer || plain_len > capacity || truncated_len > capacity - plain_len) return 0;
+
+    buffer[plain_len] = status;
+    uint8_t full_mac[16];
+    full_mac_len = compute_full_cmac(sm, buffer, plain_len + 1, full_mac);
+    truncated_len = DFC_MIN((size_t)8, full_mac_len);
+    memcpy(buffer + plain_len, full_mac, truncated_len);
+    update_iv_from_full_cmac(sm, full_mac, full_mac_len);
+    return plain_len + truncated_len;
+}
+
 size_t dfc_secure_messaging_unwrap_ev1_response(
     DfcSecureMessaging* sm,
     uint8_t status,

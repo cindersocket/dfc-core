@@ -1154,6 +1154,52 @@ int32_t dfc_ffi_reader_exchange_begin(
         &exchange->exchange, &session->session, (DfcReaderFraming)framing, &command, &options);
 }
 
+int32_t dfc_ffi_reader_write_data_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    if(!exchange || !session || framing > DfcReaderFramingNative) return DFC_FFI_INVALID_ARGUMENT;
+    return dfc_reader_write_data_begin(
+        &exchange->exchange, &session->session, (DfcReaderFraming)framing,
+        file_number, offset, data, data_len, comm_mode);
+}
+
+int32_t dfc_ffi_reader_write_record_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    if(!exchange || !session || framing > DfcReaderFramingNative) return DFC_FFI_INVALID_ARGUMENT;
+    return dfc_reader_write_record_begin(
+        &exchange->exchange, &session->session, (DfcReaderFraming)framing,
+        file_number, offset, data, data_len, comm_mode);
+}
+
+int32_t dfc_ffi_reader_update_record_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    if(!exchange || !session || framing > DfcReaderFramingNative) return DFC_FFI_INVALID_ARGUMENT;
+    return dfc_reader_update_record_begin(
+        &exchange->exchange, &session->session, (DfcReaderFraming)framing,
+        file_number, record_number, offset, data, data_len, comm_mode);
+}
+
 int32_t dfc_ffi_reader_create_delegated_application_begin(
     DfcFfiReaderExchange* exchange,
     DfcFfiReaderSession* session,

@@ -20,7 +20,7 @@ typedef struct {
     bool awaiting_step2;
     uint8_t get_version_frame;
     // Chained native response residual (after the first frame).
-    uint8_t pending_chain[DFC_WORKER_MAX_BUFFER_SIZE];
+    uint8_t pending_chain[DFC_EMULATOR_CHAIN_BUFFER_SIZE];
     size_t pending_chain_len;
     size_t pending_chain_offset;
     // Octets each further frame of the pending chain carries: whole entries of
@@ -29,6 +29,16 @@ typedef struct {
     // Largest a final frame may carry. A secured answer keeps its MAC on the
     // last frame, so its final frame runs to the full limit above the block size.
     size_t pending_chain_last;
+    // Variable-size records, such as DF names, retain their boundaries here.
+    size_t pending_chain_chunks[DFC_MAX_APPS];
+    size_t pending_chain_chunk_count;
+    size_t pending_chain_chunk_index;
+    // Native command chaining reassembles one logical write before secure
+    // messaging and file handlers inspect it.
+    bool command_chain_active;
+    size_t command_chain_len;
+    size_t command_chain_expected;
+    uint8_t command_chain[DFC_EMULATOR_CHAIN_BUFFER_SIZE];
     // GetDFNames answers one application per frame; the next one to send.
     bool df_names_pending;
     size_t df_names_next;
@@ -42,11 +52,17 @@ typedef struct {
     size_t selected_app_index;
 
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    // The snapshot is the committed view while commands below build the next
+    // transaction in the live credential.
     bool transaction_snapshot_active;
     size_t transaction_snapshot_app_index;
     size_t transaction_snapshot_pool_length;
+    bool transaction_snapshot_dirty;
     uint8_t transaction_snapshot_pool[DFC_FILE_POOL_SIZE];
     uint32_t transaction_snapshot_record_counts[DFC_MAX_FILES];
+    // 0 none, 1 WriteRecord, 2 UpdateRecord, 3 ClearRecordFile.
+    uint8_t transaction_record_operations[DFC_MAX_FILES];
+    uint32_t transaction_record_numbers[DFC_MAX_FILES];
 #endif
 
 #if DFC_ENABLE_TRANSACTION_TIMER

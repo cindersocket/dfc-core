@@ -63,9 +63,9 @@ bool aes_cmac_with_iv(
     uint8_t* cmac) {
     uint8_t subkey1[BLOCK_SIZE] = {0};
     uint8_t subkey2[BLOCK_SIZE] = {0};
-    uint8_t blockCount = (message_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    size_t blockCount = (message_len + BLOCK_SIZE - 1) / BLOCK_SIZE;
     bool lastBlockCompleteFlag;
-    uint8_t lastBlockIndex;
+    size_t lastBlockIndex;
     uint8_t lastBlock[BLOCK_SIZE] = {0};
 
     // Only support key length of 16 bytes

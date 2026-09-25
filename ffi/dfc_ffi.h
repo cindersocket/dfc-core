@@ -459,6 +459,35 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_exchange_begin(
     size_t data_len,
     uint8_t comm_mode,
     int32_t header_len);
+// The caller owns `data` until dfc_ffi_reader_step completes the exchange.
+DFC_FFI_EXPORT int32_t dfc_ffi_reader_write_data_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode);
+DFC_FFI_EXPORT int32_t dfc_ffi_reader_write_record_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode);
+DFC_FFI_EXPORT int32_t dfc_ffi_reader_update_record_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode);
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_create_delegated_application_begin(
     DfcFfiReaderExchange* exchange,
     DfcFfiReaderSession* session,

@@ -154,6 +154,64 @@ public sealed class DfcReader : IDisposable
         return st == 0 ? RunAsync(cancellationToken) : Task.FromResult(Failure<DfcResponse>(st));
     }
 
+    /// <summary>Writes a caller-owned payload in bounded commands.</summary>
+    public async Task<Result<DfcResponse, DfcProtocolError>> WriteDataAsync(
+        byte fileNumber,
+        uint offset,
+        ReadOnlyMemory<byte> data,
+        DfcCommunicationMode mode = DfcCommunicationMode.Plain,
+        CancellationToken cancellationToken = default)
+    {
+        using var pinned = data.Pin();
+        int status;
+        unsafe
+        {
+            status = Native.dfc_ffi_reader_write_data_begin(
+                ExchangeRaw, SessionRaw, (uint)framing, fileNumber, offset,
+                (byte*)pinned.Pointer, (nuint)data.Length, (byte)mode);
+        }
+        return status == 0 ? await RunAsync(cancellationToken).ConfigureAwait(false) : Failure<DfcResponse>(status);
+    }
+
+    /// <summary>Writes one record across bounded commands; commit or abort the record afterward.</summary>
+    public async Task<Result<DfcResponse, DfcProtocolError>> WriteRecordAsync(
+        byte fileNumber,
+        uint offset,
+        ReadOnlyMemory<byte> data,
+        DfcCommunicationMode mode = DfcCommunicationMode.Plain,
+        CancellationToken cancellationToken = default)
+    {
+        using var pinned = data.Pin();
+        int status;
+        unsafe
+        {
+            status = Native.dfc_ffi_reader_write_record_begin(
+                ExchangeRaw, SessionRaw, (uint)framing, fileNumber, offset,
+                (byte*)pinned.Pointer, (nuint)data.Length, (byte)mode);
+        }
+        return status == 0 ? await RunAsync(cancellationToken).ConfigureAwait(false) : Failure<DfcResponse>(status);
+    }
+
+    /// <summary>Updates one record across bounded commands; commit or abort afterward.</summary>
+    public async Task<Result<DfcResponse, DfcProtocolError>> UpdateRecordAsync(
+        byte fileNumber,
+        uint recordNumber,
+        uint offset,
+        ReadOnlyMemory<byte> data,
+        DfcCommunicationMode mode = DfcCommunicationMode.Plain,
+        CancellationToken cancellationToken = default)
+    {
+        using var pinned = data.Pin();
+        int status;
+        unsafe
+        {
+            status = Native.dfc_ffi_reader_update_record_begin(
+                ExchangeRaw, SessionRaw, (uint)framing, fileNumber, recordNumber, offset,
+                (byte*)pinned.Pointer, (nuint)data.Length, (byte)mode);
+        }
+        return status == 0 ? await RunAsync(cancellationToken).ConfigureAwait(false) : Failure<DfcResponse>(status);
+    }
+
     private unsafe int BeginExchange(DfcCommand command, DfcCommunicationMode mode, int headerLength)
     {
         fixed (byte* d = command.Data.Span)

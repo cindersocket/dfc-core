@@ -62,6 +62,14 @@ size_t dfc_secure_messaging_generate_ev1_response(
     const uint8_t* plain,
     size_t plain_len,
     uint8_t* out);
+// Appends the response CMAC without copying the payload through the session's
+// small scratch buffer. `buffer` must have eight spare octets.
+size_t dfc_secure_messaging_generate_ev1_response_in_place(
+    DfcSecureMessaging* sm,
+    uint8_t status,
+    uint8_t* buffer,
+    size_t plain_len,
+    size_t capacity);
 // Returns the cleartext length, or SIZE_MAX on CMAC/format failure.
 size_t dfc_secure_messaging_unwrap_ev1_response(
     DfcSecureMessaging* sm,
