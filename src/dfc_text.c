@@ -901,7 +901,7 @@ static bool parse_applications(P* p) {
     }
 
     for(size_t i = 0; i < count; i++) {
-        snprintf(prefix, sizeof(prefix), "Application %02X", (unsigned)i);
+        snprintf(prefix, sizeof(prefix), "Application %02X", (unsigned)(uint8_t)i);
         DfcApplication* app = &p->c->apps[i];
         dfc_credential_reset_application(app);
 
@@ -1714,7 +1714,7 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
         const DfcApplication* a = &c->apps[i];
         if(a->num_keys > DFC_MAX_KEYS) return DfcTextMalformed;
         if(a->iso_aid_len > sizeof(a->iso_aid)) return DfcTextMalformed;
-        snprintf(prefix, sizeof(prefix), "Application %02X", (unsigned)i);
+        snprintf(prefix, sizeof(prefix), "Application %02X", (unsigned)(uint8_t)i);
 
         snprintf(key, sizeof(key), "%s AID", prefix);
         w_line_hex(w, key, a->aid, 3);

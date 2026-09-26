@@ -51,7 +51,7 @@ typedef struct {
     bool command_chain_active;
     size_t command_chain_len;
     size_t command_chain_expected;
-    uint8_t command_chain[DFC_EMULATOR_CHAIN_BUFFER_SIZE];
+    uint8_t* command_chain;
     // GetDFNames answers one application per frame; the next one to send.
     bool df_names_pending;
     size_t df_names_next;
@@ -71,7 +71,7 @@ typedef struct {
     size_t transaction_snapshot_app_index;
     size_t transaction_snapshot_pool_length;
     bool transaction_snapshot_dirty;
-    uint8_t transaction_snapshot_pool[DFC_FILE_POOL_SIZE];
+    uint8_t* transaction_snapshot_pool;
     uint32_t transaction_snapshot_record_counts[DFC_MAX_FILES];
     // 0 none, 1 WriteRecord, 2 UpdateRecord, 3 ClearRecordFile.
     uint8_t transaction_record_operations[DFC_MAX_FILES];

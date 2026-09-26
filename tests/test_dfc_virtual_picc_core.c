@@ -706,11 +706,34 @@ static MunitResult test_scan_reports_on_device_desfire_activation_vector(
     munit_assert_memory_equal(5, activation.ats, ((uint8_t[]){0x05, 0x65, 0x81, 0x02, 0x80}));
     munit_assert_uint8(activation.sak, ==, 0x20);
     munit_assert_size(activation.atqa_len, ==, 2);
-    munit_assert_memory_equal(2, activation.atqa, ((uint8_t[]){0x03, 0x44}));
+    munit_assert_memory_equal(2, activation.atqa, ((uint8_t[]){0x44, 0x03}));
     munit_assert_size(activation.rf_detail_len, ==, 3);
     munit_assert_memory_equal(3, activation.rf_detail, ((uint8_t[]){0x01, 0x51, 0x57}));
 
     dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult test_random_id_uses_single_size_atqa(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+
+    DfcCredential credential;
+    load_standard_credential(&credential);
+    credential.picc_random_id = true;
+
+    DfcVirtualPiccActivation activation;
+    dfc_virtual_picc_anticollision(&credential, &activation);
+    munit_assert_size(activation.uid_len, ==, 4);
+    munit_assert_memory_equal(2, activation.atqa, ((uint8_t[]){0x04, 0x03}));
+
+    credential.picc_has_atqa = true;
+    credential.picc_atqa[0] = 0x00;
+    credential.picc_atqa[1] = 0x04;
+    dfc_virtual_picc_anticollision(&credential, &activation);
+    munit_assert_memory_equal(2, activation.atqa, credential.picc_atqa);
     return MUNIT_OK;
 }
 
@@ -1219,6 +1242,12 @@ static MunitTest tests[] = {
      NULL},
     {"/scan-reports-on-device-desfire-activation-vector",
      test_scan_reports_on_device_desfire_activation_vector,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/random-id-uses-single-size-atqa",
+     test_random_id_uses_single_size_atqa,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

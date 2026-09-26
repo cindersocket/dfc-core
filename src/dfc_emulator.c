@@ -24,6 +24,10 @@ DfcEmulator* dfc_emulator_alloc(DfcCredential* credential) {
 void dfc_emulator_free(DfcEmulator* emulator) {
     DFC_ASSERT(emulator);
 
+    dfc_platform_free(emulator->command_chain);
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    dfc_platform_free(emulator->transaction_snapshot_pool);
+#endif
     if(emulator->secure_messaging) {
         dfc_secure_messaging_free(emulator->secure_messaging);
     }
@@ -131,6 +135,8 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->command_chain_active = false;
     emulator->command_chain_len = 0;
     emulator->command_chain_expected = 0;
+    dfc_platform_free(emulator->command_chain);
+    emulator->command_chain = NULL;
     emulator->df_names_pending = false;
     emulator->df_names_next = 0;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
@@ -194,6 +200,10 @@ void dfc_emulator_reset_activation(DfcEmulator* emulator) {
     if(emulator->secure_messaging) {
         dfc_secure_messaging_free(emulator->secure_messaging);
     }
+    dfc_platform_free(emulator->command_chain);
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    dfc_platform_free(emulator->transaction_snapshot_pool);
+#endif
 
     memset(emulator, 0, sizeof(*emulator));
     emulator->credential = credential;

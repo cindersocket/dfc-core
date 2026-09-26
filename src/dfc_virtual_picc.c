@@ -15,7 +15,8 @@ static const uint8_t DfcVirtualPiccProtocol[] = {0x02, 0x02};
 // TA(1): this transport supports 106 kbit/s only and must not invite PPS to a
 // rate its tag modulation cannot enter. DESFire permits a configured ATS.
 static const uint8_t DfcVirtualPiccAts[] = {0x05, 0x65, 0x81, 0x02, 0x80};
-static const uint8_t DfcVirtualPiccAtqa[] = {0x03, 0x44};
+static const uint8_t DfcVirtualPiccAtqa[] = {0x44, 0x03};
+static const uint8_t DfcVirtualPiccRandomIdAtqa[] = {0x04, 0x03};
 static const uint8_t DfcVirtualPiccRfDetail[] = {0x01, 0x51, 0x57};
 #define DFC_VIRTUAL_PICC_SAK 0x20
 
@@ -474,7 +475,10 @@ void dfc_virtual_picc_anticollision(
     if(credential->picc_has_atqa) {
         memcpy(activation->atqa, credential->picc_atqa, sizeof(credential->picc_atqa));
     } else {
-        memcpy(activation->atqa, DfcVirtualPiccAtqa, sizeof(DfcVirtualPiccAtqa));
+        memcpy(
+            activation->atqa,
+            credential->picc_random_id ? DfcVirtualPiccRandomIdAtqa : DfcVirtualPiccAtqa,
+            sizeof(DfcVirtualPiccAtqa));
     }
     activation->atqa_len = sizeof(DfcVirtualPiccAtqa);
     memcpy(activation->rf_detail, DfcVirtualPiccRfDetail, sizeof(DfcVirtualPiccRfDetail));

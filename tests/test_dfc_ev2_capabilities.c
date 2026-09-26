@@ -5,6 +5,7 @@
 #include "dfc_text.h"
 #include "dfc_virtual_picc.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -64,11 +65,12 @@ static void assert_apdu(DfcVirtualPiccSession* session, const char* request, con
     munit_assert_memory_equal(wanted_len, actual, wanted);
 }
 
-static void authenticate(
+static void authenticate_with_key(
     DfcEmulator* emulator,
     const uint8_t* reader_capabilities,
     size_t reader_len,
-    const uint8_t expected_card[DFC_EV2_CAPABILITY_LENGTH]) {
+    const uint8_t expected_card[DFC_EV2_CAPABILITY_LENGTH],
+    const uint8_t key[DFC_AES_KEY_LENGTH]) {
     uint8_t request[3 + 8] = {DFC_CMD_AUTHENTICATE_EV2_FIRST, 0, (uint8_t)reader_len};
     if(reader_len) memcpy(request + 3, reader_capabilities, reader_len);
     uint8_t response[64];
@@ -77,10 +79,9 @@ static void authenticate(
     munit_assert_uint8(response[0], ==, DFC_CMD_ADDITIONAL_FRAME);
 
     uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
-    uint8_t zero_key[DFC_AES_KEY_LENGTH] = {0};
     uint8_t random_b[DFC_EV2_RANDOM_LENGTH];
     dfc_worker_aes_cbc_decrypt(
-        zero_key, sizeof(zero_key), iv, sizeof(random_b), response + 1, random_b);
+        key, DFC_AES_KEY_LENGTH, iv, sizeof(random_b), response + 1, random_b);
     uint8_t clear[DFC_EV2_RANDOM_LENGTH * 2];
     for(size_t i = 0; i < DFC_EV2_RANDOM_LENGTH; i++)
         clear[i] = (uint8_t)(0x10 + i);
@@ -90,7 +91,7 @@ static void authenticate(
     uint8_t continuation[1 + sizeof(clear)] = {DFC_CMD_ADDITIONAL_FRAME};
     memset(iv, 0, sizeof(iv));
     dfc_worker_aes_cbc_encrypt(
-        zero_key, sizeof(zero_key), iv, sizeof(clear), clear, continuation + 1);
+        key, DFC_AES_KEY_LENGTH, iv, sizeof(clear), clear, continuation + 1);
     len = command(emulator, continuation, sizeof(continuation), response);
     munit_assert_size(len, ==, 1 + DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH);
     munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
@@ -98,7 +99,7 @@ static void authenticate(
     uint8_t decoded[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
     memset(iv, 0, sizeof(iv));
     dfc_worker_aes_cbc_decrypt(
-        zero_key, sizeof(zero_key), iv, sizeof(decoded), response + 1, decoded);
+        key, DFC_AES_KEY_LENGTH, iv, sizeof(decoded), response + 1, decoded);
     for(size_t i = 0; i < DFC_EV2_RANDOM_LENGTH; i++) {
         munit_assert_uint8(
             decoded[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH + i],
@@ -110,6 +111,62 @@ static void authenticate(
     size_t copied = reader_len < sizeof(expected_reader) ? reader_len : sizeof(expected_reader);
     if(copied) memcpy(expected_reader, reader_capabilities, copied);
     munit_assert_memory_equal(DFC_EV2_CAPABILITY_LENGTH, decoded + 26, expected_reader);
+}
+
+static void authenticate(
+    DfcEmulator* emulator,
+    const uint8_t* reader_capabilities,
+    size_t reader_len,
+    const uint8_t expected_card[DFC_EV2_CAPABILITY_LENGTH]) {
+    const uint8_t zero_key[DFC_AES_KEY_LENGTH] = {0};
+    authenticate_with_key(emulator, reader_capabilities, reader_len, expected_card, zero_key);
+}
+
+static MunitResult test_v6_maximal_capability_exchange(
+    const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static DfcCredential from_text, from_binary;
+    static char text[DFC_TEXT_MAX_SIZE];
+    FILE* file = fopen("../examples/credentials/v6-maximal.dfc", "rb");
+    munit_assert_not_null(file);
+    size_t text_len = fread(text, 1, sizeof(text), file);
+    munit_assert_int(ferror(file), ==, 0);
+    munit_assert_int(fgetc(file), ==, EOF);
+    munit_assert_int(fclose(file), ==, 0);
+    DfcTextError detail = {0};
+    munit_assert_int(dfc_text_parse(&from_text, text, text_len, &detail), ==, DfcTextOk);
+
+    static uint8_t binary[DFC_DER_MAX_SIZE];
+    size_t binary_len = 0;
+    munit_assert_int(
+        dfc_der_encode(&from_text, binary, sizeof(binary), &binary_len), ==, DfcDerOk);
+    munit_assert_int(dfc_der_decode(&from_binary, binary, binary_len), ==, DfcDerOk);
+
+    const uint8_t reader_caps[6] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5};
+    const uint8_t picc_caps[6] = {1, 2, 3, 4, 5, 6};
+    const uint8_t app_caps[6] = {5, 6, 7, 8, 9, 10};
+    uint8_t picc_key[DFC_AES_KEY_LENGTH];
+    uint8_t app_key[DFC_AES_KEY_LENGTH];
+    for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++) {
+        picc_key[i] = (uint8_t)i;
+        app_key[i] = (uint8_t)(0x70 + i);
+    }
+
+    DfcCredential* credentials[] = {&from_text, &from_binary};
+    for(size_t i = 0; i < sizeof(credentials) / sizeof(credentials[0]); i++) {
+        DfcEmulator* emulator = dfc_emulator_alloc(credentials[i]);
+        munit_assert_not_null(emulator);
+        authenticate_with_key(emulator, reader_caps, sizeof(reader_caps), picc_caps, picc_key);
+        const uint8_t select_app[] = {DFC_CMD_SELECT_APPLICATION, 3, 2, 1};
+        uint8_t response[64];
+        size_t len = command(emulator, select_app, sizeof(select_app), response);
+        munit_assert_size(len, ==, 1);
+        munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
+        authenticate_with_key(emulator, reader_caps, sizeof(reader_caps), app_caps, app_key);
+        dfc_emulator_free(emulator);
+    }
+    return MUNIT_OK;
 }
 
 static MunitResult test_card_and_reader_capabilities(const MunitParameter params[], void* data) {
@@ -281,6 +338,12 @@ static MunitResult
 }
 
 static MunitTest tests[] = {
+    {"/v6_maximal_capability_exchange",
+     test_v6_maximal_capability_exchange,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/card_and_reader_capabilities",
      test_card_and_reader_capabilities,
      NULL,
