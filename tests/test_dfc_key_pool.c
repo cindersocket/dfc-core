@@ -122,6 +122,7 @@ static MunitResult test_copy_model_carries_pool(const MunitParameter params[], v
     memset(&src, 0, sizeof(src));
     dfc_credential_clear(&src);
 
+    munit_assert_true(dfc_credential_keys_resize(&src, NULL, 2, 24));
     fill_keys(&src, NULL, 0x55);
     DfcApplication* app = add_app(&src, 0x01, DFC_KEY_TYPE_AES | 2);
     munit_assert_not_null(app);
@@ -139,14 +140,17 @@ static MunitResult test_copy_model_carries_pool(const MunitParameter params[], v
     munit_assert_size(dst.num_apps, ==, 1);
     munit_assert_size(dst.key_pool_used, ==, src.key_pool_used);
     munit_assert_size(dst.picc_key_offset, ==, src.picc_key_offset);
+    munit_assert_size(dst.picc_key_pool_len, ==, src.picc_key_pool_len);
     munit_assert_true(dst.picc_has_auth_commands);
     munit_assert_uint8(dst.picc_auth_commands, ==, src.picc_auth_commands);
     munit_assert_true(dst.picc_has_preferred_auth_command);
     munit_assert_uint8(dst.picc_preferred_auth_command, ==, src.picc_preferred_auth_command);
 
-    const uint8_t* copied_picc = dfc_credential_key_const(&dst, NULL, 0);
-    munit_assert_not_null(copied_picc);
-    munit_assert_memory_equal(16, copied_picc, dfc_credential_key_const(&src, NULL, 0));
+    for(size_t i = 0; i < 2; i++) {
+        const uint8_t* copied_picc = dfc_credential_key_const(&dst, NULL, i);
+        munit_assert_not_null(copied_picc);
+        munit_assert_memory_equal(24, copied_picc, dfc_credential_key_const(&src, NULL, i));
+    }
 
     for(size_t i = 0; i < 2; i++) {
         const uint8_t* copied = dfc_credential_key_const(&dst, &dst.apps[0], i);

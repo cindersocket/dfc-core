@@ -56,6 +56,14 @@ make -C tests test CC=clang SANITIZE=memory
 The test command builds and runs every unit suite and checks that each
 reduced build profile compiles.
 
+Fuzz accepted text and binary credentials through validation, copying, and
+both canonical round trips with Clang's address and undefined-behavior
+sanitizers:
+
+```sh
+make -C tests fuzz CC=clang FUZZ_TIME=300
+```
+
 ## Integrate the library
 
 Add `src/` and `port/` to the compiler include path. Compile all files in

@@ -6,6 +6,26 @@ on:
 
 # Run both crypto backends, plain and under sanitizers.
 jobs:
+  fuzz:
+    name: Credential invariant fuzzing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libmbedtls-dev
+      - name: Fuzz accepted credential round trips
+        run: make -C tests fuzz CC=clang FUZZ_TIME=300
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credential-fuzz-artifacts
+          path: build-fuzz/artifacts
+          if-no-files-found: ignore
+
   unit:
     name: Unit suite (${{ matrix.backend }}${{ matrix.sanitize && format(', {0}', matrix.sanitize) || '' }})
     runs-on: ubuntu-24.04

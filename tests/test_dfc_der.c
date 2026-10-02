@@ -41,8 +41,13 @@ static void build_basic(DfcCredential* c) {
     app->key_versions[0] = 0x01;
 }
 
-static DfcFile* add_data_file(DfcCredential* c, uint8_t number, uint32_t size, const char* data,
-                              size_t data_len, bool complete) {
+static DfcFile* add_data_file(
+    DfcCredential* c,
+    uint8_t number,
+    uint32_t size,
+    const char* data,
+    size_t data_len,
+    bool complete) {
     DfcFile* f = dfc_credential_create_file(c, 0, number);
     munit_assert_not_null(f);
     f->type = 0x00;
@@ -316,8 +321,7 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     explicit_false.picc_random_id = false;
     uint8_t nf[DFC_DER_MAX_SIZE];
     size_t nf_len = 0;
-    munit_assert_int(
-        dfc_der_encode(&explicit_false, nf, sizeof(nf), &nf_len), ==, DfcDerOk);
+    munit_assert_int(dfc_der_encode(&explicit_false, nf, sizeof(nf), &nf_len), ==, DfcDerOk);
     // The encoder omits it, so the octets shrink rather than carrying 00.
     munit_assert_size(nf_len, <, good_len);
 
@@ -363,12 +367,12 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     munit_assert_memory_equal(
         sizeof(g->previous_reader_id), g->previous_reader_id, f->previous_reader_id);
 
-    static const uint8_t expected[] = {
-        0x80, 0x01, 0x09, 0x81, 0x08, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD,
-        0xEF, 0x82, 0x01, 0x02, 0x83, 0x01, 0x03, 0x84, 0x10, 0xB0, 0xB1, 0xB2,
-        0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE,
-        0xBF, 0x85, 0x10, 0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8,
-        0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF};
+    static const uint8_t expected[] = {0x80, 0x01, 0x09, 0x81, 0x08, 0x01, 0x23, 0x45, 0x67, 0x89,
+                                       0xAB, 0xCD, 0xEF, 0x82, 0x01, 0x02, 0x83, 0x01, 0x03, 0x84,
+                                       0x10, 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8,
+                                       0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0x85, 0x10, 0xC0,
+                                       0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA,
+                                       0xCB, 0xCC, 0xCD, 0xCE, 0xCF};
     const uint8_t* container = NULL;
     for(size_t i = 0; i + 1 < len; i++) {
         if(buf[i] == 0xA8 && buf[i + 1] == sizeof(expected)) {
@@ -436,12 +440,12 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     requested.picc_preferred_auth_command = DFC_AUTH_COMMAND_ISO_NATIVE;
     requested.apps[0].has_auth_commands = true;
     requested.apps[0].auth_commands = DFC_AUTH_COMMAND_AES | DFC_AUTH_COMMAND_EV2_FIRST |
-                                       DFC_AUTH_COMMAND_EV2_NON_FIRST | DFC_AUTH_COMMAND_ISO7816;
+                                      DFC_AUTH_COMMAND_EV2_NON_FIRST | DFC_AUTH_COMMAND_ISO7816;
     requested.apps[0].has_preferred_auth_command = true;
     requested.apps[0].preferred_auth_command = DFC_AUTH_COMMAND_AES;
     DfcDerStatus requested_status =
-        (dfc_credential_compiled_auth_commands() & DFC_AUTH_COMMAND_ISO7816) ?
-            DfcDerOk : DfcDerUnsupported;
+        (dfc_credential_compiled_auth_commands() & DFC_AUTH_COMMAND_ISO7816) ? DfcDerOk :
+                                                                               DfcDerUnsupported;
     munit_assert_int(dfc_der_validate_model(&requested), ==, requested_status);
     requested.picc_auth_commands = DFC_AUTH_COMMAND_ISO_NATIVE;
     requested.apps[0].auth_commands |= DFC_AUTH_COMMAND_ISO_NATIVE;
@@ -450,8 +454,7 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     requested.picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
     munit_assert_int(dfc_der_validate_model(&requested), ==, DfcDerMalformed);
 
-    uint8_t unavailable = DFC_AUTH_COMMAND_ALL &
-                          (uint8_t)~dfc_credential_compiled_auth_commands();
+    uint8_t unavailable = DFC_AUTH_COMMAND_ALL & (uint8_t)~dfc_credential_compiled_auth_commands();
     if(unavailable) {
         uint8_t disabled_command = unavailable & (uint8_t)(0u - unavailable);
         policy.picc_has_preferred_auth_command = true;
@@ -467,8 +470,7 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     memset(&short_complete, 0, sizeof(short_complete));
     build_basic(&short_complete);
     add_data_file(&short_complete, 0x01, 32, "\x12\x34", 2, true);
-    munit_assert_int(
-        dfc_der_encode(&short_complete, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+    munit_assert_int(dfc_der_encode(&short_complete, buf, sizeof(buf), &len), ==, DfcDerMalformed);
 
     // Value outside its own limits.
     DfcCredential bad_value;
@@ -490,6 +492,25 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     rf->has_iso_file_id = true;
     rf->iso_file_id = 0x3F00;
     munit_assert_int(dfc_der_encode(&reserved, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+
+    // Application ISO file IDs use the same reserved values as file IDs.
+    DfcCredential reserved_app;
+    memset(&reserved_app, 0, sizeof(reserved_app));
+    build_basic(&reserved_app);
+    reserved_app.apps[0].iso_file_id = 0x3FFF;
+    munit_assert_int(dfc_der_encode(&reserved_app, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+
+#if DFC_ENABLE_VIRTUAL_CARD
+    // A configured virtual card must carry a UID accepted by the decoder.
+    DfcCredential empty_virtual_uid;
+    memset(&empty_virtual_uid, 0, sizeof(empty_virtual_uid));
+    build_basic(&empty_virtual_uid);
+    empty_virtual_uid.card.generation = DfcGenerationEv2;
+    empty_virtual_uid.virtual_card_configured = true;
+    empty_virtual_uid.virtual_card_uid_len = 0;
+    munit_assert_int(
+        dfc_der_encode(&empty_virtual_uid, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+#endif
 
     // A cyclic record file needs capacity for two records.
     DfcCredential cyclic;
@@ -527,6 +548,39 @@ static MunitResult test_capacity(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+#if DFC_ENABLE_KEY_SETS
+static MunitResult test_mixed_key_set_round_trip(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential src = {0};
+    build_basic(&src);
+    src.card.generation = DfcGenerationEv2;
+    DfcApplication* app = &src.apps[0];
+    munit_assert_true(dfc_credential_key_sets_resize(&src, app, 3, 1, 16, 24));
+    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
+    app->key_set_types[1] = DFC_KEY_SET_TYPE_3K3DES;
+    app->key_set_types[2] = DFC_KEY_SET_TYPE_AES;
+    for(size_t set = 0; set < 3; set++) {
+        app->key_set_initialized[set] = true;
+        uint8_t* key = dfc_credential_key_in_set(&src, app, set, 0);
+        munit_assert_not_null(key);
+        memset(key, (int)(0x30 + set), set == 1 ? 24 : 16);
+    }
+
+    uint8_t buf[DFC_DER_MAX_SIZE];
+    size_t len = 0;
+    munit_assert_int(dfc_der_encode(&src, buf, sizeof(buf), &len), ==, DfcDerOk);
+    DfcCredential dst = {0};
+    munit_assert_int(dfc_der_decode(&dst, buf, len), ==, DfcDerOk);
+    munit_assert_uint8(dst.apps[0].key_set_types[1], ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_memory_equal(
+        24,
+        dfc_credential_key_in_set_const(&dst, &dst.apps[0], 1, 0),
+        dfc_credential_key_in_set_const(&src, app, 1, 0));
+    return MUNIT_OK;
+}
+#endif
+
 static MunitResult test_padded_length(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -562,6 +616,14 @@ static MunitTest tests[] = {
     {"/picc-level-file", test_picc_level_file, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/rejections", test_rejections, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/model-validation", test_model_validation, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+#if DFC_ENABLE_KEY_SETS
+    {"/mixed-key-set-round-trip",
+     test_mixed_key_set_round_trip,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {"/capacity", test_capacity, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };

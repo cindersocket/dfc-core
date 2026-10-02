@@ -28,7 +28,6 @@ static void assert_written_v6(const char* output) {
     munit_assert_memory_equal(again_len, again, output);
 }
 
-
 // The smaller worked example, which exercises the
 // canonical omissions: no ATS, no SAK, no random ID, no PICC files.
 static const char MINIMAL[] =
@@ -180,17 +179,19 @@ static MunitResult test_load_either_encoding(const MunitParameter params[], void
     static uint8_t octets[DFC_DER_MAX_SIZE];
     DfcTextError detail = {0};
 
-    DfcTextStatus st = dfc_credential_load(
-        &from_text, (const uint8_t*)MINIMAL, sizeof(MINIMAL) - 1, &detail);
+    DfcTextStatus st =
+        dfc_credential_load(&from_text, (const uint8_t*)MINIMAL, sizeof(MINIMAL) - 1, &detail);
     if(st != DfcTextOk) log_detail(&detail);
     munit_assert_int(st, ==, DfcTextOk);
     munit_assert_false(
         dfc_credential_content_is_binary((const uint8_t*)MINIMAL, sizeof(MINIMAL) - 1));
 
     size_t octets_len = 0;
-    munit_assert_int(dfc_der_encode(&from_text, octets, sizeof(octets), &octets_len), ==, DfcDerOk);
+    munit_assert_int(
+        dfc_der_encode(&from_text, octets, sizeof(octets), &octets_len), ==, DfcDerOk);
     munit_assert_true(dfc_credential_content_is_binary(octets, octets_len));
-    munit_assert_int(dfc_credential_load(&from_binary, octets, octets_len, &detail), ==, DfcTextOk);
+    munit_assert_int(
+        dfc_credential_load(&from_binary, octets, octets_len, &detail), ==, DfcTextOk);
     munit_assert_size(from_binary.num_apps, ==, from_text.num_apps);
     munit_assert_size(from_binary.num_files, ==, from_text.num_files);
 
@@ -327,9 +328,8 @@ static MunitResult test_v5_version_overrides(const MunitParameter params[], void
     (void)data;
     static DfcCredential c;
     DfcTextError detail = {0};
-    const char* overrides =
-        "Card Hardware Version: 04 01 01 12 00 18 05\n"
-        "Card Software Version: 04 01 01 02 01 18 05\n";
+    const char* overrides = "Card Hardware Version: 04 01 01 12 00 18 05\n"
+                            "Card Software Version: 04 01 01 02 01 18 05\n";
     const char* version = strstr(MINIMAL, "Version: 4\n");
     munit_assert_not_null(version);
     const char* picc = strstr(MINIMAL, "PICC Key Settings 1:");
@@ -337,14 +337,8 @@ static MunitResult test_v5_version_overrides(const MunitParameter params[], void
     static char text[sizeof(MINIMAL) + 128];
     size_t head = (size_t)(version - MINIMAL);
     size_t card_len = (size_t)(picc - MINIMAL);
-    int written = snprintf(
-        text,
-        sizeof(text),
-        "%.*s%s%s",
-        (int)card_len,
-        MINIMAL,
-        overrides,
-        picc);
+    int written =
+        snprintf(text, sizeof(text), "%.*s%s%s", (int)card_len, MINIMAL, overrides, picc);
     munit_assert_int(written, >, 0);
     text[head + strlen("Version: ")] = '5';
     DfcTextStatus st = dfc_text_parse(&c, text, (size_t)written, &detail);
@@ -366,7 +360,8 @@ static MunitResult test_v5_version_overrides(const MunitParameter params[], void
     return MUNIT_OK;
 }
 
-static MunitResult test_v5_rejects_short_version_override(const MunitParameter params[], void* data) {
+static MunitResult
+    test_v5_rejects_short_version_override(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     DfcTextError detail = {0};
@@ -412,6 +407,40 @@ static MunitResult test_writer_capacity(const MunitParameter params[], void* dat
     return MUNIT_OK;
 }
 
+#if DFC_ENABLE_KEY_SETS
+static MunitResult test_mixed_key_set_round_trip(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static DfcCredential src;
+    DfcTextError detail = {0};
+    munit_assert_int(dfc_text_parse(&src, MINIMAL, sizeof(MINIMAL) - 1, &detail), ==, DfcTextOk);
+    src.card.generation = DfcGenerationEv2;
+    DfcApplication* app = &src.apps[0];
+    munit_assert_true(dfc_credential_key_sets_resize(&src, app, 3, 1, 16, 24));
+    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
+    app->key_set_types[1] = DFC_KEY_SET_TYPE_3K3DES;
+    app->key_set_types[2] = DFC_KEY_SET_TYPE_AES;
+    for(size_t set = 0; set < 3; set++) {
+        app->key_set_initialized[set] = true;
+        uint8_t* key = dfc_credential_key_in_set(&src, app, set, 0);
+        munit_assert_not_null(key);
+        memset(key, (int)(0x40 + set), set == 1 ? 24 : 16);
+    }
+
+    static char text[DFC_TEXT_MAX_SIZE];
+    size_t len = 0;
+    munit_assert_int(dfc_text_write(&src, text, sizeof(text), &len), ==, DfcTextOk);
+    static DfcCredential dst;
+    munit_assert_int(dfc_text_parse(&dst, text, len, &detail), ==, DfcTextOk);
+    munit_assert_uint8(dst.apps[0].key_set_types[1], ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_memory_equal(
+        24,
+        dfc_credential_key_in_set_const(&dst, &dst.apps[0], 1, 0),
+        dfc_credential_key_in_set_const(&src, app, 1, 0));
+    return MUNIT_OK;
+}
+#endif
+
 static MunitTest tests[] = {
     {"/minimal-round-trip", test_minimal_round_trip, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/transaction-mac-round-trip",
@@ -429,6 +458,14 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/writer-capacity", test_writer_capacity, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+#if DFC_ENABLE_KEY_SETS
+    {"/mixed-key-set-round-trip",
+     test_mixed_key_set_round_trip,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {"/load-either-encoding", test_load_either_encoding, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };

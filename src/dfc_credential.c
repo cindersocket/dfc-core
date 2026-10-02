@@ -30,7 +30,8 @@ uint8_t dfc_credential_possible_auth_commands(uint8_t key_settings_2, DfcGenerat
     case DFC_KEY_TYPE_AES:
         commands = DFC_AUTH_COMMAND_AES |
                    (generation >= DfcGenerationEv2 ?
-                        DFC_AUTH_COMMAND_EV2_FIRST | DFC_AUTH_COMMAND_EV2_NON_FIRST : 0);
+                        DFC_AUTH_COMMAND_EV2_FIRST | DFC_AUTH_COMMAND_EV2_NON_FIRST :
+                        0);
         break;
     case DFC_KEY_TYPE_3K3DES:
         commands = DFC_AUTH_COMMAND_ISO_NATIVE;
@@ -53,10 +54,10 @@ uint8_t dfc_credential_picc_auth_commands(const DfcCredential* credential) {
         credential->picc_key_settings_2, credential->card.generation);
 }
 
-uint8_t dfc_credential_app_auth_commands(const DfcCredential* credential, const DfcApplication* app) {
+uint8_t
+    dfc_credential_app_auth_commands(const DfcCredential* credential, const DfcApplication* app) {
     if(app->has_auth_commands) return app->auth_commands;
-    return dfc_credential_default_auth_commands(app->key_settings_2,
-                                                credential->card.generation);
+    return dfc_credential_default_auth_commands(app->key_settings_2, credential->card.generation);
 }
 
 void dfc_credential_reset_application(DfcApplication* app) {
@@ -499,8 +500,7 @@ bool dfc_credential_keys_resize(
         memset(app->additional_key_versions, 0, sizeof(app->additional_key_versions));
     }
 #endif
-    return dfc_credential_keys_resize_total(
-        credential, app, num_keys, num_keys, key_len, key_len);
+    return dfc_credential_keys_resize_total(credential, app, num_keys, num_keys, key_len, key_len);
 }
 
 #if DFC_ENABLE_KEY_SETS
@@ -515,12 +515,7 @@ bool dfc_credential_key_sets_resize(
         return false;
     if(num_keys > SIZE_MAX / num_key_sets) return false;
     if(!dfc_credential_keys_resize_total(
-           credential,
-           app,
-           num_keys,
-           num_keys * num_key_sets,
-           active_key_len,
-           max_key_size))
+           credential, app, num_keys, num_keys * num_key_sets, active_key_len, max_key_size))
         return false;
     app->num_key_sets = (uint8_t)num_key_sets;
     app->max_key_size = (uint8_t)max_key_size;
@@ -528,7 +523,8 @@ bool dfc_credential_key_sets_resize(
     memset(app->key_set_types, 0, sizeof(app->key_set_types));
     memset(app->key_set_initialized, 0, sizeof(app->key_set_initialized));
     memset(app->additional_key_versions, 0, sizeof(app->additional_key_versions));
-    for(size_t index = 0; index < num_key_sets; index++) app->key_set_initialized[index] = true;
+    for(size_t index = 0; index < num_key_sets; index++)
+        app->key_set_initialized[index] = true;
     return true;
 }
 
@@ -554,14 +550,11 @@ uint8_t* dfc_credential_key_in_set(
     DfcApplication* app,
     size_t key_set_number,
     size_t slot) {
-    return (uint8_t*)dfc_credential_key_in_set_const(
-        credential, app, key_set_number, slot);
+    return (uint8_t*)dfc_credential_key_in_set_const(credential, app, key_set_number, slot);
 }
 
-uint8_t* dfc_credential_key_version_in_set(
-    DfcApplication* app,
-    size_t key_set_number,
-    size_t slot) {
+uint8_t*
+    dfc_credential_key_version_in_set(DfcApplication* app, size_t key_set_number, size_t slot) {
     if(!app || key_set_number >= app->num_key_sets || slot >= app->num_keys) return NULL;
     return key_set_number == 0 ? &app->key_versions[slot] :
                                  &app->additional_key_versions[key_set_number - 1][slot];
@@ -575,7 +568,8 @@ static void dfc_credential_rotate_key_set_metadata(DfcApplication* app) {
         memmove(
             app->additional_key_versions[0],
             app->additional_key_versions[1],
-            (app->num_key_sets - DFC_KEY_SET_MINIMUM_COUNT) * sizeof(app->additional_key_versions[0]));
+            (app->num_key_sets - DFC_KEY_SET_MINIMUM_COUNT) *
+                sizeof(app->additional_key_versions[0]));
     }
     memcpy(
         app->additional_key_versions[app->num_key_sets - DFC_KEY_SET_MINIMUM_COUNT],
@@ -674,115 +668,9 @@ size_t dfc_credential_count_files_in_app(const DfcCredential* credential, size_t
 
 void dfc_credential_copy_model(DfcCredential* credential, const DfcCredential* loaded) {
     if(!credential || !loaded) return;
-    memcpy(credential->uid, loaded->uid, sizeof(credential->uid));
-    credential->uid_len = loaded->uid_len;
-    credential->picc_key_settings_1 = loaded->picc_key_settings_1;
-    credential->picc_key_settings_2 = loaded->picc_key_settings_2;
-    credential->picc_auth_command = loaded->picc_auth_command;
-    credential->picc_has_auth_commands = loaded->picc_has_auth_commands;
-    credential->picc_auth_commands = loaded->picc_auth_commands;
-    credential->picc_has_preferred_auth_command = loaded->picc_has_preferred_auth_command;
-    credential->picc_preferred_auth_command = loaded->picc_preferred_auth_command;
-    credential->picc_key_offset = loaded->picc_key_offset;
-    memcpy(
-        credential->picc_key_versions,
-        loaded->picc_key_versions,
-        sizeof(credential->picc_key_versions));
-    credential->picc_num_keys = loaded->picc_num_keys;
-    credential->picc_key_len = loaded->picc_key_len;
-    credential->card = loaded->card;
-    credential->picc_random_id = loaded->picc_random_id;
-    credential->picc_format_disabled = loaded->picc_format_disabled;
-    memcpy(credential->picc_ats, loaded->picc_ats, sizeof(credential->picc_ats));
-    credential->picc_ats_len = loaded->picc_ats_len;
-    credential->picc_has_sak = loaded->picc_has_sak;
-    credential->picc_sak = loaded->picc_sak;
-    credential->picc_has_atqa = loaded->picc_has_atqa;
-    memcpy(credential->picc_atqa, loaded->picc_atqa, sizeof(credential->picc_atqa));
-    credential->picc_has_sm_disable = loaded->picc_has_sm_disable;
-    credential->picc_sm_disable = loaded->picc_sm_disable;
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-    credential->picc_has_ev2_capabilities = loaded->picc_has_ev2_capabilities;
-    memcpy(
-        credential->picc_ev2_capabilities,
-        loaded->picc_ev2_capabilities,
-        sizeof(credential->picc_ev2_capabilities));
-#endif
-#if DFC_ENABLE_PROXIMITY_CHECK
-    credential->picc_has_proximity_key = loaded->picc_has_proximity_key;
-    memcpy(
-        credential->picc_proximity_key,
-        loaded->picc_proximity_key,
-        sizeof(credential->picc_proximity_key));
-    credential->picc_proximity_option = loaded->picc_proximity_option;
-    credential->picc_proximity_published_response_time =
-        loaded->picc_proximity_published_response_time;
-    credential->picc_has_proximity_bitrate = loaded->picc_has_proximity_bitrate;
-    credential->picc_proximity_bitrate = loaded->picc_proximity_bitrate;
-#endif
-#if DFC_ENABLE_STATIC_SIGNATURE
-    credential->picc_has_static_signature = loaded->picc_has_static_signature;
-    memcpy(
-        credential->picc_static_signature,
-        loaded->picc_static_signature,
-        sizeof(credential->picc_static_signature));
-#endif
-#if DFC_ENABLE_VIRTUAL_CARD
-    credential->virtual_card_configured = loaded->virtual_card_configured;
-    memcpy(
-        credential->virtual_card_installation_id,
-        loaded->virtual_card_installation_id,
-        sizeof(credential->virtual_card_installation_id));
-    credential->virtual_card_installation_id_len = loaded->virtual_card_installation_id_len;
-    credential->virtual_card_information = loaded->virtual_card_information;
-    memcpy(
-        credential->virtual_card_capabilities,
-        loaded->virtual_card_capabilities,
-        sizeof(credential->virtual_card_capabilities));
-    memcpy(
-        credential->virtual_card_uid,
-        loaded->virtual_card_uid,
-        sizeof(credential->virtual_card_uid));
-    credential->virtual_card_uid_len = loaded->virtual_card_uid_len;
-    memcpy(
-        credential->virtual_card_select_mac_key,
-        loaded->virtual_card_select_mac_key,
-        sizeof(credential->virtual_card_select_mac_key));
-    memcpy(
-        credential->virtual_card_select_encryption_key,
-        loaded->virtual_card_select_encryption_key,
-        sizeof(credential->virtual_card_select_encryption_key));
-    credential->virtual_card_authentication_mandatory =
-        loaded->virtual_card_authentication_mandatory;
-    credential->virtual_card_proximity_mandatory = loaded->virtual_card_proximity_mandatory;
-#endif
-#if DFC_ENABLE_DELEGATED_APPLICATIONS
-    credential->picc_has_dam_keys = loaded->picc_has_dam_keys;
-    memcpy(
-        credential->picc_dam_auth_key,
-        loaded->picc_dam_auth_key,
-        sizeof(credential->picc_dam_auth_key));
-    memcpy(
-        credential->picc_dam_mac_key,
-        loaded->picc_dam_mac_key,
-        sizeof(credential->picc_dam_mac_key));
-    memcpy(
-        credential->picc_dam_encryption_key,
-        loaded->picc_dam_encryption_key,
-        sizeof(credential->picc_dam_encryption_key));
-#endif
-    memcpy(credential->apps, loaded->apps, sizeof(credential->apps));
-    credential->num_apps = loaded->num_apps;
-    memcpy(credential->files, loaded->files, sizeof(credential->files));
-    credential->num_files = loaded->num_files;
-    // files[] holds offsets into file_pool, so the pool moves with them.
-    memcpy(credential->file_pool, loaded->file_pool, sizeof(credential->file_pool));
-    credential->file_pool_used = loaded->file_pool_used;
-    // apps[] and the PICC record hold offsets into key_pool, so it moves too.
-    memcpy(credential->key_pool, loaded->key_pool, sizeof(credential->key_pool));
-    credential->key_pool_used = loaded->key_pool_used;
-    credential->dirty = loaded->dirty;
-    snprintf(credential->name, sizeof(credential->name), "%s", loaded->name);
+    // DfcCredential is deliberately a pointer-free value type. Assignment
+    // includes every current and future inline field, including pool metadata.
+    *credential = *loaded;
 }
 
 bool dfc_file_set_data_size(DfcCredential* credential, DfcFile* file, uint32_t size) {
@@ -793,7 +681,10 @@ bool dfc_file_set_data_size(DfcCredential* credential, DfcFile* file, uint32_t s
     return true;
 }
 
-bool dfc_credential_materialize_contents(DfcCredential* credential, uint8_t* scratch, size_t scratch_len) {
+bool dfc_credential_materialize_contents(
+    DfcCredential* credential,
+    uint8_t* scratch,
+    size_t scratch_len) {
     if(!credential || !scratch) return false;
     bool complete = true;
     for(size_t i = 0; i < credential->num_files; i++) {

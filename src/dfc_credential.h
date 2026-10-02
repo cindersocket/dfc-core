@@ -17,6 +17,14 @@
 // application.
 #define DFC_FILE_OWNER_PICC ((size_t)0xFFFFFFFEu)
 
+// One status vocabulary for the in-memory model and both credential codecs.
+typedef enum {
+    DfcModelOk = 0,
+    DfcModelMalformed,
+    DfcModelUnsupported,
+    DfcModelCapacity,
+} DfcModelStatus;
+
 typedef struct {
     size_t app_index;
     uint8_t number;
@@ -248,6 +256,9 @@ typedef struct {
     char name[DFC_FILE_NAME_MAX_LENGTH + 1];
 } DfcCredential;
 
+// This model owns only inline storage and offsets into its own pools. Do not
+// add owning pointers without redesigning dfc_credential_copy_model.
+
 DfcCredential* dfc_credential_alloc(void);
 void dfc_credential_free(DfcCredential* dfc_credential);
 
@@ -266,7 +277,8 @@ uint8_t dfc_credential_default_auth_commands(uint8_t key_settings_2, DfcGenerati
 uint8_t dfc_credential_possible_auth_commands(uint8_t key_settings_2, DfcGeneration generation);
 uint8_t dfc_credential_compiled_auth_commands(void);
 uint8_t dfc_credential_picc_auth_commands(const DfcCredential* credential);
-uint8_t dfc_credential_app_auth_commands(const DfcCredential* credential, const DfcApplication* app);
+uint8_t
+    dfc_credential_app_auth_commands(const DfcCredential* credential, const DfcApplication* app);
 
 // Derive the per-key byte length from the Key Settings 2 crypto-type bits
 // (00=DES/2K3DES 8 or 16 bytes stored as 16, 01=3K3DES 24 bytes, 10=AES 16 bytes).
@@ -365,13 +377,13 @@ bool dfc_file_resize(DfcCredential* credential, DfcFile* file, size_t data_len);
 void dfc_file_release(DfcCredential* credential, DfcFile* file);
 size_t dfc_credential_file_pool_free(const DfcCredential* credential);
 
-// Copy the credential model from `src` into `dst`: identity, PICC state,
-// applications, files, and the shared pool the file slices index into. Leaves
-// `dst`'s storage, dialogs and load path alone, so it can publish a freshly
-// parsed credential into a live one. Copying `files` without `file_pool`, or
-// applications without `key_pool`, leaves every slice dangling, so a pool always
-// moves with the records that index into it.
+// Copy the complete pointer-free model, including both pools and their slice
+// metadata. Whole-model assignment ensures future inline fields are included.
 void dfc_credential_copy_model(DfcCredential* dst, const DfcCredential* src);
+
+// Validate all semantic rules and internal pool bookkeeping before a model is
+// copied, encoded, or exposed through a foreign-runtime interface.
+DfcModelStatus dfc_credential_validate_model(const DfcCredential* credential);
 
 // Sets a file's allocation to `size` and records it as complete.
 bool dfc_file_set_data_size(DfcCredential* credential, DfcFile* file, uint32_t size);

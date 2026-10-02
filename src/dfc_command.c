@@ -82,19 +82,12 @@ static DfcCommandStatus with_byte(DfcCommand* command, uint8_t ins, uint8_t valu
     return builder_finish(&b);
 }
 
-static DfcCommandStatus with_bytes(
-    DfcCommand* command,
-    uint8_t ins,
-    const uint8_t* data,
-    size_t data_len) {
+static DfcCommandStatus
+    with_bytes(DfcCommand* command, uint8_t ins, const uint8_t* data, size_t data_len) {
     if(!command || (!data && data_len)) return DfcCommandInvalid;
     Builder b = builder_start(command, ins);
     put(&b, data, data_len);
     return builder_finish(&b);
-}
-
-static bool iso_file_id_is_reserved(uint16_t value) {
-    return value == 0x0000 || value == 0x3F00 || value == 0x3FFF || value == 0xFFFF;
 }
 
 const char* dfc_command_status_name(DfcCommandStatus status) {
@@ -215,7 +208,7 @@ DfcCommandStatus dfc_command_get_key_set_versions(DfcCommand* command) {
 static bool create_application_is_valid(const DfcCommandCreateApplication* app) {
     if(app->df_name_len && !app->df_name) return false;
     if(app->df_name && !app->has_iso_file_id) return false;
-    if(app->has_iso_file_id && iso_file_id_is_reserved(app->iso_file_id)) return false;
+    if(app->has_iso_file_id && dfc_iso_file_id_is_reserved(app->iso_file_id)) return false;
     if(app->df_name && (app->df_name_len < 1 || app->df_name_len > DFC_COMMAND_DF_NAME_MAX_LENGTH))
         return false;
     if(!app->has_extended_settings) return !app->has_key_sets;
@@ -300,7 +293,7 @@ static void put_file_head(
 static DfcCommandStatus
     data_file(DfcCommand* command, uint8_t ins, const DfcCommandDataFile* file) {
     if(!command || !file || file->size > DFC_COMMAND_UINT24_MAX) return DfcCommandInvalid;
-    if(file->has_iso_file_id && iso_file_id_is_reserved(file->iso_file_id))
+    if(file->has_iso_file_id && dfc_iso_file_id_is_reserved(file->iso_file_id))
         return DfcCommandInvalid;
     Builder b = builder_start(command, ins);
     put_file_head(
@@ -333,7 +326,7 @@ DfcCommandStatus
     if(file->max_records == 0 || file->max_records > DFC_COMMAND_UINT24_MAX) {
         return DfcCommandInvalid;
     }
-    if(file->has_iso_file_id && iso_file_id_is_reserved(file->iso_file_id))
+    if(file->has_iso_file_id && dfc_iso_file_id_is_reserved(file->iso_file_id))
         return DfcCommandInvalid;
     Builder b = builder_start(
         command,
@@ -491,8 +484,8 @@ DfcCommandStatus dfc_command_update_record(
        data_len > DFC_COMMAND_UINT24_MAX) {
         return DfcCommandInvalid;
     }
-    Builder b = builder_start(
-        command, iso_chaining ? DFC_CMD_UPDATE_RECORD_ISO : DFC_CMD_UPDATE_RECORD);
+    Builder b =
+        builder_start(command, iso_chaining ? DFC_CMD_UPDATE_RECORD_ISO : DFC_CMD_UPDATE_RECORD);
     put_byte(&b, file_no);
     put_u24(&b, record_no);
     put_u24(&b, offset);
@@ -511,7 +504,8 @@ DfcCommandStatus dfc_command_get_value(DfcCommand* command, uint8_t file_no) {
     return with_byte(command, DFC_CMD_GET_VALUE, file_no);
 }
 
-static DfcCommandStatus change_value(DfcCommand* command, uint8_t ins, uint8_t file_no, int32_t amount) {
+static DfcCommandStatus
+    change_value(DfcCommand* command, uint8_t ins, uint8_t file_no, int32_t amount) {
     if(!command) return DfcCommandInvalid;
     Builder b = builder_start(command, ins);
     put_byte(&b, file_no);
@@ -593,10 +587,8 @@ DfcCommandStatus
     return with_bytes(command, DFC_CMD_INITIALIZE_KEY_SET, data, sizeof(data));
 }
 
-DfcCommandStatus dfc_command_finalize_key_set(
-    DfcCommand* command,
-    uint8_t key_set_no,
-    uint8_t key_set_version) {
+DfcCommandStatus
+    dfc_command_finalize_key_set(DfcCommand* command, uint8_t key_set_no, uint8_t key_set_version) {
     const uint8_t data[] = {key_set_no, key_set_version};
     return with_bytes(command, DFC_CMD_FINALIZE_KEY_SET, data, sizeof(data));
 }

@@ -1,7 +1,23 @@
 #include "dfc_common.h"
 
-#include <stdio.h>
+bool dfc_uid_length_is_valid(size_t length) {
+    return length == DFC_DESFIRE_UID_SHORT_LEN || length == DFC_DESFIRE_UID_LEN ||
+           length == DFC_DESFIRE_UID_LONG_LEN;
+}
 
+bool dfc_iso_file_id_is_reserved(uint16_t value) {
+    return value == 0x0000 || value == 0x3F00 || value == 0x3FFF || value == 0xFFFF;
+}
+
+size_t dfc_key_set_type_length(uint8_t type) {
+    if(type == DFC_KEY_SET_TYPE_3K3DES) return DFC_KEY_SET_MAXIMUM_24_BYTE;
+    if(type == DFC_KEY_SET_TYPE_2K3DES || type == DFC_KEY_SET_TYPE_AES) {
+        return DFC_KEY_SET_MAXIMUM_16_BYTE;
+    }
+    return 0;
+}
+
+#include <stdio.h>
 
 const uint8_t DFC_ISO_AID[7] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x00};
 
@@ -33,7 +49,8 @@ const char* dfc_authentication_mode_to_string(uint8_t auth_command) {
 }
 
 bool dfc_authentication_mode_from_string(const char* value, uint8_t* auth_command) {
-    if(strcmp(value, "D40") == 0 || strcmp(value, "Legacy") == 0 || strcmp(value, "NativeD40") == 0 || strcmp(value, "Native-D40") == 0) {
+    if(strcmp(value, "D40") == 0 || strcmp(value, "Legacy") == 0 ||
+       strcmp(value, "NativeD40") == 0 || strcmp(value, "Native-D40") == 0) {
         *auth_command = DFC_CMD_AUTHENTICATE_LEGACY;
         return true;
     }
@@ -156,7 +173,6 @@ void dfc_log_buffer(char* TAG, char* prefix, uint8_t* buffer, size_t buffer_len)
         DFC_LOG_T(TAG, "Buffer %d: %s", limit, display);
     }
 }
-
 
 void dfc_rotate_left(uint8_t* buffer, size_t len) {
     if(len == 0) return;

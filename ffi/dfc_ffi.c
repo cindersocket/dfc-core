@@ -44,7 +44,8 @@ struct DfcFfiReaderExchange {
 
 static void wipe(void* p, size_t n) {
     volatile uint8_t* bytes = p;
-    while(n--) *bytes++ = 0;
+    while(n--)
+        *bytes++ = 0;
 }
 
 static void set_error(DfcFfiError* error, int32_t status, uint32_t line, const char* message) {
@@ -80,7 +81,8 @@ int32_t dfc_ffi_random_fill(uint8_t* out, size_t len) {
 bool dfc_ffi_fixed_time_equal(const uint8_t* left, const uint8_t* right, size_t len) {
     if(len > 0 && (!left || !right)) return false;
     volatile uint8_t difference = 0;
-    for(size_t index = 0; index < len; index++) difference |= left[index] ^ right[index];
+    for(size_t index = 0; index < len; index++)
+        difference |= left[index] ^ right[index];
     return difference == 0;
 }
 
@@ -247,7 +249,7 @@ int32_t dfc_ffi_credential_write_text(
 
 int32_t dfc_ffi_credential_validate(const DfcFfiCredential* credential) {
     if(!credential) return DFC_FFI_INVALID_ARGUMENT;
-    return dfc_der_validate_model(&credential->model);
+    return dfc_credential_validate_model(&credential->model);
 }
 
 void dfc_ffi_credential_free(DfcFfiCredential* credential) {
@@ -404,9 +406,12 @@ uint32_t dfc_ffi_credential_file_count(const DfcFfiCredential* credential) {
     return credential ? (uint32_t)credential->model.num_files : 0;
 }
 
-int32_t
-    dfc_ffi_credential_get_file(const DfcFfiCredential* credential, uint32_t index, DfcFfiFile* out) {
-    if(!credential || !out || index >= credential->model.num_files) return DFC_FFI_INVALID_ARGUMENT;
+int32_t dfc_ffi_credential_get_file(
+    const DfcFfiCredential* credential,
+    uint32_t index,
+    DfcFfiFile* out) {
+    if(!credential || !out || index >= credential->model.num_files)
+        return DFC_FFI_INVALID_ARGUMENT;
     const DfcFile* f = &credential->model.files[index];
     memset(out, 0, sizeof(*out));
     out->owner = f->app_index == DFC_FILE_OWNER_PICC ? DFC_FFI_OWNER_PICC : (int32_t)f->app_index;
@@ -480,10 +485,7 @@ int32_t dfc_ffi_credential_get_file_data(
 }
 
 // The owner's application, or NULL for the PICC. False for a bad index.
-static bool owner_application(
-    const DfcCredential* c,
-    int32_t owner,
-    const DfcApplication** app) {
+static bool owner_application(const DfcCredential* c, int32_t owner, const DfcApplication** app) {
     if(owner == DFC_FFI_OWNER_PICC) {
         *app = NULL;
         return true;
@@ -519,9 +521,9 @@ int32_t dfc_ffi_credential_get_key(
         return DFC_FFI_INVALID_ARGUMENT;
     }
     const uint8_t* key = dfc_credential_key_in_set_const(c, app, key_set, slot);
-    uint8_t* version =
-        dfc_credential_key_version_in_set((DfcApplication*)app, key_set, slot);
-    size_t key_len = app->key_set_types[key_set] == DFC_KEY_SET_TYPE_3K3DES ? 24 : 16;
+    uint8_t* version = dfc_credential_key_version_in_set((DfcApplication*)app, key_set, slot);
+    size_t key_len = dfc_key_set_type_length(app->key_set_types[key_set]);
+    if(key_len == 0) return DFC_FFI_INVALID_ARGUMENT;
     out->len = (uint32_t)key_len;
     if(key) memcpy(out->value, key, key_len);
     if(version) out->version = *version;
@@ -544,7 +546,7 @@ int32_t dfc_ffi_credential_new(DfcFfiCredential** out) {
 }
 
 int32_t dfc_ffi_credential_set_card(DfcFfiCredential* credential, const DfcFfiCard* card) {
-    if(!credential || !card || card->uid_len > DFC_DESFIRE_UID_MAX_LENGTH) {
+    if(!credential || !card || !dfc_uid_length_is_valid(card->uid_len)) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
     DfcCredential* c = &credential->model;
@@ -614,7 +616,7 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
     if(p->virtual_card_configured) {
 #if DFC_ENABLE_VIRTUAL_CARD
         if(p->virtual_card_installation_id_len > DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH ||
-           p->virtual_card_uid_len > DFC_VIRTUAL_CARD_UID_MAX_LENGTH) {
+           !dfc_uid_length_is_valid(p->virtual_card_uid_len)) {
             return DFC_FFI_INVALID_ARGUMENT;
         }
         c->virtual_card_configured = true;
@@ -649,7 +651,8 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
         c->picc_has_dam_keys = true;
         memcpy(c->picc_dam_auth_key, p->dam_auth_key, sizeof(c->picc_dam_auth_key));
         memcpy(c->picc_dam_mac_key, p->dam_mac_key, sizeof(c->picc_dam_mac_key));
-        memcpy(c->picc_dam_encryption_key, p->dam_encryption_key, sizeof(c->picc_dam_encryption_key));
+        memcpy(
+            c->picc_dam_encryption_key, p->dam_encryption_key, sizeof(c->picc_dam_encryption_key));
 #else
         return DfcDerUnsupported;
 #endif
@@ -667,7 +670,8 @@ int32_t dfc_ffi_credential_add_application(
     const DfcFfiApplication* a,
     uint32_t* index) {
     if(!credential || !a || a->df_name_len > 16 || a->num_keys > DFC_MAX_KEYS ||
-       a->key_len > DFC_MAX_KEY_LEN) {
+       a->key_len > DFC_MAX_KEY_LEN ||
+       (a->has_iso_file_id && dfc_iso_file_id_is_reserved(a->iso_file_id))) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
     DfcCredential* c = &credential->model;
@@ -696,6 +700,14 @@ int32_t dfc_ffi_credential_add_application(
     if(a->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
 #if DFC_ENABLE_KEY_SETS
         if(a->num_key_sets > DFC_MAX_KEY_SETS) return DfcDerCapacity;
+        if(a->key_set_max_size != DFC_KEY_SET_MAXIMUM_16_BYTE &&
+           a->key_set_max_size != DFC_KEY_SET_MAXIMUM_24_BYTE) {
+            return DFC_FFI_INVALID_ARGUMENT;
+        }
+        for(size_t i = 0; i < a->num_key_sets; i++) {
+            size_t width = dfc_key_set_type_length(a->key_set_types[i]);
+            if(width == 0 || width > a->key_set_max_size) return DFC_FFI_INVALID_ARGUMENT;
+        }
         if(!dfc_credential_key_sets_resize(
                c, app, a->num_key_sets, a->num_keys, a->key_len, a->key_set_max_size)) {
             return DfcDerCapacity;
@@ -736,8 +748,13 @@ int32_t dfc_ffi_credential_add_application(
     return DfcDerOk;
 }
 
-int32_t dfc_ffi_credential_add_file(DfcFfiCredential* credential, const DfcFfiFile* f, uint32_t* index) {
-    if(!credential || !f) return DFC_FFI_INVALID_ARGUMENT;
+int32_t dfc_ffi_credential_add_file(
+    DfcFfiCredential* credential,
+    const DfcFfiFile* f,
+    uint32_t* index) {
+    if(!credential || !f || (f->has_iso_file_id && dfc_iso_file_id_is_reserved(f->iso_file_id))) {
+        return DFC_FFI_INVALID_ARGUMENT;
+    }
     DfcCredential* c = &credential->model;
     size_t owner;
     if(f->owner == DFC_FFI_OWNER_PICC) {
@@ -749,7 +766,8 @@ int32_t dfc_ffi_credential_add_file(DfcFfiCredential* credential, const DfcFfiFi
     }
     if(c->num_files >= DFC_MAX_FILES) return DfcDerCapacity;
     for(size_t i = 0; i < c->num_files; i++) {
-        if(c->files[i].app_index == owner && c->files[i].number == f->number) return DfcDerMalformed;
+        if(c->files[i].app_index == owner && c->files[i].number == f->number)
+            return DfcDerMalformed;
     }
     DfcFile* file = &c->files[c->num_files];
     memset(file, 0, sizeof(*file));
@@ -800,7 +818,8 @@ int32_t dfc_ffi_credential_add_file(DfcFfiCredential* credential, const DfcFfiFi
     }
     if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) {
 #if DFC_ENABLE_TRANSACTION_MAC
-        memcpy(file->transaction_mac_key, f->transaction_mac_key, sizeof(file->transaction_mac_key));
+        memcpy(
+            file->transaction_mac_key, f->transaction_mac_key, sizeof(file->transaction_mac_key));
         file->transaction_mac_key_type = f->transaction_mac_key_type;
         file->transaction_mac_key_version = f->transaction_mac_key_version;
         file->transaction_counter = f->transaction_counter;
@@ -865,7 +884,8 @@ int32_t dfc_ffi_credential_set_key(
     if(!app || key_set >= app->num_key_sets || slot >= app->num_keys) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
-    size_t key_len = app->key_set_types[key_set] == DFC_KEY_SET_TYPE_3K3DES ? 24 : 16;
+    size_t key_len = dfc_key_set_type_length(app->key_set_types[key_set]);
+    if(key_len == 0) return DFC_FFI_INVALID_ARGUMENT;
     if(key->len != key_len) return DFC_FFI_INVALID_ARGUMENT;
     uint8_t* dst = dfc_credential_key_in_set(c, app, key_set, slot);
     uint8_t* version = dfc_credential_key_version_in_set(app, key_set, slot);
@@ -881,7 +901,7 @@ int32_t dfc_ffi_credential_set_key(
 int32_t dfc_ffi_credential_finish(DfcFfiCredential* credential, DfcFfiError* error) {
     set_error(error, DfcDerOk, 0, NULL);
     if(!credential) return DFC_FFI_INVALID_ARGUMENT;
-    DfcDerStatus st = dfc_der_validate_model(&credential->model);
+    DfcModelStatus st = dfc_credential_validate_model(&credential->model);
     if(st != DfcDerOk) {
         set_error(error, st, 0, dfc_der_status_name(st));
         return st;
@@ -909,7 +929,7 @@ int32_t dfc_ffi_picc_create(
     DfcFfiPicc** out) {
     if(!credential || !out) return DFC_FFI_INVALID_ARGUMENT;
     *out = NULL;
-    DfcDerStatus valid = dfc_der_validate_model(&credential->model);
+    DfcModelStatus valid = dfc_credential_validate_model(&credential->model);
     if(valid != DfcDerOk) return valid;
     DfcFfiPicc* picc = calloc(1, sizeof(*picc));
     if(!picc) return DFC_FFI_OUT_OF_MEMORY;
@@ -1157,8 +1177,15 @@ int32_t dfc_ffi_reader_authenticate_iso7816_begin(
     if(!exchange || !session) return DFC_FFI_INVALID_ARGUMENT;
 #if DFC_ENABLE_ISO7816_AUTH
     return dfc_reader_authenticate_iso7816_begin(
-        &exchange->exchange, &session->session, key_reference, key, key_len,
-        algorithm, random_first, random_second, random_len);
+        &exchange->exchange,
+        &session->session,
+        key_reference,
+        key,
+        key_len,
+        algorithm,
+        random_first,
+        random_second,
+        random_len);
 #else
     (void)key_reference;
     (void)key;
@@ -1231,8 +1258,14 @@ int32_t dfc_ffi_reader_write_data_begin(
     uint8_t comm_mode) {
     if(!exchange || !session || framing > DfcReaderFramingNative) return DFC_FFI_INVALID_ARGUMENT;
     return dfc_reader_write_data_begin(
-        &exchange->exchange, &session->session, (DfcReaderFraming)framing,
-        file_number, offset, data, data_len, comm_mode);
+        &exchange->exchange,
+        &session->session,
+        (DfcReaderFraming)framing,
+        file_number,
+        offset,
+        data,
+        data_len,
+        comm_mode);
 }
 
 int32_t dfc_ffi_reader_write_record_begin(
@@ -1246,8 +1279,14 @@ int32_t dfc_ffi_reader_write_record_begin(
     uint8_t comm_mode) {
     if(!exchange || !session || framing > DfcReaderFramingNative) return DFC_FFI_INVALID_ARGUMENT;
     return dfc_reader_write_record_begin(
-        &exchange->exchange, &session->session, (DfcReaderFraming)framing,
-        file_number, offset, data, data_len, comm_mode);
+        &exchange->exchange,
+        &session->session,
+        (DfcReaderFraming)framing,
+        file_number,
+        offset,
+        data,
+        data_len,
+        comm_mode);
 }
 
 int32_t dfc_ffi_reader_update_record_begin(
@@ -1262,8 +1301,15 @@ int32_t dfc_ffi_reader_update_record_begin(
     uint8_t comm_mode) {
     if(!exchange || !session || framing > DfcReaderFramingNative) return DFC_FFI_INVALID_ARGUMENT;
     return dfc_reader_update_record_begin(
-        &exchange->exchange, &session->session, (DfcReaderFraming)framing,
-        file_number, record_number, offset, data, data_len, comm_mode);
+        &exchange->exchange,
+        &session->session,
+        (DfcReaderFraming)framing,
+        file_number,
+        record_number,
+        offset,
+        data,
+        data_len,
+        comm_mode);
 }
 
 int32_t dfc_ffi_reader_create_delegated_application_begin(

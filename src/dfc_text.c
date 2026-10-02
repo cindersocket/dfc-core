@@ -35,11 +35,14 @@ bool dfc_credential_content_is_binary(const uint8_t* content, size_t len) {
 static const char* const GENERATION_NAMES[] = {"EV1", "EV2", "EV3"};
 static const char* const PROVENANCE_NAMES[] = {"Real", "Random", "Unknown"};
 static const char* const AUTH_NAMES[] = {"D40", "ISO", "AES"};
-static const char* const AUTH_COMMAND_NAMES[] = {
-    "D40", "ISO", "AES", "EV2First", "EV2NonFirst", "ISO7816"};
+static const char* const AUTH_COMMAND_NAMES[] =
+    {"D40", "ISO", "AES", "EV2First", "EV2NonFirst", "ISO7816"};
 static const uint8_t AUTH_COMMAND_BITS[] = {
-    DFC_AUTH_COMMAND_D40, DFC_AUTH_COMMAND_ISO_NATIVE, DFC_AUTH_COMMAND_AES,
-    DFC_AUTH_COMMAND_EV2_FIRST, DFC_AUTH_COMMAND_EV2_NON_FIRST,
+    DFC_AUTH_COMMAND_D40,
+    DFC_AUTH_COMMAND_ISO_NATIVE,
+    DFC_AUTH_COMMAND_AES,
+    DFC_AUTH_COMMAND_EV2_FIRST,
+    DFC_AUTH_COMMAND_EV2_NON_FIRST,
     DFC_AUTH_COMMAND_ISO7816};
 static const char* const FILE_TYPE_NAMES[] =
     {"Standard Data", "Backup Data", "Value", "Linear Record", "Cyclic Record", "Transaction MAC"};
@@ -56,10 +59,6 @@ static bool type_is_record(uint8_t type) {
     return type == TYPE_LINEAR || type == TYPE_CYCLIC;
 }
 
-static bool iso_file_id_is_reserved(uint16_t v) {
-    return v == 0x0000 || v == 0x3F00 || v == 0x3FFF || v == 0xFFFF;
-}
-
 static uint8_t auth_command_for(size_t index) {
     if(index == 2) return DFC_CMD_AUTHENTICATE_AES;
     if(index == 1) return DFC_CMD_AUTHENTICATE_ISO;
@@ -68,10 +67,6 @@ static uint8_t auth_command_for(size_t index) {
 
 // Stored key length is fixed by the key type (section 1.4); 8-octet DES is held
 // as 16, which is what the model already carries.
-static size_t stored_key_length(size_t key_len) {
-    return key_len == 24 ? 24 : 16;
-}
-
 // ------------------------------------------------------------------ parser ---
 
 typedef struct {
@@ -118,9 +113,8 @@ static bool req_auth_commands(P* p, const char* key, uint8_t* commands) {
         size_t length = strlen(AUTH_COMMAND_NAMES[i]);
         if(at + length <= line.value_len &&
            memcmp(line.value + at, AUTH_COMMAND_NAMES[i], length) == 0 &&
-           (at + length == line.value_len ||
-            (at + length + 2 <= line.value_len &&
-             memcmp(line.value + at + length, ", ", 2) == 0))) {
+           (at + length == line.value_len || (at + length + 2 <= line.value_len &&
+                                              memcmp(line.value + at + length, ", ", 2) == 0))) {
             result |= AUTH_COMMAND_BITS[i];
             at += length;
             if(at == line.value_len) break;
@@ -466,7 +460,8 @@ static bool opt_bool(P* p, const char* key, bool* out) {
 
 #if DFC_ENABLE_SDM
 // Reads an optional decimal value. Sets *present to false when the key is absent.
-static bool opt_uint(P* p, const char* key, uint32_t lo, uint32_t hi, uint32_t* out, bool* present) {
+static bool
+    opt_uint(P* p, const char* key, uint32_t lo, uint32_t hi, uint32_t* out, bool* present) {
     *present = false;
     Line l;
     if(!lookup(p, key, &l, false)) return !p->failed;
@@ -501,7 +496,7 @@ static bool opt_iso_file_id(P* p, const char* key, bool* present, uint16_t* valu
     uint8_t raw[2];
     hex_decode(&l, raw, 2);
     uint16_t v = (uint16_t)((raw[0] << 8) | raw[1]);
-    if(iso_file_id_is_reserved(v)) return fail(p, l.number, "%s: %04X is reserved", key, v);
+    if(dfc_iso_file_id_is_reserved(v)) return fail(p, l.number, "%s: %04X is reserved", key, v);
     *present = true;
     *value = v;
     return true;
@@ -717,7 +712,8 @@ static bool parse_transaction_mac_contents(P* p, const char* prefix, DfcFile* f)
 #else
     (void)f;
     // The field is recognized but the build omits the feature.
-    return fail_class(p, DfcTextUnsupported, 0, "%s: transaction MAC is not in this build", prefix);
+    return fail_class(
+        p, DfcTextUnsupported, 0, "%s: transaction MAC is not in this build", prefix);
 #endif
 }
 
@@ -858,7 +854,7 @@ static bool parse_key_sets(P* p, const char* prefix, DfcApplication* app) {
         size_t type_index = 0;
         if(!req_token(p, key, AUTH_NAMES, 3, &type_index)) return false;
         app->key_set_types[set] = (uint8_t)type_index;
-        size_t required = type_index == DFC_KEY_SET_TYPE_3K3DES ? 24 : 16;
+        size_t required = dfc_key_set_type_length((uint8_t)type_index);
         if(required > max_size) {
             return fail(p, 0, "%s Type: key type exceeds the maximum key size", name);
         }
@@ -932,8 +928,9 @@ static bool parse_applications(P* p) {
             if(!req_auth_commands(p, key, &app->auth_commands)) return false;
             app->has_auth_commands = true;
             snprintf(key, sizeof(key), "%s Preferred Authentication Command", prefix);
-            if(!opt_preferred_auth_command(p, key, &app->has_preferred_auth_command,
-                                           &app->preferred_auth_command)) return false;
+            if(!opt_preferred_auth_command(
+                   p, key, &app->has_preferred_auth_command, &app->preferred_auth_command))
+                return false;
         } else {
             snprintf(key, sizeof(key), "%s Authentication Mode", prefix);
             size_t auth = 0;
@@ -1010,8 +1007,7 @@ static bool parse_ev2_capabilities(P* p) {
     return true;
 #else
     // The field is recognized but the build omits the feature.
-    return fail_class(
-        p, DfcTextUnsupported, 0, "PICC EV2 Card Capabilities: not in this build");
+    return fail_class(p, DfcTextUnsupported, 0, "PICC EV2 Card Capabilities: not in this build");
 #endif
 }
 
@@ -1026,7 +1022,8 @@ static bool parse_proximity(P* p) {
     }
     if(!req_hex(p, "PICC Proximity Option", &c->picc_proximity_option, 1)) return false;
     uint32_t published = 0;
-    if(!req_uint(p, "PICC Proximity Published Response Time", 0, 0xFFFFu, &published)) return false;
+    if(!req_uint(p, "PICC Proximity Published Response Time", 0, 0xFFFFu, &published))
+        return false;
     c->picc_proximity_published_response_time = (uint16_t)published;
     size_t len = 0;
     if(!opt_hex(
@@ -1085,7 +1082,7 @@ static bool parse_virtual_card(P* p) {
         return false;
     }
     size_t uid_len = c->virtual_card_uid_len;
-    if(uid_len != 4 && uid_len != 7 && uid_len != 10) {
+    if(!dfc_uid_length_is_valid(uid_len)) {
         return fail(p, 0, "PICC Virtual Card UID: length shall be 4, 7, or 10");
     }
     if(!req_hex(
@@ -1104,10 +1101,13 @@ static bool parse_virtual_card(P* p) {
     }
     // Both flags are required, so an absent one is malformed.
     if(!req_bool(
-           p, "PICC Virtual Card Authentication Mandatory", &c->virtual_card_authentication_mandatory)) {
+           p,
+           "PICC Virtual Card Authentication Mandatory",
+           &c->virtual_card_authentication_mandatory)) {
         return false;
     }
-    if(!req_bool(p, "PICC Virtual Card Proximity Mandatory", &c->virtual_card_proximity_mandatory)) {
+    if(!req_bool(
+           p, "PICC Virtual Card Proximity Mandatory", &c->virtual_card_proximity_mandatory)) {
         return false;
     }
     c->virtual_card_configured = true;
@@ -1124,14 +1124,18 @@ static bool parse_dam_keys(P* p) {
     Line probe;
     if(!lookup(p, "PICC DAM Authentication Key", &probe, false)) return !p->failed;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
-    if(!req_hex(p, "PICC DAM Authentication Key", c->picc_dam_auth_key, sizeof(c->picc_dam_auth_key))) {
+    if(!req_hex(
+           p, "PICC DAM Authentication Key", c->picc_dam_auth_key, sizeof(c->picc_dam_auth_key))) {
         return false;
     }
     if(!req_hex(p, "PICC DAM MAC Key", c->picc_dam_mac_key, sizeof(c->picc_dam_mac_key))) {
         return false;
     }
     if(!req_hex(
-           p, "PICC DAM Encryption Key", c->picc_dam_encryption_key, sizeof(c->picc_dam_encryption_key))) {
+           p,
+           "PICC DAM Encryption Key",
+           c->picc_dam_encryption_key,
+           sizeof(c->picc_dam_encryption_key))) {
         return false;
     }
     c->picc_has_dam_keys = true;
@@ -1150,9 +1154,12 @@ static bool parse_picc(P* p) {
             return false;
         }
         c->picc_has_auth_commands = true;
-        if(!opt_preferred_auth_command(p, "PICC Preferred Authentication Command",
-                                       &c->picc_has_preferred_auth_command,
-                                       &c->picc_preferred_auth_command)) return false;
+        if(!opt_preferred_auth_command(
+               p,
+               "PICC Preferred Authentication Command",
+               &c->picc_has_preferred_auth_command,
+               &c->picc_preferred_auth_command))
+            return false;
     } else {
         size_t auth = 0;
         if(!req_token(p, "PICC Authentication Mode", AUTH_NAMES, 3, &auth)) return false;
@@ -1242,9 +1249,7 @@ DfcTextStatus
                &uid_present)) {
             break;
         }
-        if(credential->uid_len != DFC_DESFIRE_UID_SHORT_LEN &&
-           credential->uid_len != DFC_DESFIRE_UID_LEN &&
-           credential->uid_len != DFC_DESFIRE_UID_LONG_LEN) {
+        if(!dfc_uid_length_is_valid(credential->uid_len)) {
             fail(&p, 0, "UID: length shall be 4, 7, or 10");
             break;
         }
@@ -1302,7 +1307,7 @@ DfcTextStatus
     if(!p.failed) {
         // Text this accepts is text the binary codec also accepts, so the
         // shared model rules apply here too.
-        DfcDerStatus model = dfc_der_validate_model(credential);
+        DfcModelStatus model = dfc_credential_validate_model(credential);
         if(model != DfcDerOk) {
             fail_class(&p, (DfcTextStatus)model, 0, "the model breaks a DFC format rule");
         }
@@ -1450,7 +1455,8 @@ static void
             uint8_t version = set == 0 ? a->key_versions[slot] :
                                          a->additional_key_versions[set - 1][slot];
             snprintf(key, sizeof(key), "%s Key %02X", name, (unsigned)slot);
-            w_line_hex(w, key, value, stored_key_length(a->key_len));
+            size_t key_len = dfc_key_set_type_length(a->key_set_types[set]);
+            w_line_hex(w, key, value, key_len);
             snprintf(key, sizeof(key), "%s Key %02X Version", name, (unsigned)slot);
             w_line_hex(w, key, &version, 1);
         }
@@ -1590,10 +1596,9 @@ static DfcTextStatus write_files(W* w, const DfcCredential* c, const char* paren
 }
 
 static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
-    DfcDerStatus model = dfc_der_validate_model(c);
+    DfcModelStatus model = dfc_credential_validate_model(c);
     if(model != DfcDerOk) return (DfcTextStatus)model;
-    if(c->uid_len != DFC_DESFIRE_UID_SHORT_LEN && c->uid_len != DFC_DESFIRE_UID_LEN &&
-       c->uid_len != DFC_DESFIRE_UID_LONG_LEN) {
+    if(!dfc_uid_length_is_valid(c->uid_len)) {
         return DfcTextMalformed;
     }
     if(c->card.generation < DfcGenerationEv1 || c->card.generation > DfcGenerationEv3) {
@@ -1615,23 +1620,24 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
     }
 #endif
     if(c->card.has_hardware_version) {
-        w_line_hex(w, "Card Hardware Version", c->card.hardware_version,
-                   sizeof(c->card.hardware_version));
+        w_line_hex(
+            w, "Card Hardware Version", c->card.hardware_version, sizeof(c->card.hardware_version));
     }
     if(c->card.has_software_version) {
-        w_line_hex(w, "Card Software Version", c->card.software_version,
-                   sizeof(c->card.software_version));
+        w_line_hex(
+            w, "Card Software Version", c->card.software_version, sizeof(c->card.software_version));
     }
 
     w_line_hex(w, "PICC Key Settings 1", &c->picc_key_settings_1, 1);
     w_line_hex(w, "PICC Key Settings 2", &c->picc_key_settings_2, 1);
     w_line_auth_commands(w, "PICC Authentication Commands", dfc_credential_picc_auth_commands(c));
     if(c->picc_has_preferred_auth_command) {
-        w_line_auth_commands(w, "PICC Preferred Authentication Command",
-                             c->picc_preferred_auth_command);
+        w_line_auth_commands(
+            w, "PICC Preferred Authentication Command", c->picc_preferred_auth_command);
     }
     w_line_uint(w, "PICC Key Count", (uint32_t)c->picc_num_keys);
-    write_keys(w, "PICC", c, NULL, c->picc_num_keys, stored_key_length(c->picc_key_len));
+    write_keys(
+        w, "PICC", c, NULL, c->picc_num_keys, dfc_credential_stored_key_length(c->picc_key_len));
     // Canonical omission: these carry their default (rule 5).
     if(c->picc_random_id) w_line_bool(w, "PICC Random ID", true);
     if(c->picc_format_disabled) w_line_bool(w, "PICC Format Disabled", true);
@@ -1653,7 +1659,9 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
         w_line_hex(w, "PICC Proximity Key", c->picc_proximity_key, sizeof(c->picc_proximity_key));
         w_line_hex(w, "PICC Proximity Option", &c->picc_proximity_option, 1);
         w_line_uint(
-            w, "PICC Proximity Published Response Time", c->picc_proximity_published_response_time);
+            w,
+            "PICC Proximity Published Response Time",
+            c->picc_proximity_published_response_time);
         if(c->picc_has_proximity_bitrate) {
             w_line_hex(w, "PICC Proximity Bitrate", &c->picc_proximity_bitrate, 1);
         }
@@ -1744,7 +1752,7 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
 #endif
             snprintf(key, sizeof(key), "%s Key Count", prefix);
             w_line_uint(w, key, (uint32_t)a->num_keys);
-            write_keys(w, prefix, c, a, a->num_keys, stored_key_length(a->key_len));
+            write_keys(w, prefix, c, a, a->num_keys, dfc_credential_stored_key_length(a->key_len));
 #if DFC_ENABLE_KEY_SETS
         }
 #endif

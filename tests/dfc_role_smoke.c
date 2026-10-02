@@ -16,6 +16,7 @@ typedef void (*DfcRoleEntry)(void);
 
 static const DfcRoleEntry entries[] = {
     (DfcRoleEntry)dfc_credential_alloc,
+    (DfcRoleEntry)dfc_credential_validate_model,
 #if DFC_ENABLE_DER_DECODER
     (DfcRoleEntry)dfc_der_decode,
 #endif

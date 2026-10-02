@@ -77,6 +77,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_virtual_picc_mutation_vectors test_dfc_virtual_picc_multi_app_vectors \
 	test_dfc_virtual_picc_value_vectors test_dfc_ev1_conformance \
 	test_dfc_file_pool test_dfc_key_pool test_dfc_der test_dfc_profile test_dfc_text \
+	test_dfc_model \
 	test_dfc_examples \
 	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader
@@ -97,8 +98,14 @@ ROLE_DIR := role-build
 ROLE_FORBIDDEN_target := dfc_text_ dfc_reader_ dfc_command_
 ROLE_FORBIDDEN_host := dfc_emulator_ dfc_virtual_picc_
 ROLE_FORBIDDEN_simulator :=
+CODECLESS_DIR := role-build/codecs-disabled
 
-.PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds clean
+FUZZ_DIR  ?= ../build-fuzz
+FUZZ_TIME ?= 300
+FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
+
+.PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds \
+	codecs-disabled-link fuzz clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
 # cannot pass by omitting the translation unit it should have exercised.
@@ -108,7 +115,7 @@ $(TESTS): %: %.c dfc_virtual_picc_test_helpers.c $(COMMON)
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: $(TESTS) $(TOOLS) profile-builds role-builds test-ev2-profile test-auth-profile
+test: $(TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 
 test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
@@ -128,6 +135,16 @@ test-backends:
 	@$(MAKE) test CRYPTO_BACKEND=mbedtls
 	@$(MAKE) clean
 	@$(MAKE) test CRYPTO_BACKEND=tiny
+
+$(FUZZ_DIR)/fuzz_dfc_codecs: fuzz_dfc_codecs.c $(CORE_SRC) $(HOST_SRC) $(CRYPTO_SRC)
+	mkdir -p $(FUZZ_DIR)
+	$(CC) $(CFLAGS) $(FUZZ_FLAGS) -o $@ $^ $(LDFLAGS) -fsanitize=fuzzer,address,undefined
+
+fuzz: $(FUZZ_DIR)/fuzz_dfc_codecs
+	mkdir -p $(FUZZ_DIR)/corpus $(FUZZ_DIR)/artifacts
+	cp ../examples/credentials/*.dfc ../examples/credentials/*.dfcb $(FUZZ_DIR)/corpus/
+	$(FUZZ_DIR)/fuzz_dfc_codecs $(FUZZ_DIR)/corpus \
+		-max_total_time=$(FUZZ_TIME) -timeout=5 -artifact_prefix=$(FUZZ_DIR)/artifacts/
 
 profile-builds:
 	@echo "=== reduced profiles compile ==="
@@ -157,6 +174,21 @@ role-builds:
 		./$$d/smoke || exit 1; \
 		echo "ok ($$(cat $$d/*.o | wc -c | tr -d ' ') object bytes)"; \
 	done; done
+
+# The model API remains linkable when both serialization formats are omitted.
+# Referencing it from dfc_role_smoke makes declaration/definition guard drift a
+# link failure in every test run.
+codecs-disabled-link:
+	@echo "=== codecs-disabled link ==="
+	@rm -rf $(CODECLESS_DIR); mkdir -p $(CODECLESS_DIR); \
+	flags="-DDFC_BUILD_ROLE=DFC_ROLE_TARGET -DDFC_ENABLE_DER_DECODER=0 -DDFC_ENABLE_DER_ENCODER=0 -DDFC_ENABLE_TEXT_CODEC=0"; \
+	for src in $(CORE_SRC); do \
+		$(CC) $(CFLAGS) $$flags -c $$src -o $(CODECLESS_DIR)/$$(basename $$src .c).o || exit 1; \
+	done; \
+	$(CC) $(CFLAGS) $$flags -o $(CODECLESS_DIR)/smoke dfc_role_smoke.c \
+		$(CODECLESS_DIR)/*.o $(HOST_SRC) $(CRYPTO_SRC) $(LDFLAGS) || exit 1; \
+	./$(CODECLESS_DIR)/smoke; \
+	echo "  target, no codecs ok"
 
 clean:
 	rm -rf $(TESTS) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
