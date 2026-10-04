@@ -1,5 +1,6 @@
 #include "aes_cmac.h"
-#include "dfc_crypto.h"
+#define DFC_NEED_AES_SCHED
+#include "dfc_crypto_sched.h"
 
 #define BLOCK_SIZE 16
 
@@ -12,11 +13,6 @@ static const uint8_t Rb[] =
 
 static void aes_cmac_padBlock(uint8_t* block, size_t len) {
     block[len] = 0x80;
-}
-
-static bool aes_cmac_aes(uint8_t* key, const uint8_t* plain, size_t plain_len, uint8_t* enc) {
-    uint8_t iv[BLOCK_SIZE] = {0};
-    return dfc_crypto_aes_cbc(true, key, BLOCK_SIZE, iv, plain, enc, plain_len);
 }
 
 static void aes_cmac_bitShiftLeft(uint8_t* input, uint8_t* output, size_t len) {
@@ -37,9 +33,9 @@ static void aes_cmac_xor(const uint8_t* a, const uint8_t* b, uint8_t* x, size_t 
     }
 }
 
-static bool aes_cmac_generateSubkeys(uint8_t* key, uint8_t* subkey1, uint8_t* subkey2) {
+static bool aes_cmac_generateSubkeys(DfcAesEnc* enc, uint8_t* subkey1, uint8_t* subkey2) {
     uint8_t l[BLOCK_SIZE] = {0};
-    aes_cmac_aes(key, zeroes, BLOCK_SIZE, l);
+    if(!dfc_aes_enc_block(enc, zeroes, l)) return false;
 
     aes_cmac_bitShiftLeft(l, subkey1, BLOCK_SIZE);
     if(l[0] & 0x80) {
@@ -73,7 +69,12 @@ bool aes_cmac_with_iv(
         return false;
     }
 
-    aes_cmac_generateSubkeys(key, subkey1, subkey2);
+    DfcAesEnc enc;
+    if(!dfc_aes_enc_begin(&enc, key)) return false;
+    if(!aes_cmac_generateSubkeys(&enc, subkey1, subkey2)) {
+        dfc_aes_enc_end(&enc);
+        return false;
+    }
 
     if(blockCount == 0) {
         blockCount = 1;
@@ -101,13 +102,16 @@ bool aes_cmac_with_iv(
 
     for(size_t i = 0; i < lastBlockIndex; i++) {
         aes_cmac_xor(x, message + (i * BLOCK_SIZE), y, BLOCK_SIZE);
-        aes_cmac_aes(key, y, BLOCK_SIZE, x);
+        if(!dfc_aes_enc_block(&enc, y, x)) {
+            dfc_aes_enc_end(&enc);
+            return false;
+        }
     }
 
     aes_cmac_xor(x, lastBlock, y, BLOCK_SIZE);
 
-    bool success = aes_cmac_aes(key, y, BLOCK_SIZE, cmac);
-
+    bool success = dfc_aes_enc_block(&enc, y, cmac);
+    dfc_aes_enc_end(&enc);
     return success;
 }
 
