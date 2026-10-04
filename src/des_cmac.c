@@ -1,5 +1,6 @@
 #include "des_cmac.h"
-#include "dfc_crypto.h"
+#define DFC_NEED_DES_SCHED
+#include "dfc_crypto_sched.h"
 
 #define BLOCK_SIZE 8
 
@@ -10,19 +11,6 @@ static const uint8_t Rb[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1b};
 
 static void des_cmac_padBlock(uint8_t* block, size_t len) {
     block[len] = 0x80;
-}
-
-// CMAC's underlying block cipher, selected by key length: 8 bytes = single DES,
-// 16 bytes = 2-key 3DES, 24 bytes = 3-key 3DES.
-static bool des_cmac_block_cipher(
-    uint8_t* key,
-    size_t key_len,
-    const uint8_t* plain,
-    size_t plain_len,
-    uint8_t* enc) {
-    uint8_t iv[BLOCK_SIZE];
-    memset(iv, 0, BLOCK_SIZE);
-    return dfc_crypto_des_cbc(true, key, key_len, iv, plain, enc, plain_len);
 }
 
 static void des_cmac_bitShiftLeft(uint8_t* input, uint8_t* output, size_t len) {
@@ -43,10 +31,9 @@ static void des_cmac_xor(const uint8_t* a, const uint8_t* b, uint8_t* x, size_t 
     }
 }
 
-static bool des_cmac_generateSubkeys(
-    uint8_t* key, size_t key_len, uint8_t* subkey1, uint8_t* subkey2) {
+static bool des_cmac_generateSubkeys(DfcDesSched* sched, uint8_t* subkey1, uint8_t* subkey2) {
     uint8_t l[BLOCK_SIZE] = {0};
-    des_cmac_block_cipher(key, key_len, zeroes, BLOCK_SIZE, l);
+    if(!dfc_des_sched_block(sched, zeroes, l)) return false;
 
     des_cmac_bitShiftLeft(l, subkey1, BLOCK_SIZE);
     if(l[0] & 0x80) {
@@ -79,7 +66,12 @@ bool des_cmac_with_iv(
         return false;
     }
 
-    des_cmac_generateSubkeys(key, key_len, subkey1, subkey2);
+    DfcDesSched sched;
+    if(!dfc_des_sched_begin(&sched, true, key, key_len)) return false;
+    if(!des_cmac_generateSubkeys(&sched, subkey1, subkey2)) {
+        dfc_des_sched_end(&sched);
+        return false;
+    }
 
     if(blockCount == 0) {
         blockCount = 1;
@@ -107,13 +99,16 @@ bool des_cmac_with_iv(
 
     for(size_t i = 0; i < lastBlockIndex; i++) {
         des_cmac_xor(x, message + (i * BLOCK_SIZE), y, BLOCK_SIZE);
-        des_cmac_block_cipher(key, key_len, y, BLOCK_SIZE, x);
+        if(!dfc_des_sched_block(&sched, y, x)) {
+            dfc_des_sched_end(&sched);
+            return false;
+        }
     }
 
     des_cmac_xor(x, lastBlock, y, BLOCK_SIZE);
 
-    bool success = des_cmac_block_cipher(key, key_len, y, BLOCK_SIZE, cmac);
-
+    bool success = dfc_des_sched_block(&sched, y, cmac);
+    dfc_des_sched_end(&sched);
     return success;
 }
 
