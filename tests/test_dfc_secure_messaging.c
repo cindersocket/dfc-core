@@ -452,6 +452,78 @@ static MunitResult test_header_tamper_rejected_enciphered(const MunitParameter p
     return header_tamper_rejected(DFC_COMM_ENCIPHERED);
 }
 
+// Payloads longer than one DES block. The MAC and the legacy CBC both used to
+// schedule the key on every block; these vectors are the bytes that produced.
+static MunitResult test_legacy_multiblock_vectors(const MunitParameter p[], void* d) {
+    (void)p;
+    (void)d;
+    DfcSecureMessaging* reader = alloc_session(DFC_CMD_AUTHENTICATE_LEGACY, 16);
+    reader->pcd = true;
+    DfcSecureMessaging* picc = alloc_session(DFC_CMD_AUTHENTICATE_LEGACY, 16);
+    uint8_t plain[40];
+    for(size_t i = 0; i < sizeof(plain); i++) plain[i] = (uint8_t)i;
+    uint8_t header[1] = {0x3d};
+
+    uint8_t mac_wrapped[64];
+    size_t mac_len = dfc_secure_messaging_wrap(
+        reader, DFC_COMM_MAC, header, sizeof(header), plain, sizeof(plain), mac_wrapped);
+    munit_assert_size(mac_len, ==, 44);
+    uint8_t expect_mac[4];
+    hex_to_bytes("0579b644", expect_mac);
+    munit_assert_memory_equal(4, mac_wrapped + 40, expect_mac);
+
+    uint8_t mac_recovered[40];
+    size_t mac_recovered_len = dfc_secure_messaging_verify_command(
+        picc, DFC_COMM_MAC, header, sizeof(header), mac_wrapped, mac_len, mac_recovered);
+    munit_assert_size(mac_recovered_len, ==, sizeof(plain));
+    munit_assert_memory_equal(sizeof(plain), mac_recovered, plain);
+
+    uint8_t enc_wrapped[64];
+    size_t enc_len = dfc_secure_messaging_wrap(
+        reader, DFC_COMM_ENCIPHERED, header, sizeof(header), plain, sizeof(plain), enc_wrapped);
+    munit_assert_size(enc_len, ==, 48);
+    uint8_t expect_enc[48];
+    hex_to_bytes(
+        "5d292f2bf54944852183969d93c11f184b8c2ae339ef0644f975929870b07038"
+        "3fb00d5556063f056a2fca954db17923",
+        expect_enc);
+    munit_assert_memory_equal(sizeof(expect_enc), enc_wrapped, expect_enc);
+
+    uint8_t enc_recovered[48];
+    size_t enc_recovered_len = dfc_secure_messaging_verify_command(
+        picc,
+        DFC_COMM_ENCIPHERED,
+        header,
+        sizeof(header),
+        enc_wrapped,
+        enc_len,
+        enc_recovered);
+    munit_assert_size(enc_recovered_len, ==, sizeof(plain));
+    munit_assert_memory_equal(sizeof(plain), enc_recovered, plain);
+
+    dfc_secure_messaging_free(reader);
+    dfc_secure_messaging_free(picc);
+    return MUNIT_OK;
+}
+
+static MunitResult test_iso_cmac_multiblock(const MunitParameter p[], void* d) {
+    (void)p;
+    (void)d;
+    DfcSecureMessaging* sm = alloc_session(DFC_CMD_AUTHENTICATE_ISO, 16);
+    uint8_t plain[40];
+    for(size_t i = 0; i < sizeof(plain); i++) plain[i] = (uint8_t)i;
+    uint8_t header[8] = {0x3d, 0x01, 0x00, 0x00, 0x00, 40, 0x00, 0x00};
+    uint8_t wrapped[64];
+    size_t wrapped_len = dfc_secure_messaging_wrap(
+        sm, DFC_COMM_MAC, header, sizeof(header), plain, sizeof(plain), wrapped);
+    munit_assert_size(wrapped_len, ==, 48);
+    uint8_t expect[8];
+    hex_to_bytes("90ad107e3529e9ff", expect);
+    munit_assert_memory_equal(8, wrapped + 40, expect);
+    dfc_secure_messaging_free(sm);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
     {"/tamper/header_mac",
      test_header_tamper_rejected_mac,
@@ -472,6 +544,13 @@ static MunitTest tests[] = {
     {"/mac/iso_3k3des", test_mac_iso_3k3des, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/mac/aes", test_mac_aes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/legacy", test_enciphered_legacy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/legacy/multiblock",
+     test_legacy_multiblock_vectors,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/mac/iso_multiblock", test_iso_cmac_multiblock, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/iso", test_enciphered_iso, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/aes", test_enciphered_aes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/mac/tamper_rejected", test_mac_tamper_rejected, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},

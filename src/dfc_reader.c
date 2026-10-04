@@ -6,6 +6,9 @@
 
 #if DFC_ENABLE_READER
 
+#define DFC_NEED_DES_SCHED
+#include "dfc_crypto_sched.h"
+
 enum {
     KindCommand = 1,
     KindAuthenticate,
@@ -183,14 +186,20 @@ static void d40_send(
     const uint8_t* in,
     size_t len,
     uint8_t* out) {
+    if(len < 8) return;
+    DfcDesSched sched;
+    bool ok = dfc_des_sched_begin(&sched, false, key, key_len);
+    DFC_ASSERT(ok);
     uint8_t previous[8] = {0};
     for(size_t off = 0; off + 8 <= len; off += 8) {
         uint8_t block[8];
         for(size_t i = 0; i < 8; i++) block[i] = in[off + i] ^ previous[i];
-        uint8_t iv[8] = {0};
-        dfc_worker_des_cbc_decrypt(key, key_len, iv, 8, block, out + off);
+        ok = dfc_des_sched_block(&sched, block, out + off);
+        DFC_ASSERT(ok);
         memcpy(previous, out + off, 8);
     }
+    dfc_des_sched_end(&sched);
+    DFC_UNUSED(ok);
 }
 
 static uint16_t crc16(const uint8_t* data, size_t len) {

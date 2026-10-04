@@ -1,5 +1,7 @@
 #include "dfc_secure_messaging.h"
 #include "dfc_port.h"
+#define DFC_NEED_DES_SCHED
+#include "dfc_crypto_sched.h"
 #include <string.h>
 
 #define TAG "DfcSecureMessaging"
@@ -76,6 +78,9 @@ static void d40_mac(DfcSecureMessaging* sm, const uint8_t* data, size_t data_len
         return;
     }
     const size_t block_size = DFC_SM_LEGACY_BLOCK_SIZE;
+    DfcDesSched sched;
+    bool ok = dfc_des_sched_begin(&sched, true, sm->session_key, sm->session_key_len);
+    DFC_ASSERT(ok);
     uint8_t iv[DFC_SM_LEGACY_BLOCK_SIZE] = {0};
     uint8_t block[DFC_SM_LEGACY_BLOCK_SIZE];
     uint8_t encrypted[DFC_SM_LEGACY_BLOCK_SIZE];
@@ -84,9 +89,13 @@ static void d40_mac(DfcSecureMessaging* sm, const uint8_t* data, size_t data_len
         if(count > block_size) count = block_size;
         memset(block, 0, sizeof(block));
         memcpy(block, data + offset, count);
-        dfc_worker_des_cbc_encrypt(
-            sm->session_key, sm->session_key_len, iv, block_size, block, encrypted);
+        for(size_t i = 0; i < block_size; i++) block[i] ^= iv[i];
+        ok = dfc_des_sched_block(&sched, block, encrypted);
+        DFC_ASSERT(ok);
+        memcpy(iv, encrypted, block_size);
     }
+    dfc_des_sched_end(&sched);
+    DFC_UNUSED(ok);
     memcpy(mac_out, encrypted, DFC_SM_LEGACY_MAC_LENGTH);
 }
 
@@ -299,29 +308,29 @@ size_t dfc_secure_messaging_unwrap_ev1_response(
 // PICC is C[i] = dec(P[i] ^ C[i-1]) and one travelling to the PCD is
 // C[i] = enc(P[i] ^ C[i-1]); each party recovers with its own primitive. With
 // encrypt = true these two are the ordinary CBC encrypt and decrypt.
-static void legacy_ecb(const DfcSecureMessaging* sm, bool encrypt, const uint8_t* in, uint8_t* out) {
-    uint8_t iv[8] = {0};
-    if(encrypt) {
-        dfc_worker_des_cbc_encrypt(sm->session_key, sm->session_key_len, iv, 8, in, out);
-    } else {
-        dfc_worker_des_cbc_decrypt(sm->session_key, sm->session_key_len, iv, 8, in, out);
-    }
-}
-
-// C[i] = prim(P[i] ^ C[i-1])
+// C[i] = prim(P[i] ^ C[i-1]). The DES key is scheduled once; each block is still
+// an independent ECB operation under that schedule, which is what a one-block
+// CBC call with a zero IV did.
 static void legacy_cbc_forward(
     const DfcSecureMessaging* sm,
     bool encrypt,
     const uint8_t* in,
     size_t len,
     uint8_t* out) {
+    if(len < 8) return;
+    DfcDesSched sched;
+    bool ok = dfc_des_sched_begin(&sched, encrypt, sm->session_key, sm->session_key_len);
+    DFC_ASSERT(ok);
     uint8_t prev[8] = {0};
     for(size_t off = 0; off + 8 <= len; off += 8) {
         uint8_t blk[8];
         for(size_t i = 0; i < 8; i++) blk[i] = in[off + i] ^ prev[i];
-        legacy_ecb(sm, encrypt, blk, out + off);
+        ok = dfc_des_sched_block(&sched, blk, out + off);
+        DFC_ASSERT(ok);
         memcpy(prev, out + off, 8);
     }
+    dfc_des_sched_end(&sched);
+    DFC_UNUSED(ok);
 }
 
 // P[i] = prim(C[i]) ^ C[i-1]
@@ -331,13 +340,20 @@ static void legacy_cbc_reverse(
     const uint8_t* in,
     size_t len,
     uint8_t* out) {
+    if(len < 8) return;
+    DfcDesSched sched;
+    bool ok = dfc_des_sched_begin(&sched, encrypt, sm->session_key, sm->session_key_len);
+    DFC_ASSERT(ok);
     uint8_t prev[8] = {0};
     for(size_t off = 0; off + 8 <= len; off += 8) {
         uint8_t blk[8];
-        legacy_ecb(sm, encrypt, in + off, blk);
+        ok = dfc_des_sched_block(&sched, in + off, blk);
+        DFC_ASSERT(ok);
         for(size_t i = 0; i < 8; i++) out[off + i] = blk[i] ^ prev[i];
         memcpy(prev, in + off, 8);
     }
+    dfc_des_sched_end(&sched);
+    DFC_UNUSED(ok);
 }
 
 // Shared by both directions: enciphered mode is a plain CBC-encrypt-with-CRC scheme with no

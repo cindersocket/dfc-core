@@ -129,9 +129,74 @@ static MunitResult
     return MUNIT_OK;
 }
 
+// RFC 4493 examples 3 and 4. Both span more than one block, which is the path
+// that reuses a single AES key schedule.
+static MunitResult test_aes_cmac_40bytes(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    uint8_t key[16];
+    hex_to_bytes("2b7e151628aed2a6abf7158809cf4f3c", key);
+    uint8_t message[40];
+    hex_to_bytes("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411", message);
+    uint8_t expected[16];
+    hex_to_bytes("dfa66747de9ae63030ca32611497c827", expected);
+
+    uint8_t cmac[16];
+    munit_assert_true(aes_cmac(key, sizeof(key), message, sizeof(message), cmac));
+    munit_assert_memory_equal(16, cmac, expected);
+    return MUNIT_OK;
+}
+
+static MunitResult test_aes_cmac_64bytes(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    uint8_t key[16];
+    hex_to_bytes("2b7e151628aed2a6abf7158809cf4f3c", key);
+    uint8_t message[64];
+    hex_to_bytes(
+        "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411"
+        "e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710",
+        message);
+    uint8_t expected[16];
+    hex_to_bytes("51f0bebf7e3b9d92fc49741779363cfe", expected);
+
+    uint8_t cmac[16];
+    munit_assert_true(aes_cmac(key, sizeof(key), message, sizeof(message), cmac));
+    munit_assert_memory_equal(16, cmac, expected);
+    return MUNIT_OK;
+}
+
+// 40-byte message: several DES blocks under one schedule. Captured from the
+// previous per-block implementation so a schedule change cannot drift.
+static MunitResult test_des_cmac_multiblock(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    uint8_t message[40];
+    for(size_t i = 0; i < sizeof(message); i++) message[i] = (uint8_t)i;
+    uint8_t key8[8];
+    uint8_t key16[16];
+    for(size_t i = 0; i < sizeof(key16); i++) key16[i] = (uint8_t)(0x10 + i);
+    memcpy(key8, key16, sizeof(key8));
+
+    uint8_t mac8[8];
+    uint8_t mac16[8];
+    uint8_t expect8[8];
+    uint8_t expect16[8];
+    hex_to_bytes("5d1a1cca32033982", expect8);
+    hex_to_bytes("36c938508789cb23", expect16);
+    munit_assert_true(des_cmac(key8, sizeof(key8), message, sizeof(message), mac8));
+    munit_assert_true(des_cmac(key16, sizeof(key16), message, sizeof(message), mac16));
+    munit_assert_memory_equal(8, mac8, expect8);
+    munit_assert_memory_equal(8, mac16, expect16);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
     {"/aes_cmac/empty", test_aes_cmac_empty, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/aes_cmac/16bytes", test_aes_cmac_16bytes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/aes_cmac/40bytes", test_aes_cmac_40bytes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/aes_cmac/64bytes", test_aes_cmac_64bytes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/des_cmac/multiblock", test_des_cmac_multiblock, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/des_cmac/deterministic",
      test_des_cmac_deterministic,
      NULL,
