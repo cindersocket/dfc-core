@@ -25,6 +25,11 @@ selects the parts one product carries. A card carries the emulator and the
 `.dfcb` codec. A host-side client carries the reader and both encodings. A
 simulator carries everything.
 
+## Consumers
+
+- [Chameleon Ultra Phreakbyte Edition](https://github.com/nieldk/ChameleonUltra)
+- [dfc-flipper](https://github.com/cindersocket/dfc-flipper)
+
 ## Requirements
 
 Use a C11 compiler and select either mbedTLS 3.x or
@@ -113,7 +118,7 @@ and reject incompatible ABI layouts while loading. See the
 
 ## Use it from Rust
 
-`bindings/rust` contains checked-in generated raw declarations and an idiomatic safe API.
+`bindings/rust` contains generated raw declarations and an idiomatic safe API.
 Hosted builds provide credentials, virtual cards, and readers. Target-role
 builds are `no_std`, retain normal target capacities, and use caller-owned
 credential and wrapper storage so binding bookkeeping does not consume the
