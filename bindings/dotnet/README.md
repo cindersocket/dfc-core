@@ -58,7 +58,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 cmake --build build --parallel
 dotnet test bindings/dotnet/Dfc.sln -c Release
 dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj \
-  -- examples/credentials/v6-minimal.dfc
+  -- examples/credentials/v6-minimal.dfcb
 ```
 
 Set `DfcNativeDirectory` if the native build is elsewhere. Published packages

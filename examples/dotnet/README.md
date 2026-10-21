@@ -12,7 +12,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DDFC_ROLE=simulator -DDFC_PROFILE=full_ev3 -DDFC_CRYPTO=tiny
 cmake --build build --parallel
 dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj \
-  -- examples/credentials/v6-minimal.dfc
+  -- examples/credentials/v6-minimal.dfcb
 ```
 
 For a physical card, implement `IDfcApduExchange` and pass that transport to

@@ -78,6 +78,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_virtual_picc_value_vectors test_dfc_ev1_conformance \
 	test_dfc_file_pool test_dfc_key_pool test_dfc_der test_dfc_profile test_dfc_text \
 	test_dfc_model \
+	test_dfc_teardown \
 	test_dfc_examples \
 	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader
@@ -107,7 +108,7 @@ FUZZ_TIME ?= 300
 FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
 .PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds \
-	codecs-disabled-link fuzz clean
+	codecs-disabled-link check-constant-time-auth check-teardown-wipes check-jni-wipes fuzz clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
 # cannot pass by omitting the translation unit it should have exercised.
@@ -120,9 +121,18 @@ test_cmac_failures: test_cmac_failures.c $(CORE)/aes_cmac.c $(CORE)/des_cmac.c m
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: $(TESTS) $(FAULT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes $(TESTS) $(FAULT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
+
+check-constant-time-auth:
+	python3 check_constant_time_auth.py
+
+check-teardown-wipes:
+	python3 check_teardown_wipes.py
+
+check-jni-wipes:
+	python3 check_jni_wipes.py
 
 test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
 	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV2 -o $@ $^ $(LDFLAGS)

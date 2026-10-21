@@ -27,9 +27,15 @@ try (DfcVirtualPicc picc = DfcVirtualPicc.create(credential);
 Both classes own native resources and should be used in try-with-resources.
 `DfcReader` is blocking and serializes its methods. Hardware transports should
 throw `IOException` when their link fails; the reader then clears its session.
-
 `DfcCommand.selectApplication` accepts the same human-readable AID byte order
 used by credential text and converts it to wire order.
+
+`DfcVirtualPicc.createForReplay` consumes its non-empty random script in order.
+Each native random request must fit completely in the remaining script. An
+undersized script makes that operation and every later operation on the card
+that can mutate state or process protocol fail; create a new card with a complete
+script to continue. `snapshot()` remains available after exhaustion so callers
+can verify that the failed operation did not change card state.
 
 The runnable [Java example](../../examples/java/README.md) loads a credential,
 activates it, and executes the multi-frame `GetVersion` exchange. Android
