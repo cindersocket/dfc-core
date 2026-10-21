@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 // Raised whenever a struct below or a function's meaning changes.
-#define DFC_FFI_ABI_VERSION 3
+#define DFC_FFI_ABI_VERSION 4
 
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
@@ -40,6 +40,7 @@ extern "C" {
 #define DFC_FFI_BUFFER_TOO_SMALL (-2)
 #define DFC_FFI_OUT_OF_MEMORY    (-3)
 #define DFC_FFI_UNSUPPORTED      (-4)
+#define DFC_FFI_RANDOM_FAILED    (-5)
 
 #define DFC_FFI_MESSAGE_MAX 96
 
@@ -116,10 +117,11 @@ typedef struct {
 
 DFC_FFI_EXPORT void dfc_ffi_struct_sizes(DfcFfiStructSizes* out);
 
-// Random source a virtual PICC draws from. It must fill `buffer` with `len`
-// unpredictable octets. When a PICC has no callback, the operating system's
-// generator is used.
-typedef void (*DfcFfiRandomCallback)(void* context, uint8_t* buffer, size_t len);
+// ABI 4 random source a virtual PICC draws from. Return DFC_FFI_OK only after
+// filling all `len` octets. Any other value aborts the operation without
+// committing card state, and the FFI reports DFC_FFI_RANDOM_FAILED (-5).
+// When a PICC has no callback, the operating system generator is used.
+typedef int32_t (*DfcFfiRandomCallback)(void* context, uint8_t* buffer, size_t len);
 
 // ------------------------------------------------------------ credential ---
 

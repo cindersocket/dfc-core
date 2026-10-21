@@ -48,15 +48,13 @@ size_t dfc_host_random_remaining(void) {
     return queue_len - queue_offset;
 }
 
-void dfc_random_fill(uint8_t* buf, size_t len) {
+bool dfc_random_fill(uint8_t* buf, size_t len) {
     if(queue_set) {
         size_t remaining = queue_len - queue_offset;
-        size_t copy_len = len < remaining ? len : remaining;
-        memcpy(buf, queue + queue_offset, copy_len);
-        queue_offset += copy_len;
-        if(copy_len < len) memset(buf + copy_len, 0, len - copy_len);
-        if(queue_offset == queue_len) dfc_host_clear_random_buffer();
-        return;
+        if(len > remaining) return false;
+        memcpy(buf, queue + queue_offset, len);
+        queue_offset += len;
+        return true;
     }
 
     // No queue: a deterministic ramp, so an unscripted session is still
@@ -64,6 +62,7 @@ void dfc_random_fill(uint8_t* buf, size_t len) {
     for(size_t i = 0; i < len; i++) {
         buf[i] = (uint8_t)i;
     }
+    return true;
 }
 
 void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {

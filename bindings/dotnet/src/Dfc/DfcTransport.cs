@@ -90,9 +90,12 @@ public sealed class DfcScriptedRandomSource(ReadOnlyMemory<byte> script) : IDfcR
     /// <inheritdoc />
     public void Fill(Span<byte> destination)
     {
-        var available = Math.Min(destination.Length, Remaining);
-        script.Span.Slice(offset, available).CopyTo(destination);
-        destination[available..].Clear();
-        offset += available;
+        if (destination.Length > Remaining)
+        {
+            throw new InvalidOperationException("The scripted random source is exhausted.");
+        }
+
+        script.Span.Slice(offset, destination.Length).CopyTo(destination);
+        offset += destination.Length;
     }
 }

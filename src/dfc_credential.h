@@ -263,13 +263,15 @@ DfcCredential* dfc_credential_alloc(void);
 void dfc_credential_free(DfcCredential* dfc_credential);
 
 bool dfc_credential_clear(DfcCredential* dfc_credential);
-// Factory defaults and a generated UID, without applications or files.
-void dfc_credential_init_factory(DfcCredential* credential);
+// Factory defaults and a generated UID, without applications or files. Returns
+// false, leaving the credential unchanged, if randomness is unavailable.
+bool dfc_credential_init_factory(DfcCredential* credential);
 // Resets credential to a blank, emulatable template: random UID, a default AID, a
 // single D40 DES key (all-zero, key 0), and one empty writable Standard Data file -
 // enough for a DESFire reader/writer to authenticate against and WriteData into during
 // emulation. Used by the "Blank Card" main menu flow (emulate -> write -> save).
-void dfc_credential_init_blank(DfcCredential* dfc_credential);
+// Returns false, leaving the credential unchanged, if randomness is unavailable.
+bool dfc_credential_init_blank(DfcCredential* dfc_credential);
 
 // The singular command fields are retained for existing C callers. A v6 mask
 // takes precedence whenever its corresponding has_auth_commands flag is set.

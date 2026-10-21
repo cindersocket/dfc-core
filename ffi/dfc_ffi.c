@@ -1000,8 +1000,10 @@ static void enter(const DfcFfiPicc* picc) {
     dfc_ffi_port_set_random(picc->random, picc->random_context);
 }
 
-static void leave(void) {
+static bool leave(void) {
+    bool failed = dfc_ffi_port_random_failed();
     dfc_ffi_port_set_random(NULL, NULL);
+    return failed;
 }
 
 int32_t dfc_ffi_picc_create(
@@ -1034,7 +1036,13 @@ int32_t dfc_ffi_picc_create_take(
     picc->random_context = random_context;
     enter(picc);
     picc->session = dfc_virtual_picc_session_alloc(&picc->credential->model);
-    leave();
+    bool random_failed = leave();
+    if(random_failed) {
+        picc->credential = NULL;
+        if(picc->session) dfc_virtual_picc_session_free(picc->session);
+        free(picc);
+        return DFC_FFI_RANDOM_FAILED;
+    }
     if(!picc->session) {
         picc->credential = NULL;
         free(picc);
@@ -1059,8 +1067,9 @@ int32_t dfc_ffi_picc_activate(DfcFfiPicc* picc, DfcFfiActivation* out) {
     memset(&activation, 0, sizeof(activation));
     enter(picc);
     DfcVirtualPiccStatus st = dfc_virtual_picc_scan_iso14443a(picc->session, &activation);
-    leave();
+    bool random_failed = leave();
     memset(out, 0, sizeof(*out));
+    if(random_failed) return DFC_FFI_RANDOM_FAILED;
     if(st != DfcVirtualPiccStatusOk) return st;
     out->uid_len = (uint32_t)activation.uid_len;
     memcpy(out->uid, activation.uid, activation.uid_len);
@@ -1087,7 +1096,11 @@ int32_t dfc_ffi_picc_exchange(
     enter(picc);
     DfcVirtualPiccStatus st = dfc_virtual_picc_iso_dep_exchange(
         picc->session, command, command_len, response, response_cap, response_len);
-    leave();
+    bool random_failed = leave();
+    if(random_failed) {
+        *response_len = 0;
+        return DFC_FFI_RANDOM_FAILED;
+    }
     return st;
 }
 
@@ -1102,7 +1115,11 @@ int32_t dfc_ffi_picc_frame_exchange(
     enter(picc);
     DfcVirtualPiccStatus st = dfc_virtual_picc_iso_dep_frame_exchange(
         picc->session, frame, frame_len, response, response_cap, response_len);
-    leave();
+    bool random_failed = leave();
+    if(random_failed) {
+        *response_len = 0;
+        return DFC_FFI_RANDOM_FAILED;
+    }
     return st;
 }
 
@@ -1110,7 +1127,8 @@ int32_t dfc_ffi_picc_field_off(DfcFfiPicc* picc) {
     if(!picc) return DFC_FFI_INVALID_ARGUMENT;
     enter(picc);
     DfcVirtualPiccStatus st = dfc_virtual_picc_field_off(picc->session);
-    leave();
+    bool random_failed = leave();
+    if(random_failed) return DFC_FFI_RANDOM_FAILED;
     return st;
 }
 
@@ -1118,7 +1136,8 @@ int32_t dfc_ffi_picc_reset_protocol(DfcFfiPicc* picc) {
     if(!picc) return DFC_FFI_INVALID_ARGUMENT;
     enter(picc);
     DfcVirtualPiccStatus st = dfc_virtual_picc_reset_protocol(picc->session);
-    leave();
+    bool random_failed = leave();
+    if(random_failed) return DFC_FFI_RANDOM_FAILED;
     return st;
 }
 
@@ -1126,7 +1145,8 @@ int32_t dfc_ffi_picc_advance_time(DfcFfiPicc* picc, uint32_t elapsed_millisecond
     if(!picc) return DFC_FFI_INVALID_ARGUMENT;
     enter(picc);
     dfc_emulator_advance_time(picc->session->emulator, elapsed_milliseconds);
-    leave();
+    bool random_failed = leave();
+    if(random_failed) return DFC_FFI_RANDOM_FAILED;
     return DfcVirtualPiccStatusOk;
 }
 

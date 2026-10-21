@@ -1454,7 +1454,9 @@ static void handle_prepare_proximity_check(DfcEmulator* emulator, DfcByteBuf* tx
         return;
     }
 
-    dfc_random_fill(emulator->proximity_random, sizeof(emulator->proximity_random));
+    uint8_t proximity_random[DFC_PROXIMITY_RANDOM_LENGTH];
+    if(!dfc_random_fill(proximity_random, sizeof(proximity_random))) return;
+    memcpy(emulator->proximity_random, proximity_random, sizeof(proximity_random));
     emulator->proximity_offset = 0;
     emulator->proximity_transcript_len = 0;
     emulator->proximity_published[0] = credential->picc_proximity_option;
@@ -1615,14 +1617,21 @@ static void handle_authenticate_ev2_start(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
+    uint8_t random_b[DFC_EV2_RANDOM_LENGTH];
+    uint8_t transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
+    if(!dfc_random_fill(random_b, sizeof(random_b))) return;
+    if(!non_first) {
+        if(!dfc_random_fill(transaction_identifier, sizeof(transaction_identifier))) return;
+    }
     memcpy(emulator->ev2_static_key, key, DFC_AES_KEY_LENGTH);
     emulator->ev2_authenticated_key_no = key_no;
     emulator->ev2_authentication_non_first = non_first;
     emulator->ev2_authentication_pending = true;
-    dfc_random_fill(emulator->ev2_random_b, DFC_EV2_RANDOM_LENGTH);
+    memcpy(emulator->ev2_random_b, random_b, sizeof(random_b));
     if(!non_first) {
-        dfc_random_fill(
-            emulator->ev2_transaction_identifier, DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
+        memcpy(emulator->ev2_transaction_identifier,
+               transaction_identifier,
+               sizeof(transaction_identifier));
 #if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
         DfcApplication* app = dfc_emulator_current_app(emulator);
         if(app && app->has_capability_data) {
@@ -1761,16 +1770,18 @@ static void handle_authenticate_step1(
     size_t key_len = 0;
     const uint8_t* key = emulator_auth_key(emulator, key_no, factory, sizeof(factory), &key_len);
     size_t challenge_len = auth_challenge_length(cipher, key_len);
-    dfc_random_fill(emulator->rnd_b, challenge_len);
+    uint8_t rnd_b[DFC_EV2_RANDOM_LENGTH];
+    if(!dfc_random_fill(rnd_b, challenge_len)) return;
 
     uint8_t iv[16];
     memset(iv, 0, sizeof(iv));
     uint8_t encrypted[16];
     if(cipher == DFC_CMD_AUTHENTICATE_AES) {
-        dfc_worker_aes_cbc_encrypt(key, key_len, iv, challenge_len, emulator->rnd_b, encrypted);
+        dfc_worker_aes_cbc_encrypt(key, key_len, iv, challenge_len, rnd_b, encrypted);
     } else {
-        dfc_worker_des_cbc_encrypt(key, key_len, iv, challenge_len, emulator->rnd_b, encrypted);
+        dfc_worker_des_cbc_encrypt(key, key_len, iv, challenge_len, rnd_b, encrypted);
     }
+    memcpy(emulator->rnd_b, rnd_b, challenge_len);
     memcpy(emulator->enc_rnd_b, encrypted, challenge_len);
 
     emulator->auth_cipher = cipher;
@@ -3411,6 +3422,22 @@ bool dfc_emulator_render_sdm_read(DfcEmulator* emulator, DfcFile* file) {
     if(file->data_len > sizeof(emulator->sdm_read_cache)) return false;
     const uint8_t* source = dfc_file_data_const(emulator->credential, file);
     if(!source) return false;
+    uint8_t picc_clear[DFC_SDM_PICC_DATA_BLOCK_LENGTH * 2] = {0};
+    size_t random_padding_len = 0;
+    if(file->sdm_has_picc_data_offset) {
+        size_t clear_len = emulator->credential->uid_len == DFC_DESFIRE_UID_MAX_LENGTH ?
+                               DFC_SDM_PICC_DATA_BLOCK_LENGTH * 2 :
+                               DFC_SDM_PICC_DATA_BLOCK_LENGTH;
+        random_padding_len = clear_len - 1 - emulator->credential->uid_len;
+        if((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) random_padding_len -= 3;
+        size_t random_offset =
+            emulator->credential->uid_len == DFC_DESFIRE_UID_MAX_LENGTH &&
+                    (file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) == 0 ?
+                1 :
+                1 + emulator->credential->uid_len +
+                    ((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 ? 3 : 0);
+        if(!dfc_random_fill(picc_clear + random_offset, random_padding_len)) return false;
+    }
     memcpy(emulator->sdm_read_cache, source, file->data_len);
 
     uint32_t counter = ++file->sdm_read_counter;
@@ -3440,8 +3467,7 @@ bool dfc_emulator_render_sdm_read(DfcEmulator* emulator, DfcFile* file) {
                                DFC_SDM_PICC_DATA_BLOCK_LENGTH;
         size_t encoded_len = clear_len * DFC_SDM_HEX_EXPANSION;
         if(file->sdm_picc_data_offset + encoded_len > file->data_len) return false;
-        uint8_t clear[DFC_SDM_PICC_DATA_BLOCK_LENGTH * 2] = {0};
-        clear[0] = (uint8_t)(DFC_SDM_PICC_UID_TAG_MASK |
+        picc_clear[0] = (uint8_t)(DFC_SDM_PICC_UID_TAG_MASK |
                              ((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 ?
                                   DFC_SDM_COUNTER_MIRROR_MASK :
                                   0) |
@@ -3450,27 +3476,30 @@ bool dfc_emulator_render_sdm_read(DfcEmulator* emulator, DfcFile* file) {
         if((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) padding_len -= 3;
         if(emulator->credential->uid_len == DFC_DESFIRE_UID_MAX_LENGTH &&
            (file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) == 0) {
-            dfc_random_fill(clear + 1, padding_len);
             memcpy(
-                clear + 1 + padding_len, emulator->credential->uid, emulator->credential->uid_len);
+                picc_clear + 1 + padding_len,
+                emulator->credential->uid,
+                emulator->credential->uid_len);
         } else {
             size_t payload_offset = 1;
             memcpy(
-                clear + payload_offset, emulator->credential->uid, emulator->credential->uid_len);
+                picc_clear + payload_offset,
+                emulator->credential->uid,
+                emulator->credential->uid_len);
             payload_offset += emulator->credential->uid_len;
             if((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) {
-                clear[payload_offset++] = (uint8_t)counter;
-                clear[payload_offset++] = (uint8_t)(counter >> 8);
-                clear[payload_offset++] = (uint8_t)(counter >> 16);
+                picc_clear[payload_offset++] = (uint8_t)counter;
+                picc_clear[payload_offset++] = (uint8_t)(counter >> 8);
+                picc_clear[payload_offset++] = (uint8_t)(counter >> 16);
             }
-            dfc_random_fill(clear + payload_offset, padding_len);
         }
         DfcApplication* app = dfc_emulator_current_app(emulator);
         uint8_t* meta_key = app ? dfc_credential_key(emulator->credential, app, 0) : NULL;
         if(!meta_key) return false;
         uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
-        uint8_t encrypted[sizeof(clear)];
-        dfc_worker_aes_cbc_encrypt(meta_key, DFC_AES_KEY_LENGTH, iv, clear_len, clear, encrypted);
+        uint8_t encrypted[sizeof(picc_clear)];
+        dfc_worker_aes_cbc_encrypt(
+            meta_key, DFC_AES_KEY_LENGTH, iv, clear_len, picc_clear, encrypted);
         sdm_write_ascii_hex(
             emulator->sdm_read_cache + file->sdm_picc_data_offset, encrypted, clear_len);
 

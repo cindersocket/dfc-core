@@ -14,7 +14,7 @@ def test_model_is_frozen() -> None:
 
 
 def test_command_validation_and_encoding() -> None:
-    assert Command.select_application(b"\x01\x02\x03").data == b"\x03\x02\x01"
+    assert Command.select_application(bytes.fromhex("D3494F")).data == bytes.fromhex("4F49D3")
     assert Command.read_data(2, 0x1234, 7).data == bytes.fromhex("02341200070000")
     with pytest.raises(ValueError):
         Command.select_application(b"short")

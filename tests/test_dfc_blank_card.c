@@ -11,6 +11,7 @@
  * rejects every write with BOUNDARY_ERROR.
  */
 #include "dfc_virtual_picc_test_helpers.h"
+#include "dfc_port_host.h"
 
 /* SelectApplication / WriteData / ReadData, ISO7816-wrapped as a reader sends
  * them. The AID is the one init_blank creates. */
@@ -24,7 +25,7 @@ static MunitResult
     (void)user_data;
 
     DfcCredential credential;
-    dfc_credential_init_blank(&credential);
+    munit_assert_true(dfc_credential_init_blank(&credential));
 
     /* init_blank must produce a card the RF layer will answer for at all. */
     munit_assert_true(dfc_credential_uid_is_detectable(&credential));
@@ -113,7 +114,7 @@ static MunitResult test_factory_card(const MunitParameter params[], void* user_d
     (void)params;
     (void)user_data;
     DfcCredential credential;
-    dfc_credential_init_factory(&credential);
+    munit_assert_true(dfc_credential_init_factory(&credential));
     munit_assert_size(credential.num_apps, ==, 0);
     munit_assert_size(credential.num_files, ==, 0);
     munit_assert_size(credential.uid_len, ==, DFC_DESFIRE_UID_LEN);
@@ -134,8 +135,31 @@ static MunitResult test_factory_card(const MunitParameter params[], void* user_d
     return MUNIT_OK;
 }
 
+static MunitResult test_random_failure_is_atomic(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    uint8_t empty_script = 0;
+    DfcCredential credential;
+    memset(&credential, 0xA5, sizeof(credential));
+    DfcCredential before = credential;
+
+    dfc_host_set_random_buffer(&empty_script, 0);
+    munit_assert_false(dfc_credential_init_factory(&credential));
+    munit_assert_memory_equal(sizeof(before), &before, &credential);
+    dfc_host_clear_random_buffer();
+
+    memset(&credential, 0x5A, sizeof(credential));
+    before = credential;
+    dfc_host_set_random_buffer(&empty_script, 0);
+    munit_assert_false(dfc_credential_init_blank(&credential));
+    munit_assert_memory_equal(sizeof(before), &before, &credential);
+    dfc_host_clear_random_buffer();
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
     {"/factory_card", test_factory_card, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/random_failure_is_atomic", test_random_failure_is_atomic, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/blank_card_selectable_authenticable_writable",
      test_blank_card_is_selectable_authenticable_and_writable,
      NULL,

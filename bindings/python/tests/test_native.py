@@ -39,7 +39,18 @@ def test_callback_exception_is_deferred_safely() -> None:
 
     with VirtualPicc(credential, broken) as picc:
         output = (C.c_uint8 * 16)()
-        picc._random_callback(0, output, 16)
-        assert bytes(output) != bytes(16)
+        assert picc._random_callback(0, output, 16) == _native.RANDOM_FAILED
+        assert bytes(output) == bytes(16)
         with pytest.raises(RuntimeError, match="random source failed"):
             picc._check_callback()
+
+
+def test_callback_failure_does_not_mutate_picc() -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+
+    with VirtualPicc(credential, lambda _: b"") as picc:
+        picc.activate()
+        before = picc.snapshot()
+        with pytest.raises(RuntimeError, match="random source failed"):
+            picc.exchange(bytes.fromhex("901A0000010000"))
+        assert picc.snapshot() == before

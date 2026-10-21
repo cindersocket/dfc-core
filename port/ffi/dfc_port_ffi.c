@@ -36,10 +36,16 @@
 
 static DFC_THREAD_LOCAL DfcFfiRandomCallback current_random;
 static DFC_THREAD_LOCAL void* current_context;
+static DFC_THREAD_LOCAL bool random_failed;
 
 void dfc_ffi_port_set_random(DfcFfiRandomCallback random, void* context) {
     current_random = random;
     current_context = context;
+    random_failed = false;
+}
+
+bool dfc_ffi_port_random_failed(void) {
+    return random_failed;
 }
 
 void dfc_ffi_port_system_random(uint8_t* buf, size_t len) {
@@ -86,13 +92,18 @@ void dfc_ffi_port_system_random(uint8_t* buf, size_t len) {
 #endif
 }
 
-void dfc_random_fill(uint8_t* buf, size_t len) {
-    if(len == 0) return;
+bool dfc_random_fill(uint8_t* buf, size_t len) {
+    if(len == 0) return true;
     if(current_random) {
-        current_random(current_context, buf, len);
-        return;
+        if(current_random(current_context, buf, len) != DFC_FFI_OK) {
+            memset(buf, 0, len);
+            random_failed = true;
+            return false;
+        }
+        return true;
     }
     dfc_ffi_port_system_random(buf, len);
+    return true;
 }
 
 void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {

@@ -310,18 +310,19 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     }
 
     [UnmanagedCallersOnly]
-    private static void RandomTrampoline(nint context, byte* buffer, nuint length)
+    private static int RandomTrampoline(nint context, byte* buffer, nuint length)
     {
         var destination = new Span<byte>(buffer, (int)length);
         try
         {
             ((IDfcRandomSource)GCHandle.FromIntPtr(context).Target!).Fill(destination);
+            return 0;
         }
         catch (Exception)
         {
-            // An exception cannot cross into native code, and a card must never
-            // answer with a predictable challenge.
-            NativeCrypto.Fill(destination);
+            // An exception cannot cross into native code. Returning failure
+            // makes the native operation stop before it changes card state.
+            return -5;
         }
     }
 

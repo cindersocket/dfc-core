@@ -142,6 +142,7 @@ fn status(value: i32) -> Result<(), Error> {
         -2 => Err(Error::BufferTooSmall),
         -3 => Err(Error::OutOfMemory),
         -4 => Err(Error::Unsupported),
+        -5 => Err(Error::RandomSourceFailed),
         other => Err(Error::Native(other)),
     }
 }
@@ -239,7 +240,11 @@ struct RandomContext {
 }
 
 #[cfg(not(feature = "role-target"))]
-unsafe extern "C" fn random_callback(context: *mut core::ffi::c_void, buffer: *mut u8, len: usize) {
+unsafe extern "C" fn random_callback(
+    context: *mut core::ffi::c_void,
+    buffer: *mut u8,
+    len: usize,
+) -> i32 {
     let context = unsafe { &mut *context.cast::<RandomContext>() };
     let generated =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (context.source)(len)));
@@ -247,12 +252,10 @@ unsafe extern "C" fn random_callback(context: *mut core::ffi::c_void, buffer: *m
         && bytes.len() == len
     {
         unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
-        return;
+        return 0;
     }
     context.failed = true;
-    if unsafe { sys::dfc_ffi_random_fill(buffer, len) } != 0 {
-        unsafe { core::ptr::write_bytes(buffer, 0, len) };
-    }
+    -5
 }
 
 #[cfg(not(feature = "role-target"))]
@@ -432,6 +435,27 @@ mod tests {
         assert_eq!(capabilities.0.abi_version, sys::DFC_FFI_ABI_VERSION);
         assert_ne!(capabilities.0.emulator, 0);
         assert_ne!(capabilities.0.reader, 0);
+    }
+
+    #[test]
+    fn random_failure_aborts_without_mutating_picc() {
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let mut picc =
+            VirtualPicc::from_credential_with_random(credential, |_| Vec::new()).expect("PICC");
+        picc.activate().expect("activation");
+        let before = picc.snapshot().expect("snapshot").0;
+        assert_eq!(
+            picc.exchange(&[0x90, 0x1A, 0, 0, 1, 0, 0]),
+            Err(Error::RandomSourceFailed)
+        );
+        let after = picc.snapshot().expect("snapshot").0;
+        assert_eq!(before.selected, after.selected);
+        assert_eq!(before.auth_mode, after.auth_mode);
+        assert_eq!(before.ev2_active, after.ev2_active);
+        assert_eq!(before.proximity_verified, after.proximity_verified);
     }
 }
 pub use dfc_core_sys as raw;

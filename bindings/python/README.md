@@ -88,8 +88,10 @@ nonzero card status before consuming response data.
 
 Pass a callable to `VirtualPicc` only when deterministic randomness is needed for
 testing. It must return exactly the requested number of bytes. Callback failures
-are reported after native control returns; the native code uses the operating
-system random source as a safe fallback.
+or short results abort the current operation without committing card state and
+raise `RuntimeError` after the native call returns. A caller may retry if its
+source can satisfy the next request; deterministic replay should use a new card
+with a complete script.
 
 Key and generated-challenge copies held in mutable native or Python buffers are
 wiped after use. Python cannot wipe immutable `bytes` supplied by an application,

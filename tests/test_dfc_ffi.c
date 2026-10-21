@@ -63,11 +63,19 @@ static const uint8_t APP_KEY[16] =
 
 static size_t random_calls;
 
-static void counting_random(void* context, uint8_t* buffer, size_t len) {
+static int32_t counting_random(void* context, uint8_t* buffer, size_t len) {
     size_t* calls = context;
     (*calls)++;
     for(size_t i = 0; i < len; i++)
         buffer[i] = (uint8_t)(0x40 + i);
+    return DFC_FFI_OK;
+}
+
+static int32_t failing_random(void* context, uint8_t* buffer, size_t len) {
+    (void)context;
+    (void)buffer;
+    (void)len;
+    return DFC_FFI_RANDOM_FAILED;
 }
 
 static uint8_t* encode(const DfcFfiCredential* credential, size_t* len) {
@@ -303,6 +311,56 @@ int main(void) {
     uint8_t* cloned_bytes = encode(cloned, &cloned_len);
     CHECK(cloned_len == dfcb_len && memcmp(cloned_bytes, dfcb, dfcb_len) == 0);
     free(cloned_bytes);
+
+    // A failed random request aborts the operation without changing card state.
+    DfcFfiCredential* failure_credential = NULL;
+    CHECK(dfc_ffi_credential_clone(built, &failure_credential) == 0);
+    DfcFfiPicc* failure_picc = NULL;
+    CHECK(dfc_ffi_picc_create_take(
+              &failure_credential, failing_random, NULL, &failure_picc) == DFC_FFI_OK);
+    DfcFfiActivation failure_activation;
+    CHECK(dfc_ffi_picc_activate(failure_picc, &failure_activation) == DFC_FFI_OK);
+    DfcFfiSnapshot before_failure;
+    DfcFfiSnapshot after_failure;
+    CHECK(dfc_ffi_picc_snapshot(failure_picc, &before_failure) == DFC_FFI_OK);
+    const uint8_t authenticate[] = {0x90, 0x0A, 0x00, 0x00, 0x01, 0x00, 0x00};
+    uint8_t failed_response[32] = {0};
+    size_t failed_response_len = 0;
+    CHECK(dfc_ffi_picc_exchange(
+              failure_picc,
+              authenticate,
+              sizeof(authenticate),
+              failed_response,
+              sizeof(failed_response),
+              &failed_response_len) == DFC_FFI_RANDOM_FAILED);
+    CHECK(dfc_ffi_picc_snapshot(failure_picc, &after_failure) == DFC_FFI_OK);
+    CHECK(memcmp(&before_failure, &after_failure, sizeof(before_failure)) == 0);
+    CHECK(failed_response_len == 0);
+    dfc_ffi_picc_free(failure_picc);
+
+    // Random-ID activation is also atomic: a failed source leaves activation
+    // and session state untouched.
+    DfcFfiCredential* random_id_credential = NULL;
+    CHECK(dfc_ffi_credential_clone(built, &random_id_credential) == DFC_FFI_OK);
+    DfcFfiPiccSettings random_id_settings;
+    CHECK(dfc_ffi_credential_get_picc(random_id_credential, &random_id_settings) == DFC_FFI_OK);
+    random_id_settings.random_id = 1;
+    CHECK(dfc_ffi_credential_set_picc(random_id_credential, &random_id_settings) == DFC_FFI_OK);
+    DfcFfiError random_id_error;
+    CHECK(dfc_ffi_credential_finish(random_id_credential, &random_id_error) == DFC_FFI_OK);
+    DfcFfiPicc* random_id_picc = NULL;
+    CHECK(dfc_ffi_picc_create_take(
+              &random_id_credential, failing_random, NULL, &random_id_picc) == DFC_FFI_OK);
+    DfcFfiSnapshot before_activation;
+    DfcFfiSnapshot after_activation;
+    CHECK(dfc_ffi_picc_snapshot(random_id_picc, &before_activation) == DFC_FFI_OK);
+    memset(&failure_activation, 0xA5, sizeof(failure_activation));
+    CHECK(dfc_ffi_picc_activate(random_id_picc, &failure_activation) == DFC_FFI_RANDOM_FAILED);
+    CHECK(dfc_ffi_picc_snapshot(random_id_picc, &after_activation) == DFC_FFI_OK);
+    CHECK(memcmp(&before_activation, &after_activation, sizeof(before_activation)) == 0);
+    DfcFfiActivation zero_activation = {0};
+    CHECK(memcmp(&failure_activation, &zero_activation, sizeof(failure_activation)) == 0);
+    dfc_ffi_picc_free(random_id_picc);
 
     // The original constructor keeps caller ownership, while the transfer
     // constructor consumes only a valid credential after the PICC is ready.

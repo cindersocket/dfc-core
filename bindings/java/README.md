@@ -44,9 +44,12 @@ cmake --build build-jni --parallel
 mkdir -p build-jni/java
 javac --release 17 -d build-jni/java \
   bindings/java/src/main/java/com/cindersocket/dfc/*.java \
-  tests/java/DfcJniSmokeTest.java examples/java/DfcTransceiveExample.java
+  tests/java/DfcJniSmokeTest.java tests/java/DfcJniReplayRandomTest.java \
+  examples/java/DfcTransceiveExample.java
 java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
   examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
+java -Djava.library.path=build-jni -cp build-jni/java DfcJniReplayRandomTest \
+  examples/credentials/v6-minimal.dfc
 java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
   examples/credentials/v6-minimal.dfc
 ```

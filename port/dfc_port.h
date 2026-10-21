@@ -52,8 +52,10 @@ void dfc_assert_fail(const char* file, int line);
  * RndB), so the implementation must not block and must not issue a SoftDevice
  * SVC from a high-priority context. The firmware satisfies this by draining a
  * ring that the main loop keeps topped up. Never returns predictable bytes:
- * DESFire authentication security rests on RndB being unguessable. */
-void dfc_random_fill(uint8_t* buf, size_t len);
+ * DESFire authentication security rests on RndB being unguessable. Return
+ * false without supplying predictable replacement bytes when the source cannot
+ * satisfy the whole request. */
+bool dfc_random_fill(uint8_t* buf, size_t len);
 
 /* Object allocation.
  *

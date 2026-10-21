@@ -14,6 +14,10 @@
 - Reuse prepared cipher contexts during CMAC and legacy CBC operations.
 - Stream EV2 MAC input segments instead of assembling a 519-byte temporary message.
 - Propagate every CMAC cipher failure and reject overflowing message lengths.
+- Make random providers fallible in ABI 4 and fail random-dependent operations
+  atomically, with consistent error propagation through every binding.
+- Make credential factory and blank initialization, and virtual-card
+  anticollision, report random-source failures through boolean return values.
 
 ## 1.2.1 (2026-10-01)
 

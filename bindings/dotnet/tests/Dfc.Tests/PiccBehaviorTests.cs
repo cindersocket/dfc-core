@@ -11,6 +11,30 @@ using NUnit.Framework;
 public sealed class PiccBehaviorTests
 {
     [Test]
+    public void RandomExhaustion_AbortsWithoutChangingState()
+    {
+        using var picc = Fixtures.Picc(
+            Fixtures.Credential(),
+            new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty)
+        );
+        Fixtures.Ok(picc.Activate());
+        var before = picc.Snapshot();
+
+        var failed = picc.Exchange(Hex("901A0000010000"));
+        var after = picc.Snapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(failed.IsFailure, Is.True);
+            Assert.That(before.Selection, Is.EqualTo(after.Selection));
+            Assert.That(before.SelectedAid, Is.EqualTo(after.SelectedAid));
+            Assert.That(before.Authentication, Is.EqualTo(after.Authentication));
+            Assert.That(before.Ev2Session, Is.EqualTo(after.Ev2Session));
+            Assert.That(before.ProximityVerified, Is.EqualTo(after.ProximityVerified));
+        });
+    }
+
+    [Test]
     public void GetVersion_UsesThreeNativeResponseFrames()
     {
         using var picc = Fixtures.Picc(Fixtures.Credential(DfcGeneration.Ev1));

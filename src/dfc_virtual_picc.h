@@ -69,8 +69,9 @@ void dfc_virtual_picc_session_free(DfcVirtualPiccSession* session);
 // when random ID is enabled, and a new one on every call), ATS, SAK and ATQA,
 // each the credential's own where it carries one and the built-in default
 // otherwise. One authority for that precedence, so the scripted sessions, the
-// host tool and the real listener cannot drift apart.
-void dfc_virtual_picc_anticollision(
+// host tool and the real listener cannot drift apart. Returns false without
+// changing `activation` if a random identifier cannot be generated.
+bool dfc_virtual_picc_anticollision(
     const DfcCredential* credential,
     DfcVirtualPiccActivation* activation);
 

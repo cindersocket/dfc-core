@@ -6,4 +6,5 @@
 // Install the random source the engine draws from on this thread, or NULL for
 // the operating system's generator.
 void dfc_ffi_port_set_random(DfcFfiRandomCallback random, void* context);
+bool dfc_ffi_port_random_failed(void);
 void dfc_ffi_port_system_random(uint8_t* buffer, size_t len);

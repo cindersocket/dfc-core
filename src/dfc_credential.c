@@ -770,23 +770,26 @@ bool dfc_credential_clear(DfcCredential* credential) {
     return true;
 }
 
-void dfc_credential_init_factory(DfcCredential* credential) {
+bool dfc_credential_init_factory(DfcCredential* credential) {
+    uint8_t uid[DFC_DESFIRE_UID_LEN];
+    if(!dfc_random_fill(uid, sizeof(uid))) return false;
     dfc_credential_clear(credential);
 
     credential->uid_len = DFC_DESFIRE_UID_LEN;
-    dfc_random_fill(credential->uid, credential->uid_len);
+    memcpy(credential->uid, uid, sizeof(uid));
     credential->uid[0] = DFC_DESFIRE_UID_FIRST_BYTE;
+    return true;
 }
 
-void dfc_credential_init_blank(DfcCredential* credential) {
-    dfc_credential_init_factory(credential);
+bool dfc_credential_init_blank(DfcCredential* credential) {
+    if(!dfc_credential_init_factory(credential)) return false;
     const uint8_t aid_desfire_order[3] = {0x01, 0x00, 0x00};
     DfcApplication* app = dfc_credential_create_application_desfire_order(
         credential, aid_desfire_order, 0x0F, DFC_KEY_TYPE_DES_2K3DES | 1);
-    if(!app) return;
+    if(!app) return false;
 
     DfcFile* file = dfc_credential_create_file(credential, 0, 0x00);
-    if(!file) return;
+    if(!file) return false;
     file->number = 0x00;
     file->type = 0x00;
     file->comm_settings = DFC_COMM_PLAIN;
@@ -797,7 +800,9 @@ void dfc_credential_init_blank(DfcCredential* credential) {
         file->data_offset = DFC_FILE_POOL_NONE;
         file->data_len = 0;
         file->declared_size = 0;
+        return false;
     }
+    return true;
 }
 
 void dfc_credential_free(DfcCredential* credential) {

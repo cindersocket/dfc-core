@@ -150,7 +150,10 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
         }
         if(response_capacity < challenge_len + DFC_ISO7816_STATUS_WORD_LENGTH)
             return DfcVirtualPiccStatusBufferTooSmall;
-        dfc_random_fill(emulator->iso_auth_card_first, challenge_len);
+        uint8_t challenge[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+        if(!dfc_random_fill(challenge, challenge_len))
+            return DfcVirtualPiccStatusProtocolError;
+        memcpy(emulator->iso_auth_card_first, challenge, challenge_len);
         emulator->iso_auth_challenge_len = (uint8_t)challenge_len;
         emulator->iso_auth_phase = 1;
         memcpy(response, emulator->iso_auth_card_first, challenge_len);
@@ -208,7 +211,6 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
                                DFC_ISO7816_SW_INSTRUCTION_LO,
                                response, response_capacity, response_len);
     }
-    emulator->iso_auth_phase = 0;
     size_t challenge_len = emulator->iso_auth_challenge_len;
     if(apdu_len != challenge_len + 6 || apdu[4] != challenge_len || apdu[apdu_len - 1] != 0) {
         return iso_auth_status(DFC_ISO7816_SW_WRONG_LENGTH_HI,
@@ -224,7 +226,8 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
     if(response_capacity < challenge_len * 2 + DFC_ISO7816_STATUS_WORD_LENGTH)
         return DfcVirtualPiccStatusBufferTooSmall;
     uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];
-    dfc_random_fill(clear, challenge_len);
+    if(!dfc_random_fill(clear, challenge_len)) return DfcVirtualPiccStatusProtocolError;
+    emulator->iso_auth_phase = 0;
     memcpy(clear + challenge_len, apdu + 5, challenge_len);
     uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
     memcpy(iv, emulator->iso_auth_external_iv,
@@ -297,8 +300,12 @@ static DfcVirtualPiccStatus handle_virtual_card_select(
     if(response_capacity < fci_len) return DfcVirtualPiccStatusBufferTooSmall;
 
     DfcEmulator* emulator = session->emulator;
-    dfc_random_fill(
-        emulator->virtual_card_challenge, DFC_VIRTUAL_CARD_CHALLENGE_LENGTH);
+    uint8_t virtual_card_challenge[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH];
+    if(!dfc_random_fill(virtual_card_challenge, sizeof(virtual_card_challenge)))
+        return DfcVirtualPiccStatusProtocolError;
+    memcpy(emulator->virtual_card_challenge,
+           virtual_card_challenge,
+           sizeof(virtual_card_challenge));
     memset(
         emulator->virtual_card_clear_data, 0, DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH);
     emulator->virtual_card_clear_data[DfcVirtualCardClearInformationOffset] =
@@ -446,10 +453,10 @@ DfcVirtualPiccStatus dfc_virtual_picc_field_off(DfcVirtualPiccSession* session) 
     return DfcVirtualPiccStatusOk;
 }
 
-void dfc_virtual_picc_anticollision(
+bool dfc_virtual_picc_anticollision(
     const DfcCredential* credential,
     DfcVirtualPiccActivation* activation) {
-    if(!credential || !activation) return;
+    if(!credential || !activation) return false;
 
     memset(activation, 0, sizeof(DfcVirtualPiccActivation));
     memcpy(activation->protocol, DfcVirtualPiccProtocol, sizeof(DfcVirtualPiccProtocol));
@@ -459,7 +466,7 @@ void dfc_virtual_picc_anticollision(
         // A fresh identifier per activation. The stored UID stays where it is and
         // is reachable only through GetCardUID under an authenticated session.
         activation->uid[0] = DFC_RANDOM_UID_FIRST_BYTE;
-        dfc_random_fill(activation->uid + 1, DFC_RANDOM_UID_LEN - 1);
+        if(!dfc_random_fill(activation->uid + 1, DFC_RANDOM_UID_LEN - 1)) return false;
         activation->uid_len = DFC_RANDOM_UID_LEN;
     } else {
         memcpy(activation->uid, credential->uid, credential->uid_len);
@@ -483,6 +490,7 @@ void dfc_virtual_picc_anticollision(
     activation->atqa_len = sizeof(DfcVirtualPiccAtqa);
     memcpy(activation->rf_detail, DfcVirtualPiccRfDetail, sizeof(DfcVirtualPiccRfDetail));
     activation->rf_detail_len = sizeof(DfcVirtualPiccRfDetail);
+    return true;
 }
 
 DfcVirtualPiccStatus dfc_virtual_picc_scan_iso14443a(
@@ -493,7 +501,8 @@ DfcVirtualPiccStatus dfc_virtual_picc_scan_iso14443a(
         return DfcVirtualPiccStatusNoCard;
     }
 
-    dfc_virtual_picc_anticollision(session->credential, activation);
+    if(!dfc_virtual_picc_anticollision(session->credential, activation))
+        return DfcVirtualPiccStatusProtocolError;
     if(session->credential->picc_random_id) {
         memcpy(session->random_uid, activation->uid, DFC_RANDOM_UID_LEN);
         session->random_uid_valid = true;

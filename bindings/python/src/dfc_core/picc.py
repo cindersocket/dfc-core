@@ -47,20 +47,17 @@ class VirtualPicc:
         self._handle = out
         self._finalizer = weakref.finalize(self, N.library().dfc_ffi_picc_free, out)
 
-    def _random_callback(self, _context: int, buffer: Any, length: int) -> None:
+    def _random_callback(self, _context: int, buffer: Any, length: int) -> int:
         try:
             assert self._random is not None
             result = self._random(length)
             if len(result) != length:
                 raise ValueError(f"random source returned {len(result)} bytes, expected {length}")
             C.memmove(buffer, result, length)
+            return 0
         except BaseException as exc:  # noqa: BLE001, nothing may unwind through C
             self._callback_error = exc
-            # Keep the native operation cryptographically safe even though its
-            # Python-supplied deterministic source failed.
-            status = N.library().dfc_ffi_random_fill(buffer, length)
-            if status:
-                C.memset(buffer, 0, length)
+            return -5
 
     def _open(self) -> N.Handle:
         if not self._finalizer.alive:

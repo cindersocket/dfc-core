@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 internal static unsafe partial class Native
 {
     internal const string Library = "libdfc";
-    internal const uint AbiVersion = 3;
+    internal const uint AbiVersion = 4;
 
     internal const int InvalidArgument = -1;
     internal const int BufferTooSmall = -2;
@@ -157,7 +157,7 @@ internal static unsafe partial class Native
     [LibraryImport(Library)]
     internal static partial int dfc_ffi_picc_create(
         nint credential,
-        delegate* unmanaged<nint, byte*, nuint, void> random,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
         nint context,
         nint* output);
 

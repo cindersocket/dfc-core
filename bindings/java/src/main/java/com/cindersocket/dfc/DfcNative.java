@@ -3,7 +3,7 @@ package com.cindersocket.dfc;
 final class DfcNative {
   static {
     System.loadLibrary("dfc_jni");
-    if (abiVersion() != 3)
+    if (abiVersion() != 4)
       throw new UnsatisfiedLinkError("dfc JNI ABI mismatch: " + abiVersion());
   }
   private DfcNative() {}

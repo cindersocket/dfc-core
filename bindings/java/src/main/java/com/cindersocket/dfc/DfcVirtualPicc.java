@@ -32,11 +32,19 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
     cleanable = DfcCleaner.register(this, state);
   }
   public static DfcVirtualPicc create(DfcCredential credential) throws DfcException {
-    return createForReplay(credential, null);
+    Objects.requireNonNull(credential, "credential");
+    return new DfcVirtualPicc(DfcNative.piccCreate(credential.encode(), null));
   }
+  /**
+   * Creates a card whose random requests consume the supplied script in order.
+   *
+   * <p>The script must not be empty. If a request cannot be satisfied in full, that operation and
+   * every later operation on the card fail. Create a new card with a complete script to continue.
+   */
   public static DfcVirtualPicc createForReplay(DfcCredential credential, byte[] randomScript)
       throws DfcException {
     Objects.requireNonNull(credential, "credential");
+    Objects.requireNonNull(randomScript, "randomScript");
     return new DfcVirtualPicc(DfcNative.piccCreate(credential.encode(), randomScript));
   }
   public synchronized DfcActivation activate() throws DfcException {

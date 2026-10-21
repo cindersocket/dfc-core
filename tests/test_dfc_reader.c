@@ -5,6 +5,7 @@
 #include "munit/munit.h"
 
 #include "dfc_credential.h"
+#include "dfc_port_host.h"
 #include "dfc_reader.h"
 #include "dfc_virtual_picc.h"
 
@@ -47,6 +48,16 @@ typedef struct {
     DfcReaderSession session;
     DfcReaderFraming framing;
 } Link;
+
+static DfcReaderStatus
+    send(Link* link, const DfcCommand* command, uint8_t comm, DfcReaderExchange* exchange);
+static void select_app(Link* link, const uint8_t aid[3]);
+static DfcReaderStatus authenticate(
+    Link* link, uint8_t cipher, uint8_t key_no, const uint8_t* key, size_t key_len);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+static DfcReaderStatus
+    authenticate_ev2(Link* link, bool first, uint8_t key_no, const uint8_t key[16]);
+#endif
 
 static void add_data_file(DfcCredential* c, size_t app, uint8_t number, uint8_t comm, size_t size) {
     DfcFile* file = dfc_credential_create_file(c, app, number);
@@ -112,6 +123,246 @@ static void link_open(Link* link, DfcGeneration generation, DfcReaderFraming fra
 
 static void link_close(Link* link) {
     dfc_virtual_picc_session_free(link->picc);
+}
+
+static void assert_emulator_unchanged(const DfcEmulator* before, const Link* link) {
+    munit_assert_memory_equal(sizeof(*before), before, link->picc->emulator);
+}
+
+static MunitResult test_random_failures_are_atomic(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    const struct {
+        const uint8_t* aid;
+        uint8_t command;
+        size_t short_random_len;
+    } authentication_cases[] = {
+        {AID_D40, DFC_CMD_AUTHENTICATE_LEGACY, 7},
+        {AID_ISO, DFC_CMD_AUTHENTICATE_ISO, 7},
+        {AID_AES, DFC_CMD_AUTHENTICATE_AES, 15},
+    };
+    uint8_t short_random[16] = {0};
+    for(size_t i = 0; i < sizeof(authentication_cases) / sizeof(authentication_cases[0]); i++) {
+        link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+        select_app(&link, authentication_cases[i].aid);
+        DfcEmulator before = *link.picc->emulator;
+        dfc_host_set_random_buffer(short_random, authentication_cases[i].short_random_len);
+        uint8_t apdu[] = {0x90, authentication_cases[i].command, 0, 0, 1, 0, 0};
+        uint8_t response[32];
+        size_t response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc, apdu, sizeof(apdu), response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusProtocolError);
+        munit_assert_size(response_len, ==, 0);
+        assert_emulator_unchanged(&before, &link);
+        dfc_host_clear_random_buffer();
+        link_close(&link);
+    }
+
+#if DFC_ENABLE_ISO7816_AUTH
+    const uint8_t reader_random_first[DFC_ISO7816_AUTH_CHALLENGE_LONG] = {0xA1};
+    const uint8_t reader_random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG] = {0xB2};
+    uint8_t tx[DFC_COMMAND_MAX_APDU];
+    uint8_t rx[64];
+    size_t tx_len = 0;
+    size_t rx_len = 0;
+    DfcReaderExchange iso_exchange;
+
+    // The GET CHALLENGE draw fails before the ISO authentication state advances.
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        dfc_reader_authenticate_iso7816_begin(
+            &iso_exchange, &link.session, DFC_ISO7816_AUTH_APP_REFERENCE,
+            AES_KEY_0, sizeof(AES_KEY_0), DFC_ISO7816_AUTH_ALGORITHM_AES,
+            reader_random_first, reader_random_second, sizeof(reader_random_first)),
+        ==,
+        DfcReaderOk);
+    munit_assert_int(
+        dfc_reader_step(&iso_exchange, NULL, 0, tx, sizeof(tx), &tx_len),
+        ==,
+        DfcReaderPending);
+    DfcEmulator before_iso_first = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, sizeof(reader_random_first) - 1);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, tx, tx_len, rx, sizeof(rx), &rx_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(rx_len, ==, 0);
+    assert_emulator_unchanged(&before_iso_first, &link);
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+
+    // Advance through GET CHALLENGE and EXTERNAL AUTHENTICATE, then fail the
+    // independent INTERNAL AUTHENTICATE draw without committing phase state.
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        dfc_reader_authenticate_iso7816_begin(
+            &iso_exchange, &link.session, DFC_ISO7816_AUTH_APP_REFERENCE,
+            AES_KEY_0, sizeof(AES_KEY_0), DFC_ISO7816_AUTH_ALGORITHM_AES,
+            reader_random_first, reader_random_second, sizeof(reader_random_first)),
+        ==,
+        DfcReaderOk);
+    munit_assert_int(
+        dfc_reader_step(&iso_exchange, NULL, 0, tx, sizeof(tx), &tx_len),
+        ==,
+        DfcReaderPending);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, tx, tx_len, rx, sizeof(rx), &rx_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_int(
+        dfc_reader_step(&iso_exchange, rx, rx_len, tx, sizeof(tx), &tx_len),
+        ==,
+        DfcReaderPending);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, tx, tx_len, rx, sizeof(rx), &rx_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_int(
+        dfc_reader_step(&iso_exchange, rx, rx_len, tx, sizeof(tx), &tx_len),
+        ==,
+        DfcReaderPending);
+    DfcEmulator before_iso_second = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, sizeof(reader_random_first) - 1);
+    rx_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, tx, tx_len, rx, sizeof(rx), &rx_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(rx_len, ==, 0);
+    assert_emulator_unchanged(&before_iso_second, &link);
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+#endif
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    DfcEmulator before_first = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, 16);
+    const uint8_t ev2_first[] = {0x90, DFC_CMD_AUTHENTICATE_EV2_FIRST, 0, 0, 2, 0, 0, 0};
+    uint8_t ev2_response[64];
+    size_t ev2_response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            ev2_first,
+            sizeof(ev2_first),
+            ev2_response,
+            sizeof(ev2_response),
+            &ev2_response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(ev2_response_len, ==, 0);
+    assert_emulator_unchanged(&before_first, &link);
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+    DfcEmulator before_non_first = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, 15);
+    const uint8_t ev2_non_first[] = {
+        0x90, DFC_CMD_AUTHENTICATE_EV2_NON_FIRST, 0, 0, 1, 1, 0};
+    ev2_response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            ev2_non_first,
+            sizeof(ev2_non_first),
+            ev2_response,
+            sizeof(ev2_response),
+            &ev2_response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(ev2_response_len, ==, 0);
+    assert_emulator_unchanged(&before_non_first, &link);
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+#endif
+
+#if DFC_ENABLE_PROXIMITY_CHECK
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    link.credential.picc_has_proximity_key = true;
+    DfcEmulator before_proximity = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, DFC_PROXIMITY_RANDOM_LENGTH - 1);
+    const uint8_t proximity[] = {0x90, DFC_CMD_PREPARE_PROXIMITY_CHECK, 0, 0, 0};
+    uint8_t proximity_response[32];
+    size_t proximity_response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            proximity,
+            sizeof(proximity),
+            proximity_response,
+            sizeof(proximity_response),
+            &proximity_response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(proximity_response_len, ==, 0);
+    assert_emulator_unchanged(&before_proximity, &link);
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+#endif
+
+#if DFC_ENABLE_VIRTUAL_CARD
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    const uint8_t iid[] = {0xF0, 1, 2, 3, 4};
+    link.credential.virtual_card_configured = true;
+    link.credential.virtual_card_authentication_mandatory = true;
+    memcpy(link.credential.virtual_card_installation_id, iid, sizeof(iid));
+    link.credential.virtual_card_installation_id_len = sizeof(iid);
+    link.credential.virtual_card_uid_len = link.credential.uid_len;
+    memcpy(link.credential.virtual_card_uid, link.credential.uid, link.credential.uid_len);
+    uint8_t apdu[32];
+    size_t apdu_len = 0;
+    munit_assert_int(
+        dfc_reader_virtual_card_select_apdu(iid, sizeof(iid), apdu, sizeof(apdu), &apdu_len),
+        ==,
+        DfcReaderOk);
+    DfcEmulator before_virtual = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, DFC_VIRTUAL_CARD_CHALLENGE_LENGTH - 1);
+    uint8_t response[64];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, apdu, apdu_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(response_len, ==, 0);
+    assert_emulator_unchanged(&before_virtual, &link);
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+#endif
+
+#if DFC_ENABLE_SDM
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    DfcFile* sdm_file = dfc_credential_find_file_in_app(&link.credential, 0, FileLong);
+    munit_assert_not_null(sdm_file);
+    sdm_file->sdm_enabled = true;
+    sdm_file->sdm_has_picc_data_offset = true;
+    sdm_file->sdm_picc_data_offset = 0;
+    sdm_file->sdm_read_counter = 41;
+    DfcEmulator before_sdm = *link.picc->emulator;
+    uint32_t before_counter = sdm_file->sdm_read_counter;
+    dfc_host_set_random_buffer(short_random, 7);
+    munit_assert_false(dfc_emulator_render_sdm_read(link.picc->emulator, sdm_file));
+    assert_emulator_unchanged(&before_sdm, &link);
+    munit_assert_uint32(sdm_file->sdm_read_counter, ==, before_counter);
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+#endif
+    return MUNIT_OK;
 }
 
 // Set DFC_READER_TRACE to print every frame the loopback carries.
@@ -933,6 +1184,12 @@ static MunitResult test_delegated_application(const MunitParameter params[], voi
 #endif
 
 static MunitTest tests[] = {
+    {"/random-failures-are-atomic",
+     test_random_failures_are_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/aes-session", test_aes_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/iso-session", test_iso_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #if DFC_ENABLE_ISO7816_AUTH

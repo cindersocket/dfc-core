@@ -6,8 +6,15 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
-ABI_VERSION = 3
-OK, INVALID_ARGUMENT, BUFFER_TOO_SMALL, OUT_OF_MEMORY, UNSUPPORTED = 0, -1, -2, -3, -4
+ABI_VERSION = 4
+OK, INVALID_ARGUMENT, BUFFER_TOO_SMALL, OUT_OF_MEMORY, UNSUPPORTED, RANDOM_FAILED = (
+    0,
+    -1,
+    -2,
+    -3,
+    -4,
+    -5,
+)
 OWNER_PICC = -1
 MESSAGE_MAX = 96
 Handle = C.c_void_p
@@ -315,7 +322,7 @@ STRUCTS = (
     Snapshot,
     ReaderState,
 )
-RANDOM_CALLBACK = C.CFUNCTYPE(None, C.c_void_p, P8, C.c_size_t)
+RANDOM_CALLBACK = C.CFUNCTYPE(C.c_int32, C.c_void_p, P8, C.c_size_t)
 
 
 def layout_fingerprint() -> int:
