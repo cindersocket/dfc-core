@@ -18,6 +18,21 @@ public sealed class FeatureTests
     private static readonly byte[] DamEncryption = Convert.FromHexString("6162636465666768696A6B6C6D6E6F60");
 
     [Test]
+    public void SelectApplication_ConvertsModelAidToWireOrder()
+    {
+        var command = Fixtures.Ok(DfcCommand.SelectApplication(Convert.FromHexString("D3494F")));
+        Assert.That(command.Data.ToArray(), Is.EqualTo(Convert.FromHexString("4F49D3")));
+
+        command = Fixtures.Ok(
+            DfcCommand.SelectApplication(
+                Convert.FromHexString("D3494F"),
+                Convert.FromHexString("AB12CD")
+            )
+        );
+        Assert.That(command.Data.ToArray(), Is.EqualTo(Convert.FromHexString("4F49D3CD12AB")));
+    }
+
+    [Test]
     public async Task ChangeKeyEv2_ChangesAnotherKeyInTheActiveSet()
     {
         var credential = Fixtures.Credential(DfcGeneration.Ev2);

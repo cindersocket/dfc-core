@@ -43,7 +43,10 @@ public sealed record DfcCommand(byte Instruction, ReadOnlyMemory<byte> Data)
 
     // --------------------------------------------------------- discovery ---
 
-    /// <summary>SelectApplication. The AID is given as the wire carries it, least significant octet first.</summary>
+    /// <summary>
+    /// SelectApplication. AIDs use the human-readable order stored by the credential model;
+    /// this factory converts them to wire order.
+    /// </summary>
     public static unsafe Result<DfcCommand, DfcProtocolError> SelectApplication(
         ReadOnlySpan<byte> aid,
         ReadOnlySpan<byte> secondaryAid = default

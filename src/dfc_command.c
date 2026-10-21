@@ -149,8 +149,13 @@ DfcCommandStatus dfc_command_select_application(
     const uint8_t* secondary_aid) {
     if(!command || !aid) return DfcCommandInvalid;
     Builder b = builder_start(command, DFC_CMD_SELECT_APPLICATION);
-    put(&b, aid, DFC_COMMAND_AID_LENGTH);
-    if(secondary_aid) put(&b, secondary_aid, DFC_COMMAND_AID_LENGTH);
+    uint8_t wire_aid[DFC_COMMAND_AID_LENGTH] = {aid[2], aid[1], aid[0]};
+    put(&b, wire_aid, sizeof(wire_aid));
+    if(secondary_aid) {
+        const uint8_t wire_secondary_aid[DFC_COMMAND_AID_LENGTH] = {
+            secondary_aid[2], secondary_aid[1], secondary_aid[0]};
+        put(&b, wire_secondary_aid, sizeof(wire_secondary_aid));
+    }
     return builder_finish(&b);
 }
 

@@ -41,6 +41,8 @@ var version = exchanged.Value;
 `DfcVirtualPicc` implements `IDfcApduExchange`. For hardware, implement that
 interface over PC/SC, NFC, or a serial bridge and pass it to `DfcReader`.
 Transport failures clear the managed reader session.
+`DfcCommand.SelectApplication` accepts the same human-readable AID byte order
+used by `DfcApplication.Aid` and converts it to wire order.
 
 The runnable [.NET example](../../examples/dotnet/README.md) validates a
 credential, activates a virtual card, and performs a multi-frame `GetVersion`

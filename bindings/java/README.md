@@ -28,6 +28,9 @@ Both classes own native resources and should be used in try-with-resources.
 `DfcReader` is blocking and serializes its methods. Hardware transports should
 throw `IOException` when their link fails; the reader then clears its session.
 
+`DfcCommand.selectApplication` accepts the same human-readable AID byte order
+used by credential text and converts it to wire order.
+
 The runnable [Java example](../../examples/java/README.md) loads a credential,
 activates it, and executes the multi-frame `GetVersion` exchange. Android
 consumers should use the separate [Android binding](../android/README.md).

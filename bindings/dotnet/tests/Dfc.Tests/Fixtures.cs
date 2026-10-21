@@ -27,8 +27,6 @@ internal static class Fixtures
     public const byte FileValueMac = 0x04;
     public const byte FileValueFull = 0x05;
 
-    public static byte[] Wire(byte[] aid) => aid.Reverse().ToArray();
-
     public static byte[] Pattern(byte number, int length) =>
         Enumerable.Range(0, length).Select(i => (byte)(number * 0x10 + i)).ToArray();
 
@@ -89,7 +87,7 @@ internal static class Fixtures
         Assert.That(result.IsSuccess, Is.True, () => $"Expected success, got {result.Error}");
 
     public static async Task SelectAsync(DfcReader reader, byte[] aid) =>
-        Ok(await reader.ExchangeAsync(DfcCommand.SelectApplication(Wire(aid))));
+        Ok(await reader.ExchangeAsync(DfcCommand.SelectApplication(aid)));
 
     public static DfcVirtualPicc Picc(DfcCredential credential, IDfcRandomSource? random = null)
     {

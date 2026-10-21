@@ -13,10 +13,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const uint8_t AID_AES[3] = {0x01, 0x00, 0x00};
-static const uint8_t AID_ISO[3] = {0x02, 0x00, 0x00};
-static const uint8_t AID_3K[3] = {0x03, 0x00, 0x00};
-static const uint8_t AID_D40[3] = {0x04, 0x00, 0x00};
+static const uint8_t AID_AES[3] = {0x00, 0x00, 0x01};
+static const uint8_t AID_ISO[3] = {0x00, 0x00, 0x02};
+static const uint8_t AID_3K[3] = {0x00, 0x00, 0x03};
+static const uint8_t AID_D40[3] = {0x00, 0x00, 0x04};
 
 static const uint8_t AES_KEY_0[16] = {
     0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
@@ -83,7 +83,9 @@ static void add_value_file(DfcCredential* c, size_t app, uint8_t number, uint8_t
 
 static DfcApplication*
     add_app(DfcCredential* c, const uint8_t aid[3], uint8_t ks2, uint8_t auth, const uint8_t* key0) {
-    DfcApplication* app = dfc_credential_create_application_desfire_order(c, aid, 0x0F, ks2);
+    const uint8_t wire_aid[3] = {aid[2], aid[1], aid[0]};
+    DfcApplication* app =
+        dfc_credential_create_application_desfire_order(c, wire_aid, 0x0F, ks2);
     munit_assert_not_null(app);
     app->auth_command = auth;
     app->has_auth_commands = true;
@@ -785,8 +787,7 @@ static MunitResult test_d40_session(const MunitParameter params[], void* data) {
     munit_assert_int(authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
     munit_assert_uint8(link.session.auth_mode, ==, DFC_CMD_AUTHENTICATE_LEGACY);
     exercise_files(&link);
-    DfcApplication* app =
-        dfc_credential_find_application_desfire_order(&link.credential, AID_D40);
+    DfcApplication* app = dfc_credential_find_application(&link.credential, AID_D40);
     munit_assert_not_null(app);
     size_t app_index = dfc_credential_application_index(&link.credential, app);
     DfcFile* long_file =
@@ -1175,7 +1176,7 @@ static MunitResult test_delegated_application(const MunitParameter params[], voi
     munit_assert_int(st, ==, DfcReaderOk);
     munit_assert_uint16(link.session.ev2_command_counter, ==, 1);
 
-    const uint8_t aid[3] = {0x0A, 0x0B, 0x0C};
+    const uint8_t aid[3] = {0x0C, 0x0B, 0x0A};
     select_app(&link, aid);
     munit_assert_int(authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, initial, 16), ==, DfcReaderOk);
     link_close(&link);

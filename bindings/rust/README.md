@@ -51,6 +51,8 @@ because native code takes ownership without cloning the credential pools.
 transport owns device I/O; DFC owns command framing, authentication state, and
 secure messaging. A transport failure clears the protocol session before the
 error is returned. Handles are `Send`, but deliberately not `Sync`.
+`Command::select_application` accepts the same human-readable AID byte order
+returned by `Credential::application` and converts it to wire order.
 
 To link an installed library instead of compiling the bundled source, disable
 defaults and enable `system` plus one role and profile. Set `DFC_LIB_DIR` when

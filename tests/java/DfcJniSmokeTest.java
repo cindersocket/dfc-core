@@ -24,6 +24,10 @@ public final class DfcJniSmokeTest {
         check(credential.equals(reparsed), "credential text round-trip");
         check(DfcLibrary.abiVersion() == 3, "ABI version");
         check(DfcLibrary.capabilities() != 0, "capabilities");
+        check(Arrays.equals(DfcCommand.selectApplication(
+            new byte[] {(byte) 0xd3, 0x49, 0x4f}).data(),
+            new byte[] {0x4f, 0x49, (byte) 0xd3}),
+            "SelectApplication converts model AID to wire order");
 
         try (DfcVirtualPicc picc = DfcVirtualPicc.createForReplay(credential, new byte[64]);
              DfcReader reader = new DfcReader(picc)) {

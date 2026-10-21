@@ -70,7 +70,7 @@ public record DfcCommand(int instruction, byte[] data) {
   public static DfcCommand selectApplication(byte[] aid) {
     if (Objects.requireNonNull(aid, "aid").length != 3)
       throw new IllegalArgumentException("AID must be 3 bytes");
-    return new DfcCommand(0x5a, aid);
+    return new DfcCommand(0x5a, new byte[] {aid[2], aid[1], aid[0]});
   }
   public static DfcCommand readData(int fileNumber, int offset, int length) {
     return new DfcCommand(0xbd, fileRange(fileNumber, offset, length));

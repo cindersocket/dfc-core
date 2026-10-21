@@ -28,6 +28,16 @@ pub struct Command {
     pub data: Vec<u8>,
 }
 
+impl Command {
+    /// Select an application using the AID order stored by the credential model.
+    pub fn select_application(aid: [u8; 3]) -> Self {
+        Self {
+            instruction: 0x5a,
+            data: aid.into_iter().rev().collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response {
     pub status: u8,

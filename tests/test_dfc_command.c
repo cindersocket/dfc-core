@@ -65,15 +65,18 @@ static MunitResult test_application_commands(const MunitParameter params[], void
     (void)params;
     (void)data;
     DfcCommand c;
-    const uint8_t aid[3] = {0x4F, 0x49, 0xD3};
-    const uint8_t second[3] = {0x01, 0x02, 0x03};
+    // Semantic command builders take the AID as printed and stored in the
+    // credential model. Only the command boundary converts it to wire order.
+    const uint8_t aid[3] = {0xD3, 0x49, 0x4F};
+    const uint8_t second[3] = {0xAB, 0x12, 0xCD};
     munit_assert_int(dfc_command_select_application(&c, aid, NULL), ==, DfcCommandOk);
     assert_apdu(&c, "905A0000034F49D300");
     munit_assert_int(dfc_command_select_application(&c, aid, second), ==, DfcCommandOk);
-    assert_apdu(&c, "905A0000064F49D301020300");
+    assert_apdu(&c, "905A0000064F49D3CD12AB00");
 
     DfcCommandCreateApplication app = {0};
-    memcpy(app.aid, aid, 3);
+    const uint8_t wire_aid[3] = {0x4F, 0x49, 0xD3};
+    memcpy(app.aid, wire_aid, 3);
     app.key_settings_1 = 0x0F;
     app.key_settings_2 = 0x04;
     munit_assert_int(dfc_command_create_application(&c, &app), ==, DfcCommandOk);

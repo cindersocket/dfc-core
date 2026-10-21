@@ -65,6 +65,8 @@ DfcCommandStatus
 
 // ------------------------------------------------------------ discovery ---
 
+// AIDs use the human-readable order stored by the credential model. The
+// command boundary converts them to least-significant-octet-first wire order.
 // `secondary_aid` may be NULL. With one, the card selects two applications.
 DfcCommandStatus dfc_command_select_application(
     DfcCommand* command,
