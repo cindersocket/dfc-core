@@ -22,7 +22,7 @@ public final class DfcJniSmokeTest {
         credential.validate();
         DfcCredential reparsed = DfcCredentialCodec.parse(credential.writeText());
         check(credential.equals(reparsed), "credential text round-trip");
-        check(DfcLibrary.abiVersion() == 3, "ABI version");
+        check(DfcLibrary.abiVersion() == 4, "ABI version");
         check(DfcLibrary.capabilities() != 0, "capabilities");
         check(Arrays.equals(DfcCommand.selectApplication(
             new byte[] {(byte) 0xd3, 0x49, 0x4f}).data(),
