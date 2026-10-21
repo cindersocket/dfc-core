@@ -802,6 +802,7 @@ void dfc_credential_init_blank(DfcCredential* credential) {
 
 void dfc_credential_free(DfcCredential* credential) {
     DFC_ASSERT(credential);
+    dfc_secure_wipe(credential, sizeof(*credential));
     free(credential);
 }
 

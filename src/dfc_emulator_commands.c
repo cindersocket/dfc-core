@@ -2725,9 +2725,7 @@ static void transaction_snapshot_commit(DfcEmulator* emulator) {
     if(emulator->transaction_snapshot_active &&
        emulator->transaction_snapshot_app_index == emulator->selected_app_index) {
         emulator->transaction_snapshot_active = false;
-        emulator->transaction_snapshot_pool_length = 0;
-        dfc_platform_free(emulator->transaction_snapshot_pool);
-        emulator->transaction_snapshot_pool = NULL;
+        dfc_emulator_discard_transaction_snapshot(emulator);
         memset(
             emulator->transaction_record_operations,
             RecordTransactionNone,
@@ -2753,9 +2751,7 @@ static bool transaction_snapshot_abort(DfcEmulator* emulator) {
     }
     emulator->credential->dirty = emulator->transaction_snapshot_dirty;
     emulator->transaction_snapshot_active = false;
-    emulator->transaction_snapshot_pool_length = 0;
-    dfc_platform_free(emulator->transaction_snapshot_pool);
-    emulator->transaction_snapshot_pool = NULL;
+    dfc_emulator_discard_transaction_snapshot(emulator);
     memset(
         emulator->transaction_record_operations,
         RecordTransactionNone,
@@ -4523,11 +4519,7 @@ bool dfc_emulator_handle_command(
 
     if(emulator->command_chain_active) {
         if(cmd != DFC_CMD_ADDITIONAL_FRAME) {
-            emulator->command_chain_active = false;
-            emulator->command_chain_len = 0;
-            emulator->command_chain_expected = 0;
-            dfc_platform_free(emulator->command_chain);
-            emulator->command_chain = NULL;
+            dfc_emulator_discard_command_chain(emulator);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COMMAND_ABORTED);
             return true;
         }
@@ -4535,11 +4527,7 @@ bool dfc_emulator_handle_command(
         size_t remaining = emulator->command_chain_expected - emulator->command_chain_len;
         if(continuation_len == 0 || continuation_len > DFC_EV1_MAX_FRAME_PAYLOAD ||
            continuation_len > remaining) {
-            emulator->command_chain_active = false;
-            emulator->command_chain_len = 0;
-            emulator->command_chain_expected = 0;
-            dfc_platform_free(emulator->command_chain);
-            emulator->command_chain = NULL;
+            dfc_emulator_discard_command_chain(emulator);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return true;
         }
@@ -4552,13 +4540,10 @@ bool dfc_emulator_handle_command(
         }
         size_t logical_len = emulator->command_chain_len;
         emulator->command_chain_active = false;
-        emulator->command_chain_len = 0;
         emulator->command_chain_expected = SIZE_MAX;
         bool handled = dfc_emulator_handle_command(
             emulator, emulator->command_chain, logical_len, tx_buffer, context);
-        dfc_platform_free(emulator->command_chain);
-        emulator->command_chain = NULL;
-        emulator->command_chain_expected = 0;
+        dfc_emulator_discard_command_chain(emulator);
         return handled;
     }
 

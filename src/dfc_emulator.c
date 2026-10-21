@@ -24,19 +24,44 @@ DfcEmulator* dfc_emulator_alloc(DfcCredential* credential) {
 void dfc_emulator_free(DfcEmulator* emulator) {
     DFC_ASSERT(emulator);
 
-    dfc_platform_free(emulator->command_chain);
+    dfc_emulator_discard_command_chain(emulator);
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
-    dfc_platform_free(emulator->transaction_snapshot_pool);
+    dfc_emulator_discard_transaction_snapshot(emulator);
 #endif
     if(emulator->secure_messaging) {
         dfc_secure_messaging_free(emulator->secure_messaging);
     }
 
     if(emulator->tx_buffer) {
+        dfc_secure_wipe(emulator->tx_buffer, sizeof(*emulator->tx_buffer));
         dfc_bytebuf_free(emulator->tx_buffer);
     }
+    dfc_secure_wipe(emulator, sizeof(*emulator));
     dfc_platform_free(emulator);
 }
+
+void dfc_emulator_discard_command_chain(DfcEmulator* emulator) {
+    if(emulator->command_chain) {
+        dfc_secure_wipe(emulator->command_chain, emulator->command_chain_len);
+        dfc_platform_free(emulator->command_chain);
+    }
+    emulator->command_chain = NULL;
+    emulator->command_chain_active = false;
+    emulator->command_chain_len = 0;
+    emulator->command_chain_expected = 0;
+}
+
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator) {
+    if(emulator->transaction_snapshot_pool) {
+        dfc_secure_wipe(
+            emulator->transaction_snapshot_pool, emulator->transaction_snapshot_pool_length);
+        dfc_platform_free(emulator->transaction_snapshot_pool);
+    }
+    emulator->transaction_snapshot_pool = NULL;
+    emulator->transaction_snapshot_pool_length = 0;
+}
+#endif
 
 DfcApplication* dfc_emulator_current_app(DfcEmulator* emulator) {
     if(emulator->selected_application != DfcEmulatorSelectedApplicationApp) return NULL;
@@ -137,11 +162,7 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->pending_chain_last = 0;
     emulator->pending_chain_chunk_count = 0;
     emulator->pending_chain_chunk_index = 0;
-    emulator->command_chain_active = false;
-    emulator->command_chain_len = 0;
-    emulator->command_chain_expected = 0;
-    dfc_platform_free(emulator->command_chain);
-    emulator->command_chain = NULL;
+    dfc_emulator_discard_command_chain(emulator);
     emulator->df_names_pending = false;
     emulator->df_names_next = 0;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
@@ -205,11 +226,12 @@ void dfc_emulator_reset_activation(DfcEmulator* emulator) {
     if(emulator->secure_messaging) {
         dfc_secure_messaging_free(emulator->secure_messaging);
     }
-    dfc_platform_free(emulator->command_chain);
+    dfc_emulator_discard_command_chain(emulator);
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
-    dfc_platform_free(emulator->transaction_snapshot_pool);
+    dfc_emulator_discard_transaction_snapshot(emulator);
 #endif
 
+    if(tx_buffer) dfc_secure_wipe(tx_buffer, sizeof(*tx_buffer));
     memset(emulator, 0, sizeof(*emulator));
     emulator->credential = credential;
     emulator->tx_buffer = tx_buffer;

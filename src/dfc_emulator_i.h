@@ -13,6 +13,10 @@ size_t dfc_emulator_key_len(DfcEmulator* emulator);
 size_t dfc_emulator_num_keys(DfcEmulator* emulator);
 uint8_t* dfc_emulator_key(DfcEmulator* emulator, uint8_t key_no);
 uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no);
+void dfc_emulator_discard_command_chain(DfcEmulator* emulator);
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator);
+#endif
 
 uint32_t dfc_emulator_read_uint24_le(const uint8_t* data);
 uint16_t dfc_emulator_crc16_iso14443(const uint8_t* data, size_t len);
