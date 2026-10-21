@@ -84,6 +84,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_command test_dfc_reader
 
 FAULT_TEST := test_cmac_failures
+EV2_RESPONSE_FAULT_TEST := test_dfc_ev2_response_atomicity
 
 TESTS += test_dfc_ev2_capabilities test_dfc_static_signature
 
@@ -118,12 +119,16 @@ $(TESTS): %: %.c dfc_virtual_picc_test_helpers.c $(COMMON)
 test_cmac_failures: test_cmac_failures.c $(CORE)/aes_cmac.c $(CORE)/des_cmac.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+test_dfc_ev2_response_atomicity: test_dfc_ev2_response_atomicity.c $(CORE)/dfc_ev2.c munit/munit.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes $(TESTS) $(FAULT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes $(TESTS) $(FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
+	./$(EV2_RESPONSE_FAULT_TEST)
 
 check-constant-time-auth:
 	python3 check_constant_time_auth.py
@@ -207,4 +212,4 @@ codecs-disabled-link:
 	echo "  target, no codecs ok"
 
 clean:
-	rm -rf $(TESTS) $(FAULT_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
