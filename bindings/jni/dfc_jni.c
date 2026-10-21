@@ -40,6 +40,12 @@ static void
     if(error != NULL) (*env)->Throw(env, (jthrowable)error);
 }
 
+static void secure_free(void* buffer, size_t length) {
+    if(buffer == NULL) return;
+    dfc_ffi_secure_zero(buffer, length);
+    free(buffer);
+}
+
 static uint8_t* copy_array(JNIEnv* env, jbyteArray array, size_t* length, bool nullable) {
     if(array == NULL) {
         *length = 0;
@@ -56,7 +62,7 @@ static uint8_t* copy_array(JNIEnv* env, jbyteArray array, size_t* length, bool n
     }
     (*env)->GetByteArrayRegion(env, array, 0, java_length, (jbyte*)bytes);
     if((*env)->ExceptionCheck(env)) {
-        free(bytes);
+        secure_free(bytes, (size_t)java_length);
         return NULL;
     }
     return bytes;
@@ -73,6 +79,13 @@ static jbyteArray make_array(JNIEnv* env, const uint8_t* bytes, size_t length) {
     return result;
 }
 
+static jbyteArray
+    make_array_and_wipe(JNIEnv* env, uint8_t* bytes, size_t length, size_t capacity) {
+    jbyteArray result = make_array(env, bytes, length);
+    dfc_ffi_secure_zero(bytes, capacity);
+    return result;
+}
+
 static void put_u32_be(uint8_t* output, uint32_t value) {
     output[0] = (uint8_t)(value >> 24);
     output[1] = (uint8_t)(value >> 16);
@@ -86,7 +99,7 @@ static int load_credential(JNIEnv* env, jbyteArray content, DfcFfiCredential** c
     if((*env)->ExceptionCheck(env)) return 0;
     DfcFfiError error = {0};
     int32_t status = dfc_ffi_credential_load(bytes, length, credential, &error);
-    free(bytes);
+    secure_free(bytes, length);
     if(status != DFC_FFI_OK) {
         throw_dfc(env, status, error.line, 0, error.message);
         return 0;
@@ -101,19 +114,20 @@ static jbyteArray encode_credential(JNIEnv* env, const DfcFfiCredential* credent
         throw_dfc(env, status, 0, 0, "could not size encoded credential");
         return NULL;
     }
-    uint8_t* bytes = length == 0 ? NULL : malloc(length);
+    size_t capacity = length;
+    uint8_t* bytes = capacity == 0 ? NULL : malloc(capacity);
     if(length != 0 && bytes == NULL) {
         throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
         return NULL;
     }
-    status = dfc_ffi_credential_encode(credential, bytes, length, &length);
+    status = dfc_ffi_credential_encode(credential, bytes, capacity, &length);
     if(status != DFC_FFI_OK) {
-        free(bytes);
+        secure_free(bytes, capacity);
         throw_dfc(env, status, 0, 0, "could not encode credential");
         return NULL;
     }
     jbyteArray result = make_array(env, bytes, length);
-    free(bytes);
+    secure_free(bytes, capacity);
     return result;
 }
 
@@ -139,6 +153,12 @@ static JniReader* reader_handle(JNIEnv* env, jlong handle) {
     JniReader* wrapper = (JniReader*)(uintptr_t)handle;
     if(wrapper == NULL) throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "invalid reader handle");
     return wrapper;
+}
+
+static void reader_clear_pending(JniReader* wrapper) {
+    secure_free(wrapper->pending_data, wrapper->pending_data_len);
+    wrapper->pending_data = NULL;
+    wrapper->pending_data_len = 0;
 }
 
 JNIEXPORT jint JNICALL Java_com_cindersocket_dfc_DfcNative_abiVersion(JNIEnv* env, jclass type) {
@@ -171,7 +191,7 @@ JNIEXPORT jbyteArray JNICALL
     DfcFfiError error = {0};
     int32_t status =
         dfc_ffi_credential_parse_text((const char*)bytes, length, &credential, &error);
-    free(bytes);
+    secure_free(bytes, length);
     if(status != DFC_FFI_OK) {
         throw_dfc(env, status, error.line, 0, error.message);
         return NULL;
@@ -202,19 +222,20 @@ JNIEXPORT jstring JNICALL Java_com_cindersocket_dfc_DfcNative_credentialText(
     if(!load_credential(env, content, &credential)) return NULL;
     size_t length = 0;
     int32_t status = dfc_ffi_credential_write_text(credential, NULL, 0, &length);
-    char* text = status == DFC_FFI_OK ? malloc(length + 1) : NULL;
+    size_t capacity = length + 1;
+    char* text = status == DFC_FFI_OK ? malloc(capacity) : NULL;
     if(status == DFC_FFI_OK && text == NULL) status = DFC_FFI_OUT_OF_MEMORY;
     if(status == DFC_FFI_OK)
         status = dfc_ffi_credential_write_text(credential, text, length, &length);
     dfc_ffi_credential_free(credential);
     if(status != DFC_FFI_OK) {
-        free(text);
+        secure_free(text, capacity);
         throw_dfc(env, status, 0, 0, "could not write credential text");
         return NULL;
     }
     text[length] = '\0';
     jstring result = (*env)->NewStringUTF(env, text);
-    free(text);
+    secure_free(text, capacity);
     return result;
 }
 
@@ -247,7 +268,7 @@ JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_piccCreate(
     if(random_script != NULL) {
         wrapper->random = copy_array(env, random_script, &wrapper->random_len, true);
         if((*env)->ExceptionCheck(env)) {
-            free(wrapper);
+            secure_free(wrapper, sizeof(*wrapper));
             dfc_ffi_credential_free(credential);
             return 0;
         }
@@ -256,9 +277,8 @@ JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_piccCreate(
         credential, random_script == NULL ? NULL : scripted_random, wrapper, &wrapper->picc);
     dfc_ffi_credential_free(credential);
     if(status != DFC_FFI_OK) {
-        dfc_ffi_secure_zero(wrapper->random, wrapper->random_len);
-        free(wrapper->random);
-        free(wrapper);
+        secure_free(wrapper->random, wrapper->random_len);
+        secure_free(wrapper, sizeof(*wrapper));
         throw_dfc(env, status, 0, 0, "could not create virtual PICC");
         return 0;
     }
@@ -272,10 +292,8 @@ JNIEXPORT void JNICALL
     JniPicc* wrapper = (JniPicc*)(uintptr_t)handle;
     if(wrapper == NULL) return;
     dfc_ffi_picc_free(wrapper->picc);
-    dfc_ffi_secure_zero(wrapper->random, wrapper->random_len);
-    free(wrapper->random);
-    dfc_ffi_secure_zero(wrapper, sizeof(*wrapper));
-    free(wrapper);
+    secure_free(wrapper->random, wrapper->random_len);
+    secure_free(wrapper, sizeof(*wrapper));
 }
 
 JNIEXPORT jbyteArray JNICALL
@@ -286,6 +304,7 @@ JNIEXPORT jbyteArray JNICALL
     DfcFfiActivation activation = {0};
     int32_t status = dfc_ffi_picc_activate(wrapper->picc, &activation);
     if(status != DFC_FFI_OK) {
+        dfc_ffi_secure_zero(&activation, sizeof(activation));
         throw_dfc(env, status, 0, 0, "virtual PICC activation failed");
         return NULL;
     }
@@ -301,7 +320,9 @@ JNIEXPORT jbyteArray JNICALL
     packed[offset++] = (uint8_t)activation.ats_len;
     memcpy(packed + offset, activation.ats, activation.ats_len);
     offset += activation.ats_len;
-    return make_array(env, packed, offset);
+    jbyteArray result = make_array_and_wipe(env, packed, offset, sizeof(packed));
+    dfc_ffi_secure_zero(&activation, sizeof(activation));
+    return result;
 }
 
 JNIEXPORT jbyteArray JNICALL
@@ -312,6 +333,7 @@ JNIEXPORT jbyteArray JNICALL
     DfcFfiSnapshot snapshot = {0};
     int32_t status = dfc_ffi_picc_snapshot(wrapper->picc, &snapshot);
     if(status != DFC_FFI_OK) {
+        dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));
         throw_dfc(env, status, 0, 0, "could not read virtual PICC state");
         return NULL;
     }
@@ -330,7 +352,9 @@ JNIEXPORT jbyteArray JNICALL
     packed[offset++] = snapshot.ev2_active;
     packed[offset++] = snapshot.virtual_card_selected;
     packed[offset++] = snapshot.proximity_verified;
-    return make_array(env, packed, offset);
+    jbyteArray result = make_array_and_wipe(env, packed, offset, sizeof(packed));
+    dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));
+    return result;
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccExchange(
@@ -353,12 +377,13 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccExchange(
                 wrapper->picc, input_bytes, input_len, response, sizeof(response), &response_len) :
             dfc_ffi_picc_exchange(
                 wrapper->picc, input_bytes, input_len, response, sizeof(response), &response_len);
-    free(input_bytes);
+    secure_free(input_bytes, input_len);
     if(status != DFC_FFI_OK) {
+        dfc_ffi_secure_zero(response, sizeof(response));
         throw_dfc(env, status, 0, 0, "virtual PICC exchange failed");
         return NULL;
     }
-    return make_array(env, response, response_len);
+    return make_array_and_wipe(env, response, response_len, sizeof(response));
 }
 
 JNIEXPORT void JNICALL
@@ -428,7 +453,7 @@ JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_readerCreate(JNIEnv*
     if(status != DFC_FFI_OK) {
         dfc_ffi_reader_exchange_free(wrapper->exchange);
         dfc_ffi_reader_session_free(wrapper->session);
-        free(wrapper);
+        secure_free(wrapper, sizeof(*wrapper));
         throw_dfc(env, status, 0, 0, "could not create reader");
         return 0;
     }
@@ -441,12 +466,10 @@ JNIEXPORT void JNICALL
     (void)type;
     JniReader* wrapper = (JniReader*)(uintptr_t)handle;
     if(wrapper == NULL) return;
-    dfc_ffi_secure_zero(wrapper->pending_data, wrapper->pending_data_len);
-    free(wrapper->pending_data);
+    reader_clear_pending(wrapper);
     dfc_ffi_reader_exchange_free(wrapper->exchange);
     dfc_ffi_reader_session_free(wrapper->session);
-    dfc_ffi_secure_zero(wrapper, sizeof(*wrapper));
-    free(wrapper);
+    secure_free(wrapper, sizeof(*wrapper));
 }
 
 JNIEXPORT void JNICALL
@@ -455,10 +478,7 @@ JNIEXPORT void JNICALL
     JniReader* wrapper = reader_handle(env, handle);
     if(wrapper != NULL) {
         dfc_ffi_reader_session_clear(wrapper->session);
-        dfc_ffi_secure_zero(wrapper->pending_data, wrapper->pending_data_len);
-        free(wrapper->pending_data);
-        wrapper->pending_data = NULL;
-        wrapper->pending_data_len = 0;
+        reader_clear_pending(wrapper);
     }
 }
 
@@ -477,8 +497,7 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerBegin(
     size_t length = 0;
     uint8_t* bytes = copy_array(env, data, &length, false);
     if((*env)->ExceptionCheck(env)) return;
-    dfc_ffi_secure_zero(wrapper->pending_data, wrapper->pending_data_len);
-    free(wrapper->pending_data);
+    reader_clear_pending(wrapper);
     wrapper->pending_data = bytes;
     wrapper->pending_data_len = length;
     int32_t status = dfc_ffi_reader_exchange_begin(
@@ -491,10 +510,7 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerBegin(
         (uint8_t)communication,
         (int32_t)header_length);
     if(status != DFC_FFI_OK) {
-        dfc_ffi_secure_zero(wrapper->pending_data, wrapper->pending_data_len);
-        free(wrapper->pending_data);
-        wrapper->pending_data = NULL;
-        wrapper->pending_data_len = 0;
+        reader_clear_pending(wrapper);
         throw_dfc(env, status, 0, 0, "could not begin reader exchange");
     }
 }
@@ -516,8 +532,7 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticate(
     uint8_t* random_bytes =
         (*env)->ExceptionCheck(env) ? NULL : copy_array(env, random_a, &random_len, false);
     if((*env)->ExceptionCheck(env)) {
-        dfc_ffi_secure_zero(key_bytes, key_len);
-        free(key_bytes);
+        secure_free(key_bytes, key_len);
         return;
     }
     int32_t status = dfc_ffi_reader_authenticate_begin(
@@ -530,10 +545,8 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticate(
         key_len,
         random_bytes,
         random_len);
-    dfc_ffi_secure_zero(key_bytes, key_len);
-    dfc_ffi_secure_zero(random_bytes, random_len);
-    free(key_bytes);
-    free(random_bytes);
+    secure_free(key_bytes, key_len);
+    secure_free(random_bytes, random_len);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "could not begin authentication");
 }
 
@@ -573,12 +586,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateIso
     if(status != DFC_FFI_OK)
         throw_dfc(env, status, 0, 0, "could not begin ISO 7816 authentication");
 cleanup:
-    dfc_ffi_secure_zero(key_bytes, key_len);
-    dfc_ffi_secure_zero(first_bytes, first_len);
-    dfc_ffi_secure_zero(second_bytes, second_len);
-    free(key_bytes);
-    free(first_bytes);
-    free(second_bytes);
+    secure_free(key_bytes, key_len);
+    secure_free(first_bytes, first_len);
+    secure_free(second_bytes, second_len);
 }
 
 JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2(
@@ -618,12 +628,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2
         capabilities_len);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "could not begin EV2 authentication");
 cleanup:
-    dfc_ffi_secure_zero(key_bytes, key_len);
-    dfc_ffi_secure_zero(random_bytes, random_len);
-    dfc_ffi_secure_zero(capability_bytes, capabilities_len);
-    free(key_bytes);
-    free(random_bytes);
-    free(capability_bytes);
+    secure_free(key_bytes, key_len);
+    secure_free(random_bytes, random_len);
+    secure_free(capability_bytes, capabilities_len);
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_readerStep(
@@ -641,19 +648,14 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_readerStep(
     size_t frame_len = 0;
     int32_t status = dfc_ffi_reader_step(
         wrapper->exchange, answer_bytes, answer_len, frame, sizeof(frame), &frame_len);
-    free(answer_bytes);
-    if(status == 1) return make_array(env, frame, frame_len);
+    secure_free(answer_bytes, answer_len);
+    if(status == 1) return make_array_and_wipe(env, frame, frame_len, sizeof(frame));
+    dfc_ffi_secure_zero(frame, sizeof(frame));
     if(status == 0) {
-        dfc_ffi_secure_zero(wrapper->pending_data, wrapper->pending_data_len);
-        free(wrapper->pending_data);
-        wrapper->pending_data = NULL;
-        wrapper->pending_data_len = 0;
+        reader_clear_pending(wrapper);
         return NULL;
     }
-    dfc_ffi_secure_zero(wrapper->pending_data, wrapper->pending_data_len);
-    free(wrapper->pending_data);
-    wrapper->pending_data = NULL;
-    wrapper->pending_data_len = 0;
+    reader_clear_pending(wrapper);
     throw_dfc(
         env, status, 0, dfc_ffi_reader_result_status(wrapper->exchange), "reader exchange failed");
     return NULL;
@@ -675,19 +677,20 @@ JNIEXPORT jbyteArray JNICALL
             "could not read reader result");
         return NULL;
     }
-    uint8_t* result = length == 0 ? NULL : malloc(length);
-    if(length != 0 && result == NULL) {
+    size_t capacity = length;
+    uint8_t* result = capacity == 0 ? NULL : malloc(capacity);
+    if(capacity != 0 && result == NULL) {
         throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
         return NULL;
     }
-    status = dfc_ffi_reader_result_data(wrapper->exchange, result, length, &length);
+    status = dfc_ffi_reader_result_data(wrapper->exchange, result, capacity, &length);
     if(status != DFC_FFI_OK) {
-        free(result);
+        secure_free(result, capacity);
         throw_dfc(env, status, 0, 0, "could not read reader result");
         return NULL;
     }
     jbyteArray output = make_array(env, result, length);
-    free(result);
+    secure_free(result, capacity);
     return output;
 }
 
@@ -706,6 +709,7 @@ JNIEXPORT jbyteArray JNICALL
     DfcFfiReaderState state = {0};
     int32_t status = dfc_ffi_reader_session_state(wrapper->session, &state);
     if(status != DFC_FFI_OK) {
+        dfc_ffi_secure_zero(&state, sizeof(state));
         throw_dfc(env, status, 0, 0, "could not read reader state");
         return NULL;
     }
@@ -721,5 +725,7 @@ JNIEXPORT jbyteArray JNICALL
     offset += 6;
     memcpy(packed + offset, state.ev2_reader_capabilities, 6);
     offset += 6;
-    return make_array(env, packed, offset);
+    jbyteArray result = make_array_and_wipe(env, packed, offset, sizeof(packed));
+    dfc_ffi_secure_zero(&state, sizeof(state));
+    return result;
 }
