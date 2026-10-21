@@ -25,7 +25,7 @@ public final class DfcTransceiveExample {
 
     // The virtual PICC owns an independent copy. Closing both native-backed objects is required.
     try (DfcVirtualPicc picc = DfcVirtualPicc.create(credential);
-        DfcReader reader = new DfcReader(picc)) {
+         DfcReader reader = new DfcReader(picc)) {
       DfcActivation activation = picc.activate();
 
       // The reader follows GetVersion's additional frames and returns one assembled payload.
