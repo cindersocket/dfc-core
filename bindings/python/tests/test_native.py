@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import ctypes as C
-import os
 from pathlib import Path
 
 import pytest
 
 from dfc_core import Command, Credential, Reader, VirtualPicc, _native, capabilities
 
-pytestmark = pytest.mark.skipif(not os.environ.get("DFC_LIBRARY_PATH"), reason="requires libdfc")
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
 
 

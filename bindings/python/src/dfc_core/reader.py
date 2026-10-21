@@ -26,7 +26,9 @@ class Command:
     def select_application(cls, aid: bytes) -> Command:
         if len(aid) != 3:
             raise ValueError("AID must be three bytes")
-        return cls(0x5A, aid)
+        # Credential files and APIs use the human-readable AID order. The
+        # protocol carries the three-byte value least-significant byte first.
+        return cls(0x5A, aid[::-1])
 
     @classmethod
     def get_version(cls) -> Command:

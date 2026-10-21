@@ -15,6 +15,7 @@ import com.cindersocket.dfc.android.IsoDepTransport;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/** Reads a real ISO-DEP card through the public DFC reader and Android transport APIs. */
 public final class MainActivity extends Activity implements NfcAdapter.ReaderCallback {
   private final ExecutorService worker = Executors.newSingleThreadExecutor();
   private TextView status;
@@ -32,23 +33,28 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
   protected void onResume() {
     super.onResume();
     NfcAdapter adapter = NfcAdapter.getDefaultAdapter(this);
-    if (adapter == null)
+    if (adapter == null) {
       status.setText("This device has no NFC adapter.");
-    else
-      adapter.enableReaderMode(
-          this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, null);
+      return;
+    }
+
+    // Reader mode avoids the NDEF dispatcher taking ownership before this app can transceive.
+    adapter.enableReaderMode(
+        this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, null);
   }
 
   @Override
   protected void onPause() {
     NfcAdapter adapter = NfcAdapter.getDefaultAdapter(this);
-    if (adapter != null)
+    if (adapter != null) {
       adapter.disableReaderMode(this);
+    }
     super.onPause();
   }
 
   @Override
   public void onTagDiscovered(Tag tag) {
+    // NFC callbacks must not block while GetVersion follows its additional frames.
     worker.execute(() -> readVersion(tag));
   }
 
@@ -58,6 +64,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
       show("Tag does not support ISO-DEP.");
       return;
     }
+
     try {
       isoDep.connect();
       try (DfcReader reader = new DfcReader(new IsoDepTransport(isoDep))) {
@@ -72,6 +79,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
       try {
         isoDep.close();
       } catch (Exception ignored) {
+        // The tag may already have left the field; there is no connection left to recover.
       }
     }
   }
@@ -82,7 +90,9 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
 
   private static String hex(byte[] value) {
     StringBuilder result = new StringBuilder(value.length * 2);
-    for (byte item : value) result.append(String.format("%02X", item & 0xff));
+    for (byte item : value) {
+      result.append(String.format("%02X", item & 0xff));
+    }
     return result.toString();
   }
 

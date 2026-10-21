@@ -14,3 +14,7 @@ bindings/python/dist/
 bindings/dotnet/**/bin/
 bindings/dotnet/**/obj/
 bindings/dotnet/src/Dfc/runtimes/
+examples/android/build/
+examples/dotnet/bin/
+examples/dotnet/obj/
+examples/rust-virtual-picc/target/

@@ -1,50 +1,64 @@
-# Dfc for .NET
+# DFC for .NET
 
-`Dfc` is a slim .NET library over the native DFC core. Parsing, validation,
-encoding, the card emulator, and the reader's secure messaging all run in
-native code. .NET applies exactly the rules a device applies.
+`Dfc` is a .NET 10 binding for credential codecs, an in-process virtual card,
+and reader-side secure messaging. Protocol behavior runs in the native DFC
+core; the managed layer owns resources and adapts transports.
 
-| Namespace | Contents |
+## API map
+
+| Namespace | Purpose |
 |---|---|
-| `Dfc.Credentials` | The credential record tree and `DfcCredentialCodec` for `.dfc` text and `.dfcb` octets |
-| `Dfc.Emulation` | `DfcVirtualPicc`, a card in process |
-| `Dfc.Reader` | `DfcReader`, which drives any card through `IDfcApduExchange`, and `DfcCommand` |
+| `Dfc.Credentials` | Read, validate, and write `.dfc` text and `.dfcb` octets |
+| `Dfc.Emulation` | Activate and transceive with `DfcVirtualPicc` |
+| `Dfc.Reader` | Drive a virtual or physical card through `IDfcApduExchange` |
 
-## Use
+## Load and transceive
+
+Handle `Result` failures before taking `.Value`. Both the card and reader own
+native resources and must be disposed:
 
 ```csharp
-var credential = DfcCredentialCodec.Parse(File.ReadAllText("card.dfc")).Value;
+var loaded = DfcCredentialCodec.Load(await File.ReadAllBytesAsync("card.dfc"));
+if (loaded.IsFailure)
+    throw new InvalidDataException(loaded.Error.ToString());
 
-using var card = DfcVirtualPicc.Create(credential).Value;
-card.Activate();
+var created = DfcVirtualPicc.Create(loaded.Value);
+if (created.IsFailure)
+    throw new InvalidOperationException(created.Error.ToString());
+using var card = created.Value;
+
+var activated = card.Activate();
+if (activated.IsFailure)
+    throw new InvalidOperationException(activated.Error.ToString());
 
 using var reader = new DfcReader(card);
-await reader.ExchangeAsync(DfcCommand.SelectApplication([0x01, 0x00, 0x00]));
-await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, key);
-var data = await reader.ExchangeAsync(DfcCommand.ReadData(1, 0, 32), DfcCommunicationMode.Mac);
+var exchanged = await reader.ExchangeAsync(DfcCommand.GetVersion());
+if (exchanged.IsFailure)
+    throw new InvalidOperationException(exchanged.Error.ToString());
+var version = exchanged.Value;
 ```
 
-A host that loads hardware converts text to octets first:
+`DfcVirtualPicc` implements `IDfcApduExchange`. For hardware, implement that
+interface over PC/SC, NFC, or a serial bridge and pass it to `DfcReader`.
+Transport failures clear the managed reader session.
 
-```csharp
-var octets = DfcCredentialCodec.Encode(DfcCredentialCodec.Parse(text).Value).Value;
-```
+The runnable [.NET example](../../examples/dotnet/README.md) validates a
+credential, activates a virtual card, and performs a multi-frame `GetVersion`
+exchange through the public reader and transport APIs.
 
-To drive a physical card, implement `IDfcApduExchange` over your transport and
-pass it to `DfcReader`. That transport can be PC/SC, a serial bridge, or an NFC
-front end.
+## Build and verify
 
-## Build and test
-
-Build the native library first. The tests load it from `build/` at the root of
-the repository:
+From the repository root, build the native library before the managed code:
 
 ```sh
-cmake -S ../.. -B ../../build -DCMAKE_BUILD_TYPE=Release \
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DDFC_ROLE=simulator -DDFC_PROFILE=full_ev3 -DDFC_CRYPTO=tiny
-cmake --build ../../build
-dotnet test Dfc.sln -c Release
+cmake --build build --parallel
+dotnet test bindings/dotnet/Dfc.sln -c Release
+dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj \
+  -- examples/credentials/v6-minimal.dfc
 ```
 
-Set `DfcNativeDirectory` to load the native library from somewhere else. A
-packed `Dfc` package carries each platform's native build under `runtimes/`.
+Set `DfcNativeDirectory` if the native build is elsewhere. Published packages
+place the library under `runtimes/<RID>/native`; local builds copy it beside the
+test or example assembly.

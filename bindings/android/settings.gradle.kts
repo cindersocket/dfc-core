@@ -7,3 +7,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "dfc-android"
 include(":dfc", ":sample")
+project(":sample").projectDir = file("../../examples/android")

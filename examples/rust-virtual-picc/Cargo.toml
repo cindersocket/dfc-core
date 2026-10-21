@@ -1,0 +1,11 @@
+[package]
+name = "dfc-rust-virtual-picc-example"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+dfc-core = { path = "../../bindings/rust/dfc-core" }
+
+# Keep this runnable example independent of the library workspace.
+[workspace]

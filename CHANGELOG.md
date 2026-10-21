@@ -5,6 +5,8 @@
 - Add Java and Android JNI bindings, an Android library, and a sample application.
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
   target builds, with ABI-layout checks and caller-owned target storage.
+- Add runnable transceive examples for .NET, Java, Android, Python, and Rust.
+- Correct Python application selection to encode application identifiers in wire order.
 - Add one-command formatting and documentation-link verification for every
   supported binding language.
 - Refactor credential validation and serialization around explicit model invariants.

@@ -6,6 +6,23 @@ on:
 
 # Run both crypto backends, plain and under sanitizers.
 jobs:
+  format-docs:
+    name: Formatting and documentation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install formatters
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-format
+      - name: Check every binding language
+        run: ./scripts/check-format.sh
+      - name: Check documentation links
+        run: python3 scripts/check-docs.py
+
   fuzz:
     name: Credential invariant fuzzing
     runs-on: ubuntu-24.04
@@ -117,6 +134,8 @@ jobs:
         shell: bash
         run: mkdir -p build && cp runtimes/${{ matrix.rid }}/native/* build/
       - run: dotnet test bindings/dotnet/Dfc.sln -c Release
+      - name: Run .NET transceive example
+        run: dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj -c Release -- examples/credentials/v6-minimal.dfc
 
   java:
     name: Java JNI
@@ -142,9 +161,11 @@ jobs:
           mkdir -p build-jni/java
           javac --release 17 -d build-jni/java \
             bindings/java/src/main/java/com/cindersocket/dfc/*.java \
-            tests/java/DfcJniSmokeTest.java
+            tests/java/DfcJniSmokeTest.java examples/java/DfcTransceiveExample.java
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
             examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
+          java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
+            examples/credentials/v6-minimal.dfc
 
   android:
     name: Android AAR and sample
@@ -163,7 +184,53 @@ jobs:
           name: dfc-android
           path: |
             bindings/android/dfc/build/outputs/aar/dfc-release.aar
-            bindings/android/sample/build/outputs/apk/debug/sample-debug.apk
+            examples/android/build/outputs/apk/debug/sample-debug.apk
+
+  python:
+    name: Python binding and example
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Build the wheel
+        run: uv build --python 3.12 --wheel --out-dir bindings/python/dist bindings/python
+      - name: Test the installed binding and transceive example
+        run: |
+          wheel=$(find bindings/python/dist -name '*.whl' -print -quit)
+          DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" --with pytest \
+            pytest bindings/python/tests
+          DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
+            python examples/python/virtual_card.py
+      - name: Check Python types and formatting
+        working-directory: bindings/python
+        run: |
+          uv run --frozen --extra test mypy src ../../examples/python/virtual_card.py
+          uv run --frozen --extra test ruff format --check src tests ../../examples/python
+          uv run --frozen --extra test ruff check src tests ../../examples/python
+
+  rust:
+    name: Rust binding and example
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+          components: clippy
+      - name: Install the ARM C toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Test hosted bindings and transceive example
+        run: |
+          cargo test --workspace
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --manifest-path examples/rust-virtual-picc/Cargo.toml
+          cargo clippy --manifest-path examples/rust-virtual-picc/Cargo.toml --all-targets -- -D warnings
+          cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- examples/credentials/v6-minimal.dfcb
+      - name: Compile the no-std target bridge
+        run: |
+          cargo check --manifest-path bindings/rust/dfc-core/Cargo.toml \
+            --target thumbv7em-none-eabihf --no-default-features \
+            --features bundled,role-target,profile-full-ev3
 
   pack:
     name: NuGet package
