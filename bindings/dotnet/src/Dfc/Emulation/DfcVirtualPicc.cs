@@ -60,15 +60,13 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     private const int NoCard = 1;
 
     private readonly PiccHandle handle;
-    private readonly GCHandle randomRoot;
     private readonly TimeProvider? clock;
     private long lastTimestamp;
     private readonly Lock gate = new();
 
-    private DfcVirtualPicc(PiccHandle handle, GCHandle randomRoot, TimeProvider? clock)
+    private DfcVirtualPicc(PiccHandle handle, TimeProvider? clock)
     {
         this.handle = handle;
-        this.randomRoot = randomRoot;
         this.clock = clock;
         lastTimestamp = clock?.GetTimestamp() ?? 0;
     }
@@ -120,7 +118,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
             return DfcError.FromStatus(st, "the virtual PICC could not be created");
         }
 
-        return new DfcVirtualPicc(new PiccHandle(picc), root, clock);
+        return new DfcVirtualPicc(new PiccHandle(picc, root), clock);
     }
 
     /// <summary>Runs anticollision and reports what the card presented.</summary>
@@ -130,7 +128,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         int st;
         lock (gate)
         {
-            st = Native.dfc_ffi_picc_activate(Raw, &activation);
+            using var lease = new PiccHandleLease(handle);
+            st = Native.dfc_ffi_picc_activate(lease.Raw, &activation);
         }
 
         if (st != 0)
@@ -173,7 +172,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     {
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_field_off(Raw);
+            using var lease = new PiccHandleLease(handle);
+            _ = Native.dfc_ffi_picc_field_off(lease.Raw);
         }
     }
 
@@ -182,7 +182,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     {
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_reset_protocol(Raw);
+            using var lease = new PiccHandleLease(handle);
+            _ = Native.dfc_ffi_picc_reset_protocol(lease.Raw);
         }
     }
 
@@ -192,7 +193,11 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_advance_time(Raw, (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue));
+            using var lease = new PiccHandleLease(handle);
+            _ = Native.dfc_ffi_picc_advance_time(
+                lease.Raw,
+                (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue)
+            );
         }
     }
 
@@ -202,7 +207,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         NativeSnapshot s;
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_snapshot(Raw, &s);
+            using var lease = new PiccHandleLease(handle);
+            _ = Native.dfc_ffi_picc_snapshot(lease.Raw, &s);
         }
 
         DfcEv2SessionSnapshot? ev2 = s.Ev2Active != 0
@@ -235,7 +241,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         nint exported;
         lock (gate)
         {
-            CredentialMarshaller.Check(Native.dfc_ffi_picc_export(Raw, &exported));
+            using var lease = new PiccHandleLease(handle);
+            CredentialMarshaller.Check(Native.dfc_ffi_picc_export(lease.Raw, &exported));
         }
 
         using var credential = new CredentialHandle(exported);
@@ -247,26 +254,17 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     {
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_mark_persisted(Raw);
+            using var lease = new PiccHandleLease(handle);
+            _ = Native.dfc_ffi_picc_mark_persisted(lease.Raw);
         }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        handle.Dispose();
-        if (randomRoot.IsAllocated)
+        lock (gate)
         {
-            randomRoot.Free();
-        }
-    }
-
-    private nint Raw
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(handle.IsClosed, this);
-            return handle.DangerousGetHandle();
+            handle.Dispose();
         }
     }
 
@@ -277,13 +275,28 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         int st;
         lock (gate)
         {
-            FollowClock();
+            using var lease = new PiccHandleLease(handle);
+            FollowClock(lease.Raw);
             fixed (byte* c = command)
             fixed (byte* r = response)
             {
                 st = frame
-                    ? Native.dfc_ffi_picc_frame_exchange(Raw, c, (nuint)command.Length, r, ResponseCapacity, &length)
-                    : Native.dfc_ffi_picc_exchange(Raw, c, (nuint)command.Length, r, ResponseCapacity, &length);
+                    ? Native.dfc_ffi_picc_frame_exchange(
+                        lease.Raw,
+                        c,
+                        (nuint)command.Length,
+                        r,
+                        ResponseCapacity,
+                        &length
+                    )
+                    : Native.dfc_ffi_picc_exchange(
+                        lease.Raw,
+                        c,
+                        (nuint)command.Length,
+                        r,
+                        ResponseCapacity,
+                        &length
+                    );
             }
         }
 
@@ -301,7 +314,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         return response[..(int)length].ToArray();
     }
 
-    private void FollowClock()
+    private void FollowClock(nint raw)
     {
         if (clock is null)
         {
@@ -313,7 +326,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         lastTimestamp = now;
         if (elapsed > TimeSpan.Zero)
         {
-            _ = Native.dfc_ffi_picc_advance_time(Raw, (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue));
+            _ = Native.dfc_ffi_picc_advance_time(raw, (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue));
         }
     }
 
@@ -336,9 +349,12 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
     private sealed class PiccHandle : SafeHandle
     {
-        public PiccHandle(nint picc)
+        private GCHandle randomRoot;
+
+        public PiccHandle(nint picc, GCHandle randomRoot)
             : base(IntPtr.Zero, ownsHandle: true)
         {
+            this.randomRoot = randomRoot;
             SetHandle(picc);
         }
 
@@ -346,8 +362,35 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
         protected override bool ReleaseHandle()
         {
-            Native.dfc_ffi_picc_free(handle);
+            try
+            {
+                Native.dfc_ffi_picc_free(handle);
+            }
+            finally
+            {
+                if (randomRoot.IsAllocated)
+                {
+                    randomRoot.Free();
+                }
+            }
             return true;
         }
+    }
+
+    private readonly ref struct PiccHandleLease
+    {
+        private readonly PiccHandle handle;
+
+        public PiccHandleLease(PiccHandle handle)
+        {
+            this.handle = handle;
+            bool added = false;
+            handle.DangerousAddRef(ref added);
+            Raw = handle.DangerousGetHandle();
+        }
+
+        public nint Raw { get; }
+
+        public void Dispose() => handle.DangerousRelease();
     }
 }

@@ -1,6 +1,9 @@
 namespace Dfc.Tests;
 
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Dfc.Credentials;
 using Dfc.Emulation;
@@ -10,6 +13,112 @@ using NUnit.Framework;
 [TestFixture]
 public sealed class PiccBehaviorTests
 {
+    [Test]
+    public void Dispose_IsIdempotent_WithoutReleasingOtherCallbackRoots()
+    {
+        var picc = Fixtures.Picc(
+            Fixtures.Credential(),
+            new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty)
+        );
+        picc.Dispose();
+
+        var targets = new object[4096];
+        var roots = new GCHandle[targets.Length];
+        try
+        {
+            for (var i = 0; i < targets.Length; i++)
+            {
+                targets[i] = new object();
+                roots[i] = GCHandle.Alloc(targets[i]);
+            }
+
+            Assert.DoesNotThrow(picc.Dispose);
+            Assert.Multiple(() =>
+            {
+                for (var i = 0; i < targets.Length; i++)
+                {
+                    Assert.That(roots[i].Target, Is.SameAs(targets[i]), $"callback root {i}");
+                }
+            });
+        }
+        finally
+        {
+            foreach (var root in roots)
+            {
+                if (root.IsAllocated)
+                {
+                    root.Free();
+                }
+            }
+        }
+    }
+
+    [Test]
+    public async Task Dispose_WaitsForInFlightNativeCallback()
+    {
+        var random = new BlockingRandomSource();
+        var picc = Fixtures.Picc(Fixtures.Credential(), random);
+        Fixtures.Ok(picc.Activate());
+
+        var exchange = Task.Run(() => picc.Exchange(Hex("901A0000010000")));
+        Assert.That(random.Entered.Wait(TimeSpan.FromSeconds(5)), Is.True);
+
+        using var disposeStarted = new ManualResetEventSlim();
+        var dispose = Task.Factory.StartNew(
+            () =>
+            {
+                disposeStarted.Set();
+                picc.Dispose();
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default
+        );
+        Assert.That(disposeStarted.Wait(TimeSpan.FromSeconds(5)), Is.True);
+
+        var disposedDuringCallback = dispose.Wait(TimeSpan.FromMilliseconds(250));
+        random.Continue.Set();
+        await Task.WhenAll(exchange, dispose);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(disposedDuringCallback, Is.False);
+            Assert.DoesNotThrow(picc.Dispose);
+        });
+    }
+
+    [Test]
+    public void Finalization_ReleasesTheRandomCallbackRoot()
+    {
+        var random = CreateAbandonedPicc();
+
+        for (var i = 0; i < 10 && random.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        Assert.That(random.IsAlive, Is.False);
+    }
+
+    [Test]
+    public void Dispose_FromRandomCallback_DefersNativeReleaseUntilTheExchangeCompletes()
+    {
+        var random = new DisposingRandomSource();
+        var picc = Fixtures.Picc(Fixtures.Credential(), random);
+        random.Attach(picc);
+        Fixtures.Ok(picc.Activate());
+
+        var response = Fixtures.Ok(picc.Exchange(Hex("901A0000010000")));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response[^2..], Is.EqualTo(new byte[] { 0x91, 0xAF }));
+            Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+        });
+    }
+
     [Test]
     public void RandomExhaustion_AbortsWithoutChangingState()
     {
@@ -186,4 +295,43 @@ public sealed class PiccBehaviorTests
     }
 
     private static byte[] Hex(string value) => Convert.FromHexString(value);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateAbandonedPicc()
+    {
+        var random = new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty);
+        var weak = new WeakReference(random);
+        _ = Fixtures.Picc(Fixtures.Credential(), random);
+        return weak;
+    }
+
+    private sealed class BlockingRandomSource : IDfcRandomSource
+    {
+        public ManualResetEventSlim Entered { get; } = new();
+
+        public ManualResetEventSlim Continue { get; } = new();
+
+        public void Fill(Span<byte> destination)
+        {
+            Entered.Set();
+            if (!Continue.Wait(TimeSpan.FromSeconds(5)))
+            {
+                throw new TimeoutException("The test did not release the random callback.");
+            }
+            destination.Fill(0x5A);
+        }
+    }
+
+    private sealed class DisposingRandomSource : IDfcRandomSource
+    {
+        private DfcVirtualPicc? picc;
+
+        public void Attach(DfcVirtualPicc value) => picc = value;
+
+        public void Fill(Span<byte> destination)
+        {
+            Interlocked.Exchange(ref picc, null)?.Dispose();
+            destination.Fill(0x5A);
+        }
+    }
 }
