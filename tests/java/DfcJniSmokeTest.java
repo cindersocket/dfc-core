@@ -40,8 +40,12 @@ public final class DfcJniSmokeTest {
             reader.authenticateForReplay(DfcReader.Cipher.ISO, 0, key,
                 DfcReader.Framing.ISO_7816, randomA);
             check(reader.session().authenticationMode() == 0x1a, "ISO reader session");
-            check(reader.exchange(DfcCommand.getApplicationIds(), DfcReader.Framing.ISO_7816,
-                DfcReader.Communication.PLAIN).successful(), "authenticated exchange");
+            check(DfcReader.Communication.ENCIPHERED.ordinal() == 2,
+                "test must distinguish native values from enum ordinals");
+            for (DfcReader.Communication communication : DfcReader.Communication.values()) {
+                check(reader.exchange(DfcCommand.getApplicationIds(), DfcReader.Framing.ISO_7816,
+                    communication).successful(), communication + " authenticated exchange");
+            }
         }
 
         DfcCredential ev2Credential = DfcCredentialCodec.load(Files.readAllBytes(Path.of(arguments[1])));

@@ -9,7 +9,16 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Blocking reader-side secure messaging over a caller-provided transport. */
 public final class DfcReader implements AutoCloseable {
   public enum Framing { ISO_7816, NATIVE }
-  public enum Communication { PLAIN, MAC, ENCIPHERED }
+  public enum Communication {
+    PLAIN(0x00),
+    MAC(0x01),
+    ENCIPHERED(0x03);
+    private final int nativeValue;
+
+    Communication(int nativeValue) {
+      this.nativeValue = nativeValue;
+    }
+  }
   public enum Cipher {
     LEGACY(0x0a),
     ISO(0x1a),
@@ -83,7 +92,7 @@ public final class DfcReader implements AutoCloseable {
       throw new IllegalArgumentException("encryptedHeaderLength");
     long handle = state.require();
     DfcNative.readerBegin(handle, framing.ordinal(), command.instruction(), command.data(),
-        communication.ordinal(), encryptedHeaderLength);
+        communication.nativeValue, encryptedHeaderLength);
     return complete(handle);
   }
   public synchronized void authenticate(Cipher cipher, int keyNumber, byte[] key, Framing framing)
