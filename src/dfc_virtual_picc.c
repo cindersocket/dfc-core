@@ -458,6 +458,11 @@ bool dfc_virtual_picc_anticollision(
     DfcVirtualPiccActivation* activation) {
     if(!credential || !activation) return false;
 
+    uint8_t random_uid_tail[DFC_RANDOM_UID_LEN - 1];
+    if(credential->picc_random_id &&
+       !dfc_random_fill(random_uid_tail, sizeof(random_uid_tail)))
+        return false;
+
     memset(activation, 0, sizeof(DfcVirtualPiccActivation));
     memcpy(activation->protocol, DfcVirtualPiccProtocol, sizeof(DfcVirtualPiccProtocol));
     activation->protocol_len = sizeof(DfcVirtualPiccProtocol);
@@ -466,7 +471,7 @@ bool dfc_virtual_picc_anticollision(
         // A fresh identifier per activation. The stored UID stays where it is and
         // is reachable only through GetCardUID under an authenticated session.
         activation->uid[0] = DFC_RANDOM_UID_FIRST_BYTE;
-        if(!dfc_random_fill(activation->uid + 1, DFC_RANDOM_UID_LEN - 1)) return false;
+        memcpy(activation->uid + 1, random_uid_tail, sizeof(random_uid_tail));
         activation->uid_len = DFC_RANDOM_UID_LEN;
     } else {
         memcpy(activation->uid, credential->uid, credential->uid_len);

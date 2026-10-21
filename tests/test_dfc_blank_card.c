@@ -154,6 +154,16 @@ static MunitResult test_random_failure_is_atomic(const MunitParameter params[], 
     munit_assert_false(dfc_credential_init_blank(&credential));
     munit_assert_memory_equal(sizeof(before), &before, &credential);
     dfc_host_clear_random_buffer();
+
+    load_standard_credential(&credential);
+    credential.picc_random_id = true;
+    DfcVirtualPiccActivation activation;
+    memset(&activation, 0xC3, sizeof(activation));
+    DfcVirtualPiccActivation activation_before = activation;
+    dfc_host_set_random_buffer(&empty_script, 0);
+    munit_assert_false(dfc_virtual_picc_anticollision(&credential, &activation));
+    munit_assert_memory_equal(sizeof(activation_before), &activation_before, &activation);
+    dfc_host_clear_random_buffer();
     return MUNIT_OK;
 }
 
