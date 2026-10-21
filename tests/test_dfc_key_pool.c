@@ -65,6 +65,21 @@ static MunitResult test_resize_allocate_and_release(const MunitParameter params[
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_resize_accepts_zero_initialized_model(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential = {0};
+
+    munit_assert_true(dfc_credential_keys_resize(&credential, NULL, 1, 16));
+    munit_assert_size(credential.picc_key_offset, ==, 0);
+    munit_assert_size(credential.picc_num_keys, ==, 1);
+    munit_assert_size(credential.picc_key_len, ==, 16);
+    munit_assert_not_null(dfc_credential_key(&credential, NULL, 0));
+
+    return MUNIT_OK;
+}
+
 static MunitResult test_format_picc_keeps_picc_keys(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -341,6 +356,12 @@ static MunitResult
 static MunitTest tests[] = {
     {"/resize-allocate-and-release",
      test_resize_allocate_and_release,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/resize-accepts-zero-initialized-model",
+     test_resize_accepts_zero_initialized_model,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

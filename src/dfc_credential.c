@@ -286,19 +286,25 @@ bool dfc_file_resize(DfcCredential* credential, DfcFile* file, size_t data_len) 
     if(data_len > DFC_MAX_FILE_DATA) return false;
     if(data_len > DFC_FILE_POOL_SIZE) return false;
     if(credential->file_pool_used > DFC_FILE_POOL_SIZE) return false;
-    if((file->data_offset == DFC_FILE_POOL_NONE) != (file->data_len == 0)) return false;
-    if(file->data_offset != DFC_FILE_POOL_NONE &&
-       (file->data_offset > credential->file_pool_used ||
-        file->data_len > credential->file_pool_used - file->data_offset)) {
+    // A zero-initialized record represents the same empty slice as the
+    // canonical NONE offset used after explicit initialization.
+    size_t old_offset = file->data_offset;
+    if(file->data_len == 0 && old_offset == 0 && credential->file_pool_used == 0) {
+        old_offset = DFC_FILE_POOL_NONE;
+    }
+    if((old_offset == DFC_FILE_POOL_NONE) != (file->data_len == 0)) return false;
+    if(old_offset != DFC_FILE_POOL_NONE &&
+       (old_offset > credential->file_pool_used ||
+        file->data_len > credential->file_pool_used - old_offset)) {
         return false;
     }
 
-    if(file->data_offset != DFC_FILE_POOL_NONE && file->data_len == data_len) {
+    if(old_offset != DFC_FILE_POOL_NONE && file->data_len == data_len) {
         return true;
     }
 
     size_t used_without_old = credential->file_pool_used;
-    if(file->data_offset != DFC_FILE_POOL_NONE) {
+    if(old_offset != DFC_FILE_POOL_NONE) {
         if(file->data_len > used_without_old) return false;
         used_without_old -= file->data_len;
     }
@@ -306,15 +312,16 @@ bool dfc_file_resize(DfcCredential* credential, DfcFile* file, size_t data_len) 
 
     // Capacity is known before releasing the old slice, so a failed resize
     // never destroys file data that still backs the live model.
-    if(file->data_offset != DFC_FILE_POOL_NONE) {
-        size_t old_off = file->data_offset;
+    if(old_offset != DFC_FILE_POOL_NONE) {
         size_t old_len = file->data_len;
         file->data_offset = DFC_FILE_POOL_NONE;
         file->data_len = 0;
-        dfc_file_pool_compact_after_release(credential, old_off, old_len);
+        dfc_file_pool_compact_after_release(credential, old_offset, old_len);
     }
 
     if(data_len == 0) {
+        file->data_offset = DFC_FILE_POOL_NONE;
+        file->data_len = 0;
         return true;
     }
 
@@ -464,13 +471,20 @@ static bool dfc_credential_keys_resize_total(
     size_t want = allocated_keys * stride;
     if(want > DFC_KEY_POOL_SIZE) return false;
     if(credential->key_pool_used > DFC_KEY_POOL_SIZE) return false;
-    if((*offset == DFC_KEY_POOL_NONE) != (*pool_len == 0)) return false;
-    if(*offset != DFC_KEY_POOL_NONE &&
-       (*offset > credential->key_pool_used || *pool_len > credential->key_pool_used - *offset)) {
+    // Models are commonly zero-initialized before their first resize. Treat
+    // that representation as the canonical empty slice without accepting any
+    // other offset/length mismatch.
+    size_t old_offset = *offset;
+    if(*pool_len == 0 && old_offset == 0 && credential->key_pool_used == 0) {
+        old_offset = DFC_KEY_POOL_NONE;
+    }
+    if((old_offset == DFC_KEY_POOL_NONE) != (*pool_len == 0)) return false;
+    if(old_offset != DFC_KEY_POOL_NONE && (old_offset > credential->key_pool_used ||
+                                           *pool_len > credential->key_pool_used - old_offset)) {
         return false;
     }
 
-    if(*offset != DFC_KEY_POOL_NONE && *pool_len == want && want > 0) {
+    if(old_offset != DFC_KEY_POOL_NONE && *pool_len == want && want > 0) {
         // Same footprint: keep the material, only the counts can change.
         *stored_num = num_keys;
         *stored_len = key_len;
@@ -481,7 +495,7 @@ static bool dfc_credential_keys_resize_total(
     }
 
     size_t used_without_old = credential->key_pool_used;
-    if(*offset != DFC_KEY_POOL_NONE) {
+    if(old_offset != DFC_KEY_POOL_NONE) {
         if(*pool_len > used_without_old) return false;
         used_without_old -= *pool_len;
     }

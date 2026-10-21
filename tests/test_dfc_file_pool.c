@@ -42,6 +42,21 @@ static MunitResult test_resize_allocate_and_release(const MunitParameter params[
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_resize_accepts_zero_initialized_model(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential = {0};
+    DfcFile file = {0};
+
+    munit_assert_true(dfc_file_resize(&credential, &file, 8));
+    munit_assert_size(file.data_offset, ==, 0);
+    munit_assert_size(file.data_len, ==, 8);
+    munit_assert_not_null(dfc_file_data(&credential, &file));
+
+    return MUNIT_OK;
+}
+
 static MunitResult test_pool_exhaustion(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -224,6 +239,12 @@ static MunitResult test_copy_model_carries_pool(const MunitParameter params[], v
 static MunitTest tests[] = {
     {"/resize-allocate-and-release",
      test_resize_allocate_and_release,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/resize-accepts-zero-initialized-model",
+     test_resize_accepts_zero_initialized_model,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
