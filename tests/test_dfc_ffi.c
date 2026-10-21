@@ -9,6 +9,10 @@
 
 static int failures;
 
+// Credential builders return the stable model-status family described by the
+// FFI, where capacity is the third nonzero status.
+static const int32_t model_capacity_status = 3;
+
 #define CHECK(cond)                                                                  \
     do {                                                                             \
         if(!(cond)) {                                                                \
@@ -193,6 +197,140 @@ int main(void) {
     CHECK(sizes.file == sizeof(DfcFfiFile));
     CHECK(sizes.application == sizeof(DfcFfiApplication));
 
+    // Reusing a builder replaces optional settings. Disabling an option must
+    // clear both its presence bit and the data it previously owned.
+    DfcFfiCredential* updated = NULL;
+    CHECK(dfc_ffi_credential_new(&updated) == DFC_FFI_OK);
+    DfcFfiCard update_card = {0};
+    update_card.uid_len = 7;
+    update_card.has_static_signature = 1;
+    memset(update_card.static_signature, 0xA5, sizeof(update_card.static_signature));
+    CHECK(dfc_ffi_credential_set_card(updated, &update_card) == DFC_FFI_OK);
+    update_card.has_static_signature = 0;
+    CHECK(dfc_ffi_credential_set_card(updated, &update_card) == DFC_FFI_OK);
+    DfcFfiCard read_card;
+    CHECK(dfc_ffi_credential_get_card(updated, &read_card) == DFC_FFI_OK);
+    CHECK(!read_card.has_static_signature);
+    for(size_t i = 0; i < sizeof(read_card.static_signature); i++)
+        CHECK(read_card.static_signature[i] == 0);
+
+    DfcFfiPiccSettings update_picc = {0};
+    update_picc.num_keys = 1;
+    update_picc.key_len = 16;
+    update_picc.has_ev2_capabilities = 1;
+    memset(update_picc.ev2_capabilities, 0x11, sizeof(update_picc.ev2_capabilities));
+    update_picc.has_proximity_key = 1;
+    memset(update_picc.proximity_key, 0x22, sizeof(update_picc.proximity_key));
+    update_picc.proximity_option = 0x23;
+    update_picc.has_proximity_bitrate = 1;
+    update_picc.proximity_bitrate = 0x24;
+    update_picc.proximity_published_response_time = 0x2526;
+    update_picc.virtual_card_configured = 1;
+    update_picc.virtual_card_uid_len = 7;
+    update_picc.virtual_card_installation_id_len = 4;
+    memset(
+        update_picc.virtual_card_installation_id,
+        0x31,
+        sizeof(update_picc.virtual_card_installation_id));
+    update_picc.virtual_card_information = 0x32;
+    memset(
+        update_picc.virtual_card_capabilities,
+        0x33,
+        sizeof(update_picc.virtual_card_capabilities));
+    memset(update_picc.virtual_card_uid, 0x34, sizeof(update_picc.virtual_card_uid));
+    memset(
+        update_picc.virtual_card_select_mac_key,
+        0x35,
+        sizeof(update_picc.virtual_card_select_mac_key));
+    memset(
+        update_picc.virtual_card_select_encryption_key,
+        0x36,
+        sizeof(update_picc.virtual_card_select_encryption_key));
+    update_picc.virtual_card_authentication_mandatory = 1;
+    update_picc.virtual_card_proximity_mandatory = 1;
+    update_picc.has_dam_keys = 1;
+    memset(update_picc.dam_auth_key, 0x44, sizeof(update_picc.dam_auth_key));
+    memset(update_picc.dam_mac_key, 0x45, sizeof(update_picc.dam_mac_key));
+    memset(update_picc.dam_encryption_key, 0x46, sizeof(update_picc.dam_encryption_key));
+    CHECK(dfc_ffi_credential_set_picc(updated, &update_picc) == DFC_FFI_OK);
+    update_picc.has_ev2_capabilities = 0;
+    update_picc.has_proximity_key = 0;
+    update_picc.virtual_card_configured = 0;
+    update_picc.has_dam_keys = 0;
+    CHECK(dfc_ffi_credential_set_picc(updated, &update_picc) == DFC_FFI_OK);
+    DfcFfiPiccSettings read_picc;
+    CHECK(dfc_ffi_credential_get_picc(updated, &read_picc) == DFC_FFI_OK);
+    CHECK(!read_picc.has_ev2_capabilities);
+    CHECK(!read_picc.has_proximity_key);
+    CHECK(!read_picc.virtual_card_configured);
+    CHECK(!read_picc.has_dam_keys);
+    for(size_t i = 0; i < sizeof(read_picc.ev2_capabilities); i++)
+        CHECK(read_picc.ev2_capabilities[i] == 0);
+    for(size_t i = 0; i < sizeof(read_picc.proximity_key); i++)
+        CHECK(read_picc.proximity_key[i] == 0);
+    CHECK(read_picc.proximity_option == 0);
+    CHECK(!read_picc.has_proximity_bitrate);
+    CHECK(read_picc.proximity_bitrate == 0);
+    CHECK(read_picc.proximity_published_response_time == 0);
+    CHECK(read_picc.virtual_card_installation_id_len == 0);
+    for(size_t i = 0; i < sizeof(read_picc.virtual_card_installation_id); i++)
+        CHECK(read_picc.virtual_card_installation_id[i] == 0);
+    CHECK(read_picc.virtual_card_information == 0);
+    for(size_t i = 0; i < sizeof(read_picc.virtual_card_capabilities); i++)
+        CHECK(read_picc.virtual_card_capabilities[i] == 0);
+    CHECK(read_picc.virtual_card_uid_len == 0);
+    for(size_t i = 0; i < sizeof(read_picc.virtual_card_uid); i++)
+        CHECK(read_picc.virtual_card_uid[i] == 0);
+    for(size_t i = 0; i < sizeof(read_picc.virtual_card_select_mac_key); i++)
+        CHECK(read_picc.virtual_card_select_mac_key[i] == 0);
+    for(size_t i = 0; i < sizeof(read_picc.virtual_card_select_encryption_key); i++)
+        CHECK(read_picc.virtual_card_select_encryption_key[i] == 0);
+    CHECK(!read_picc.virtual_card_authentication_mandatory);
+    CHECK(!read_picc.virtual_card_proximity_mandatory);
+    for(size_t i = 0; i < sizeof(read_picc.dam_auth_key); i++)
+        CHECK(read_picc.dam_auth_key[i] == 0);
+    for(size_t i = 0; i < sizeof(read_picc.dam_mac_key); i++)
+        CHECK(read_picc.dam_mac_key[i] == 0);
+    for(size_t i = 0; i < sizeof(read_picc.dam_encryption_key); i++)
+        CHECK(read_picc.dam_encryption_key[i] == 0);
+    dfc_ffi_credential_free(updated);
+
+    // Rejecting malformed optional settings must leave both settings and key
+    // material unchanged, including when validation fails late in the group.
+    DfcFfiCredential* atomic = NULL;
+    CHECK(dfc_ffi_credential_new(&atomic) == DFC_FFI_OK);
+    DfcFfiPiccSettings atomic_picc = {0};
+    atomic_picc.num_keys = 1;
+    atomic_picc.key_len = 16;
+    atomic_picc.key_settings_1 = 0x0F;
+    atomic_picc.key_settings_2 = 0x01;
+    atomic_picc.random_id = 1;
+    CHECK(dfc_ffi_credential_set_picc(atomic, &atomic_picc) == DFC_FFI_OK);
+    DfcFfiKey atomic_key = repeated_key(16, 0x6A, 0x07);
+    CHECK(dfc_ffi_credential_set_key(atomic, DFC_FFI_OWNER_PICC, 0, 0, &atomic_key) == DFC_FFI_OK);
+    DfcFfiPiccSettings atomic_before;
+    CHECK(dfc_ffi_credential_get_picc(atomic, &atomic_before) == DFC_FFI_OK);
+
+    DfcFfiPiccSettings malformed = atomic_before;
+    malformed.virtual_card_configured = 1;
+    malformed.virtual_card_installation_id_len =
+        (uint8_t)(sizeof(malformed.virtual_card_installation_id) + 1);
+    malformed.virtual_card_uid_len = 7;
+    CHECK(dfc_ffi_credential_set_picc(atomic, &malformed) == DFC_FFI_INVALID_ARGUMENT);
+    DfcFfiPiccSettings atomic_after;
+    CHECK(dfc_ffi_credential_get_picc(atomic, &atomic_after) == DFC_FFI_OK);
+    CHECK(memcmp(&atomic_after, &atomic_before, sizeof(atomic_before)) == 0);
+    check_key(atomic, DFC_FFI_OWNER_PICC, 0, 0, &atomic_key);
+
+    malformed = atomic_before;
+    malformed.virtual_card_configured = 1;
+    malformed.virtual_card_uid_len = (uint8_t)(sizeof(malformed.virtual_card_uid) + 1);
+    CHECK(dfc_ffi_credential_set_picc(atomic, &malformed) == DFC_FFI_INVALID_ARGUMENT);
+    CHECK(dfc_ffi_credential_get_picc(atomic, &atomic_after) == DFC_FFI_OK);
+    CHECK(memcmp(&atomic_after, &atomic_before, sizeof(atomic_before)) == 0);
+    check_key(atomic, DFC_FFI_OWNER_PICC, 0, 0, &atomic_key);
+    dfc_ffi_credential_free(atomic);
+
     // Text in, binary out, and back.
     DfcFfiCredential* credential = NULL;
     DfcFfiError error;
@@ -299,6 +437,65 @@ int main(void) {
         dfc_ffi_credential_free(bounded);
     }
 
+    // A failed PICC-key expansion is a rejected update, not a destructive
+    // replacement of the previously configured PICC keys and settings.
+    DfcFfiCredential* crowded = NULL;
+    CHECK(dfc_ffi_credential_new(&crowded) == DFC_FFI_OK);
+    DfcFfiPiccSettings original_picc = {0};
+    original_picc.num_keys = 1;
+    original_picc.key_len = 16;
+    original_picc.key_settings_1 = 0xA5;
+    CHECK(dfc_ffi_credential_set_picc(crowded, &original_picc) == DFC_FFI_OK);
+    DfcFfiKey original_key = repeated_key(16, 0x5A, 0x7E);
+    CHECK(
+        dfc_ffi_credential_set_key(crowded, DFC_FFI_OWNER_PICC, 0, 0, &original_key) ==
+        DFC_FFI_OK);
+    size_t crowded_apps = 0;
+    for(size_t i = 0; i < caps.max_applications; i++) {
+        DfcFfiApplication application = {0};
+        application.aid[0] = (uint8_t)(i + 1);
+        application.aid[1] = 0x70;
+        application.aid[2] = 0x01;
+        application.num_keys = 14;
+        application.key_len = 24;
+        application.key_settings_2 = 0x8E;
+        application.num_key_sets = 16;
+        application.key_set_max_size = 24;
+        for(size_t key_set = 0; key_set < 16; key_set++)
+            application.key_set_types[key_set] = 1;
+        uint32_t index = 0;
+        if(dfc_ffi_credential_add_application(crowded, &application, &index) != DFC_FFI_OK) break;
+        crowded_apps++;
+    }
+    if(crowded_apps == 0) {
+        for(size_t i = 0; i < caps.max_applications; i++) {
+            DfcFfiApplication application = {0};
+            application.aid[0] = (uint8_t)(i + 1);
+            application.aid[1] = 0x71;
+            application.aid[2] = 0x01;
+            application.num_keys = 14;
+            application.key_len = 24;
+            application.key_settings_2 = 0x8E;
+            uint32_t index = 0;
+            if(dfc_ffi_credential_add_application(crowded, &application, &index) != DFC_FFI_OK)
+                break;
+            crowded_apps++;
+        }
+    }
+    CHECK(crowded_apps > 0);
+    DfcFfiPiccSettings too_large = original_picc;
+    too_large.num_keys = 14;
+    too_large.key_len = 24;
+    too_large.key_settings_1 = 0x3C;
+    CHECK(dfc_ffi_credential_set_picc(crowded, &too_large) == model_capacity_status);
+    DfcFfiPiccSettings after_rejection;
+    CHECK(dfc_ffi_credential_get_picc(crowded, &after_rejection) == DFC_FFI_OK);
+    CHECK(after_rejection.num_keys == original_picc.num_keys);
+    CHECK(after_rejection.key_len == original_picc.key_len);
+    CHECK(after_rejection.key_settings_1 == original_picc.key_settings_1);
+    check_key(crowded, DFC_FFI_OWNER_PICC, 0, 0, &original_key);
+    dfc_ffi_credential_free(crowded);
+
     // The walk and the builder agree with the codec.
     DfcFfiCredential* built = rebuild(decoded);
     size_t rebuilt_len = 0;
@@ -316,8 +513,9 @@ int main(void) {
     DfcFfiCredential* failure_credential = NULL;
     CHECK(dfc_ffi_credential_clone(built, &failure_credential) == 0);
     DfcFfiPicc* failure_picc = NULL;
-    CHECK(dfc_ffi_picc_create_take(
-              &failure_credential, failing_random, NULL, &failure_picc) == DFC_FFI_OK);
+    CHECK(
+        dfc_ffi_picc_create_take(&failure_credential, failing_random, NULL, &failure_picc) ==
+        DFC_FFI_OK);
     DfcFfiActivation failure_activation;
     CHECK(dfc_ffi_picc_activate(failure_picc, &failure_activation) == DFC_FFI_OK);
     DfcFfiSnapshot before_failure;
@@ -326,13 +524,14 @@ int main(void) {
     const uint8_t authenticate[] = {0x90, 0x0A, 0x00, 0x00, 0x01, 0x00, 0x00};
     uint8_t failed_response[32] = {0};
     size_t failed_response_len = 0;
-    CHECK(dfc_ffi_picc_exchange(
-              failure_picc,
-              authenticate,
-              sizeof(authenticate),
-              failed_response,
-              sizeof(failed_response),
-              &failed_response_len) == DFC_FFI_RANDOM_FAILED);
+    CHECK(
+        dfc_ffi_picc_exchange(
+            failure_picc,
+            authenticate,
+            sizeof(authenticate),
+            failed_response,
+            sizeof(failed_response),
+            &failed_response_len) == DFC_FFI_RANDOM_FAILED);
     CHECK(dfc_ffi_picc_snapshot(failure_picc, &after_failure) == DFC_FFI_OK);
     CHECK(memcmp(&before_failure, &after_failure, sizeof(before_failure)) == 0);
     CHECK(failed_response_len == 0);
@@ -349,8 +548,9 @@ int main(void) {
     DfcFfiError random_id_error;
     CHECK(dfc_ffi_credential_finish(random_id_credential, &random_id_error) == DFC_FFI_OK);
     DfcFfiPicc* random_id_picc = NULL;
-    CHECK(dfc_ffi_picc_create_take(
-              &random_id_credential, failing_random, NULL, &random_id_picc) == DFC_FFI_OK);
+    CHECK(
+        dfc_ffi_picc_create_take(&random_id_credential, failing_random, NULL, &random_id_picc) ==
+        DFC_FFI_OK);
     DfcFfiSnapshot before_activation;
     DfcFfiSnapshot after_activation;
     CHECK(dfc_ffi_picc_snapshot(random_id_picc, &before_activation) == DFC_FFI_OK);

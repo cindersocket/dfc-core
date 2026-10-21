@@ -619,6 +619,9 @@ int32_t dfc_ffi_credential_set_card(DfcFfiCredential* credential, const DfcFfiCa
     if(!credential || !card || !dfc_uid_length_is_valid(card->uid_len)) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
+#if !DFC_ENABLE_STATIC_SIGNATURE
+    if(card->has_static_signature) return DfcDerUnsupported;
+#endif
     DfcCredential* c = &credential->model;
     c->card.generation = (DfcGeneration)card->generation;
     c->card.storage = card->storage;
@@ -629,14 +632,14 @@ int32_t dfc_ffi_credential_set_card(DfcFfiCredential* credential, const DfcFfiCa
     memcpy(c->card.hardware_version, card->hardware_version, sizeof(c->card.hardware_version));
     c->card.has_software_version = card->has_software_version != 0;
     memcpy(c->card.software_version, card->software_version, sizeof(c->card.software_version));
-    if(card->has_static_signature) {
 #if DFC_ENABLE_STATIC_SIGNATURE
-        c->picc_has_static_signature = true;
+    c->picc_has_static_signature = card->has_static_signature != 0;
+    if(card->has_static_signature) {
         memcpy(c->picc_static_signature, card->static_signature, sizeof(c->picc_static_signature));
-#else
-        return DfcDerUnsupported;
-#endif
+    } else {
+        memset(c->picc_static_signature, 0, sizeof(c->picc_static_signature));
     }
+#endif
     return DfcDerOk;
 }
 
@@ -645,7 +648,30 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
        p->key_len > DFC_MAX_KEY_LEN) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
+#if !DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(p->has_ev2_capabilities) return DfcDerUnsupported;
+#endif
+#if !DFC_ENABLE_PROXIMITY_CHECK
+    if(p->has_proximity_key) return DfcDerUnsupported;
+#endif
+#if DFC_ENABLE_VIRTUAL_CARD
+    if(p->virtual_card_configured &&
+       (p->virtual_card_installation_id_len > DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH ||
+        !dfc_uid_length_is_valid(p->virtual_card_uid_len))) {
+        return DFC_FFI_INVALID_ARGUMENT;
+    }
+#else
+    if(p->virtual_card_configured) return DfcDerUnsupported;
+#endif
+#if !DFC_ENABLE_DELEGATED_APPLICATIONS
+    if(p->has_dam_keys) return DfcDerUnsupported;
+#endif
     DfcCredential* c = &credential->model;
+    if(p->num_keys == 0) {
+        dfc_credential_keys_release(c, NULL);
+    } else if(!dfc_credential_keys_resize(c, NULL, p->num_keys, p->key_len)) {
+        return DfcDerCapacity;
+    }
     c->picc_key_settings_1 = p->key_settings_1;
     c->picc_key_settings_2 = p->key_settings_2;
     c->picc_auth_command = p->auth_command;
@@ -663,33 +689,33 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
     memcpy(c->picc_atqa, p->atqa, sizeof(c->picc_atqa));
     c->picc_has_sm_disable = p->has_sm_disable != 0;
     c->picc_sm_disable = p->sm_disable;
-    if(p->has_ev2_capabilities) {
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
-        c->picc_has_ev2_capabilities = true;
+    c->picc_has_ev2_capabilities = p->has_ev2_capabilities != 0;
+    if(p->has_ev2_capabilities) {
         memcpy(c->picc_ev2_capabilities, p->ev2_capabilities, sizeof(c->picc_ev2_capabilities));
-#else
-        return DfcDerUnsupported;
-#endif
+    } else {
+        memset(c->picc_ev2_capabilities, 0, sizeof(c->picc_ev2_capabilities));
     }
-    if(p->has_proximity_key) {
+#endif
 #if DFC_ENABLE_PROXIMITY_CHECK
-        c->picc_has_proximity_key = true;
+    c->picc_has_proximity_key = p->has_proximity_key != 0;
+    if(p->has_proximity_key) {
         memcpy(c->picc_proximity_key, p->proximity_key, sizeof(c->picc_proximity_key));
         c->picc_proximity_option = p->proximity_option;
         c->picc_proximity_published_response_time = p->proximity_published_response_time;
         c->picc_has_proximity_bitrate = p->has_proximity_bitrate != 0;
         c->picc_proximity_bitrate = p->proximity_bitrate;
-#else
-        return DfcDerUnsupported;
-#endif
+    } else {
+        memset(c->picc_proximity_key, 0, sizeof(c->picc_proximity_key));
+        c->picc_proximity_option = 0;
+        c->picc_proximity_published_response_time = 0;
+        c->picc_has_proximity_bitrate = false;
+        c->picc_proximity_bitrate = 0;
     }
-    if(p->virtual_card_configured) {
+#endif
 #if DFC_ENABLE_VIRTUAL_CARD
-        if(p->virtual_card_installation_id_len > DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH ||
-           !dfc_uid_length_is_valid(p->virtual_card_uid_len)) {
-            return DFC_FFI_INVALID_ARGUMENT;
-        }
-        c->virtual_card_configured = true;
+    c->virtual_card_configured = p->virtual_card_configured != 0;
+    if(p->virtual_card_configured) {
         c->virtual_card_installation_id_len = p->virtual_card_installation_id_len;
         memcpy(
             c->virtual_card_installation_id,
@@ -712,26 +738,35 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
             sizeof(c->virtual_card_select_encryption_key));
         c->virtual_card_authentication_mandatory = p->virtual_card_authentication_mandatory != 0;
         c->virtual_card_proximity_mandatory = p->virtual_card_proximity_mandatory != 0;
-#else
-        return DfcDerUnsupported;
-#endif
+    } else {
+        c->virtual_card_installation_id_len = 0;
+        memset(c->virtual_card_installation_id, 0, sizeof(c->virtual_card_installation_id));
+        c->virtual_card_information = 0;
+        memset(c->virtual_card_capabilities, 0, sizeof(c->virtual_card_capabilities));
+        c->virtual_card_uid_len = 0;
+        memset(c->virtual_card_uid, 0, sizeof(c->virtual_card_uid));
+        memset(c->virtual_card_select_mac_key, 0, sizeof(c->virtual_card_select_mac_key));
+        memset(
+            c->virtual_card_select_encryption_key,
+            0,
+            sizeof(c->virtual_card_select_encryption_key));
+        c->virtual_card_authentication_mandatory = false;
+        c->virtual_card_proximity_mandatory = false;
     }
-    if(p->has_dam_keys) {
+#endif
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
-        c->picc_has_dam_keys = true;
+    c->picc_has_dam_keys = p->has_dam_keys != 0;
+    if(p->has_dam_keys) {
         memcpy(c->picc_dam_auth_key, p->dam_auth_key, sizeof(c->picc_dam_auth_key));
         memcpy(c->picc_dam_mac_key, p->dam_mac_key, sizeof(c->picc_dam_mac_key));
         memcpy(
             c->picc_dam_encryption_key, p->dam_encryption_key, sizeof(c->picc_dam_encryption_key));
-#else
-        return DfcDerUnsupported;
+    } else {
+        memset(c->picc_dam_auth_key, 0, sizeof(c->picc_dam_auth_key));
+        memset(c->picc_dam_mac_key, 0, sizeof(c->picc_dam_mac_key));
+        memset(c->picc_dam_encryption_key, 0, sizeof(c->picc_dam_encryption_key));
+    }
 #endif
-    }
-    if(p->num_keys == 0) {
-        dfc_credential_keys_release(c, NULL);
-    } else if(!dfc_credential_keys_resize(c, NULL, p->num_keys, p->key_len)) {
-        return DfcDerCapacity;
-    }
     return DfcDerOk;
 }
 
@@ -744,6 +779,31 @@ int32_t dfc_ffi_credential_add_application(
        (a->has_iso_file_id && dfc_iso_file_id_is_reserved(a->iso_file_id))) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
+    if(a->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
+#if DFC_ENABLE_KEY_SETS
+        if(a->num_key_sets > DFC_MAX_KEY_SETS) return DfcDerCapacity;
+        if(a->key_set_max_size != DFC_KEY_SET_MAXIMUM_16_BYTE &&
+           a->key_set_max_size != DFC_KEY_SET_MAXIMUM_24_BYTE) {
+            return DFC_FFI_INVALID_ARGUMENT;
+        }
+        size_t active_width = dfc_key_set_type_length(a->key_set_types[0]);
+        if(a->key_len > a->key_set_max_size || active_width != a->key_len) {
+            return DFC_FFI_INVALID_ARGUMENT;
+        }
+        for(size_t i = 0; i < a->num_key_sets; i++) {
+            size_t width = dfc_key_set_type_length(a->key_set_types[i]);
+            if(width == 0 || width > a->key_set_max_size) return DFC_FFI_INVALID_ARGUMENT;
+        }
+#else
+        return DfcDerUnsupported;
+#endif
+    }
+#if !DFC_ENABLE_APPLICATION_CAPABILITY_DATA
+    if(a->has_capability_data) return DfcDerUnsupported;
+#endif
+#if !DFC_ENABLE_DELEGATED_APPLICATIONS
+    if(a->delegated) return DfcDerUnsupported;
+#endif
     DfcCredential* c = &credential->model;
     if(c->num_apps >= DFC_MAX_APPS) return DfcDerCapacity;
     for(size_t i = 0; i < c->num_apps; i++) {
@@ -769,19 +829,6 @@ int32_t dfc_ffi_credential_add_application(
 
     if(a->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
 #if DFC_ENABLE_KEY_SETS
-        if(a->num_key_sets > DFC_MAX_KEY_SETS) return DfcDerCapacity;
-        if(a->key_set_max_size != DFC_KEY_SET_MAXIMUM_16_BYTE &&
-           a->key_set_max_size != DFC_KEY_SET_MAXIMUM_24_BYTE) {
-            return DFC_FFI_INVALID_ARGUMENT;
-        }
-        size_t active_width = dfc_key_set_type_length(a->key_set_types[0]);
-        if(a->key_len > a->key_set_max_size || active_width != a->key_len) {
-            return DFC_FFI_INVALID_ARGUMENT;
-        }
-        for(size_t i = 0; i < a->num_key_sets; i++) {
-            size_t width = dfc_key_set_type_length(a->key_set_types[i]);
-            if(width == 0 || width > a->key_set_max_size) return DFC_FFI_INVALID_ARGUMENT;
-        }
         if(!dfc_credential_key_sets_resize(
                c, app, a->num_key_sets, a->num_keys, a->key_len, a->key_set_max_size)) {
             return DfcDerCapacity;
@@ -792,8 +839,6 @@ int32_t dfc_ffi_credential_add_application(
             app->key_set_types[i] = a->key_set_types[i];
             app->key_set_initialized[i] = a->key_set_initialized[i] != 0;
         }
-#else
-        return DfcDerUnsupported;
 #endif
     } else if(a->num_keys > 0) {
         if(!dfc_credential_keys_resize(c, app, a->num_keys, a->key_len)) return DfcDerCapacity;
@@ -829,6 +874,12 @@ int32_t dfc_ffi_credential_add_file(
     if(!credential || !f || (f->has_iso_file_id && dfc_iso_file_id_is_reserved(f->iso_file_id))) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
+#if !DFC_ENABLE_SDM
+    if(f->sdm_enabled) return DfcDerUnsupported;
+#endif
+#if !DFC_ENABLE_TRANSACTION_MAC
+    if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) return DfcDerUnsupported;
+#endif
     DfcCredential* c = &credential->model;
     size_t owner;
     if(f->owner == DFC_FFI_OWNER_PICC) {

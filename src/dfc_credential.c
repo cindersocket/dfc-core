@@ -285,12 +285,27 @@ bool dfc_file_resize(DfcCredential* credential, DfcFile* file, size_t data_len) 
     if(!credential || !file) return false;
     if(data_len > DFC_MAX_FILE_DATA) return false;
     if(data_len > DFC_FILE_POOL_SIZE) return false;
+    if(credential->file_pool_used > DFC_FILE_POOL_SIZE) return false;
+    if((file->data_offset == DFC_FILE_POOL_NONE) != (file->data_len == 0)) return false;
+    if(file->data_offset != DFC_FILE_POOL_NONE &&
+       (file->data_offset > credential->file_pool_used ||
+        file->data_len > credential->file_pool_used - file->data_offset)) {
+        return false;
+    }
 
     if(file->data_offset != DFC_FILE_POOL_NONE && file->data_len == data_len) {
         return true;
     }
 
-    // Release existing slice first so the free space can be reused.
+    size_t used_without_old = credential->file_pool_used;
+    if(file->data_offset != DFC_FILE_POOL_NONE) {
+        if(file->data_len > used_without_old) return false;
+        used_without_old -= file->data_len;
+    }
+    if(data_len > DFC_FILE_POOL_SIZE - used_without_old) return false;
+
+    // Capacity is known before releasing the old slice, so a failed resize
+    // never destroys file data that still backs the live model.
     if(file->data_offset != DFC_FILE_POOL_NONE) {
         size_t old_off = file->data_offset;
         size_t old_len = file->data_len;
@@ -301,10 +316,6 @@ bool dfc_file_resize(DfcCredential* credential, DfcFile* file, size_t data_len) 
 
     if(data_len == 0) {
         return true;
-    }
-
-    if(credential->file_pool_used + data_len > DFC_FILE_POOL_SIZE) {
-        return false;
     }
 
     file->data_offset = credential->file_pool_used;
@@ -452,6 +463,12 @@ static bool dfc_credential_keys_resize_total(
     if(allocated_keys > DFC_KEY_POOL_SIZE / stride) return false;
     size_t want = allocated_keys * stride;
     if(want > DFC_KEY_POOL_SIZE) return false;
+    if(credential->key_pool_used > DFC_KEY_POOL_SIZE) return false;
+    if((*offset == DFC_KEY_POOL_NONE) != (*pool_len == 0)) return false;
+    if(*offset != DFC_KEY_POOL_NONE &&
+       (*offset > credential->key_pool_used || *pool_len > credential->key_pool_used - *offset)) {
+        return false;
+    }
 
     if(*offset != DFC_KEY_POOL_NONE && *pool_len == want && want > 0) {
         // Same footprint: keep the material, only the counts can change.
@@ -463,7 +480,15 @@ static bool dfc_credential_keys_resize_total(
         return true;
     }
 
-    // Release the old slice first so the space it held can be reused.
+    size_t used_without_old = credential->key_pool_used;
+    if(*offset != DFC_KEY_POOL_NONE) {
+        if(*pool_len > used_without_old) return false;
+        used_without_old -= *pool_len;
+    }
+    if(want > DFC_KEY_POOL_SIZE - used_without_old) return false;
+
+    // Capacity is known before releasing the old slice, so a failed resize
+    // never destroys the existing key material.
     dfc_credential_keys_release(credential, app);
 
     if(want == 0) {
@@ -471,8 +496,6 @@ static bool dfc_credential_keys_resize_total(
         *stored_len = key_len;
         return true;
     }
-
-    if(credential->key_pool_used + want > DFC_KEY_POOL_SIZE) return false;
 
     *offset = credential->key_pool_used;
     *pool_len = want;
@@ -491,6 +514,8 @@ bool dfc_credential_keys_resize(
     DfcApplication* app,
     size_t num_keys,
     size_t key_len) {
+    if(!dfc_credential_keys_resize_total(credential, app, num_keys, num_keys, key_len, key_len))
+        return false;
 #if DFC_ENABLE_KEY_SETS
     if(app) {
         app->num_key_sets = 1;
@@ -500,7 +525,7 @@ bool dfc_credential_keys_resize(
         memset(app->additional_key_versions, 0, sizeof(app->additional_key_versions));
     }
 #endif
-    return dfc_credential_keys_resize_total(credential, app, num_keys, num_keys, key_len, key_len);
+    return true;
 }
 
 #if DFC_ENABLE_KEY_SETS
@@ -612,9 +637,8 @@ bool dfc_credential_roll_key_set(
         dfc_credential_rotate_key_set_metadata(app);
     }
     app->key_len = dfc_key_set_type_length(app->key_set_types[0]);
-    app->key_settings_2 =
-        (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) |
-                  dfc_key_type_for_set_type(app->key_set_types[0]));
+    app->key_settings_2 = (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) |
+                                    dfc_key_type_for_set_type(app->key_set_types[0]));
     return true;
 }
 #endif

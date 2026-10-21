@@ -81,6 +81,106 @@ static MunitResult test_pool_exhaustion(const MunitParameter params[], void* dat
     return MUNIT_OK;
 }
 
+static MunitResult test_failed_resize_preserves_slice(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    memset(&credential, 0, sizeof(credential));
+    dfc_credential_clear(&credential);
+    const uint8_t aid[] = {0x01, 0x02, 0x03};
+    munit_assert_not_null(
+        dfc_credential_create_application_desfire_order(&credential, aid, 0x0F, 0x01));
+
+    DfcFile* target = dfc_credential_create_file(&credential, 0, 0x01);
+    munit_assert_not_null(target);
+    munit_assert_true(dfc_file_resize(&credential, target, 16));
+    memset(dfc_file_data(&credential, target), 0xA5, 16);
+
+    uint8_t next_no = 0x10;
+    size_t fillers = 0;
+    while(dfc_credential_file_pool_free(&credential) > 0 && credential.num_files < DFC_MAX_FILES) {
+        size_t chunk = dfc_credential_file_pool_free(&credential);
+        if(chunk > DFC_MAX_FILE_DATA) chunk = DFC_MAX_FILE_DATA;
+        DfcFile* filler = dfc_credential_create_file(&credential, 0, next_no++);
+        munit_assert_not_null(filler);
+        munit_assert_true(dfc_file_resize(&credential, filler, chunk));
+        fillers++;
+    }
+    munit_assert_size(fillers, >, 0);
+    munit_assert_size(dfc_credential_file_pool_free(&credential), ==, 0);
+
+    size_t used = credential.file_pool_used;
+    size_t offset = target->data_offset;
+    munit_assert_false(dfc_file_resize(&credential, target, 17));
+    munit_assert_size(credential.file_pool_used, ==, used);
+    munit_assert_size(target->data_offset, ==, offset);
+    munit_assert_size(target->data_len, ==, 16);
+    const uint8_t expected[16] = {
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+        0xA5,
+    };
+    munit_assert_memory_equal(16, expected, dfc_file_data_const(&credential, target));
+
+    DfcFile* last = &credential.files[credential.num_files - 1];
+    uint8_t last_number = last->number;
+    munit_assert_true(dfc_credential_delete_file(&credential, 0, last_number));
+    munit_assert_true(dfc_file_resize(&credential, target, 17));
+
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_resize_rejects_malformed_pool_metadata(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    memset(&credential, 0, sizeof(credential));
+    dfc_credential_clear(&credential);
+    const uint8_t aid[] = {0x01, 0x02, 0x03};
+    munit_assert_not_null(
+        dfc_credential_create_application_desfire_order(&credential, aid, 0x0F, 0x01));
+    DfcFile* file = dfc_credential_create_file(&credential, 0, 0x01);
+    munit_assert_not_null(file);
+    munit_assert_true(dfc_file_resize(&credential, file, 8));
+
+    size_t used = credential.file_pool_used;
+    size_t offset = file->data_offset;
+    size_t len = file->data_len;
+    credential.file_pool_used = DFC_FILE_POOL_SIZE + 1;
+    munit_assert_false(dfc_file_resize(&credential, file, len));
+    credential.file_pool_used = used;
+
+    file->data_offset = used + 1;
+    munit_assert_false(dfc_file_resize(&credential, file, len));
+    file->data_offset = used;
+    file->data_len = 1;
+    munit_assert_false(dfc_file_resize(&credential, file, 1));
+    file->data_offset = DFC_FILE_POOL_NONE;
+    file->data_len = 1;
+    munit_assert_false(dfc_file_resize(&credential, file, 1));
+    file->data_offset = offset;
+    file->data_len = 0;
+    munit_assert_false(dfc_file_resize(&credential, file, 0));
+
+    file->data_offset = offset;
+    file->data_len = len;
+    munit_assert_true(dfc_file_resize(&credential, file, len));
+    return MUNIT_OK;
+}
 
 // A copy of the model has to bring the pool with it. Copying files[] alone
 // leaves every data_offset pointing into a pool that was never populated, and
@@ -94,8 +194,7 @@ static MunitResult test_copy_model_carries_pool(const MunitParameter params[], v
     dfc_credential_clear(&src);
 
     const uint8_t aid[] = {0x01, 0x02, 0x03};
-    munit_assert_not_null(
-        dfc_credential_create_application_desfire_order(&src, aid, 0x0F, 0x01));
+    munit_assert_not_null(dfc_credential_create_application_desfire_order(&src, aid, 0x0F, 0x01));
     DfcFile* file = dfc_credential_create_file(&src, 0, 0x01);
     munit_assert_not_null(file);
     munit_assert_true(dfc_file_resize(&src, file, 8));
@@ -130,6 +229,18 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/pool-exhaustion", test_pool_exhaustion, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/failed-resize-preserves-slice",
+     test_failed_resize_preserves_slice,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/resize-rejects-malformed-pool-metadata",
+     test_resize_rejects_malformed_pool_metadata,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/copy-model-carries-pool",
      test_copy_model_carries_pool,
      NULL,
