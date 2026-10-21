@@ -5,7 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from dfc_core import Command, Credential, Reader, VirtualPicc, _native, capabilities
+from dfc_core import (
+    Command,
+    Credential,
+    RandomSourceError,
+    Reader,
+    VirtualPicc,
+    _native,
+    capabilities,
+)
 
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
 
@@ -41,8 +49,10 @@ def test_callback_exception_is_deferred_safely() -> None:
         output = (C.c_uint8 * 16)()
         assert picc._random_callback(0, output, 16) == _native.RANDOM_FAILED
         assert bytes(output) == bytes(16)
-        with pytest.raises(RuntimeError, match="random source failed"):
+        with pytest.raises(RandomSourceError, match="random source failed") as failure:
             picc._check_callback()
+        assert failure.value.status == _native.RANDOM_FAILED
+        assert isinstance(failure.value.__cause__, LookupError)
 
 
 def test_callback_failure_does_not_mutate_picc() -> None:
@@ -51,6 +61,27 @@ def test_callback_failure_does_not_mutate_picc() -> None:
     with VirtualPicc(credential, lambda _: b"") as picc:
         picc.activate()
         before = picc.snapshot()
-        with pytest.raises(RuntimeError, match="random source failed"):
+        with pytest.raises(RandomSourceError, match="random source failed") as failure:
             picc.exchange(bytes.fromhex("901A0000010000"))
+        assert failure.value.status == _native.RANDOM_FAILED
         assert picc.snapshot() == before
+        picc.reset_protocol()
+        assert picc.exchange(bytes.fromhex("9060000000"))[-2:] == bytes.fromhex("91AF")
+
+
+def test_callback_failure_is_reported_once_per_operation() -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+    calls = 0
+
+    def exhausted(length: int) -> bytes:
+        nonlocal calls
+        calls += 1
+        return bytes(max(0, length - 1))
+
+    with VirtualPicc(credential, exhausted) as picc:
+        picc.activate()
+        for _ in range(2):
+            with pytest.raises(RandomSourceError) as failure:
+                picc.exchange(bytes.fromhex("901A0000010000"))
+            assert failure.value.status == _native.RANDOM_FAILED
+        assert calls == 2

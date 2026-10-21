@@ -23,6 +23,10 @@ class UnsupportedError(DfcError):
     pass
 
 
+class RandomSourceError(DfcError):
+    pass
+
+
 class CredentialError(DfcError):
     def __init__(self, status: int, message: str, line: int = 0) -> None:
         self.line = line
@@ -39,4 +43,5 @@ def exception_for_status(status: int) -> DfcError:
         -2: BufferTooSmallError,
         -3: DfcMemoryError,
         -4: UnsupportedError,
+        -5: RandomSourceError,
     }.get(status, ProtocolError)(status)

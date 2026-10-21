@@ -89,7 +89,8 @@ nonzero card status before consuming response data.
 Pass a callable to `VirtualPicc` only when deterministic randomness is needed for
 testing. It must return exactly the requested number of bytes. Callback failures
 or short results abort the current operation without committing card state and
-raise `RuntimeError` after the native call returns. A caller may retry if its
+raise `RandomSourceError` with status `-5` after the native call returns. The
+original callback exception is available as its cause. A caller may retry if its
 source can satisfy the next request; deterministic replay should use a new card
 with a complete script.
 

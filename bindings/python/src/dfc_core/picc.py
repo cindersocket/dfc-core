@@ -8,6 +8,7 @@ from typing import Any, Self
 
 from . import _native as N
 from .credential import Credential
+from .errors import RandomSourceError
 from .models import Activation, Snapshot
 
 
@@ -67,7 +68,7 @@ class VirtualPicc:
     def _check_callback(self) -> None:
         if self._callback_error is not None:
             error, self._callback_error = self._callback_error, None
-            raise RuntimeError("virtual PICC random source failed") from error
+            raise RandomSourceError(N.RANDOM_FAILED, "virtual PICC random source failed") from error
 
     def close(self) -> None:
         with self._lock:

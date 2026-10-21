@@ -13,6 +13,7 @@ from .errors import (
     DfcMemoryError,
     InvalidArgumentError,
     ProtocolError,
+    RandomSourceError,
     UnsupportedError,
 )
 from .models import (
@@ -87,6 +88,7 @@ __all__ = [
     "Key",
     "PiccSettings",
     "ProtocolError",
+    "RandomSourceError",
     "Reader",
     "ReaderState",
     "Response",

@@ -135,9 +135,13 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
         if (st != 0)
         {
-            return st == NoCard
-                ? new DfcProtocolError(DfcProtocolErrorKind.NoCard, "No card answered anticollision.")
-                : new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"Activation failed with status {st}.");
+            return st switch
+            {
+                NoCard => new DfcProtocolError(DfcProtocolErrorKind.NoCard, "No card answered anticollision."),
+                Native.RandomFailed => new DfcProtocolError(
+                    DfcProtocolErrorKind.RandomSource, "The virtual card's random source failed."),
+                _ => new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"Activation failed with status {st}."),
+            };
         }
 
         return new DfcActivation(
@@ -285,9 +289,13 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
         if (st != 0)
         {
-            return st == NoCard
-                ? new DfcProtocolError(DfcProtocolErrorKind.NoCard, "The card is not activated.")
-                : new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"The card could not answer (status {st}).");
+            return st switch
+            {
+                NoCard => new DfcProtocolError(DfcProtocolErrorKind.NoCard, "The card is not activated."),
+                Native.RandomFailed => new DfcProtocolError(
+                    DfcProtocolErrorKind.RandomSource, "The virtual card's random source failed."),
+                _ => new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"The card could not answer (status {st})."),
+            };
         }
 
         return response[..(int)length].ToArray();

@@ -27,6 +27,9 @@ public enum DfcProtocolErrorKind
     /// <summary>The native build does not carry what the operation needs.</summary>
     Unsupported = 7,
 
+    /// <summary>The virtual card's random source could not fill a request.</summary>
+    RandomSource = 8,
+
     /// <summary>The transport failed to deliver a frame.</summary>
     Transport = 100,
 
@@ -80,22 +83,63 @@ public sealed class DfcSystemRandomSource : IDfcRandomSource
 }
 
 /// <summary>A fixed sequence of octets, for tests that replay a recorded session.</summary>
-public sealed class DfcScriptedRandomSource(ReadOnlyMemory<byte> script) : IDfcRandomSource
+public sealed class DfcScriptedRandomSource : IDfcRandomSource
 {
+    private readonly object gate = new();
+    private byte[] buffer;
     private int offset;
+    private int count;
+
+    /// <summary>Creates a queue initialized with <paramref name="script" />.</summary>
+    public DfcScriptedRandomSource(ReadOnlyMemory<byte> script)
+    {
+        buffer = script.ToArray();
+        count = buffer.Length;
+    }
 
     /// <summary>Octets not yet handed out.</summary>
-    public int Remaining => script.Length - offset;
+    public int Remaining
+    {
+        get { lock (gate) return count - offset; }
+    }
+
+    /// <summary>Appends octets that become visible to the next random request.</summary>
+    public void Append(ReadOnlySpan<byte> bytes)
+    {
+        lock (gate)
+        {
+            var remaining = count - offset;
+            if (offset != 0)
+            {
+                buffer.AsSpan(offset, remaining).CopyTo(buffer);
+                offset = 0;
+                count = remaining;
+            }
+            var required = checked(remaining + bytes.Length);
+            if (required > buffer.Length)
+            {
+                var doubled = buffer.Length <= int.MaxValue / 2 ? buffer.Length * 2 : required;
+                var grown = new byte[Math.Max(required, Math.Max(16, doubled))];
+                buffer.AsSpan(0, remaining).CopyTo(grown);
+                buffer = grown;
+            }
+            bytes.CopyTo(buffer.AsSpan(count));
+            count += bytes.Length;
+        }
+    }
 
     /// <inheritdoc />
     public void Fill(Span<byte> destination)
     {
-        if (destination.Length > Remaining)
+        lock (gate)
         {
-            throw new InvalidOperationException("The scripted random source is exhausted.");
-        }
+            if (destination.Length > count - offset)
+            {
+                throw new InvalidOperationException("The scripted random source is exhausted.");
+            }
 
-        script.Span.Slice(offset, destination.Length).CopyTo(destination);
-        offset += destination.Length;
+            buffer.AsSpan(offset, destination.Length).CopyTo(destination);
+            offset += destination.Length;
+        }
     }
 }

@@ -38,8 +38,8 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
   /**
    * Creates a card whose random requests consume the supplied script in order.
    *
-   * <p>The script must not be empty. If a request cannot be satisfied in full, that operation and
-   * every later operation on the card fail. Create a new card with a complete script to continue.
+   * <p>If a request cannot be satisfied in full, it consumes no script bytes and that operation
+   * fails with status {@code -5}. Later operations may continue, including a smaller random draw.
    */
   public static DfcVirtualPicc createForReplay(DfcCredential credential, byte[] randomScript)
       throws DfcException {
@@ -57,6 +57,14 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
     byte[] ats = new byte[data.get() & 0xff];
     data.get(ats);
     return new DfcActivation(uid, atqa, sak, ats);
+  }
+  /** Appends bytes to this replay card's random queue without exposing future events early. */
+  public synchronized void appendReplayRandom(byte[] bytes) throws DfcException {
+    DfcNative.piccAppendReplayRandom(state.require(), Objects.requireNonNull(bytes, "bytes"));
+  }
+  /** Returns the number of bytes currently available in this replay card's random queue. */
+  public synchronized int replayRandomRemaining() throws DfcException {
+    return DfcNative.piccReplayRandomRemaining(state.require());
   }
   public synchronized byte[] exchange(byte[] command) throws DfcException {
     return DfcNative.piccExchange(

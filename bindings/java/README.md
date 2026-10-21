@@ -30,12 +30,14 @@ throw `IOException` when their link fails; the reader then clears its session.
 `DfcCommand.selectApplication` accepts the same human-readable AID byte order
 used by credential text and converts it to wire order.
 
-`DfcVirtualPicc.createForReplay` consumes its non-empty random script in order.
-Each native random request must fit completely in the remaining script. An
-undersized script makes that operation and every later operation on the card
-that can mutate state or process protocol fail; create a new card with a complete
-script to continue. `snapshot()` remains available after exhaustion so callers
-can verify that the failed operation did not change card state.
+`DfcVirtualPicc.createForReplay` consumes its random script in order. Each native
+random request must fit completely in the remaining script. An undersized request
+consumes no bytes, fails that operation with status `-5`, and leaves later
+operations usable. `snapshot()` remains available after failure so callers can
+verify that card state did not change. An empty script is valid and fails on its
+first random request. Use `appendReplayRandom` immediately before the event that
+needs those bytes; `replayRandomRemaining` exposes the current queue length for
+test assertions.
 
 The runnable [Java example](../../examples/java/README.md) loads a credential,
 activates it, and executes the multi-frame `GetVersion` exchange. Android

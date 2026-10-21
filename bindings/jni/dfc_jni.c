@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "dfc_ffi.h"
+#include "dfc_jni_queue.h"
 
 #define JNI_PICC_RESPONSE_MAX 256u
 #define JNI_READER_FRAME_MAX  600u
@@ -17,7 +18,7 @@ typedef struct {
     uint8_t* random;
     size_t random_len;
     size_t random_offset;
-    bool random_exhausted;
+    bool replay_random;
 } JniPicc;
 
 typedef struct {
@@ -137,19 +138,10 @@ static int32_t scripted_random(void* context, uint8_t* buffer, size_t length) {
     size_t available = wrapper->random_offset < wrapper->random_len ?
                            wrapper->random_len - wrapper->random_offset :
                            0;
-    if(wrapper->random_exhausted || available < length) {
-        wrapper->random_exhausted = true;
-        return DFC_FFI_RANDOM_FAILED;
-    }
+    if(available < length) return DFC_FFI_RANDOM_FAILED;
     if(length != 0) memcpy(buffer, wrapper->random + wrapper->random_offset, length);
     wrapper->random_offset += length;
     return DFC_FFI_OK;
-}
-
-static bool replay_random_available(JNIEnv* env, const JniPicc* wrapper) {
-    if(!wrapper->random_exhausted) return true;
-    throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "replay random script is exhausted");
-    return false;
 }
 
 static JniPicc* picc_handle(JNIEnv* env, jlong handle) {
@@ -276,16 +268,11 @@ JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_piccCreate(
         return 0;
     }
     if(random_script != NULL) {
+        wrapper->replay_random = true;
         wrapper->random = copy_array(env, random_script, &wrapper->random_len, true);
         if((*env)->ExceptionCheck(env)) {
             secure_free(wrapper, sizeof(*wrapper));
             dfc_ffi_credential_free(credential);
-            return 0;
-        }
-        if(wrapper->random_len == 0) {
-            secure_free(wrapper, sizeof(*wrapper));
-            dfc_ffi_credential_free(credential);
-            throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "replay random script is empty");
             return 0;
         }
     }
@@ -299,6 +286,72 @@ JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_piccCreate(
         return 0;
     }
     return (jlong)(uintptr_t)wrapper;
+}
+
+JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_piccAppendReplayRandom(
+    JNIEnv* env,
+    jclass type,
+    jlong handle,
+    jbyteArray bytes) {
+    (void)type;
+    JniPicc* wrapper = picc_handle(env, handle);
+    if(wrapper == NULL) return;
+    if(!wrapper->replay_random) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "PICC does not use replay randomness");
+        return;
+    }
+    if(bytes == NULL) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "null byte array");
+        return;
+    }
+    if(wrapper->random_offset > wrapper->random_len) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "invalid replay random queue");
+        return;
+    }
+    size_t append_len = (size_t)(*env)->GetArrayLength(env, bytes);
+    size_t remaining = wrapper->random_len - wrapper->random_offset;
+    size_t total = 0;
+    if(!dfc_jni_replay_queue_length(remaining, append_len, &total)) {
+        throw_dfc(env, DFC_FFI_BUFFER_TOO_SMALL, 0, 0, "replay random queue is too large");
+        return;
+    }
+    uint8_t* combined = total == 0 ? NULL : malloc(total);
+    if(total != 0 && combined == NULL) {
+        throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
+        return;
+    }
+    if(remaining != 0) memcpy(combined, wrapper->random + wrapper->random_offset, remaining);
+    if(append_len != 0) {
+        (*env)->GetByteArrayRegion(
+            env, bytes, 0, (jsize)append_len, (jbyte*)(combined + remaining));
+        if((*env)->ExceptionCheck(env)) {
+            secure_free(combined, total);
+            return;
+        }
+    }
+    secure_free(wrapper->random, wrapper->random_len);
+    wrapper->random = combined;
+    wrapper->random_len = total;
+    wrapper->random_offset = 0;
+}
+
+JNIEXPORT jint JNICALL Java_com_cindersocket_dfc_DfcNative_piccReplayRandomRemaining(
+    JNIEnv* env,
+    jclass type,
+    jlong handle) {
+    (void)type;
+    JniPicc* wrapper = picc_handle(env, handle);
+    if(wrapper == NULL) return 0;
+    if(!wrapper->replay_random) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "PICC does not use replay randomness");
+        return 0;
+    }
+    if(wrapper->random_offset > wrapper->random_len ||
+       wrapper->random_len - wrapper->random_offset > (size_t)INT_MAX) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "invalid replay random queue");
+        return 0;
+    }
+    return (jint)(wrapper->random_len - wrapper->random_offset);
 }
 
 JNIEXPORT void JNICALL
@@ -317,13 +370,8 @@ JNIEXPORT jbyteArray JNICALL
     (void)type;
     JniPicc* wrapper = picc_handle(env, handle);
     if(wrapper == NULL) return NULL;
-    if(!replay_random_available(env, wrapper)) return NULL;
     DfcFfiActivation activation = {0};
     int32_t status = dfc_ffi_picc_activate(wrapper->picc, &activation);
-    if(!replay_random_available(env, wrapper)) {
-        dfc_ffi_secure_zero(&activation, sizeof(activation));
-        return NULL;
-    }
     if(status != DFC_FFI_OK) {
         dfc_ffi_secure_zero(&activation, sizeof(activation));
         throw_dfc(env, status, 0, 0, "virtual PICC activation failed");
@@ -399,10 +447,6 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccExchange(
             dfc_ffi_picc_exchange(
                 wrapper->picc, input_bytes, input_len, response, sizeof(response), &response_len);
     secure_free(input_bytes, input_len);
-    if(!replay_random_available(env, wrapper)) {
-        dfc_ffi_secure_zero(response, sizeof(response));
-        return NULL;
-    }
     if(status != DFC_FFI_OK) {
         dfc_ffi_secure_zero(response, sizeof(response));
         throw_dfc(env, status, 0, 0, "virtual PICC exchange failed");
@@ -416,7 +460,6 @@ JNIEXPORT void JNICALL
     (void)type;
     JniPicc* wrapper = picc_handle(env, handle);
     if(wrapper == NULL) return;
-    if(!replay_random_available(env, wrapper)) return;
     int32_t status = dfc_ffi_picc_field_off(wrapper->picc);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "virtual PICC field-off failed");
 }
@@ -426,7 +469,6 @@ JNIEXPORT void JNICALL
     (void)type;
     JniPicc* wrapper = picc_handle(env, handle);
     if(wrapper == NULL) return;
-    if(!replay_random_available(env, wrapper)) return;
     int32_t status = dfc_ffi_picc_reset_protocol(wrapper->picc);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "virtual PICC reset failed");
 }
@@ -439,7 +481,6 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_piccAdvanceTime(
     (void)type;
     JniPicc* wrapper = picc_handle(env, handle);
     if(wrapper == NULL) return;
-    if(!replay_random_available(env, wrapper)) return;
     int32_t status = dfc_ffi_picc_advance_time(wrapper->picc, (uint32_t)milliseconds);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "virtual PICC time advance failed");
 }
@@ -449,7 +490,6 @@ JNIEXPORT void JNICALL
     (void)type;
     JniPicc* wrapper = picc_handle(env, handle);
     if(wrapper == NULL) return;
-    if(!replay_random_available(env, wrapper)) return;
     int32_t status = dfc_ffi_picc_mark_persisted(wrapper->picc);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "virtual PICC persistence reset failed");
 }
@@ -459,7 +499,6 @@ JNIEXPORT jbyteArray JNICALL
     (void)type;
     JniPicc* wrapper = picc_handle(env, handle);
     if(wrapper == NULL) return NULL;
-    if(!replay_random_available(env, wrapper)) return NULL;
     DfcFfiCredential* credential = NULL;
     int32_t status = dfc_ffi_picc_export(wrapper->picc, &credential);
     if(status != DFC_FFI_OK) {

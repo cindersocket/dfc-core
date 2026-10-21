@@ -26,11 +26,35 @@ public sealed class PiccBehaviorTests
         Assert.Multiple(() =>
         {
             Assert.That(failed.IsFailure, Is.True);
+            Assert.That(failed.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.RandomSource));
             Assert.That(before.Selection, Is.EqualTo(after.Selection));
             Assert.That(before.SelectedAid, Is.EqualTo(after.SelectedAid));
             Assert.That(before.Authentication, Is.EqualTo(after.Authentication));
             Assert.That(before.Ev2Session, Is.EqualTo(after.Ev2Session));
             Assert.That(before.ProximityVerified, Is.EqualTo(after.ProximityVerified));
+        });
+
+        picc.ResetProtocol();
+        Assert.That(Fixtures.Ok(picc.Exchange(Hex("9060000000"))).Length, Is.GreaterThan(2));
+    }
+
+    [Test]
+    public void ScriptedRandomSource_ShortRequestConsumesNothing()
+    {
+        var source = new DfcScriptedRandomSource(new byte[] { 0x11, 0x22 });
+        Assert.Throws<InvalidOperationException>(() => source.Fill(new byte[3]));
+        Assert.That(source.Remaining, Is.EqualTo(2));
+        source.Append(new byte[] { 0x33 });
+        var exact = new byte[2];
+        source.Fill(exact);
+        var later = new byte[1];
+        source.Fill(later);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exact, Is.EqualTo(new byte[] { 0x11, 0x22 }));
+            Assert.That(later, Is.EqualTo(new byte[] { 0x33 }));
+            Assert.That(source.Remaining, Is.Zero);
         });
     }
 
