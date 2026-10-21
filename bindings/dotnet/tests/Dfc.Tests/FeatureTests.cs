@@ -164,7 +164,7 @@ public sealed class FeatureTests
             )
         );
 
-        Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.SelectApplication(new byte[] { 0x0A, 0x0B, 0x0C })));
+        Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.SelectApplication(new byte[] { 0x0C, 0x0B, 0x0A })));
         Fixtures.Ok(await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, initialKey));
         var created = picc.ExportCredential().Applications[^1];
         Assert.That(created.Delegation, Is.Not.Null);

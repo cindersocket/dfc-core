@@ -129,7 +129,7 @@ public sealed class PiccBehaviorTests
     {
         using var picc = FreeFilePicc(DfcCommunicationMode.Plain, DfcFileType.BackupData, 4);
         using var reader = new DfcReader(picc);
-        Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.SelectApplication(Hex("010203"))));
+        Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.SelectApplication(Hex("030201"))));
 
         Fixtures.Ok(await reader.WriteDataAsync(1, 0, Hex("01020304")));
         var before = Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.ReadData(1, 0, 0)));
