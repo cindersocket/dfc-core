@@ -77,6 +77,16 @@ static DfcVirtualPiccStatus iso_auth_status(
     return write_status_word(sw1, sw2, response, capacity, length);
 }
 
+static void iso_auth_abort_on_unexpected_command(
+    DfcEmulator* emulator, const uint8_t* command, size_t command_len) {
+    if(emulator->iso_auth_phase == 0) return;
+    uint8_t expected = emulator->iso_auth_phase == 1 ?
+                           DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE :
+                           DFC_ISO7816_INS_INTERNAL_AUTHENTICATE;
+    if(command_len < 4 || command[0] != DFC_ISO7816_CLA_STANDARD || command[1] != expected)
+        emulator->iso_auth_phase = 0;
+}
+
 static bool iso_auth_key(
     DfcEmulator* emulator, uint8_t algorithm, uint8_t reference, size_t challenge_len) {
     DfcCredential* credential = emulator->credential;
@@ -211,6 +221,7 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
                                DFC_ISO7816_SW_INSTRUCTION_LO,
                                response, response_capacity, response_len);
     }
+    emulator->iso_auth_phase = 0;
     size_t challenge_len = emulator->iso_auth_challenge_len;
     if(apdu_len != challenge_len + 6 || apdu[4] != challenge_len || apdu[apdu_len - 1] != 0) {
         return iso_auth_status(DFC_ISO7816_SW_WRONG_LENGTH_HI,
@@ -226,8 +237,10 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
     if(response_capacity < challenge_len * 2 + DFC_ISO7816_STATUS_WORD_LENGTH)
         return DfcVirtualPiccStatusBufferTooSmall;
     uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];
-    if(!dfc_random_fill(clear, challenge_len)) return DfcVirtualPiccStatusProtocolError;
-    emulator->iso_auth_phase = 0;
+    if(!dfc_random_fill(clear, challenge_len)) {
+        emulator->iso_auth_phase = 2;
+        return DfcVirtualPiccStatusProtocolError;
+    }
     memcpy(clear + challenge_len, apdu + 5, challenge_len);
     uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
     memcpy(iv, emulator->iso_auth_external_iv,
@@ -998,6 +1011,10 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_exchange(
         return DfcVirtualPiccStatusProtocolError;
     if(!session->activated) return DfcVirtualPiccStatusNoCard;
     *response_len = 0;
+
+#if DFC_ENABLE_ISO7816_AUTH
+    iso_auth_abort_on_unexpected_command(session->emulator, command, command_len);
+#endif
 
     if(command_len >= 4 && command[0] == DFC_ISO7816_CLA_STANDARD) {
         if(command[1] == DFC_ISO7816_INS_SELECT) {

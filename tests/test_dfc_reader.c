@@ -900,6 +900,204 @@ static MunitResult test_iso7816_mutual_authentication(const MunitParameter param
     }
     return MUNIT_OK;
 }
+
+typedef enum {
+    IsoAuthExternalShort,
+    IsoAuthExternalWrongReference,
+    IsoAuthExternalWrongAlgorithm,
+    IsoAuthExternalWrongCryptogram,
+    IsoAuthExternalUnexpectedInternal,
+    IsoAuthInternalShort,
+    IsoAuthInternalWrongReference,
+    IsoAuthInternalWrongAlgorithm,
+    IsoAuthInternalUnexpectedExternal,
+    IsoAuthInternalUnrelatedCommand,
+} IsoAuthRejectedTransition;
+
+static void iso7816_authenticate_begin(
+    Link* link, DfcReaderExchange* exchange, uint8_t* command, size_t* command_len) {
+    static const uint8_t random_a[DFC_ISO7816_AUTH_CHALLENGE_LONG] = {0xA1};
+    static const uint8_t random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG] = {0xB2};
+    munit_assert_int(dfc_reader_authenticate_iso7816_begin(
+        exchange, &link->session, DFC_ISO7816_AUTH_APP_REFERENCE,
+        AES_KEY_0, sizeof(AES_KEY_0), DFC_ISO7816_AUTH_ALGORITHM_AES,
+        random_a, random_second, sizeof(random_a)), ==, DfcReaderOk);
+    munit_assert_int(
+        dfc_reader_step(exchange, NULL, 0, command, DFC_COMMAND_MAX_APDU, command_len),
+        ==,
+        DfcReaderPending);
+}
+
+static void iso7816_advance_authentication(
+    Link* link,
+    DfcReaderExchange* exchange,
+    uint8_t* command,
+    size_t* command_len,
+    uint8_t* response,
+    size_t* response_len) {
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link->picc, command, *command_len, response, 64, response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_int(dfc_reader_step(
+        exchange, response, *response_len,
+        command, DFC_COMMAND_MAX_APDU, command_len), ==, DfcReaderPending);
+}
+
+static void assert_iso7816_authentication_restarts(Link* link) {
+    static const uint8_t random_a[DFC_ISO7816_AUTH_CHALLENGE_LONG] = {0xA1};
+    static const uint8_t random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG] = {0xB2};
+    DfcReaderExchange fresh;
+    munit_assert_int(dfc_reader_authenticate_iso7816_begin(
+        &fresh, &link->session, DFC_ISO7816_AUTH_APP_REFERENCE,
+        AES_KEY_0, sizeof(AES_KEY_0), DFC_ISO7816_AUTH_ALGORITHM_AES,
+        random_a, random_second, sizeof(random_a)), ==, DfcReaderOk);
+    munit_assert_int(run(link, &fresh), ==, DfcReaderOk);
+}
+
+static MunitResult test_iso7816_rejected_authentication_transitions(
+    const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const IsoAuthRejectedTransition cases[] = {
+        IsoAuthExternalShort,
+        IsoAuthExternalWrongReference,
+        IsoAuthExternalWrongAlgorithm,
+        IsoAuthExternalWrongCryptogram,
+        IsoAuthExternalUnexpectedInternal,
+        IsoAuthInternalShort,
+        IsoAuthInternalWrongReference,
+        IsoAuthInternalWrongAlgorithm,
+        IsoAuthInternalUnexpectedExternal,
+        IsoAuthInternalUnrelatedCommand,
+    };
+    static Link link;
+
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+        select_app(&link, AID_AES);
+
+        DfcReaderExchange exchange;
+        uint8_t command[DFC_COMMAND_MAX_APDU];
+        uint8_t valid_command[DFC_COMMAND_MAX_APDU];
+        uint8_t response[64];
+        size_t command_len = 0;
+        size_t response_len = 0;
+        iso7816_authenticate_begin(&link, &exchange, command, &command_len);
+        iso7816_advance_authentication(
+            &link, &exchange, command, &command_len, response, &response_len);
+
+        bool internal = cases[i] >= IsoAuthInternalShort;
+        if(internal) {
+            iso7816_advance_authentication(
+                &link, &exchange, command, &command_len, response, &response_len);
+        }
+        memcpy(valid_command, command, command_len);
+        size_t valid_command_len = command_len;
+
+        switch(cases[i]) {
+        case IsoAuthExternalShort:
+        case IsoAuthInternalShort:
+            command_len--;
+            break;
+        case IsoAuthExternalWrongReference:
+        case IsoAuthInternalWrongReference:
+            command[3] ^= 1;
+            break;
+        case IsoAuthExternalWrongAlgorithm:
+        case IsoAuthInternalWrongAlgorithm:
+            command[2] = DFC_ISO7816_AUTH_ALGORITHM_2TDEA;
+            break;
+        case IsoAuthExternalWrongCryptogram:
+            command[5] ^= 1;
+            break;
+        case IsoAuthExternalUnexpectedInternal:
+            command[1] = DFC_ISO7816_INS_INTERNAL_AUTHENTICATE;
+            break;
+        case IsoAuthInternalUnexpectedExternal:
+            command[1] = DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE;
+            break;
+        case IsoAuthInternalUnrelatedCommand: {
+            static const uint8_t unrelated[] = {0x90, DFC_CMD_GET_KEY_SETTINGS, 0, 0, 0};
+            memcpy(command, unrelated, sizeof(unrelated));
+            command_len = sizeof(unrelated);
+            break;
+        }
+        }
+
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc, command, command_len, response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        if(cases[i] == IsoAuthInternalUnrelatedCommand) {
+            munit_assert_size(response_len, >=, DFC_ISO7816_STATUS_WORD_LENGTH);
+            munit_assert_uint8(response[response_len - 2], ==, 0x91);
+            munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
+        } else if(cases[i] == IsoAuthExternalShort || cases[i] == IsoAuthInternalShort) {
+            munit_assert_size(response_len, ==, DFC_ISO7816_STATUS_WORD_LENGTH);
+            munit_assert_uint8(response[0], ==, DFC_ISO7816_SW_WRONG_LENGTH_HI);
+            munit_assert_uint8(response[1], ==, DFC_ISO7816_SW_WRONG_LENGTH_LO);
+        } else if(cases[i] == IsoAuthExternalUnexpectedInternal ||
+                  cases[i] == IsoAuthInternalUnexpectedExternal) {
+            munit_assert_size(response_len, ==, DFC_ISO7816_STATUS_WORD_LENGTH);
+            munit_assert_uint8(response[0], ==, DFC_ISO7816_SW_INSTRUCTION_HI);
+            munit_assert_uint8(response[1], ==, DFC_ISO7816_SW_INSTRUCTION_LO);
+        } else {
+            munit_assert_size(response_len, ==, DFC_ISO7816_STATUS_WORD_LENGTH);
+            munit_assert_uint8(response[0], ==, DFC_ISO7816_SW_SECURITY_HI);
+            munit_assert_uint8(response[1], ==, DFC_ISO7816_SW_SECURITY_LO);
+        }
+
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc, valid_command, valid_command_len,
+                response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_size(response_len, ==, DFC_ISO7816_STATUS_WORD_LENGTH);
+        munit_assert_uint8(response[0], ==, DFC_ISO7816_SW_INSTRUCTION_HI);
+        munit_assert_uint8(response[1], ==, DFC_ISO7816_SW_INSTRUCTION_LO);
+
+        assert_iso7816_authentication_restarts(&link);
+        link_close(&link);
+    }
+
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    DfcReaderExchange exchange;
+    uint8_t command[DFC_COMMAND_MAX_APDU];
+    uint8_t response[64];
+    uint8_t short_random[DFC_ISO7816_AUTH_CHALLENGE_LONG - 1] = {0};
+    size_t command_len = 0;
+    size_t response_len = 0;
+    iso7816_authenticate_begin(&link, &exchange, command, &command_len);
+    iso7816_advance_authentication(
+        &link, &exchange, command, &command_len, response, &response_len);
+    iso7816_advance_authentication(
+        &link, &exchange, command, &command_len, response, &response_len);
+    DfcEmulator before = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, sizeof(short_random));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, command, command_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(response_len, ==, 0);
+    assert_emulator_unchanged(&before, &link);
+    dfc_host_clear_random_buffer();
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, command, command_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_int(dfc_reader_step(
+        &exchange, response, response_len,
+        command, sizeof(command), &command_len), ==, DfcReaderOk);
+    link_close(&link);
+    return MUNIT_OK;
+}
 #endif
 
 static MunitResult test_3k3des_session(const MunitParameter params[], void* data) {
@@ -1332,6 +1530,12 @@ static MunitTest tests[] = {
     {"/iso-session", test_iso_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #if DFC_ENABLE_ISO7816_AUTH
     {"/iso7816-mutual-authentication", test_iso7816_mutual_authentication, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/iso7816-rejected-authentication-transitions",
+     test_iso7816_rejected_authentication_transitions,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #endif
     {"/3k3des-session", test_3k3des_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/d40-session", test_d40_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
