@@ -1447,15 +1447,15 @@ static bool proximity_wire_mac(
     return true;
 }
 
-static void handle_prepare_proximity_check(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
+static bool handle_prepare_proximity_check(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     DfcCredential* credential = emulator->credential;
     if(!credential->picc_has_proximity_key) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PROXIMITY_KEY_DISABLED);
-        return;
+        return true;
     }
 
     uint8_t proximity_random[DFC_PROXIMITY_RANDOM_LENGTH];
-    if(!dfc_random_fill(proximity_random, sizeof(proximity_random))) return;
+    if(!dfc_random_fill(proximity_random, sizeof(proximity_random))) return false;
     memcpy(emulator->proximity_random, proximity_random, sizeof(proximity_random));
     emulator->proximity_offset = 0;
     emulator->proximity_transcript_len = 0;
@@ -1474,6 +1474,7 @@ static void handle_prepare_proximity_check(DfcEmulator* emulator, DfcByteBuf* tx
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_SPECIAL_SUCCESS);
     dfc_bytebuf_append_bytes(
         tx_buffer, emulator->proximity_published, emulator->proximity_published_len);
+    return true;
 }
 
 static void handle_proximity_check(
@@ -1576,7 +1577,7 @@ static bool ev2_derive_session_keys(DfcEmulator* emulator) {
         emulator->ev2_session_mac_key);
 }
 
-static void handle_authenticate_ev2_start(
+static bool handle_authenticate_ev2_start(
     DfcEmulator* emulator,
     const uint8_t* apdu,
     size_t apdu_len,
@@ -1584,22 +1585,22 @@ static void handle_authenticate_ev2_start(
     DfcByteBuf* tx_buffer) {
     if(emulator->credential->card.generation < DfcGenerationEv2) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-        return;
+        return true;
     }
     if((non_first && apdu_len != 2) || (!non_first && apdu_len < 3) ||
        (!non_first && apdu_len != (size_t)3 + apdu[2])) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return;
+        return true;
     }
     if(non_first && !emulator->ev2_session_active) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
+        return true;
     }
     uint8_t key_no = apdu[1];
 #if DFC_ENABLE_SPECIAL_KEY_STATUS
     if(picc_disabled_special_key(emulator, key_no)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-        return;
+        return true;
     }
 #endif
     if(!is_available_authentication_key(emulator, key_no) ||
@@ -1607,7 +1608,7 @@ static void handle_authenticate_ev2_start(
            emulator,
            non_first ? DFC_CMD_AUTHENTICATE_EV2_NON_FIRST : DFC_CMD_AUTHENTICATE_EV2_FIRST)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
-        return;
+        return true;
     }
 
     uint8_t factory[DFC_MAX_KEY_LEN];
@@ -1615,23 +1616,23 @@ static void handle_authenticate_ev2_start(
     const uint8_t* key = emulator_auth_key(emulator, key_no, factory, sizeof(factory), &key_len);
     if(key_len != DFC_AES_KEY_LENGTH) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
+        return true;
     }
-    uint8_t random_b[DFC_EV2_RANDOM_LENGTH];
-    uint8_t transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
-    if(!dfc_random_fill(random_b, sizeof(random_b))) return;
-    if(!non_first) {
-        if(!dfc_random_fill(transaction_identifier, sizeof(transaction_identifier))) return;
-    }
+    uint8_t random_material[DFC_EV2_RANDOM_LENGTH + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
+    size_t random_material_len = non_first ? DFC_EV2_RANDOM_LENGTH : sizeof(random_material);
+    if(!dfc_random_fill(random_material, random_material_len)) return false;
+    const uint8_t* random_b = random_material;
+    const uint8_t* transaction_identifier = random_material + DFC_EV2_RANDOM_LENGTH;
     memcpy(emulator->ev2_static_key, key, DFC_AES_KEY_LENGTH);
     emulator->ev2_authenticated_key_no = key_no;
     emulator->ev2_authentication_non_first = non_first;
     emulator->ev2_authentication_pending = true;
-    memcpy(emulator->ev2_random_b, random_b, sizeof(random_b));
+    memcpy(emulator->ev2_random_b, random_b, DFC_EV2_RANDOM_LENGTH);
     if(!non_first) {
-        memcpy(emulator->ev2_transaction_identifier,
-               transaction_identifier,
-               sizeof(transaction_identifier));
+        memcpy(
+            emulator->ev2_transaction_identifier,
+            transaction_identifier,
+            DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
 #if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
         DfcApplication* app = dfc_emulator_current_app(emulator);
         if(app && app->has_capability_data) {
@@ -1665,6 +1666,7 @@ static void handle_authenticate_ev2_start(
         key, key_len, iv, DFC_EV2_RANDOM_LENGTH, emulator->ev2_random_b, encrypted);
     dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
     dfc_bytebuf_append_bytes(tx_buffer, encrypted, sizeof(encrypted));
+    return true;
 }
 
 static void handle_authenticate_ev2_continuation(
@@ -4531,6 +4533,17 @@ static bool begin_or_reject_command_chain(
     return true;
 }
 
+static void update_ev1_command_if_active(
+    DfcEmulator* emulator,
+    uint8_t cmd,
+    const uint8_t* data,
+    size_t data_len) {
+    if(emulator->secure_messaging &&
+       dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
+        dfc_secure_messaging_update_ev1_command(emulator->secure_messaging, cmd, data, data_len);
+    }
+}
+
 bool dfc_emulator_handle_command(
     DfcEmulator* emulator,
     const uint8_t* buffer,
@@ -4595,20 +4608,27 @@ bool dfc_emulator_handle_command(
                               cmd == DFC_CMD_CREDIT || cmd == DFC_CMD_DEBIT ||
                               cmd == DFC_CMD_LIMITED_CREDIT || cmd == DFC_CMD_WRITE_RECORD ||
                               cmd == DFC_CMD_UPDATE_RECORD || cmd == DFC_CMD_UPDATE_RECORD_ISO;
-    if(emulator->secure_messaging &&
-       dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd) && !defer_ev1_cmd_cmac) {
-        dfc_secure_messaging_update_ev1_command(
-            emulator->secure_messaging, cmd, buffer + 1, buffer_len - 1);
+#if DFC_ENABLE_PROXIMITY_CHECK
+    defer_ev1_cmd_cmac = defer_ev1_cmd_cmac || cmd == DFC_CMD_PREPARE_PROXIMITY_CHECK;
+#endif
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    defer_ev1_cmd_cmac = defer_ev1_cmd_cmac || cmd == DFC_CMD_AUTHENTICATE_EV2_FIRST ||
+                         cmd == DFC_CMD_AUTHENTICATE_EV2_NON_FIRST;
+#endif
+    if(!defer_ev1_cmd_cmac) {
+        update_ev1_command_if_active(emulator, cmd, buffer + 1, buffer_len - 1);
     }
 
     switch(cmd) {
 #if DFC_ENABLE_PROXIMITY_CHECK
     case DFC_CMD_PREPARE_PROXIMITY_CHECK:
         if(buffer_len != 1) {
+            update_ev1_command_if_active(emulator, cmd, buffer + 1, buffer_len - 1);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return true;
         }
-        handle_prepare_proximity_check(emulator, tx_buffer);
+        if(handle_prepare_proximity_check(emulator, tx_buffer))
+            update_ev1_command_if_active(emulator, cmd, buffer + 1, buffer_len - 1);
         return true;
     case DFC_CMD_PROXIMITY_CHECK:
         handle_proximity_check(emulator, buffer, buffer_len, tx_buffer);
@@ -4858,10 +4878,12 @@ bool dfc_emulator_handle_command(
 #endif
         return true;
     case DFC_CMD_AUTHENTICATE_EV2_FIRST:
-        handle_authenticate_ev2_start(emulator, buffer, buffer_len, false, tx_buffer);
+        if(handle_authenticate_ev2_start(emulator, buffer, buffer_len, false, tx_buffer))
+            update_ev1_command_if_active(emulator, cmd, buffer + 1, buffer_len - 1);
         return true;
     case DFC_CMD_AUTHENTICATE_EV2_NON_FIRST:
-        handle_authenticate_ev2_start(emulator, buffer, buffer_len, true, tx_buffer);
+        if(handle_authenticate_ev2_start(emulator, buffer, buffer_len, true, tx_buffer))
+            update_ev1_command_if_active(emulator, cmd, buffer + 1, buffer_len - 1);
         return true;
 #endif
     case DFC_CMD_ADDITIONAL_FRAME:

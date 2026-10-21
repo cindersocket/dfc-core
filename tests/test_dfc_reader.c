@@ -244,6 +244,52 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
     assert_emulator_unchanged(&before_iso_second, &link);
     dfc_host_clear_random_buffer();
     link_close(&link);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    // An EV2 First attempt made from an EV1 session must not consume the
+    // session CMAC state when either part of its random input is unavailable.
+    const size_t ev2_first_short_lengths[] = {15, DFC_EV2_RANDOM_LENGTH};
+    uint8_t ev2_from_ev1_response[64];
+    size_t ev2_from_ev1_response_len = 0;
+    for(size_t i = 0; i < sizeof(ev2_first_short_lengths) / sizeof(ev2_first_short_lengths[0]); i++) {
+        link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+        select_app(&link, AID_AES);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+            ==,
+            DfcReaderOk);
+        munit_assert_not_null(link.picc->emulator->secure_messaging);
+        DfcSecureMessaging before_secure_messaging = *link.picc->emulator->secure_messaging;
+        DfcEmulator before_ev2_from_ev1 = *link.picc->emulator;
+        dfc_host_set_random_buffer(short_random, ev2_first_short_lengths[i]);
+        const uint8_t ev2_from_ev1[] = {
+            0x90, DFC_CMD_AUTHENTICATE_EV2_FIRST, 0, 0, 2, 0, 0, 0};
+        ev2_from_ev1_response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc,
+                ev2_from_ev1,
+                sizeof(ev2_from_ev1),
+                ev2_from_ev1_response,
+                sizeof(ev2_from_ev1_response),
+                &ev2_from_ev1_response_len),
+            ==,
+            DfcVirtualPiccStatusProtocolError);
+        munit_assert_size(ev2_from_ev1_response_len, ==, 0);
+        assert_emulator_unchanged(&before_ev2_from_ev1, &link);
+        munit_assert_memory_equal(
+            sizeof(before_secure_messaging),
+            &before_secure_messaging,
+            link.picc->emulator->secure_messaging);
+        dfc_host_clear_random_buffer();
+
+        DfcCommand command;
+        DfcReaderExchange exchange;
+        munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 8), ==, DfcCommandOk);
+        munit_assert_int(send(&link, &command, DFC_COMM_MAC, &exchange), ==, DfcReaderOk);
+        link_close(&link);
+    }
+#endif
 #endif
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -314,6 +360,97 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
     munit_assert_size(proximity_response_len, ==, 0);
     assert_emulator_unchanged(&before_proximity, &link);
     dfc_host_clear_random_buffer();
+    link_close(&link);
+
+    // Exercise the same failure through ISO-DEP while EV1 secure messaging is
+    // active. The failed I-block must not consume either chaining state.
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    link.credential.picc_has_proximity_key = true;
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+        ==,
+        DfcReaderOk);
+    const uint8_t rats[] = {0xE0, 0x80};
+    uint8_t frame_response[128];
+    size_t frame_response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            link.picc,
+            rats,
+            sizeof(rats),
+            frame_response,
+            sizeof(frame_response),
+            &frame_response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    uint8_t expected_sequence = link.picc->expected_pcd_sequence;
+    DfcVirtualPiccSession before_proximity_session = *link.picc;
+    DfcSecureMessaging before_proximity_secure = *link.picc->emulator->secure_messaging;
+    DfcEmulator before_secure_proximity = *link.picc->emulator;
+    const uint8_t proximity_frame[] = {0x02, 0x90, DFC_CMD_PREPARE_PROXIMITY_CHECK, 0, 0, 0};
+    dfc_host_set_random_buffer(short_random, DFC_PROXIMITY_RANDOM_LENGTH - 1);
+    frame_response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            link.picc,
+            proximity_frame,
+            sizeof(proximity_frame),
+            frame_response,
+            sizeof(frame_response),
+            &frame_response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(frame_response_len, ==, 0);
+    munit_assert_uint8(link.picc->expected_pcd_sequence, ==, expected_sequence);
+    munit_assert_memory_equal(
+        sizeof(before_proximity_session), &before_proximity_session, link.picc);
+    assert_emulator_unchanged(&before_secure_proximity, &link);
+    munit_assert_memory_equal(
+        sizeof(before_proximity_secure),
+        &before_proximity_secure,
+        link.picc->emulator->secure_messaging);
+    dfc_host_clear_random_buffer();
+
+    DfcCommand command;
+    DfcReaderExchange exchange;
+    DfcReaderOptions options = {.comm_mode = DFC_COMM_MAC};
+    uint8_t secured_apdu[DFC_COMMAND_MAX_APDU];
+    size_t secured_apdu_len = 0;
+    munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 8), ==, DfcCommandOk);
+    munit_assert_int(
+        dfc_reader_exchange_begin(&exchange, &link.session, link.framing, &command, &options),
+        ==,
+        DfcReaderOk);
+    munit_assert_int(
+        dfc_reader_step(&exchange, NULL, 0, secured_apdu, sizeof(secured_apdu), &secured_apdu_len),
+        ==,
+        DfcReaderPending);
+    uint8_t secured_frame[1 + DFC_COMMAND_MAX_APDU];
+    secured_frame[0] = (uint8_t)(0x02 | expected_sequence);
+    memcpy(secured_frame + 1, secured_apdu, secured_apdu_len);
+    frame_response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            link.picc,
+            secured_frame,
+            secured_apdu_len + 1,
+            frame_response,
+            sizeof(frame_response),
+            &frame_response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(frame_response_len, >, 1);
+    munit_assert_int(
+        dfc_reader_step(
+            &exchange,
+            frame_response + 1,
+            frame_response_len - 1,
+            secured_apdu,
+            sizeof(secured_apdu),
+            &secured_apdu_len),
+        ==,
+        DfcReaderOk);
     link_close(&link);
 #endif
 

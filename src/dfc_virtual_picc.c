@@ -1120,6 +1120,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             return DfcVirtualPiccStatusProtocolError;
         }
 
+        size_t pending_command_len_before = session->pending_command_len;
         if(more || session->pending_command_len) {
             if(inf_len > sizeof(session->pending_command) - session->pending_command_len)
                 return DfcVirtualPiccStatusBufferTooSmall;
@@ -1130,8 +1131,8 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             inf_len = session->pending_command_len;
         }
 
-        session->expected_pcd_sequence ^= 0x01;
         if(more) {
+            session->expected_pcd_sequence ^= 0x01;
             session->picc_sequence = session->expected_pcd_sequence;
             return build_iso_dep_r_block(
                 sequence,
@@ -1151,8 +1152,12 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             session->pending_response,
             sizeof(session->pending_response),
             &apdu_response_len);
+        if(status != DfcVirtualPiccStatusOk) {
+            session->pending_command_len = pending_command_len_before;
+            return status;
+        }
         session->pending_command_len = 0;
-        if(status != DfcVirtualPiccStatusOk) return status;
+        session->expected_pcd_sequence ^= 0x01;
         session->pending_response_len = apdu_response_len;
         session->pending_response_offset = 0;
         session->picc_sequence = sequence;
