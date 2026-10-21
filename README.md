@@ -8,7 +8,7 @@ DFC core is a portable DESFire-compatible engine. It provides these parts:
 - Secure messaging
 - A virtual card emulator
 - A reader with command encoding and secure messaging
-- A flat interface for foreign runtimes, with .NET and Java/Android libraries over it
+- A flat interface for foreign runtimes, with .NET, Java/Android, Python, and Rust libraries over it
 
 See the [changelog](CHANGELOG.md) for release notes.
 The [credential format specification](docs/credential-format-v6.md) defines
@@ -103,6 +103,27 @@ command builders, and blocking reader secure messaging. `bindings/android`
 packages that API and the native core as a four-ABI AAR, adds an Android
 `IsoDep` transport, and includes a sample application. See the
 [Java and Android README](bindings/java/README.md).
+
+## Use it from Python
+
+`bindings/python` provides a blocking Python 3.11+ API for credentials, virtual
+cards, and reader secure messaging. Wheels carry the matching native library
+and reject incompatible ABI layouts while loading. See the
+[Python README](bindings/python/README.md).
+
+## Use it from Rust
+
+`bindings/rust` contains checked-in generated raw declarations and an idiomatic safe API.
+Hosted builds provide credentials, virtual cards, and readers. Target-role
+builds are `no_std`, retain normal target capacities, and use caller-owned
+credential and wrapper storage so binding bookkeeping does not consume the
+firmware protocol-session allocation. See the [Rust README](bindings/rust/README.md).
+
+## Check formatting and documentation
+
+Run `scripts/check-format.sh` to verify C/JNI, Java, C#, Python, and Rust
+formatting. Run `python3 scripts/check-docs.py` to verify repository-local links
+in the Markdown documentation.
 
 ## License
 

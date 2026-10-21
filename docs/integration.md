@@ -142,6 +142,8 @@ These cache variables select the build:
 | `DFC_TINY_CRYPTO_DIR` | empty | A local tiny-crypto-c checkout to build from instead |
 | `DFC_HOST_CAPACITY` | `OFF` for target, `ON` otherwise | Sizes the credential model for a workstation |
 | `DFC_BUILD_SHARED` | `OFF` for target, `ON` otherwise | Builds the flat interface shared library |
+| `DFC_BUILD_STATIC_FFI` | `OFF` | Builds the hosted flat interface as `libdfc.a` for static language packages |
+| `DFC_BUILD_RUST_TARGET_BRIDGE` | `OFF` | Builds the allocation-neutral target bridge; requires `DFC_ROLE=target` |
 | `DFC_FEATURE_DEFINITIONS` | empty | Semicolon-separated `DFC_ENABLE_*` values ending in `=0` or `=1` |
 | `DFC_MAX_APPS`, `DFC_MAX_FILES`, `DFC_MAX_KEYS`, `DFC_FILE_POOL_SIZE`, `DFC_KEY_POOL_SIZE`, `DFC_MAX_FILE_DATA` | profile defaults | Set fixed model and transfer buffers for the device |
 
@@ -169,7 +171,14 @@ library is suitable when an app only uses the reader.
 The interface uses fixed layouts and opaque handles only, so a binding does not
 depend on the features or pool sizes a library was built with.
 `dfc_ffi_capabilities` reports both, and `dfc_ffi_struct_sizes` lets a binding
-check its declarations against the library it loaded.
+check its declarations against the library it loaded. Hosted bindings also
+check `dfc_ffi_layout_fingerprint`, which covers field offsets as well as sizes.
+
+The Rust target bridge is separate from the hosted flat interface. Rust owns
+the exact-size credential and wrapper allocations reported by the bridge; the
+native engine keeps its existing fixed capacities and uses the platform port
+for the protocol session. This avoids a second credential model and leaves file
+and application capacity unchanged.
 
 ## 7. Verify the integration
 

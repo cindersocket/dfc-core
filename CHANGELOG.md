@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Add Java and Android JNI bindings, an Android library, and a sample application.
+- Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
+  target builds, with ABI-layout checks and caller-owned target storage.
+- Add one-command formatting and documentation-link verification for every
+  supported binding language.
 - Refactor credential validation and serialization around explicit model invariants.
 - Harden authentication comparisons, secret cleanup, key updates, and SDM range validation.
 - Reuse prepared cipher contexts during CMAC and legacy CBC operations.

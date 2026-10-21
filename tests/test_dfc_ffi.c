@@ -142,6 +142,7 @@ static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
 
 int main(void) {
     CHECK(dfc_ffi_abi_version() == DFC_FFI_ABI_VERSION);
+    CHECK(dfc_ffi_layout_fingerprint() != 0);
     enum {
         RandomSampleLength = 16
     };
@@ -215,9 +216,34 @@ int main(void) {
     uint8_t* rebuilt = encode(built, &rebuilt_len);
     CHECK(rebuilt_len == dfcb_len && memcmp(rebuilt, dfcb, dfcb_len) == 0);
 
+    DfcFfiCredential* cloned = NULL;
+    CHECK(dfc_ffi_credential_clone(built, &cloned) == 0);
+    size_t cloned_len = 0;
+    uint8_t* cloned_bytes = encode(cloned, &cloned_len);
+    CHECK(cloned_len == dfcb_len && memcmp(cloned_bytes, dfcb, dfcb_len) == 0);
+    free(cloned_bytes);
+
+    // The original constructor keeps caller ownership, while the transfer
+    // constructor consumes only a valid credential after the PICC is ready.
+    DfcFfiPicc* copied_picc = NULL;
+    CHECK(dfc_ffi_picc_create(cloned, counting_random, &random_calls, &copied_picc) == 0);
+    CHECK(cloned != NULL);
+    dfc_ffi_picc_free(copied_picc);
+    dfc_ffi_credential_free(cloned);
+
+    DfcFfiCredential* unfinished = NULL;
+    CHECK(dfc_ffi_credential_new(&unfinished) == 0);
+    DfcFfiCredential* retained = unfinished;
+    DfcFfiPicc* rejected_picc = NULL;
+    CHECK(dfc_ffi_picc_create_take(&unfinished, NULL, NULL, &rejected_picc) != 0);
+    CHECK(unfinished == retained);
+    CHECK(rejected_picc == NULL);
+    dfc_ffi_credential_free(unfinished);
+
     // A virtual PICC answering a reader, both through the interface.
     DfcFfiPicc* picc = NULL;
-    CHECK(dfc_ffi_picc_create(built, counting_random, &random_calls, &picc) == 0);
+    CHECK(dfc_ffi_picc_create_take(&built, counting_random, &random_calls, &picc) == 0);
+    CHECK(built == NULL);
     DfcFfiActivation activation;
     CHECK(dfc_ffi_picc_activate(picc, &activation) == 0);
     CHECK(activation.uid_len == 7);
@@ -278,7 +304,6 @@ int main(void) {
     dfc_ffi_picc_free(picc);
     free(rebuilt);
     free(dfcb);
-    dfc_ffi_credential_free(built);
     dfc_ffi_credential_free(decoded);
     dfc_ffi_credential_free(credential);
 

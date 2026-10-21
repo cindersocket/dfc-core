@@ -1,0 +1,56 @@
+[package]
+name = "dfc-core-sys"
+description = "Raw native bindings for dfc-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+links = "dfc"
+build = "bindings/rust/dfc-core-sys/build.rs"
+include = [
+    "Cargo.toml",
+    "CMakeLists.txt",
+    "LICENSE",
+    "src/**",
+    "port/**",
+    "ffi/**",
+    "bindings/rust/dfc-core-sys/**",
+]
+
+[lib]
+path = "bindings/rust/dfc-core-sys/src/lib.rs"
+
+[features]
+default = ["bundled", "role-simulator", "profile-full-ev3"]
+bundled = ["dep:cmake"]
+system = []
+role-simulator = []
+role-host = []
+role-target = []
+profile-minimal-ev1 = []
+profile-full-ev1 = []
+profile-full-ev2 = []
+profile-full-ev3 = []
+profile-minimal-ev3 = []
+
+[build-dependencies]
+cmake = { version = "0.1", optional = true }
+
+[workspace]
+members = ["bindings/rust/dfc-core"]
+resolver = "2"
+
+[workspace.package]
+version = "1.2.1"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/cindersocket/dfc-core"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints]
+workspace = true
+

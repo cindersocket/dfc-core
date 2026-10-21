@@ -35,7 +35,7 @@ extern "C" {
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
 // DfcVirtualPiccStatus, reader functions a DfcReaderStatus.
-#define DFC_FFI_OK 0
+#define DFC_FFI_OK               0
 #define DFC_FFI_INVALID_ARGUMENT (-1)
 #define DFC_FFI_BUFFER_TOO_SMALL (-2)
 #define DFC_FFI_OUT_OF_MEMORY    (-3)
@@ -89,10 +89,13 @@ typedef struct {
 } DfcFfiCapabilities;
 
 DFC_FFI_EXPORT uint32_t dfc_ffi_abi_version(void);
+// Hash of structure sizes and field offsets used by foreign runtimes. Unlike
+// size checks alone, this changes when equal-sized fields are reordered.
+DFC_FFI_EXPORT uint64_t dfc_ffi_layout_fingerprint(void);
 // Uses the platform generator directly, even while a scripted PICC callback is active.
 DFC_FFI_EXPORT int32_t dfc_ffi_random_fill(uint8_t* out, size_t len);
-DFC_FFI_EXPORT bool dfc_ffi_fixed_time_equal(
-    const uint8_t* left, const uint8_t* right, size_t len);
+DFC_FFI_EXPORT bool
+    dfc_ffi_fixed_time_equal(const uint8_t* left, const uint8_t* right, size_t len);
 DFC_FFI_EXPORT void dfc_ffi_secure_zero(void* buffer, size_t len);
 DFC_FFI_EXPORT void dfc_ffi_capabilities(DfcFfiCapabilities* out);
 
@@ -298,24 +301,37 @@ DFC_FFI_EXPORT int32_t dfc_ffi_credential_load(
 
 // Encodings of a credential. With `out` NULL and `cap` 0, `*len` receives the
 // size without writing. Text is not NUL-terminated.
-DFC_FFI_EXPORT int32_t
-    dfc_ffi_credential_encode(const DfcFfiCredential* credential, uint8_t* out, size_t cap, size_t* len);
-DFC_FFI_EXPORT int32_t
-    dfc_ffi_credential_write_text(const DfcFfiCredential* credential, char* out, size_t cap, size_t* len);
+DFC_FFI_EXPORT int32_t dfc_ffi_credential_encode(
+    const DfcFfiCredential* credential,
+    uint8_t* out,
+    size_t cap,
+    size_t* len);
+DFC_FFI_EXPORT int32_t dfc_ffi_credential_write_text(
+    const DfcFfiCredential* credential,
+    char* out,
+    size_t cap,
+    size_t* len);
 DFC_FFI_EXPORT int32_t dfc_ffi_credential_validate(const DfcFfiCredential* credential);
+// A separate handle containing the same pointer-free model.
+DFC_FFI_EXPORT int32_t
+    dfc_ffi_credential_clone(const DfcFfiCredential* credential, DfcFfiCredential** out);
 DFC_FFI_EXPORT void dfc_ffi_credential_free(DfcFfiCredential* credential);
 
 // Walking the model.
-DFC_FFI_EXPORT int32_t dfc_ffi_credential_get_card(const DfcFfiCredential* credential, DfcFfiCard* out);
-DFC_FFI_EXPORT int32_t dfc_ffi_credential_get_picc(const DfcFfiCredential* credential, DfcFfiPiccSettings* out);
+DFC_FFI_EXPORT int32_t
+    dfc_ffi_credential_get_card(const DfcFfiCredential* credential, DfcFfiCard* out);
+DFC_FFI_EXPORT int32_t
+    dfc_ffi_credential_get_picc(const DfcFfiCredential* credential, DfcFfiPiccSettings* out);
 DFC_FFI_EXPORT uint32_t dfc_ffi_credential_application_count(const DfcFfiCredential* credential);
 DFC_FFI_EXPORT int32_t dfc_ffi_credential_get_application(
     const DfcFfiCredential* credential,
     uint32_t index,
     DfcFfiApplication* out);
 DFC_FFI_EXPORT uint32_t dfc_ffi_credential_file_count(const DfcFfiCredential* credential);
-DFC_FFI_EXPORT int32_t
-    dfc_ffi_credential_get_file(const DfcFfiCredential* credential, uint32_t index, DfcFfiFile* out);
+DFC_FFI_EXPORT int32_t dfc_ffi_credential_get_file(
+    const DfcFfiCredential* credential,
+    uint32_t index,
+    DfcFfiFile* out);
 DFC_FFI_EXPORT int32_t dfc_ffi_credential_get_file_data(
     const DfcFfiCredential* credential,
     uint32_t index,
@@ -334,14 +350,18 @@ DFC_FFI_EXPORT int32_t dfc_ffi_credential_get_key(
 // Building a model: start empty, set the card and PICC, add applications and
 // files, set keys and contents, then finish, which validates the whole.
 DFC_FFI_EXPORT int32_t dfc_ffi_credential_new(DfcFfiCredential** out);
-DFC_FFI_EXPORT int32_t dfc_ffi_credential_set_card(DfcFfiCredential* credential, const DfcFfiCard* card);
-DFC_FFI_EXPORT int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPiccSettings* picc);
+DFC_FFI_EXPORT int32_t
+    dfc_ffi_credential_set_card(DfcFfiCredential* credential, const DfcFfiCard* card);
+DFC_FFI_EXPORT int32_t
+    dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPiccSettings* picc);
 DFC_FFI_EXPORT int32_t dfc_ffi_credential_add_application(
     DfcFfiCredential* credential,
     const DfcFfiApplication* application,
     uint32_t* index);
-DFC_FFI_EXPORT int32_t
-    dfc_ffi_credential_add_file(DfcFfiCredential* credential, const DfcFfiFile* file, uint32_t* index);
+DFC_FFI_EXPORT int32_t dfc_ffi_credential_add_file(
+    DfcFfiCredential* credential,
+    const DfcFfiFile* file,
+    uint32_t* index);
 DFC_FFI_EXPORT int32_t dfc_ffi_credential_set_file_data(
     DfcFfiCredential* credential,
     uint32_t index,
@@ -394,6 +414,13 @@ typedef struct {
 // The PICC answers from its own copy of `credential`.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_create(
     const DfcFfiCredential* credential,
+    DfcFfiRandomCallback random,
+    void* random_context,
+    DfcFfiPicc** out);
+// Transfer `*credential` into the PICC without copying its model. On success
+// `*credential` is NULL and the PICC owns it. On failure ownership is unchanged.
+DFC_FFI_EXPORT int32_t dfc_ffi_picc_create_take(
+    DfcFfiCredential** credential,
     DfcFfiRandomCallback random,
     void* random_context,
     DfcFfiPicc** out);

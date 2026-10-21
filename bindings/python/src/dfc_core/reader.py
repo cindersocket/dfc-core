@@ -1,0 +1,378 @@
+from __future__ import annotations
+
+import ctypes as C
+import secrets
+import threading
+import weakref
+from dataclasses import dataclass
+from typing import Self
+
+from . import _native as N
+from .models import ReaderState, Response, Transport
+
+PENDING = 1
+
+
+@dataclass(frozen=True, slots=True)
+class Command:
+    instruction: int
+    data: bytes = b""
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.instruction <= 255:
+            raise ValueError("instruction must fit in one byte")
+
+    @classmethod
+    def select_application(cls, aid: bytes) -> Command:
+        if len(aid) != 3:
+            raise ValueError("AID must be three bytes")
+        return cls(0x5A, aid)
+
+    @classmethod
+    def get_version(cls) -> Command:
+        return cls(0x60)
+
+    @classmethod
+    def get_free_memory(cls) -> Command:
+        return cls(0x6E)
+
+    @classmethod
+    def get_key_settings(cls) -> Command:
+        return cls(0x45)
+
+    @classmethod
+    def get_application_ids(cls) -> Command:
+        return cls(0x6A)
+
+    @classmethod
+    def get_file_ids(cls) -> Command:
+        return cls(0x6F)
+
+    @classmethod
+    def get_card_uid(cls) -> Command:
+        return cls(0x51)
+
+    @classmethod
+    def commit_transaction(cls, option: int | None = None) -> Command:
+        return cls(0xC7, b"" if option is None else bytes((option,)))
+
+    @classmethod
+    def abort_transaction(cls) -> Command:
+        return cls(0xA7)
+
+    @classmethod
+    def file_operation(cls, instruction: int, file_number: int) -> Command:
+        if not 0 <= file_number <= 31:
+            raise ValueError("file number must be between 0 and 31")
+        return cls(instruction, bytes((file_number,)))
+
+    @classmethod
+    def read_data(cls, file_number: int, offset: int, length: int) -> Command:
+        if not 0 <= file_number <= 31 or not 0 <= offset < 1 << 24 or not 0 <= length < 1 << 24:
+            raise ValueError("read-data field is out of range")
+        return cls(
+            0xBD,
+            bytes((file_number,)) + offset.to_bytes(3, "little") + length.to_bytes(3, "little"),
+        )
+
+
+class Reader:
+    def __init__(self, transport: Transport, framing: int = 0) -> None:
+        self.transport, self.framing = transport, framing
+        self._lock = threading.RLock()
+        self._session, self._exchange = N.Handle(), N.Handle()
+        lib = N.library()
+        N.raise_status(lib.dfc_ffi_reader_session_new(C.byref(self._session)))
+        try:
+            N.raise_status(lib.dfc_ffi_reader_exchange_new(C.byref(self._exchange)))
+        except BaseException:
+            lib.dfc_ffi_reader_session_free(self._session)
+            raise
+        self._finalizer = weakref.finalize(self, self._free, lib, self._session, self._exchange)
+
+    @staticmethod
+    def _free(lib: C.CDLL, session: N.Handle, exchange: N.Handle) -> None:
+        lib.dfc_ffi_reader_exchange_free(exchange)
+        lib.dfc_ffi_reader_session_free(session)
+
+    def _open(self) -> None:
+        if not self._finalizer.alive:
+            raise RuntimeError("reader is closed")
+
+    def close(self) -> None:
+        with self._lock:
+            self._finalizer()
+
+    def __enter__(self) -> Self:
+        self._open()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    @property
+    def state(self) -> ReaderState:
+        with self._lock:
+            self._open()
+            s = N.ReaderState()
+            N.raise_status(N.library().dfc_ffi_reader_session_state(self._session, C.byref(s)))
+            return ReaderState(
+                s.auth_mode,
+                s.key_no,
+                s.ev2_command_counter,
+                bytes(s.ev2_transaction_identifier),
+                bytes(s.ev2_card_capabilities),
+                bytes(s.ev2_reader_capabilities),
+            )
+
+    def clear(self) -> None:
+        with self._lock:
+            self._open()
+            N.library().dfc_ffi_reader_session_clear(self._session)
+
+    def _run(self) -> Response:
+        answer = b""
+        while True:
+            _raw, pointer = N.byte_pointer(answer)
+            capacity, length = 1024, C.c_size_t()
+            out = (C.c_uint8 * capacity)()
+            status = N.library().dfc_ffi_reader_step(
+                self._exchange, pointer, len(answer), out, capacity, C.byref(length)
+            )
+            if status == PENDING:
+                try:
+                    answer = bytes(self.transport.transceive(bytes(out[: length.value])))
+                except BaseException:
+                    self.clear()
+                    raise
+                continue
+            N.raise_status(status)
+            data = N.variable_output(N.library().dfc_ffi_reader_result_data, self._exchange)
+            return Response(N.library().dfc_ffi_reader_result_status(self._exchange), data)
+
+    def exchange(self, command: Command, comm_mode: int = 0, header_len: int = -1) -> Response:
+        with self._lock:
+            self._open()
+            _raw, pointer = N.byte_pointer(command.data)
+            status = N.library().dfc_ffi_reader_exchange_begin(
+                self._exchange,
+                self._session,
+                self.framing,
+                command.instruction,
+                pointer,
+                len(command.data),
+                comm_mode,
+                header_len,
+            )
+            N.raise_status(status)
+            return self._run()
+
+    def authenticate(
+        self, cipher: int, key_no: int, key: bytes, random_a: bytes | None = None
+    ) -> Response:
+        challenge = bytearray(
+            random_a or secrets.token_bytes(16 if cipher == 0xAA or len(key) == 24 else 8)
+        )
+        keybuf, keyptr = N.byte_pointer(key)
+        randbuf, randptr = N.byte_pointer(challenge)
+        try:
+            with self._lock:
+                status = N.library().dfc_ffi_reader_authenticate_begin(
+                    self._exchange,
+                    self._session,
+                    self.framing,
+                    cipher,
+                    key_no,
+                    keyptr,
+                    len(key),
+                    randptr,
+                    len(challenge),
+                )
+                N.raise_status(status)
+                return self._run()
+        finally:
+            C.memset(randbuf, 0, len(challenge))
+            C.memset(keybuf, 0, len(key))
+
+    def authenticate_ev2(
+        self,
+        key_no: int,
+        key: bytes,
+        *,
+        first: bool = True,
+        random_a: bytes | None = None,
+        capabilities: bytes = b"",
+    ) -> Response:
+        challenge = bytearray(random_a or secrets.token_bytes(16))
+        kb, kp = N.byte_pointer(key)
+        rb, rp = N.byte_pointer(challenge)
+        _cb, cp = N.byte_pointer(capabilities)
+        try:
+            with self._lock:
+                status = N.library().dfc_ffi_reader_authenticate_ev2_begin(
+                    self._exchange,
+                    self._session,
+                    self.framing,
+                    int(first),
+                    key_no,
+                    kp,
+                    rp,
+                    cp if capabilities else None,
+                    len(capabilities),
+                )
+                N.raise_status(status)
+                return self._run()
+        finally:
+            C.memset(kb, 0, len(key))
+            C.memset(rb, 0, len(challenge))
+
+    def authenticate_iso7816(
+        self,
+        key_reference: int,
+        algorithm: int,
+        key: bytes,
+        random_first: bytes | None = None,
+        random_second: bytes | None = None,
+    ) -> Response:
+        length = 8 if algorithm == 0x02 else 16
+        first = bytearray(random_first or secrets.token_bytes(length))
+        second = bytearray(random_second or secrets.token_bytes(length))
+        if len(first) != length or len(second) != length:
+            raise ValueError(f"algorithm requires {length}-byte challenges")
+        kb, kp = N.byte_pointer(key)
+        fb, fp = N.byte_pointer(first)
+        sb, sp = N.byte_pointer(second)
+        try:
+            with self._lock:
+                status = N.library().dfc_ffi_reader_authenticate_iso7816_begin(
+                    self._exchange,
+                    self._session,
+                    key_reference,
+                    kp,
+                    len(key),
+                    algorithm,
+                    fp,
+                    sp,
+                    length,
+                )
+                N.raise_status(status)
+                return self._run()
+        finally:
+            C.memset(kb, 0, len(key))
+            C.memset(fb, 0, length)
+            C.memset(sb, 0, length)
+
+    def create_delegated_application(
+        self,
+        header: bytes,
+        dam_encryption_key: bytes,
+        dam_mac_key: bytes,
+        random_prefix: bytes,
+        initial_key: bytes,
+        initial_version: int,
+    ) -> Response:
+        values = [
+            N.byte_pointer(v)
+            for v in (header, dam_encryption_key, dam_mac_key, random_prefix, initial_key)
+        ]
+        try:
+            with self._lock:
+                status = N.library().dfc_ffi_reader_create_delegated_application_begin(
+                    self._exchange,
+                    self._session,
+                    self.framing,
+                    values[0][1],
+                    len(header),
+                    values[1][1],
+                    values[2][1],
+                    values[3][1],
+                    values[4][1],
+                    len(initial_key),
+                    initial_version,
+                )
+                N.raise_status(status)
+                return self._run()
+        finally:
+            for (buffer, _), value in zip(
+                values, (header, dam_encryption_key, dam_mac_key, random_prefix, initial_key)
+            ):
+                C.memset(buffer, 0, len(value))
+
+    def change_key_cryptogram(
+        self, key_no: int, new_key: bytes, current_key: bytes, *, aes_key: bool, new_version: int
+    ) -> bytes:
+        new, newp = N.byte_pointer(new_key)
+        old, oldp = N.byte_pointer(current_key)
+        try:
+            return N.variable_output(
+                N.library().dfc_ffi_reader_change_key_cryptogram,
+                self._session,
+                key_no,
+                newp,
+                len(new_key),
+                oldp,
+                int(aes_key),
+                new_version,
+            )
+        finally:
+            C.memset(new, 0, len(new_key))
+            C.memset(old, 0, len(current_key))
+
+    def change_key_ev2_data(
+        self, key_set_no: int, key_no: int, new_key: bytes, current_key: bytes, new_version: int
+    ) -> bytes:
+        if len(new_key) != 16 or len(current_key) != 16:
+            raise ValueError("EV2 keys must be 16 bytes")
+        new, newp = N.byte_pointer(new_key)
+        old, oldp = N.byte_pointer(current_key)
+        try:
+            return N.variable_output(
+                N.library().dfc_ffi_reader_change_key_ev2_data,
+                self._session,
+                key_set_no,
+                key_no,
+                newp,
+                oldp,
+                new_version,
+            )
+        finally:
+            C.memset(new, 0, 16)
+            C.memset(old, 0, 16)
+
+    def _write(
+        self,
+        kind: str,
+        file_number: int,
+        offset: int,
+        data: bytes,
+        comm_mode: int,
+        record_number: int | None = None,
+    ) -> Response:
+        _raw, pointer = N.byte_pointer(data)
+        with self._lock:
+            function = getattr(N.library(), f"dfc_ffi_reader_{kind}_begin")
+            prefix = (self._exchange, self._session, self.framing, file_number)
+            status = function(
+                *prefix,
+                *((record_number, offset) if record_number is not None else (offset,)),
+                pointer,
+                len(data),
+                comm_mode,
+            )
+            N.raise_status(status)
+            return self._run()
+
+    def write_data(
+        self, file_number: int, offset: int, data: bytes, comm_mode: int = 0
+    ) -> Response:
+        return self._write("write_data", file_number, offset, data, comm_mode)
+
+    def write_record(
+        self, file_number: int, offset: int, data: bytes, comm_mode: int = 0
+    ) -> Response:
+        return self._write("write_record", file_number, offset, data, comm_mode)
+
+    def update_record(
+        self, file_number: int, record_number: int, offset: int, data: bytes, comm_mode: int = 0
+    ) -> Response:
+        return self._write("update_record", file_number, offset, data, comm_mode, record_number)

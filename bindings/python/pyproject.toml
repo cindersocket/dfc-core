@@ -1,0 +1,39 @@
+[build-system]
+requires = ["scikit-build-core>=0.10"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "dfc-core"
+version = "1.2.1"
+description = "Python bindings for dfc-core"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-2.0-or-later" }
+authors = [{ name = "CinderSocket" }]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "mypy>=1.13", "ruff>=0.8"]
+
+[tool.scikit-build]
+cmake.source-dir = "../.."
+wheel.packages = ["src/dfc_core"]
+wheel.install-dir = "dfc_core"
+cmake.args = ["-DDFC_BUILD_SHARED=ON", "-DDFC_BUILD_TESTS=OFF", "-DDFC_BUILD_JNI=OFF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["dfc_core"]
+
+[[tool.mypy.overrides]]
+module = "dfc_core._native"
+# ctypes assigns runtime field descriptors that its type stubs cannot express.
+ignore_errors = true
+

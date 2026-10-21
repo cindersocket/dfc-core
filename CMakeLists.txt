@@ -31,6 +31,8 @@ else()
     set(DFC_DEFAULT_BUILD_SHARED ON)
 endif()
 option(DFC_BUILD_SHARED "Build the shared library with the flat interface" ${DFC_DEFAULT_BUILD_SHARED})
+option(DFC_BUILD_STATIC_FFI "Build a static library with the flat interface" OFF)
+option(DFC_BUILD_RUST_TARGET_BRIDGE "Build the allocation-neutral Rust target bridge" OFF)
 option(DFC_BUILD_TESTS "Build the smoke test for the shared library" ${DFC_BUILD_SHARED})
 option(DFC_BUILD_JNI "Build the self-contained Java/Android JNI library" OFF)
 # Workstation sizes for the credential model. A device build keeps the small
@@ -159,22 +161,29 @@ target_include_directories(dfc_core PUBLIC src port)
 target_compile_definitions(dfc_core PUBLIC ${DFC_DEFINITIONS})
 target_link_libraries(dfc_core PUBLIC ${DFC_CRYPTO_LIBRARIES})
 
-if(DFC_BUILD_SHARED)
-    add_library(dfc SHARED
+set(DFC_FFI_SOURCES
         $<TARGET_OBJECTS:dfc_objects>
         ffi/dfc_ffi.c
         port/ffi/dfc_port_ffi.c
         port/host/dfc_bytebuf_host.c)
-    target_include_directories(dfc PUBLIC ffi src port PRIVATE port/ffi port/host)
-    target_compile_definitions(dfc PUBLIC ${DFC_DEFINITIONS} DFC_ENABLE_FFI=1 PRIVATE DFC_FFI_BUILD=1)
-    target_compile_options(dfc PRIVATE ${DFC_WARNINGS})
-    target_link_libraries(dfc PRIVATE ${DFC_CRYPTO_LIBRARIES})
+
+function(dfc_configure_ffi_target target)
+    target_include_directories(${target} PUBLIC ffi src port PRIVATE port/ffi port/host)
+    target_compile_definitions(
+        ${target} PUBLIC ${DFC_DEFINITIONS} DFC_ENABLE_FFI=1 PRIVATE DFC_FFI_BUILD=1)
+    target_compile_options(${target} PRIVATE ${DFC_WARNINGS})
+    target_link_libraries(${target} PRIVATE ${DFC_CRYPTO_LIBRARIES})
     if(WIN32)
-        target_link_libraries(dfc PRIVATE bcrypt)
+        target_link_libraries(${target} PRIVATE bcrypt)
         # Export every function, so a binding can call the plain encoders
         # (dfc_command_*) as well as the flat interface.
-        set_target_properties(dfc PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+        set_target_properties(${target} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
     endif()
+endfunction()
+
+if(DFC_BUILD_SHARED)
+    add_library(dfc SHARED ${DFC_FFI_SOURCES})
+    dfc_configure_ffi_target(dfc)
     # libdfc on every platform. On Windows a plain dfc.dll collides with the
     # managed Dfc.dll beside it: file names ignore case there, and the loader
     # hands back the already-loaded assembly instead of the native library.
@@ -192,6 +201,27 @@ if(DFC_BUILD_SHARED)
         target_link_libraries(test_dfc_ffi PRIVATE dfc)
         add_test(NAME ffi COMMAND test_dfc_ffi)
     endif()
+endif()
+
+if(DFC_BUILD_STATIC_FFI)
+    add_library(dfc_ffi_static STATIC ${DFC_FFI_SOURCES})
+    dfc_configure_ffi_target(dfc_ffi_static)
+    set_target_properties(dfc_ffi_static PROPERTIES OUTPUT_NAME dfc)
+    install(TARGETS dfc_ffi_static ARCHIVE DESTINATION lib)
+    install(FILES ffi/dfc_ffi.h DESTINATION include)
+endif()
+
+if(DFC_BUILD_RUST_TARGET_BRIDGE)
+    if(NOT DFC_ROLE STREQUAL "target")
+        message(FATAL_ERROR "DFC_BUILD_RUST_TARGET_BRIDGE requires DFC_ROLE=target")
+    endif()
+    add_library(dfc_rust_target STATIC ffi/dfc_target_ffi.c)
+    target_include_directories(dfc_rust_target PUBLIC ffi src port)
+    target_compile_definitions(dfc_rust_target PUBLIC ${DFC_DEFINITIONS})
+    target_compile_options(dfc_rust_target PRIVATE ${DFC_WARNINGS})
+    target_link_libraries(dfc_rust_target PUBLIC dfc_core)
+    install(TARGETS dfc_core dfc_rust_target ARCHIVE DESTINATION lib)
+    install(FILES ffi/dfc_target_ffi.h DESTINATION include)
 endif()
 
 if(DFC_BUILD_JNI)

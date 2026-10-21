@@ -25,7 +25,7 @@ struct DfcFfiCredential {
 
 #if DFC_ENABLE_EMULATOR
 struct DfcFfiPicc {
-    DfcCredential model;
+    DfcFfiCredential* credential;
     DfcVirtualPiccSession* session;
     DfcFfiRandomCallback random;
     void* random_context;
@@ -65,6 +65,69 @@ static DfcFfiCredential* credential_alloc(void) {
 uint32_t dfc_ffi_abi_version(void) {
     return DFC_FFI_ABI_VERSION;
 }
+
+static uint64_t layout_hash_word(uint64_t hash, size_t value) {
+    for(size_t i = 0; i < sizeof(value); i++) {
+        hash ^= (uint8_t)(value >> (i * 8));
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+#define HASH_SIZE(hash, type)         layout_hash_word((hash), sizeof(type))
+#define HASH_FIELD(hash, type, field) layout_hash_word((hash), offsetof(type, field))
+
+uint64_t dfc_ffi_layout_fingerprint(void) {
+    uint64_t hash = UINT64_C(14695981039346656037);
+    hash = layout_hash_word(hash, DFC_FFI_ABI_VERSION);
+    hash = HASH_SIZE(hash, DfcFfiCapabilities);
+    hash = HASH_FIELD(hash, DfcFfiCapabilities, generation_ev1);
+    hash = HASH_FIELD(hash, DfcFfiCapabilities, max_applications);
+    hash = HASH_FIELD(hash, DfcFfiCapabilities, key_pool_size);
+    hash = HASH_SIZE(hash, DfcFfiError);
+    hash = HASH_FIELD(hash, DfcFfiError, line);
+    hash = HASH_FIELD(hash, DfcFfiError, message);
+    hash = HASH_SIZE(hash, DfcFfiCard);
+    hash = HASH_FIELD(hash, DfcFfiCard, uid);
+    hash = HASH_FIELD(hash, DfcFfiCard, hardware_version);
+    hash = HASH_FIELD(hash, DfcFfiCard, static_signature);
+    hash = HASH_SIZE(hash, DfcFfiPiccSettings);
+    hash = HASH_FIELD(hash, DfcFfiPiccSettings, ats);
+    hash = HASH_FIELD(hash, DfcFfiPiccSettings, ev2_capabilities);
+    hash = HASH_FIELD(hash, DfcFfiPiccSettings, virtual_card_installation_id);
+    hash = HASH_FIELD(hash, DfcFfiPiccSettings, dam_auth_key);
+    hash = HASH_FIELD(hash, DfcFfiPiccSettings, preferred_auth_command);
+    hash = HASH_SIZE(hash, DfcFfiApplication);
+    hash = HASH_FIELD(hash, DfcFfiApplication, aid);
+    hash = HASH_FIELD(hash, DfcFfiApplication, key_set_versions);
+    hash = HASH_FIELD(hash, DfcFfiApplication, capability_data);
+    hash = HASH_FIELD(hash, DfcFfiApplication, preferred_auth_command);
+    hash = HASH_SIZE(hash, DfcFfiFile);
+    hash = HASH_FIELD(hash, DfcFfiFile, access_rights);
+    hash = HASH_FIELD(hash, DfcFfiFile, number);
+    hash = HASH_FIELD(hash, DfcFfiFile, transaction_mac_key);
+    hash = HASH_FIELD(hash, DfcFfiFile, previous_reader_id);
+    hash = HASH_SIZE(hash, DfcFfiKey);
+    hash = HASH_FIELD(hash, DfcFfiKey, value);
+    hash = HASH_FIELD(hash, DfcFfiKey, version);
+    hash = HASH_SIZE(hash, DfcFfiActivation);
+    hash = HASH_FIELD(hash, DfcFfiActivation, uid);
+    hash = HASH_FIELD(hash, DfcFfiActivation, protocol);
+    hash = HASH_FIELD(hash, DfcFfiActivation, rf_detail);
+    hash = HASH_SIZE(hash, DfcFfiSnapshot);
+    hash = HASH_FIELD(hash, DfcFfiSnapshot, selected_aid);
+    hash = HASH_FIELD(hash, DfcFfiSnapshot, ev2_transaction_identifier);
+    hash = HASH_FIELD(hash, DfcFfiSnapshot, ev2_mac_key);
+    hash = HASH_FIELD(hash, DfcFfiSnapshot, proximity_verified);
+    hash = HASH_SIZE(hash, DfcFfiReaderState);
+    hash = HASH_FIELD(hash, DfcFfiReaderState, auth_mode);
+    hash = HASH_FIELD(hash, DfcFfiReaderState, ev2_transaction_identifier);
+    hash = HASH_FIELD(hash, DfcFfiReaderState, ev2_reader_capabilities);
+    return hash;
+}
+
+#undef HASH_FIELD
+#undef HASH_SIZE
 
 int32_t dfc_ffi_random_fill(uint8_t* out, size_t len) {
     if(len > 0 && !out) return DFC_FFI_INVALID_ARGUMENT;
@@ -241,6 +304,14 @@ int32_t dfc_ffi_credential_write_text(
 int32_t dfc_ffi_credential_validate(const DfcFfiCredential* credential) {
     if(!credential) return DFC_FFI_INVALID_ARGUMENT;
     return dfc_credential_validate_model(&credential->model);
+}
+
+int32_t dfc_ffi_credential_clone(const DfcFfiCredential* credential, DfcFfiCredential** out) {
+    if(!credential || !out) return DFC_FFI_INVALID_ARGUMENT;
+    *out = credential_alloc();
+    if(!*out) return DFC_FFI_OUT_OF_MEMORY;
+    dfc_credential_copy_model(&(*out)->model, &credential->model);
+    return DfcDerOk;
 }
 
 void dfc_ffi_credential_free(DfcFfiCredential* credential) {
@@ -927,21 +998,37 @@ int32_t dfc_ffi_picc_create(
     void* random_context,
     DfcFfiPicc** out) {
     if(!credential || !out) return DFC_FFI_INVALID_ARGUMENT;
+    DfcFfiCredential* copy = NULL;
+    int32_t status = dfc_ffi_credential_clone(credential, &copy);
+    if(status != DfcDerOk) return status;
+    status = dfc_ffi_picc_create_take(&copy, random, random_context, out);
+    dfc_ffi_credential_free(copy);
+    return status;
+}
+
+int32_t dfc_ffi_picc_create_take(
+    DfcFfiCredential** credential,
+    DfcFfiRandomCallback random,
+    void* random_context,
+    DfcFfiPicc** out) {
+    if(!credential || !*credential || !out) return DFC_FFI_INVALID_ARGUMENT;
     *out = NULL;
-    DfcModelStatus valid = dfc_credential_validate_model(&credential->model);
+    DfcModelStatus valid = dfc_credential_validate_model(&(*credential)->model);
     if(valid != DfcDerOk) return valid;
     DfcFfiPicc* picc = calloc(1, sizeof(*picc));
     if(!picc) return DFC_FFI_OUT_OF_MEMORY;
-    dfc_credential_copy_model(&picc->model, &credential->model);
+    picc->credential = *credential;
     picc->random = random;
     picc->random_context = random_context;
     enter(picc);
-    picc->session = dfc_virtual_picc_session_alloc(&picc->model);
+    picc->session = dfc_virtual_picc_session_alloc(&picc->credential->model);
     leave();
     if(!picc->session) {
+        picc->credential = NULL;
         free(picc);
         return DFC_FFI_OUT_OF_MEMORY;
     }
+    *credential = NULL;
     *out = picc;
     return DfcVirtualPiccStatusOk;
 }
@@ -949,6 +1036,7 @@ int32_t dfc_ffi_picc_create(
 void dfc_ffi_picc_free(DfcFfiPicc* picc) {
     if(!picc) return;
     if(picc->session) dfc_virtual_picc_session_free(picc->session);
+    dfc_ffi_credential_free(picc->credential);
     dfc_secure_wipe(picc, sizeof(*picc));
     free(picc);
 }
@@ -1037,10 +1125,10 @@ int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out) {
     out->selected = (uint32_t)e->selected_application;
     out->selected_application_index = (uint32_t)e->selected_app_index;
     if(e->selected_application == DfcEmulatorSelectedApplicationApp &&
-       e->selected_app_index < picc->model.num_apps) {
-        memcpy(out->selected_aid, picc->model.apps[e->selected_app_index].aid, 3);
+       e->selected_app_index < picc->credential->model.num_apps) {
+        memcpy(out->selected_aid, picc->credential->model.apps[e->selected_app_index].aid, 3);
     }
-    out->dirty = picc->model.dirty;
+    out->dirty = picc->credential->model.dirty;
     if(e->secure_messaging) {
         out->auth_mode = e->secure_messaging->cipher;
         out->auth_key_no = e->auth_key_no;
@@ -1066,20 +1154,28 @@ int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out) {
 
 int32_t dfc_ffi_picc_export(const DfcFfiPicc* picc, DfcFfiCredential** out) {
     if(!picc || !out) return DFC_FFI_INVALID_ARGUMENT;
-    *out = credential_alloc();
-    if(!*out) return DFC_FFI_OUT_OF_MEMORY;
-    dfc_credential_copy_model(&(*out)->model, &picc->model);
-    return DfcVirtualPiccStatusOk;
+    return dfc_ffi_credential_clone(picc->credential, out);
 }
 
 int32_t dfc_ffi_picc_mark_persisted(DfcFfiPicc* picc) {
     if(!picc) return DFC_FFI_INVALID_ARGUMENT;
-    dfc_credential_clear_dirty(&picc->model);
+    dfc_credential_clear_dirty(&picc->credential->model);
     return DfcVirtualPiccStatusOk;
 }
 #else
 int32_t dfc_ffi_picc_create(
     const DfcFfiCredential* credential,
+    DfcFfiRandomCallback random,
+    void* random_context,
+    DfcFfiPicc** out) {
+    DFC_UNUSED(credential);
+    DFC_UNUSED(random);
+    DFC_UNUSED(random_context);
+    if(out) *out = NULL;
+    return DFC_FFI_UNSUPPORTED;
+}
+int32_t dfc_ffi_picc_create_take(
+    DfcFfiCredential** credential,
     DfcFfiRandomCallback random,
     void* random_context,
     DfcFfiPicc** out) {
