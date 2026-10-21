@@ -774,6 +774,10 @@ int32_t dfc_ffi_credential_add_application(
            a->key_set_max_size != DFC_KEY_SET_MAXIMUM_24_BYTE) {
             return DFC_FFI_INVALID_ARGUMENT;
         }
+        size_t active_width = dfc_key_set_type_length(a->key_set_types[0]);
+        if(a->key_len > a->key_set_max_size || active_width != a->key_len) {
+            return DFC_FFI_INVALID_ARGUMENT;
+        }
         for(size_t i = 0; i < a->num_key_sets; i++) {
             size_t width = dfc_key_set_type_length(a->key_set_types[i]);
             if(width == 0 || width > a->key_set_max_size) return DFC_FFI_INVALID_ARGUMENT;
@@ -939,6 +943,14 @@ int32_t dfc_ffi_credential_set_key(
     if(key_set == 0) {
         size_t num_keys = app ? app->num_keys : c->picc_num_keys;
         size_t key_len = app ? app->key_len : c->picc_key_len;
+#if DFC_ENABLE_KEY_SETS
+        if(app && app->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
+            size_t active_len = dfc_key_set_type_length(app->key_set_types[0]);
+            if(active_len == 0 || active_len > app->key_storage_len || active_len != key_len) {
+                return DFC_FFI_INVALID_ARGUMENT;
+            }
+        }
+#endif
         if(slot >= num_keys || key->len != key_len) return DFC_FFI_INVALID_ARGUMENT;
         uint8_t* dst = dfc_credential_key(c, app, slot);
         if(!dst) return DfcDerCapacity;

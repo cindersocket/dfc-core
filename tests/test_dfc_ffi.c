@@ -77,6 +77,25 @@ static uint8_t* encode(const DfcFfiCredential* credential, size_t* len) {
     return out;
 }
 
+static DfcFfiKey repeated_key(uint32_t len, uint8_t value, uint8_t version) {
+    DfcFfiKey key = {.len = len, .version = version};
+    memset(key.value, value, len);
+    return key;
+}
+
+static void check_key(
+    const DfcFfiCredential* credential,
+    int32_t owner,
+    uint32_t key_set,
+    uint32_t slot,
+    const DfcFfiKey* expected) {
+    DfcFfiKey actual;
+    CHECK(dfc_ffi_credential_get_key(credential, owner, key_set, slot, &actual) == 0);
+    CHECK(actual.len == expected->len);
+    CHECK(actual.version == expected->version);
+    CHECK(memcmp(actual.value, expected->value, expected->len) == 0);
+}
+
 // Rebuild a credential from nothing but what the walk returns.
 static DfcFfiCredential* rebuild(const DfcFfiCredential* source) {
     DfcFfiCredential* built = NULL;
@@ -188,27 +207,89 @@ int main(void) {
     CHECK(rejected == NULL);
     CHECK(error.line == 3);
 
-    // A malformed multi-key-set model must not expose a key wider than its slot.
-    DfcFfiCredential* bounded = NULL;
-    CHECK(dfc_ffi_credential_new(&bounded) == 0);
-    DfcFfiApplication oversized = {0};
-    oversized.aid[2] = 2;
-    oversized.num_keys = 1;
-    oversized.key_len = 24;
-    oversized.key_settings_2 = 0x81;
-    oversized.num_key_sets = 2;
-    oversized.key_set_max_size = 16;
-    oversized.key_set_types[0] = 2;
-    oversized.key_set_types[1] = 2;
-    oversized.key_set_initialized[0] = 1;
-    oversized.key_set_initialized[1] = 1;
-    uint32_t bounded_index = 0;
-    CHECK(dfc_ffi_credential_add_application(bounded, &oversized, &bounded_index) == 0);
-    DfcFfiKey bounded_key;
-    CHECK(
-        dfc_ffi_credential_get_key(bounded, (int32_t)bounded_index, 0, 0, &bounded_key) ==
-        DFC_FFI_INVALID_ARGUMENT);
-    dfc_ffi_credential_free(bounded);
+    // Key-set storage accepts exact and mixed widths, but the active set must
+    // have the application's declared key width and fit its slot.
+    const struct {
+        uint32_t key_len;
+        uint32_t max_size;
+        uint8_t active_type;
+        uint8_t additional_type;
+    } valid_key_sets[] = {
+        {16, 16, 2, 2},
+        {16, 24, 2, 1},
+        {24, 24, 1, 2},
+    };
+    for(size_t i = 0; i < sizeof(valid_key_sets) / sizeof(valid_key_sets[0]); i++) {
+        DfcFfiCredential* bounded = NULL;
+        CHECK(dfc_ffi_credential_new(&bounded) == 0);
+        DfcFfiApplication application = {0};
+        application.aid[2] = (uint8_t)(2 + i);
+        application.num_keys = 2;
+        application.key_len = valid_key_sets[i].key_len;
+        application.key_settings_2 = valid_key_sets[i].key_len == 24 ? 0x81 : 0x82;
+        application.num_key_sets = 2;
+        application.key_set_max_size = valid_key_sets[i].max_size;
+        application.key_set_types[0] = valid_key_sets[i].active_type;
+        application.key_set_types[1] = valid_key_sets[i].additional_type;
+        application.key_set_initialized[0] = 1;
+        application.key_set_initialized[1] = 1;
+        uint32_t index = 0;
+        CHECK(dfc_ffi_credential_add_application(bounded, &application, &index) == 0);
+
+        uint32_t additional_len = application.key_set_types[1] == 1 ? 24 : 16;
+        DfcFfiKey active = repeated_key(application.key_len, 0xA0 + (uint8_t)i, 0x10);
+        DfcFfiKey adjacent = repeated_key(additional_len, 0x10 + (uint8_t)i, 0x20);
+        CHECK(dfc_ffi_credential_set_key(bounded, (int32_t)index, 1, 0, &adjacent) == 0);
+        CHECK(dfc_ffi_credential_set_key(bounded, (int32_t)index, 0, 0, &active) == 0);
+        check_key(bounded, (int32_t)index, 0, 0, &active);
+        check_key(bounded, (int32_t)index, 1, 0, &adjacent);
+
+        DfcFfiKey wrong_width = repeated_key(active.len == 24 ? 16 : 24, 0xEE, 0xEE);
+        CHECK(
+            dfc_ffi_credential_set_key(bounded, (int32_t)index, 0, 0, &wrong_width) ==
+            DFC_FFI_INVALID_ARGUMENT);
+        CHECK(
+            dfc_ffi_credential_set_key(bounded, (int32_t)index, 2, 0, &active) ==
+            DFC_FFI_INVALID_ARGUMENT);
+        CHECK(
+            dfc_ffi_credential_set_key(bounded, (int32_t)index, 1, 2, &adjacent) ==
+            DFC_FFI_INVALID_ARGUMENT);
+        check_key(bounded, (int32_t)index, 0, 0, &active);
+        check_key(bounded, (int32_t)index, 1, 0, &adjacent);
+        dfc_ffi_credential_free(bounded);
+    }
+
+    const struct {
+        uint32_t key_len;
+        uint32_t max_size;
+        uint8_t active_type;
+    } invalid_key_sets[] = {
+        {24, 16, 1},
+        {16, 24, 1},
+        {24, 24, 2},
+        {8, 16, 0},
+    };
+    for(size_t i = 0; i < sizeof(invalid_key_sets) / sizeof(invalid_key_sets[0]); i++) {
+        DfcFfiCredential* bounded = NULL;
+        CHECK(dfc_ffi_credential_new(&bounded) == 0);
+        DfcFfiApplication application = {0};
+        application.aid[2] = (uint8_t)(8 + i);
+        application.num_keys = 1;
+        application.key_len = invalid_key_sets[i].key_len;
+        application.key_settings_2 = invalid_key_sets[i].key_len == 24 ? 0x81 : 0x80;
+        application.num_key_sets = 2;
+        application.key_set_max_size = invalid_key_sets[i].max_size;
+        application.key_set_types[0] = invalid_key_sets[i].active_type;
+        application.key_set_types[1] = 2;
+        application.key_set_initialized[0] = 1;
+        application.key_set_initialized[1] = 1;
+        uint32_t index = 0;
+        CHECK(
+            dfc_ffi_credential_add_application(bounded, &application, &index) ==
+            DFC_FFI_INVALID_ARGUMENT);
+        CHECK(dfc_ffi_credential_application_count(bounded) == 0);
+        dfc_ffi_credential_free(bounded);
+    }
 
     // The walk and the builder agree with the codec.
     DfcFfiCredential* built = rebuild(decoded);
