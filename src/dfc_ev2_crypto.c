@@ -68,19 +68,32 @@ bool dfc_ev2_mac(
     const uint8_t* second,
     size_t second_len,
     uint8_t output[DFC_WIRE_MAC_LENGTH]) {
-    uint8_t input[DFC_EV2_MAC_PREFIX_LENGTH + DFC_EV2_MAC_DATA_MAX];
     if(first_len > DFC_EV2_MAC_DATA_MAX || second_len > DFC_EV2_MAC_DATA_MAX - first_len)
         return false;
-    input[0] = lead;
-    input[1] = (uint8_t)counter;
-    input[2] = (uint8_t)(counter >> 8);
-    memcpy(input + 3, transaction_identifier, DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
-    size_t len = DFC_EV2_MAC_PREFIX_LENGTH;
-    if(first_len) memcpy(input + len, first, first_len);
-    len += first_len;
-    if(second_len) memcpy(input + len, second, second_len);
-    len += second_len;
-    return dfc_ev2_wire_mac(mac_key, input, len, output);
+    uint8_t prefix[DFC_EV2_MAC_PREFIX_LENGTH];
+    prefix[0] = lead;
+    prefix[1] = (uint8_t)counter;
+    prefix[2] = (uint8_t)(counter >> 8);
+    memcpy(prefix + 3, transaction_identifier, DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
+    AesCmacSegment segments[] = {
+        {.data = prefix, .length = sizeof(prefix)},
+        {.data = first, .length = first_len},
+        {.data = second, .length = second_len},
+    };
+    uint8_t zero_iv[DFC_AES_CMAC_LENGTH] = {0};
+    uint8_t full[DFC_AES_CMAC_LENGTH];
+    if(!aes_cmac_segments_with_iv(
+           (uint8_t*)mac_key,
+           DFC_AES_KEY_LENGTH,
+           segments,
+           sizeof(segments) / sizeof(segments[0]),
+           zero_iv,
+           full)) {
+        return false;
+    }
+    for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++) output[i] = full[i * 2 + 1];
+    memset(full, 0, sizeof(full));
+    return true;
 }
 
 void dfc_ev2_derive_iv(

@@ -1,4 +1,5 @@
 #include "dfc_emulator_i.h"
+#include "dfc_crypto_internal.h"
 
 #if DFC_ENABLE_EMULATOR
 
@@ -16,17 +17,6 @@ uint16_t dfc_emulator_crc16_iso14443(const uint8_t* data, size_t len) {
     return crc;
 }
 
-static void des_ecb_crypt(
-    bool encrypt,
-    const uint8_t* key,
-    size_t key_len,
-    const uint8_t input[8],
-    uint8_t output[8]) {
-    bool ok = dfc_crypto_des_ecb(encrypt, key, key_len, input, output);
-    DFC_ASSERT(ok);
-    DFC_UNUSED(ok);
-}
-
 void dfc_emulator_d40_receive_plain(
     const uint8_t* key,
     size_t key_len,
@@ -34,14 +24,20 @@ void dfc_emulator_d40_receive_plain(
     size_t encrypted_len,
     uint8_t* plain) {
     uint8_t previous[8] = {0};
+    DfcCryptoDesBlock cipher;
+    bool ok = dfc_crypto_des_block_init(&cipher, true, key, key_len);
+    DFC_ASSERT(ok);
+    if(!ok) return;
     for(size_t offset = 0; offset < encrypted_len; offset += 8) {
         uint8_t block[8];
-        des_ecb_crypt(true, key, key_len, encrypted + offset, block);
+        ok = dfc_crypto_des_block_crypt(&cipher, encrypted + offset, block);
+        if(!ok) break;
         for(size_t i = 0; i < 8; i++) {
             plain[offset + i] = block[i] ^ previous[i];
         }
         memcpy(previous, encrypted + offset, sizeof(previous));
     }
+    dfc_crypto_des_block_clear(&cipher);
 }
 
 uint8_t dfc_emulator_des_key_version(const uint8_t* key) {

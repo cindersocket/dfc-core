@@ -44,6 +44,60 @@ static MunitResult test_aes_cmac_16bytes(const MunitParameter params[], void* da
     return MUNIT_OK;
 }
 
+static MunitResult test_aes_cmac_multiblock_and_segments(
+    const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    uint8_t key[16];
+    uint8_t message[64];
+    uint8_t expected40[16];
+    uint8_t expected64[16];
+    hex_to_bytes("2b7e151628aed2a6abf7158809cf4f3c", key);
+    hex_to_bytes(
+        "6bc1bee22e409f96e93d7e117393172a"
+        "ae2d8a571e03ac9c9eb76fac45af8e51"
+        "30c81c46a35ce411e5fbc1191a0a52ef"
+        "f69f2445df4f9b17ad2b417be66c3710",
+        message);
+    hex_to_bytes("dfa66747de9ae63030ca32611497c827", expected40);
+    hex_to_bytes("51f0bebf7e3b9d92fc49741779363cfe", expected64);
+
+    uint8_t mac[16];
+    munit_assert_true(aes_cmac(key, sizeof(key), message, 40, mac));
+    munit_assert_memory_equal(sizeof(mac), mac, expected40);
+    munit_assert_true(aes_cmac(key, sizeof(key), message, sizeof(message), mac));
+    munit_assert_memory_equal(sizeof(mac), mac, expected64);
+
+    AesCmacSegment segments[] = {
+        {.data = message, .length = 3},
+        {.data = message + 3, .length = 29},
+        {.data = message + 32, .length = 1},
+        {.data = message + 33, .length = 31},
+    };
+    uint8_t iv[16] = {0};
+    munit_assert_true(aes_cmac_segments_with_iv(
+        key, sizeof(key), segments, sizeof(segments) / sizeof(segments[0]), iv, mac));
+    munit_assert_memory_equal(sizeof(mac), mac, expected64);
+    return MUNIT_OK;
+}
+
+static MunitResult test_cmac_rejects_overflow_lengths(
+    const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    uint8_t key[24] = {0};
+    uint8_t byte = 0;
+    uint8_t output[16];
+    memset(output, 0xA5, sizeof(output));
+    munit_assert_false(aes_cmac(key, 16, &byte, SIZE_MAX, output));
+    uint8_t zero[16] = {0};
+    munit_assert_memory_equal(16, output, zero);
+    memset(output, 0xA5, sizeof(output));
+    munit_assert_false(des_cmac(key, 24, &byte, SIZE_MAX, output));
+    munit_assert_memory_equal(8, output, zero);
+    return MUNIT_OK;
+}
+
 // des_cmac() self-consistency: same input -> same output; different keys/messages -> different
 // output. There's no widely-available official test vector for this project's exact 2K/3K3DES
 // CMAC construction, so this checks internal correctness properties instead.
@@ -132,6 +186,18 @@ static MunitResult
 static MunitTest tests[] = {
     {"/aes_cmac/empty", test_aes_cmac_empty, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/aes_cmac/16bytes", test_aes_cmac_16bytes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/aes_cmac/multiblock-segments",
+     test_aes_cmac_multiblock_and_segments,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/cmac/overflow-lengths",
+     test_cmac_rejects_overflow_lengths,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/des_cmac/deterministic",
      test_des_cmac_deterministic,
      NULL,

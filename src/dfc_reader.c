@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "dfc_crypto_internal.h"
 #include "dfc_ev2_crypto.h"
 
 #if DFC_ENABLE_READER
@@ -172,13 +173,18 @@ static void d40_send(
     size_t len,
     uint8_t* out) {
     uint8_t previous[8] = {0};
+    DfcCryptoDesBlock cipher;
+    bool ok = dfc_crypto_des_block_init(&cipher, false, key, key_len);
+    DFC_ASSERT(ok);
+    if(!ok) return;
     for(size_t off = 0; off + 8 <= len; off += 8) {
         uint8_t block[8];
         for(size_t i = 0; i < 8; i++) block[i] = in[off + i] ^ previous[i];
-        uint8_t iv[8] = {0};
-        dfc_worker_des_cbc_decrypt(key, key_len, iv, 8, block, out + off);
+        ok = dfc_crypto_des_block_crypt(&cipher, block, out + off);
+        if(!ok) break;
         memcpy(previous, out + off, 8);
     }
+    dfc_crypto_des_block_clear(&cipher);
 }
 
 static uint16_t crc16(const uint8_t* data, size_t len) {

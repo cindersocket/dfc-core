@@ -1,8 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Add Java and Android JNI bindings, an Android library, and a sample application.
+- Refactor credential validation and serialization around explicit model invariants.
+- Harden authentication comparisons, secret cleanup, key updates, and SDM range validation.
+- Reuse prepared cipher contexts during CMAC and legacy CBC operations.
+- Stream EV2 MAC input segments instead of assembling a 519-byte temporary message.
+- Propagate every CMAC cipher failure and reject overflowing message lengths.
+
 ## 1.2.1 (2026-10-01)
 
-- Update tiny-crypto-c to v2.0.0.
+- Adapt the tiny-crypto-c backend to its split mode sources and buffer-based API.
+- Document EV2 feature coverage.
 
 ## 1.2.0 (2026-09-25)
 

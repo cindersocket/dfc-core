@@ -1,4 +1,5 @@
 #include "dfc_secure_messaging.h"
+#include "dfc_crypto_internal.h"
 #include "dfc_port.h"
 #include <string.h>
 
@@ -80,15 +81,29 @@ static void d40_mac(DfcSecureMessaging* sm, const uint8_t* data, size_t data_len
     uint8_t iv[DFC_SM_LEGACY_BLOCK_SIZE] = {0};
     uint8_t block[DFC_SM_LEGACY_BLOCK_SIZE];
     uint8_t encrypted[DFC_SM_LEGACY_BLOCK_SIZE];
+    DfcCryptoDesBlock cipher;
+    bool ok = dfc_crypto_des_block_init(
+        &cipher, true, sm->session_key, sm->session_key_len);
+    DFC_ASSERT(ok);
+    if(!ok) {
+        memset(mac_out, 0, DFC_SM_LEGACY_MAC_LENGTH);
+        return;
+    }
     for(size_t offset = 0; offset < data_len; offset += block_size) {
         size_t count = data_len - offset;
         if(count > block_size) count = block_size;
         memset(block, 0, sizeof(block));
         memcpy(block, data + offset, count);
-        dfc_worker_des_cbc_encrypt(
-            sm->session_key, sm->session_key_len, iv, block_size, block, encrypted);
+        for(size_t i = 0; i < block_size; i++) block[i] ^= iv[i];
+        ok = dfc_crypto_des_block_crypt(&cipher, block, encrypted);
+        if(!ok) break;
+        memcpy(iv, encrypted, sizeof(iv));
     }
-    memcpy(mac_out, encrypted, DFC_SM_LEGACY_MAC_LENGTH);
+    if(ok)
+        memcpy(mac_out, encrypted, DFC_SM_LEGACY_MAC_LENGTH);
+    else
+        memset(mac_out, 0, DFC_SM_LEGACY_MAC_LENGTH);
+    dfc_crypto_des_block_clear(&cipher);
 }
 
 static void
@@ -300,15 +315,6 @@ size_t dfc_secure_messaging_unwrap_ev1_response(
 // PICC is C[i] = dec(P[i] ^ C[i-1]) and one travelling to the PCD is
 // C[i] = enc(P[i] ^ C[i-1]); each party recovers with its own primitive. With
 // encrypt = true these two are the ordinary CBC encrypt and decrypt.
-static void legacy_ecb(const DfcSecureMessaging* sm, bool encrypt, const uint8_t* in, uint8_t* out) {
-    uint8_t iv[8] = {0};
-    if(encrypt) {
-        dfc_worker_des_cbc_encrypt(sm->session_key, sm->session_key_len, iv, 8, in, out);
-    } else {
-        dfc_worker_des_cbc_decrypt(sm->session_key, sm->session_key_len, iv, 8, in, out);
-    }
-}
-
 // C[i] = prim(P[i] ^ C[i-1])
 static void legacy_cbc_forward(
     const DfcSecureMessaging* sm,
@@ -317,12 +323,19 @@ static void legacy_cbc_forward(
     size_t len,
     uint8_t* out) {
     uint8_t prev[8] = {0};
+    DfcCryptoDesBlock cipher;
+    bool ok = dfc_crypto_des_block_init(
+        &cipher, encrypt, sm->session_key, sm->session_key_len);
+    DFC_ASSERT(ok);
+    if(!ok) return;
     for(size_t off = 0; off + 8 <= len; off += 8) {
         uint8_t blk[8];
         for(size_t i = 0; i < 8; i++) blk[i] = in[off + i] ^ prev[i];
-        legacy_ecb(sm, encrypt, blk, out + off);
+        ok = dfc_crypto_des_block_crypt(&cipher, blk, out + off);
+        if(!ok) break;
         memcpy(prev, out + off, 8);
     }
+    dfc_crypto_des_block_clear(&cipher);
 }
 
 // P[i] = prim(C[i]) ^ C[i-1]
@@ -333,12 +346,19 @@ static void legacy_cbc_reverse(
     size_t len,
     uint8_t* out) {
     uint8_t prev[8] = {0};
+    DfcCryptoDesBlock cipher;
+    bool ok = dfc_crypto_des_block_init(
+        &cipher, encrypt, sm->session_key, sm->session_key_len);
+    DFC_ASSERT(ok);
+    if(!ok) return;
     for(size_t off = 0; off + 8 <= len; off += 8) {
         uint8_t blk[8];
-        legacy_ecb(sm, encrypt, in + off, blk);
+        ok = dfc_crypto_des_block_crypt(&cipher, in + off, blk);
+        if(!ok) break;
         for(size_t i = 0; i < 8; i++) out[off + i] = blk[i] ^ prev[i];
         memcpy(prev, in + off, 8);
     }
+    dfc_crypto_des_block_clear(&cipher);
 }
 
 // Shared by both directions: enciphered mode is a plain CBC-encrypt-with-CRC scheme with no
