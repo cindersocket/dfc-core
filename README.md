@@ -8,7 +8,7 @@ DFC core is a portable DESFire-compatible engine. It provides these parts:
 - Secure messaging
 - A virtual card emulator
 - A reader with command encoding and secure messaging
-- A flat interface for foreign runtimes, and a .NET library over it
+- A flat interface for foreign runtimes, with .NET and Java/Android libraries over it
 
 See the [changelog](CHANGELOG.md) for release notes.
 The [credential format specification](docs/credential-format-v6.md) defines
@@ -95,6 +95,14 @@ ctest --test-dir build
 `bindings/dotnet` holds the `Dfc` library, which runs every rule in native code.
 It provides the credential records and codec, `DfcVirtualPicc` and
 `DfcReader`. See its [README](bindings/dotnet/README.md).
+
+## Use it from Java or Android
+
+`bindings/java` provides a Java 17 API for the credential codec, virtual PICC,
+command builders, and blocking reader secure messaging. `bindings/android`
+packages that API and the native core as a four-ABI AAR, adds an Android
+`IsoDep` transport, and includes a sample application. See the
+[Java and Android README](bindings/java/README.md).
 
 ## License
 

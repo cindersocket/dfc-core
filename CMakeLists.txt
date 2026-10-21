@@ -32,6 +32,7 @@ else()
 endif()
 option(DFC_BUILD_SHARED "Build the shared library with the flat interface" ${DFC_DEFAULT_BUILD_SHARED})
 option(DFC_BUILD_TESTS "Build the smoke test for the shared library" ${DFC_BUILD_SHARED})
+option(DFC_BUILD_JNI "Build the self-contained Java/Android JNI library" OFF)
 # Workstation sizes for the credential model. A device build keeps the small
 # defaults in dfc_common.h.
 if(DFC_ROLE STREQUAL "target")
@@ -39,6 +40,7 @@ if(DFC_ROLE STREQUAL "target")
 else()
     set(DFC_DEFAULT_HOST_CAPACITY ON)
 endif()
+
 option(DFC_HOST_CAPACITY "Size the credential model for a workstation" ${DFC_DEFAULT_HOST_CAPACITY})
 set(DFC_FEATURE_DEFINITIONS "" CACHE STRING
     "Semicolon-separated DFC_ENABLE_* overrides, each ending in =0 or =1")
@@ -190,4 +192,27 @@ if(DFC_BUILD_SHARED)
         target_link_libraries(test_dfc_ffi PRIVATE dfc)
         add_test(NAME ffi COMMAND test_dfc_ffi)
     endif()
+endif()
+
+if(DFC_BUILD_JNI)
+    if(NOT ANDROID)
+        find_package(JNI REQUIRED)
+    endif()
+    add_library(dfc_jni SHARED
+        $<TARGET_OBJECTS:dfc_objects>
+        ffi/dfc_ffi.c
+        port/ffi/dfc_port_ffi.c
+        port/host/dfc_bytebuf_host.c
+        bindings/jni/dfc_jni.c)
+    target_include_directories(dfc_jni PRIVATE
+        ffi src port port/ffi port/host ${JNI_INCLUDE_DIRS})
+    target_compile_definitions(dfc_jni PUBLIC ${DFC_DEFINITIONS} DFC_ENABLE_FFI=1
+        PRIVATE DFC_FFI_BUILD=1)
+    target_compile_options(dfc_jni PRIVATE ${DFC_WARNINGS})
+    target_link_libraries(dfc_jni PRIVATE ${DFC_CRYPTO_LIBRARIES} ${JNI_LIBRARIES})
+    if(WIN32)
+        target_link_libraries(dfc_jni PRIVATE bcrypt)
+    endif()
+    set_target_properties(dfc_jni PROPERTIES C_VISIBILITY_PRESET default)
+    install(TARGETS dfc_jni LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 endif()

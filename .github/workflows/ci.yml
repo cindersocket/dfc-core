@@ -118,6 +118,53 @@ jobs:
         run: mkdir -p build && cp runtimes/${{ matrix.rid }}/native/* build/
       - run: dotnet test bindings/dotnet/Dfc.sln -c Release
 
+  java:
+    name: Java JNI
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install mbedTLS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential libmbedtls-dev
+      - name: Build JNI
+        run: |
+          cmake -S . -B build-jni -DCMAKE_BUILD_TYPE=Release \
+            -DDFC_BUILD_SHARED=OFF -DDFC_BUILD_TESTS=OFF -DDFC_BUILD_JNI=ON \
+            -DDFC_ROLE=simulator -DDFC_PROFILE=full_ev3 -DDFC_CRYPTO=mbedtls
+          cmake --build build-jni --parallel
+      - name: Run Java smoke test
+        run: |
+          mkdir -p build-jni/java
+          javac --release 17 -d build-jni/java \
+            bindings/java/src/main/java/com/cindersocket/dfc/*.java \
+            tests/java/DfcJniSmokeTest.java
+          java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
+            examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
+
+  android:
+    name: Android AAR and sample
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build four-ABI AAR, sample, and lint
+        working-directory: bindings/android
+        run: ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleDebug :dfc:lintRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dfc-android
+          path: |
+            bindings/android/dfc/build/outputs/aar/dfc-release.aar
+            bindings/android/sample/build/outputs/apk/debug/sample-debug.apk
+
   pack:
     name: NuGet package
     needs: [native, dotnet]
