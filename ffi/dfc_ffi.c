@@ -42,12 +42,6 @@ struct DfcFfiReaderExchange {
 };
 #endif
 
-static void wipe(void* p, size_t n) {
-    volatile uint8_t* bytes = p;
-    while(n--)
-        *bytes++ = 0;
-}
-
 static void set_error(DfcFfiError* error, int32_t status, uint32_t line, const char* message) {
     if(!error) return;
     error->status = status;
@@ -80,14 +74,11 @@ int32_t dfc_ffi_random_fill(uint8_t* out, size_t len) {
 
 bool dfc_ffi_fixed_time_equal(const uint8_t* left, const uint8_t* right, size_t len) {
     if(len > 0 && (!left || !right)) return false;
-    volatile uint8_t difference = 0;
-    for(size_t index = 0; index < len; index++)
-        difference |= left[index] ^ right[index];
-    return difference == 0;
+    return dfc_ct_equal(left, right, len);
 }
 
 void dfc_ffi_secure_zero(void* buffer, size_t len) {
-    if(buffer) wipe(buffer, len);
+    if(buffer) dfc_secure_wipe(buffer, len);
 }
 
 void dfc_ffi_capabilities(DfcFfiCapabilities* out) {
@@ -254,7 +245,7 @@ int32_t dfc_ffi_credential_validate(const DfcFfiCredential* credential) {
 
 void dfc_ffi_credential_free(DfcFfiCredential* credential) {
     if(!credential) return;
-    wipe(credential, sizeof(*credential));
+    dfc_secure_wipe(credential, sizeof(*credential));
     free(credential);
 }
 
@@ -509,6 +500,14 @@ int32_t dfc_ffi_credential_get_key(
     if(key_set == 0) {
         size_t num_keys = app ? app->num_keys : c->picc_num_keys;
         size_t key_len = app ? app->key_len : c->picc_key_len;
+#if DFC_ENABLE_KEY_SETS
+        if(app && app->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
+            size_t active_len = dfc_key_set_type_length(app->key_set_types[0]);
+            if(active_len == 0 || active_len > app->key_storage_len || active_len != key_len) {
+                return DFC_FFI_INVALID_ARGUMENT;
+            }
+        }
+#endif
         if(slot >= num_keys) return DFC_FFI_INVALID_ARGUMENT;
         const uint8_t* key = dfc_credential_key_const(c, app, slot);
         out->len = (uint32_t)key_len;
@@ -950,7 +949,7 @@ int32_t dfc_ffi_picc_create(
 void dfc_ffi_picc_free(DfcFfiPicc* picc) {
     if(!picc) return;
     if(picc->session) dfc_virtual_picc_session_free(picc->session);
-    wipe(picc, sizeof(*picc));
+    dfc_secure_wipe(picc, sizeof(*picc));
     free(picc);
 }
 
@@ -1108,7 +1107,7 @@ int32_t dfc_ffi_reader_session_new(DfcFfiReaderSession** out) {
 
 void dfc_ffi_reader_session_free(DfcFfiReaderSession* session) {
     if(!session) return;
-    wipe(session, sizeof(*session));
+    dfc_secure_wipe(session, sizeof(*session));
     free(session);
 }
 
@@ -1137,7 +1136,7 @@ int32_t dfc_ffi_reader_exchange_new(DfcFfiReaderExchange** out) {
 
 void dfc_ffi_reader_exchange_free(DfcFfiReaderExchange* exchange) {
     if(!exchange) return;
-    wipe(exchange, sizeof(*exchange));
+    dfc_secure_wipe(exchange, sizeof(*exchange));
     free(exchange);
 }
 
@@ -1437,7 +1436,7 @@ int32_t dfc_ffi_reader_change_key_ev2_data(
     if(command.data_len > out_cap) return DFC_FFI_BUFFER_TOO_SMALL;
     memcpy(out, command.data, command.data_len);
     *out_len = command.data_len;
-    wipe(&command, sizeof(command));
+    dfc_secure_wipe(&command, sizeof(command));
     return DfcReaderOk;
 #else
     DFC_UNUSED(session);

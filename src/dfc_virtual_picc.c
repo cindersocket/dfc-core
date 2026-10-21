@@ -188,7 +188,7 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
             dfc_worker_des_cbc_decrypt(emulator->iso_auth_key, emulator->iso_auth_key_len,
                                        iv, challenge_len * 2, apdu + 5, clear);
         }
-        if(memcmp(clear + challenge_len, emulator->iso_auth_card_first, challenge_len) != 0) {
+        if(!dfc_ct_equal(clear + challenge_len, emulator->iso_auth_card_first, challenge_len)) {
             return iso_auth_status(DFC_ISO7816_SW_SECURITY_HI,
                                    DFC_ISO7816_SW_SECURITY_LO,
                                    response, response_capacity, response_len);
@@ -285,10 +285,10 @@ static DfcVirtualPiccStatus handle_virtual_card_select(
     size_t identifier_len = command[DfcVirtualCardSelectLengthOffset];
     if(command_len < DfcVirtualCardSelectDataOffset + identifier_len ||
        identifier_len != credential->virtual_card_installation_id_len ||
-       memcmp(
+       !dfc_ct_equal(
            command + DfcVirtualCardSelectDataOffset,
            credential->virtual_card_installation_id,
-           identifier_len) != 0)
+           identifier_len))
         return DfcVirtualPiccStatusUnsupportedProtocol;
 
     const size_t selection_len =
@@ -381,10 +381,10 @@ static DfcVirtualPiccStatus handle_virtual_card_external_authenticate(
         for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++) wire_mac[i] = full_mac[(i * 2) + 1];
         emulator->virtual_card_selected =
             emulator->virtual_card_selection_pending &&
-            memcmp(
+            dfc_ct_equal(
                 wire_mac,
                 command + DfcVirtualCardExternalAuthenticateDataOffset,
-                DFC_WIRE_MAC_LENGTH) == 0;
+                DFC_WIRE_MAC_LENGTH);
     }
     emulator->virtual_card_authentication_expected = false;
     emulator->virtual_card_selection_pending = false;

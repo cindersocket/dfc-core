@@ -6,8 +6,8 @@
  * Assertions, logging and randomness. This is the whole platform surface the
  * engine depends on; everything else it needs is freestanding C.
  *
- * The firmware supplies the implementations in desfire_shim.c; the host test
- * harness supplies its own in tests/support/.
+ * Host implementations live in port/host/. Firmware consumers provide the
+ * same interface in their own port directory, for example dfc-flipper/port/.
  */
 #pragma once
 

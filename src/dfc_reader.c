@@ -84,23 +84,11 @@ const char* dfc_reader_status_name(DfcReaderStatus status) {
     return "unknown";
 }
 
-// Comparison whose duration does not depend on where the inputs differ.
-static bool ct_equal(const uint8_t* a, const uint8_t* b, size_t len) {
-    uint8_t difference = 0;
-    for(size_t i = 0; i < len; i++) difference |= a[i] ^ b[i];
-    return difference == 0;
-}
-
 // ------------------------------------------------------------ session ---
-
-static void wipe(void* p, size_t n) {
-    volatile uint8_t* bytes = p;
-    while(n--) *bytes++ = 0;
-}
 
 void dfc_reader_session_init(DfcReaderSession* session) {
     if(!session) return;
-    wipe(session, sizeof(*session));
+    dfc_secure_wipe(session, sizeof(*session));
     session->sm.pcd = true;
 }
 
@@ -432,7 +420,7 @@ DfcReaderStatus dfc_reader_authenticate_ev2_begin(
 static DfcReaderStatus fail_auth(DfcReaderExchange* ex, DfcReaderStatus status) {
     // A refused or broken handshake leaves the card unauthenticated.
     dfc_reader_session_clear(ex->session);
-    wipe(ex->auth_key, sizeof(ex->auth_key));
+    dfc_secure_wipe(ex->auth_key, sizeof(ex->auth_key));
     ex->phase = PhaseDone;
     return status;
 }
@@ -519,7 +507,7 @@ static DfcReaderStatus step_authenticate_iso7816(
     memcpy(iv, ex->auth_iv, block);
     cbc_decrypt(ex->auth_cipher, ex->auth_key, ex->auth_key_len,
                 iv, response, challenge * 2, clear);
-    if(!ct_equal(clear + challenge, ex->auth_random_second, challenge))
+    if(!dfc_ct_equal(clear + challenge, ex->auth_random_second, challenge))
         return fail_auth(ex, DfcReaderIntegrityError);
     uint8_t session_key[DFC_MAX_KEY_LEN];
     size_t session_key_len = 0;
@@ -527,8 +515,8 @@ static DfcReaderStatus step_authenticate_iso7816(
                            ex->auth_random_a, clear, session_key, &session_key_len);
     open_legacy_session(ex->session, ex->auth_cipher, ex->auth_key_no,
                         session_key, session_key_len);
-    wipe(session_key, sizeof(session_key));
-    wipe(ex->auth_key, sizeof(ex->auth_key));
+    dfc_secure_wipe(session_key, sizeof(session_key));
+    dfc_secure_wipe(ex->auth_key, sizeof(ex->auth_key));
     ex->phase = PhaseDone;
     return DfcReaderOk;
 }
@@ -611,8 +599,8 @@ static DfcReaderStatus step_authenticate(
     dfc_derive_session_key(
         cipher, ex->auth_key, ex->auth_key_len, random_a, random_b, session_key, &session_key_len);
     open_legacy_session(ex->session, cipher, ex->auth_key_no, session_key, session_key_len);
-    wipe(session_key, sizeof(session_key));
-    wipe(ex->auth_key, sizeof(ex->auth_key));
+    dfc_secure_wipe(session_key, sizeof(session_key));
+    dfc_secure_wipe(ex->auth_key, sizeof(ex->auth_key));
     ex->phase = PhaseDone;
     return DfcReaderOk;
 }
@@ -674,7 +662,7 @@ static DfcReaderStatus step_authenticate_ev2(
     const uint8_t* rotated = ex->auth_first ? clear + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH : clear;
     uint8_t expected[DFC_EV2_RANDOM_LENGTH];
     dfc_ev2_rotate_left(ex->auth_random_a, expected);
-    if(!ct_equal(rotated, expected, DFC_EV2_RANDOM_LENGTH)) {
+    if(!dfc_ct_equal(rotated, expected, DFC_EV2_RANDOM_LENGTH)) {
         return fail_auth(ex, DfcReaderIntegrityError);
     }
 
@@ -711,9 +699,9 @@ static DfcReaderStatus step_authenticate_ev2(
     memcpy(session->ev2_mac_key, mac_key, sizeof(mac_key));
     memcpy(session->ev2_card_capabilities, card_caps, sizeof(card_caps));
     memcpy(session->ev2_reader_capabilities, reader_caps, sizeof(reader_caps));
-    wipe(encryption_key, sizeof(encryption_key));
-    wipe(mac_key, sizeof(mac_key));
-    wipe(ex->auth_key, sizeof(ex->auth_key));
+    dfc_secure_wipe(encryption_key, sizeof(encryption_key));
+    dfc_secure_wipe(mac_key, sizeof(mac_key));
+    dfc_secure_wipe(ex->auth_key, sizeof(ex->auth_key));
     ex->phase = PhaseDone;
     return DfcReaderOk;
 }
@@ -1175,7 +1163,7 @@ static DfcReaderStatus card_error(DfcReaderExchange* ex) {
                    NULL,
                    0,
                    mac) ||
-               !ct_equal(mac, ex->data + body, sizeof(mac))) {
+               !dfc_ct_equal(mac, ex->data + body, sizeof(mac))) {
                 dfc_reader_session_clear(session);
                 return finish_command(ex, DfcReaderIntegrityError);
             }
@@ -1251,7 +1239,7 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
                NULL,
                0,
                mac) ||
-           !ct_equal(mac, ex->data + body, sizeof(mac))) {
+           !dfc_ct_equal(mac, ex->data + body, sizeof(mac))) {
             dfc_reader_session_clear(session);
             return finish_command(ex, DfcReaderIntegrityError);
         }
@@ -1296,7 +1284,7 @@ static DfcReaderStatus verify_ev1_frame(DfcReaderExchange* ex, size_t frame_star
     input[body] = status;
     uint8_t full[16];
     if(!ev1_cmac(ex->session, input, body + 1, full) ||
-       !ct_equal(full, ex->data + frame_start + body, DFC_WORKER_CMAC_SIZE)) {
+       !dfc_ct_equal(full, ex->data + frame_start + body, DFC_WORKER_CMAC_SIZE)) {
         dfc_reader_session_clear(ex->session);
         return DfcReaderIntegrityError;
     }
@@ -1554,7 +1542,7 @@ DfcReaderStatus dfc_reader_change_key_ev2_command(
         len += 4;
     }
     DfcCommandStatus st = dfc_command_change_key_ev2(command, key_set_no, key_no, clear, len);
-    wipe(clear, sizeof(clear));
+    dfc_secure_wipe(clear, sizeof(clear));
     return st == DfcCommandOk ? DfcReaderOk : DfcReaderInvalid;
 }
 
@@ -1597,7 +1585,7 @@ DfcReaderStatus dfc_reader_create_delegated_application_begin(
     uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
     dfc_worker_aes_cbc_encrypt(
         dam_encryption_key, DFC_AES_KEY_LENGTH, iv, sizeof(key_data), key_data, body + body_len);
-    wipe(key_data, sizeof(key_data));
+    dfc_secure_wipe(key_data, sizeof(key_data));
     body_len += DFC_DELEGATED_ENCRYPTED_KEY_LENGTH;
 
     uint8_t dam_input[1 + sizeof(body)];
@@ -1708,7 +1696,7 @@ DfcReaderStatus dfc_reader_virtual_card_open(
         select_encryption_key, DFC_AES_KEY_LENGTH, iv, cryptogram_len, response + 4, clear);
     memcpy(challenge, clear, DFC_VIRTUAL_CARD_CHALLENGE_LENGTH);
     memcpy(clear_data, clear + DFC_VIRTUAL_CARD_CHALLENGE_LENGTH, DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH);
-    wipe(clear, sizeof(clear));
+    dfc_secure_wipe(clear, sizeof(clear));
     return DfcReaderOk;
 }
 

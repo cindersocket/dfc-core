@@ -187,6 +187,28 @@ int main(void) {
     CHECK(rejected == NULL);
     CHECK(error.line == 3);
 
+    // A malformed multi-key-set model must not expose a key wider than its slot.
+    DfcFfiCredential* bounded = NULL;
+    CHECK(dfc_ffi_credential_new(&bounded) == 0);
+    DfcFfiApplication oversized = {0};
+    oversized.aid[2] = 2;
+    oversized.num_keys = 1;
+    oversized.key_len = 24;
+    oversized.key_settings_2 = 0x81;
+    oversized.num_key_sets = 2;
+    oversized.key_set_max_size = 16;
+    oversized.key_set_types[0] = 2;
+    oversized.key_set_types[1] = 2;
+    oversized.key_set_initialized[0] = 1;
+    oversized.key_set_initialized[1] = 1;
+    uint32_t bounded_index = 0;
+    CHECK(dfc_ffi_credential_add_application(bounded, &oversized, &bounded_index) == 0);
+    DfcFfiKey bounded_key;
+    CHECK(
+        dfc_ffi_credential_get_key(bounded, (int32_t)bounded_index, 0, 0, &bounded_key) ==
+        DFC_FFI_INVALID_ARGUMENT);
+    dfc_ffi_credential_free(bounded);
+
     // The walk and the builder agree with the codec.
     DfcFfiCredential* built = rebuild(decoded);
     size_t rebuilt_len = 0;

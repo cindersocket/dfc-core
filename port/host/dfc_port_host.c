@@ -14,6 +14,13 @@ static uint8_t queue[DFC_HOST_RANDOM_BUFFER_MAX];
 static size_t queue_len;
 static size_t queue_offset;
 static bool queue_set;
+static DfcHostFreeObserver free_observer;
+static void* free_observer_context;
+
+void dfc_host_set_free_observer(DfcHostFreeObserver observer, void* context) {
+    free_observer = observer;
+    free_observer_context = context;
+}
 
 void dfc_host_clear_random_buffer(void) {
     queue_len = 0;
@@ -67,6 +74,7 @@ void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {
 }
 
 void dfc_platform_free(void* ptr) {
+    if(ptr && free_observer) free_observer(ptr, free_observer_context);
     free(ptr);
 }
 

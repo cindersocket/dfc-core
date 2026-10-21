@@ -3517,7 +3517,10 @@ bool dfc_emulator_render_sdm_read(DfcEmulator* emulator, DfcFile* file) {
     if(file->sdm_has_encrypted_file_offset) {
         if(file->sdm_encrypted_file_length == 0 ||
            file->sdm_encrypted_file_length % (DFC_AES_KEY_LENGTH * DFC_SDM_HEX_EXPANSION) != 0 ||
-           file->sdm_encrypted_file_offset + file->sdm_encrypted_file_length > file->data_len)
+           file->sdm_encrypted_file_offset > file->data_len ||
+           file->sdm_encrypted_file_length >
+               file->data_len - file->sdm_encrypted_file_offset ||
+           file->sdm_encrypted_file_length / DFC_SDM_HEX_EXPANSION > DFC_SM_MAX_SIZE)
             return false;
         DfcApplication* app = dfc_emulator_current_app(emulator);
         uint8_t file_read_key_number =

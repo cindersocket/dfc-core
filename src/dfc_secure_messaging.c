@@ -28,6 +28,7 @@ DfcSecureMessaging* dfc_secure_messaging_alloc(
 
 void dfc_secure_messaging_free(DfcSecureMessaging* sm) {
     DFC_ASSERT(sm);
+    dfc_secure_wipe(sm, sizeof(*sm));
     dfc_platform_free(sm);
 }
 
@@ -202,7 +203,7 @@ size_t dfc_secure_messaging_verify_ev1_transmitted_command_mac(
     uint8_t full_mac[16];
     size_t full_mac_len = compute_full_cmac(sm, mac_input, plain_len + 1, full_mac);
     size_t trunc = DFC_MIN((size_t)8, full_mac_len);
-    if(memcmp(full_mac, data + plain_len, trunc) != 0) {
+    if(!dfc_ct_equal(full_mac, data + plain_len, trunc)) {
         DFC_LOG_W(TAG, "EV1 command CMAC mismatch");
         return SIZE_MAX;
     }
@@ -219,7 +220,7 @@ size_t dfc_secure_messaging_verify_ev1_transmitted_command_mac_full(
     uint8_t full_mac[16];
     size_t full_mac_len = compute_full_cmac(sm, command, clear_len, full_mac);
     if(full_mac_len < DFC_WIRE_MAC_LENGTH ||
-       memcmp(full_mac, command + clear_len, DFC_WIRE_MAC_LENGTH) != 0) {
+       !dfc_ct_equal(full_mac, command + clear_len, DFC_WIRE_MAC_LENGTH)) {
         return SIZE_MAX;
     }
     update_iv_from_full_cmac(sm, full_mac, full_mac_len);
@@ -283,7 +284,7 @@ size_t dfc_secure_messaging_unwrap_ev1_response(
     uint8_t full_mac[16];
     full_mac_len = compute_full_cmac(sm, mac_input, plain_len + 1, full_mac);
     truncated_len = DFC_MIN((size_t)8, full_mac_len);
-    if(memcmp(full_mac, wrapped + plain_len, truncated_len) != 0) {
+    if(!dfc_ct_equal(full_mac, wrapped + plain_len, truncated_len)) {
         DFC_LOG_W(TAG, "EV1 response CMAC mismatch");
         return SIZE_MAX;
     }
@@ -559,7 +560,7 @@ size_t dfc_secure_messaging_unwrap(
             compute_mac(sm, wrapped, data_len, mac);
         }
 
-        if(memcmp(mac, wrapped + data_len, mac_len) != 0) {
+        if(!dfc_ct_equal(mac, wrapped + data_len, mac_len)) {
             DFC_LOG_W(TAG, "MAC mismatch");
             return 0;
         }
@@ -653,7 +654,7 @@ size_t dfc_secure_messaging_verify_command(
             compute_mac(sm, wrapped, data_len, mac);
         }
 
-        if(memcmp(mac, wrapped + data_len, mac_len) != 0) {
+        if(!dfc_ct_equal(mac, wrapped + data_len, mac_len)) {
             DFC_LOG_W(TAG, "MAC mismatch");
             return 0;
         }

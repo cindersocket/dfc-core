@@ -4,9 +4,35 @@
 
 #include "dfc_credential.h"
 #include "dfc_der.h"
+#include "dfc_port_host.h"
+#include "dfc_secure_messaging.h"
 #include "dfc_text.h"
 
 #include <string.h>
+
+static void observe_zeroed_sm(const void* ptr, void* context) {
+    bool* zeroed = context;
+    const uint8_t* bytes = ptr;
+    *zeroed = true;
+    for(size_t index = 0; index < sizeof(DfcSecureMessaging); index++)
+        *zeroed = *zeroed && bytes[index] == 0;
+}
+
+static MunitResult test_secure_messaging_wiped_before_free(
+    const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t key[DFC_AES_KEY_LENGTH] = {1};
+    DfcSecureMessaging* sm =
+        dfc_secure_messaging_alloc(DFC_CMD_AUTHENTICATE_AES, key, sizeof(key), NULL);
+    munit_assert_not_null(sm);
+    bool zeroed = false;
+    dfc_host_set_free_observer(observe_zeroed_sm, &zeroed);
+    dfc_secure_messaging_free(sm);
+    dfc_host_set_free_observer(NULL, NULL);
+    munit_assert_true(zeroed);
+    return MUNIT_OK;
+}
 
 static void build_model(
     DfcCredential* credential,
@@ -174,6 +200,39 @@ static MunitResult test_mixed_key_set_matrix(const MunitParameter params[], void
     }
     return MUNIT_OK;
 }
+
+static MunitResult test_roll_key_set_updates_active_type(
+    const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    build_model(&credential, DFC_DESFIRE_UID_LEN, DFC_KEY_TYPE_AES, DFC_KEY_TYPE_AES);
+    DfcApplication* app = &credential.apps[0];
+    munit_assert_true(dfc_credential_key_sets_resize(
+        &credential, app, 2, 2, DFC_AES_KEY_LENGTH, DFC_KEY_SET_MAXIMUM_24_BYTE));
+    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
+    app->key_set_types[1] = DFC_KEY_SET_TYPE_3K3DES;
+    app->key_set_initialized[0] = true;
+    app->key_set_initialized[1] = true;
+    app->key_set_versions[0] = 1;
+    app->key_set_versions[1] = 2;
+    uint8_t* target = dfc_credential_key_in_set(&credential, app, 1, 0);
+    munit_assert_not_null(target);
+    memset(target, 0xA5, DFC_KEY_SET_MAXIMUM_24_BYTE);
+    uint8_t expected_target[DFC_KEY_SET_MAXIMUM_24_BYTE];
+    memcpy(expected_target, target, sizeof(expected_target));
+
+    munit_assert_true(dfc_credential_roll_key_set(&credential, app, 1));
+    munit_assert_size(app->key_len, ==, DFC_KEY_SET_MAXIMUM_24_BYTE);
+    munit_assert_uint8(app->key_settings_2 & DFC_KEY_TYPE_MASK, ==, DFC_KEY_TYPE_3K3DES);
+    munit_assert_uint8(app->key_set_types[0], ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_memory_equal(
+        DFC_KEY_SET_MAXIMUM_24_BYTE,
+        dfc_credential_key_in_set(&credential, app, 0, 0),
+        expected_target);
+    munit_assert_int(dfc_credential_validate_model(&credential), ==, DfcModelOk);
+    return MUNIT_OK;
+}
 #endif
 
 static MunitResult test_shared_primitive_boundaries(const MunitParameter params[], void* data) {
@@ -199,6 +258,13 @@ static MunitResult test_shared_primitive_boundaries(const MunitParameter params[
                 (type == DFC_KEY_SET_TYPE_2K3DES || type == DFC_KEY_SET_TYPE_AES ? 16 : 0);
         munit_assert_size(dfc_key_set_type_length((uint8_t)type), ==, expected);
     }
+    uint8_t left[4] = {1, 2, 3, 4};
+    uint8_t right[4] = {1, 2, 3, 4};
+    munit_assert_true(dfc_ct_equal(left, right, sizeof(left)));
+    right[0] ^= 1;
+    munit_assert_false(dfc_ct_equal(left, right, sizeof(left)));
+    dfc_secure_wipe(right, sizeof(right));
+    munit_assert_memory_equal(sizeof(right), right, ((uint8_t[4]){0}));
     return MUNIT_OK;
 }
 
@@ -255,14 +321,40 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
     app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
     app->key_set_types[1] = 0xFF;
     assert_model_rejected(&bad);
+
+    dfc_credential_copy_model(&bad, &source);
+    app = &bad.apps[0];
+    munit_assert_true(dfc_credential_key_sets_resize(&bad, app, 2, 2, 16, 16));
+    app->key_settings_2 = (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) |
+                                   DFC_KEY_TYPE_3K3DES);
+    app->key_len = 24;
+    app->key_set_types[0] = DFC_KEY_SET_TYPE_3K3DES;
+    app->key_set_types[1] = DFC_KEY_SET_TYPE_AES;
+    app->key_set_initialized[0] = true;
+    app->key_set_initialized[1] = true;
+    assert_model_rejected(&bad);
+#endif
+
+#if DFC_ENABLE_SDM
+    dfc_credential_copy_model(&bad, &source);
+    DfcFile* file = &bad.files[0];
+    file->sdm_enabled = true;
+    file->sdm_has_encrypted_file_offset = true;
+    file->sdm_encrypted_file_offset = 2;
+    file->sdm_encrypted_file_length = UINT32_MAX;
+    assert_model_rejected(&bad);
 #endif
     return MUNIT_OK;
 }
 
 static MunitTest tests[] = {
+    {"/secure-messaging-wiped-before-free", test_secure_messaging_wiped_before_free, NULL, NULL,
+     MUNIT_TEST_OPTION_NONE, NULL},
     {"/valid-matrix", test_valid_matrix, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #if DFC_ENABLE_KEY_SETS
     {"/mixed-key-set-matrix", test_mixed_key_set_matrix, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/roll-key-set-updates-active-type", test_roll_key_set_updates_active_type, NULL, NULL,
+     MUNIT_TEST_OPTION_NONE, NULL},
 #endif
     {"/shared-primitive-boundaries",
      test_shared_primitive_boundaries,
