@@ -258,13 +258,28 @@ static MunitResult test_shared_primitive_boundaries(const MunitParameter params[
                 (type == DFC_KEY_SET_TYPE_2K3DES || type == DFC_KEY_SET_TYPE_AES ? 16 : 0);
         munit_assert_size(dfc_key_set_type_length((uint8_t)type), ==, expected);
     }
-    uint8_t left[4] = {1, 2, 3, 4};
-    uint8_t right[4] = {1, 2, 3, 4};
+    uint8_t left[32];
+    uint8_t right[32];
+    for(size_t index = 0; index < sizeof(left); index++) {
+        left[index] = (uint8_t)index;
+    }
+    memcpy(right, left, sizeof(right));
     munit_assert_true(dfc_ct_equal(left, right, sizeof(left)));
-    right[0] ^= 1;
-    munit_assert_false(dfc_ct_equal(left, right, sizeof(left)));
+    munit_assert_true(dfc_ct_equal(left, right, 0));
+    for(size_t length = 1; length <= sizeof(left); length++) {
+        for(size_t mismatch = 0; mismatch < length; mismatch++) {
+            right[mismatch] ^= 1;
+            munit_assert_false(dfc_ct_equal(left, right, length));
+            right[mismatch] ^= 1;
+        }
+        if(length < sizeof(left)) {
+            right[length] ^= 1;
+            munit_assert_true(dfc_ct_equal(left, right, length));
+            right[length] ^= 1;
+        }
+    }
     dfc_secure_wipe(right, sizeof(right));
-    munit_assert_memory_equal(sizeof(right), right, ((uint8_t[4]){0}));
+    munit_assert_memory_equal(sizeof(right), right, ((uint8_t[32]){0}));
     return MUNIT_OK;
 }
 

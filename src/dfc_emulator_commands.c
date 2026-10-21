@@ -1674,7 +1674,7 @@ static void handle_authenticate_ev2_continuation(
         emulator->ev2_static_key, DFC_AES_KEY_LENGTH, iv, sizeof(clear), apdu + 1, clear);
     uint8_t rotated_b[DFC_EV2_RANDOM_LENGTH];
     dfc_ev2_rotate_left(emulator->ev2_random_b, rotated_b);
-    if(memcmp(clear + DFC_EV2_RANDOM_LENGTH, rotated_b, sizeof(rotated_b)) != 0) {
+    if(!dfc_ct_equal(clear + DFC_EV2_RANDOM_LENGTH, rotated_b, sizeof(rotated_b))) {
         emulator->ev2_authentication_pending = false;
         emulator->ev2_session_active = false;
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
@@ -1828,7 +1828,7 @@ static void handle_authenticate_step2(
 
     emulator->awaiting_step2 = false;
 
-    if(memcmp(rnd_b_rot, expected_rnd_b_rot, challenge_len) != 0) {
+    if(!dfc_ct_equal(rnd_b_rot, expected_rnd_b_rot, challenge_len)) {
         DFC_LOG_W(TAG, "Authenticate step 2: RndB' mismatch");
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
@@ -3198,7 +3198,7 @@ static void handle_create_delegated_application_continuation(
     uint8_t expected_dam_mac[DFC_DELEGATED_MAC_LENGTH];
     if(!delegated_wire_mac(
            emulator->credential->picc_dam_mac_key, dam_input, dam_input_len, expected_dam_mac) ||
-       memcmp(expected_dam_mac, dam_mac, sizeof(expected_dam_mac)) != 0) {
+       !dfc_ct_equal(expected_dam_mac, dam_mac, sizeof(expected_dam_mac))) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         return;
     }
