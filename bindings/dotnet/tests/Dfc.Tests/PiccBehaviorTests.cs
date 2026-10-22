@@ -213,7 +213,12 @@ public sealed class PiccBehaviorTests
             (nameof(DfcVirtualPicc.ExchangeFrame), () => _ = picc.ExchangeFrame(ReadOnlySpan<byte>.Empty)),
             (
                 nameof(DfcVirtualPicc.TransmitAsync),
-                () => _ = picc.TransmitAsync(ReadOnlyMemory<byte>.Empty, CancellationToken.None)
+                () =>
+                    _ = picc
+                        .TransmitAsync(ReadOnlyMemory<byte>.Empty, CancellationToken.None)
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult()
             ),
             (nameof(DfcVirtualPicc.FieldOff), picc.FieldOff),
             (nameof(DfcVirtualPicc.ResetProtocol), picc.ResetProtocol),
