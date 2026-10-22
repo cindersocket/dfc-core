@@ -69,13 +69,44 @@ static MunitResult
     test_resize_accepts_zero_initialized_model(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    DfcCredential credential = {0};
+    for(size_t app_first = 0; app_first < 2; app_first++) {
+        DfcCredential credential = {0};
+        DfcApplication app = {0};
+        DfcApplication* first = app_first ? &app : NULL;
+        DfcApplication* second = app_first ? NULL : &app;
 
-    munit_assert_true(dfc_credential_keys_resize(&credential, NULL, 1, 16));
-    munit_assert_size(credential.picc_key_offset, ==, 0);
-    munit_assert_size(credential.picc_num_keys, ==, 1);
-    munit_assert_size(credential.picc_key_len, ==, 16);
-    munit_assert_not_null(dfc_credential_key(&credential, NULL, 0));
+        munit_assert_true(dfc_credential_keys_resize(&credential, first, 1, 16));
+        uint8_t* first_key = dfc_credential_key(&credential, first, 0);
+        munit_assert_not_null(first_key);
+        memset(first_key, 0xA5, 16);
+
+        munit_assert_true(dfc_credential_keys_resize(&credential, second, 1, 16));
+        uint8_t* second_key = dfc_credential_key(&credential, second, 0);
+        munit_assert_not_null(second_key);
+        memset(second_key, 0x5A, 16);
+        munit_assert_size(credential.key_pool_used, ==, 32);
+        munit_assert_uint8(dfc_credential_key(&credential, first, 0)[0], ==, 0xA5);
+        munit_assert_uint8(dfc_credential_key(&credential, first, 0)[15], ==, 0xA5);
+        munit_assert_uint8(dfc_credential_key(&credential, second, 0)[0], ==, 0x5A);
+        munit_assert_uint8(dfc_credential_key(&credential, second, 0)[15], ==, 0x5A);
+
+        uint8_t guard[32];
+        memcpy(guard, credential.key_pool, sizeof(guard));
+        DfcApplication empty = {0};
+        munit_assert_true(dfc_credential_keys_resize(&credential, &empty, 0, 16));
+        munit_assert_size(empty.key_offset, ==, DFC_KEY_POOL_NONE);
+        munit_assert_size(empty.key_pool_len, ==, 0);
+        munit_assert_size(credential.key_pool_used, ==, sizeof(guard));
+        munit_assert_memory_equal(sizeof(guard), guard, credential.key_pool);
+
+        DfcApplication oversized = {0};
+        munit_assert_false(
+            dfc_credential_keys_resize(&credential, &oversized, DFC_MAX_KEYS + 1, 16));
+        munit_assert_size(oversized.key_offset, ==, 0);
+        munit_assert_size(oversized.key_pool_len, ==, 0);
+        munit_assert_size(credential.key_pool_used, ==, sizeof(guard));
+        munit_assert_memory_equal(sizeof(guard), guard, credential.key_pool);
+    }
 
     return MUNIT_OK;
 }

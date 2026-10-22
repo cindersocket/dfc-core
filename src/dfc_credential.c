@@ -265,6 +265,22 @@ static void dfc_file_pool_compact_after_release(
     }
 }
 
+static bool dfc_pool_slice_resolve(
+    size_t offset,
+    size_t length,
+    size_t used,
+    size_t none,
+    size_t* resolved_offset) {
+    if(length == 0) {
+        if(offset != 0 && offset != none) return false;
+        *resolved_offset = none;
+        return true;
+    }
+    if(offset == none || offset > used || length > used - offset) return false;
+    *resolved_offset = offset;
+    return true;
+}
+
 uint8_t* dfc_file_data(DfcCredential* credential, DfcFile* file) {
     if(!credential || !file || file->data_offset == DFC_FILE_POOL_NONE || file->data_len == 0) {
         return NULL;
@@ -286,16 +302,13 @@ bool dfc_file_resize(DfcCredential* credential, DfcFile* file, size_t data_len) 
     if(data_len > DFC_MAX_FILE_DATA) return false;
     if(data_len > DFC_FILE_POOL_SIZE) return false;
     if(credential->file_pool_used > DFC_FILE_POOL_SIZE) return false;
-    // A zero-initialized record represents the same empty slice as the
-    // canonical NONE offset used after explicit initialization.
-    size_t old_offset = file->data_offset;
-    if(file->data_len == 0 && old_offset == 0 && credential->file_pool_used == 0) {
-        old_offset = DFC_FILE_POOL_NONE;
-    }
-    if((old_offset == DFC_FILE_POOL_NONE) != (file->data_len == 0)) return false;
-    if(old_offset != DFC_FILE_POOL_NONE &&
-       (old_offset > credential->file_pool_used ||
-        file->data_len > credential->file_pool_used - old_offset)) {
+    size_t old_offset;
+    if(!dfc_pool_slice_resolve(
+           file->data_offset,
+           file->data_len,
+           credential->file_pool_used,
+           DFC_FILE_POOL_NONE,
+           &old_offset)) {
         return false;
     }
 
@@ -472,16 +485,9 @@ static bool dfc_credential_keys_resize_total(
     size_t want = allocated_keys * stride;
     if(want > DFC_KEY_POOL_SIZE) return false;
     if(credential->key_pool_used > DFC_KEY_POOL_SIZE) return false;
-    // Models are commonly zero-initialized before their first resize. Treat
-    // that representation as the canonical empty slice without accepting any
-    // other offset/length mismatch.
-    size_t old_offset = *offset;
-    if(*pool_len == 0 && old_offset == 0 && credential->key_pool_used == 0) {
-        old_offset = DFC_KEY_POOL_NONE;
-    }
-    if((old_offset == DFC_KEY_POOL_NONE) != (*pool_len == 0)) return false;
-    if(old_offset != DFC_KEY_POOL_NONE && (old_offset > credential->key_pool_used ||
-                                           *pool_len > credential->key_pool_used - old_offset)) {
+    size_t old_offset;
+    if(!dfc_pool_slice_resolve(
+           *offset, *pool_len, credential->key_pool_used, DFC_KEY_POOL_NONE, &old_offset)) {
         return false;
     }
 

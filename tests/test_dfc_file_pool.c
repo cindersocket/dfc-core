@@ -46,13 +46,46 @@ static MunitResult
     test_resize_accepts_zero_initialized_model(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    DfcCredential credential = {0};
-    DfcFile file = {0};
+    for(size_t first_index = 0; first_index < 2; first_index++) {
+        DfcCredential credential = {0};
+        DfcFile files[2] = {{0}};
+        DfcFile* first = &files[first_index];
+        DfcFile* second = &files[first_index ^ 1];
 
-    munit_assert_true(dfc_file_resize(&credential, &file, 8));
-    munit_assert_size(file.data_offset, ==, 0);
-    munit_assert_size(file.data_len, ==, 8);
-    munit_assert_not_null(dfc_file_data(&credential, &file));
+        munit_assert_true(dfc_file_resize(&credential, first, 8));
+        uint8_t* first_data = dfc_file_data(&credential, first);
+        munit_assert_not_null(first_data);
+        memset(first_data, 0xA5, 8);
+
+        munit_assert_true(dfc_file_resize(&credential, second, 12));
+        uint8_t* second_data = dfc_file_data(&credential, second);
+        munit_assert_not_null(second_data);
+        memset(second_data, 0x5A, 12);
+        munit_assert_size(first->data_offset, ==, 0);
+        munit_assert_size(second->data_offset, ==, 8);
+        munit_assert_size(credential.file_pool_used, ==, 20);
+        munit_assert_uint8(dfc_file_data(&credential, first)[0], ==, 0xA5);
+        munit_assert_uint8(dfc_file_data(&credential, first)[7], ==, 0xA5);
+        munit_assert_uint8(dfc_file_data(&credential, second)[0], ==, 0x5A);
+        munit_assert_uint8(dfc_file_data(&credential, second)[11], ==, 0x5A);
+
+        uint8_t guard[20];
+        memcpy(guard, credential.file_pool, sizeof(guard));
+        DfcFile empty = {0};
+        munit_assert_true(dfc_file_resize(&credential, &empty, 0));
+        munit_assert_size(empty.data_offset, ==, DFC_FILE_POOL_NONE);
+        munit_assert_size(empty.data_len, ==, 0);
+        munit_assert_size(credential.file_pool_used, ==, sizeof(guard));
+        munit_assert_memory_equal(sizeof(guard), guard, credential.file_pool);
+
+        DfcFile oversized = {0};
+        munit_assert_false(
+            dfc_file_resize(&credential, &oversized, (size_t)DFC_MAX_FILE_DATA + 1));
+        munit_assert_size(oversized.data_offset, ==, 0);
+        munit_assert_size(oversized.data_len, ==, 0);
+        munit_assert_size(credential.file_pool_used, ==, sizeof(guard));
+        munit_assert_memory_equal(sizeof(guard), guard, credential.file_pool);
+    }
 
     return MUNIT_OK;
 }
@@ -187,7 +220,7 @@ static MunitResult
     file->data_offset = DFC_FILE_POOL_NONE;
     file->data_len = 1;
     munit_assert_false(dfc_file_resize(&credential, file, 1));
-    file->data_offset = offset;
+    file->data_offset = offset + 1;
     file->data_len = 0;
     munit_assert_false(dfc_file_resize(&credential, file, 0));
 
