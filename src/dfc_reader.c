@@ -981,10 +981,6 @@ static size_t file_header_length(uint8_t ins) {
     }
 }
 
-static size_t round_up_block(size_t length, size_t block) {
-    return ((length + block - 1) / block) * block;
-}
-
 // Return the exact caller capacity needed to emit the first frame of the next
 // streamed write without preparing it or advancing secure-messaging state.
 static size_t next_stream_emit_capacity(const DfcReaderExchange* exchange) {
@@ -993,33 +989,25 @@ static size_t next_stream_emit_capacity(const DfcReaderExchange* exchange) {
     size_t body_len = remaining > DFC_READER_STREAM_CHUNK ? DFC_READER_STREAM_CHUNK : remaining;
     size_t header_len = stream->kind == StreamUpdateRecord ? UPDATE_RECORD_HEADER_LENGTH :
                                                              FILE_HEADER_LENGTH;
-    size_t frame_len = header_len + body_len;
+    size_t wire_len = body_len;
     const DfcReaderSession* session = exchange->session;
 
     if(session->auth_mode == DFC_CMD_AUTHENTICATE_LEGACY && stream->comm_mode != DFC_COMM_PLAIN) {
-        if(stream->comm_mode == DFC_COMM_MAC) {
-            frame_len += DFC_SM_LEGACY_MAC_LENGTH;
-        } else {
-            frame_len = header_len + round_up_block(body_len + 2, DFC_SM_LEGACY_BLOCK_SIZE);
-        }
+        wire_len = dfc_secure_messaging_command_payload_length(
+            &session->sm, false, stream->comm_mode, body_len);
     } else if(session_is_ev1(session)) {
-        if(stream->comm_mode == DFC_COMM_MAC) {
-            frame_len += DFC_WORKER_CMAC_SIZE;
-        } else if(stream->comm_mode == DFC_COMM_ENCIPHERED) {
-            size_t block = block_size(session->sm.cipher);
-            frame_len = header_len + round_up_block(body_len + 4, block);
-        }
+        wire_len = dfc_secure_messaging_command_payload_length(
+            &session->sm, false, stream->comm_mode, body_len);
     }
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     else if(session->auth_mode == DFC_READER_AUTH_EV2 && stream->comm_mode != DFC_COMM_PLAIN) {
-        if(stream->comm_mode == DFC_COMM_MAC) {
-            frame_len += DFC_WIRE_MAC_LENGTH;
-        } else {
-            frame_len = header_len + round_up_block(body_len + 1, DFC_AES_KEY_LENGTH) +
-                        DFC_WIRE_MAC_LENGTH;
-        }
+        wire_len = dfc_secure_messaging_command_payload_length(
+            NULL, true, stream->comm_mode, body_len);
     }
 #endif
+
+    if(header_len > SIZE_MAX - wire_len) return SIZE_MAX;
+    size_t frame_len = header_len + wire_len;
 
     if(session->auth_mode != DFC_READER_AUTH_EV2 && frame_len > DFC_EV1_MAX_FRAME_PAYLOAD) {
         frame_len = DFC_EV1_MAX_FRAME_PAYLOAD;
@@ -1087,8 +1075,11 @@ static DfcReaderStatus
         if(header_len == SIZE_MAX || header_len > command->data_len) return DfcReaderInvalid;
         const uint8_t* body = command->data + header_len;
         size_t body_len = command->data_len - header_len;
-        if(header_len > sizeof(ex->frame) || body_len > sizeof(ex->frame) - header_len ||
-           body_len + DFC_SM_MAX_CIPHER_BLOCK_SIZE > sizeof(ex->frame) - header_len) {
+        size_t wire_len;
+        wire_len = dfc_secure_messaging_command_payload_length(
+            &session->sm, false, ex->comm_mode, body_len);
+        if(wire_len == SIZE_MAX ||
+           header_len > sizeof(ex->frame) || wire_len > sizeof(ex->frame) - header_len) {
             return DfcReaderInvalid;
         }
         uint8_t head[1 + UPDATE_RECORD_HEADER_LENGTH];
@@ -1103,7 +1094,8 @@ static DfcReaderStatus
             body,
             body_len,
             ex->frame + header_len);
-        if(wrapped_len == 0) return fail_prepared_command(ex, DfcReaderIntegrityError);
+        if(wrapped_len == 0 || wrapped_len != wire_len)
+            return fail_prepared_command(ex, DfcReaderIntegrityError);
         ex->frame_len = header_len + wrapped_len;
         return DfcReaderOk;
     }
@@ -1146,8 +1138,11 @@ static DfcReaderStatus
         if(header_len == SIZE_MAX || header_len > command->data_len) return DfcReaderInvalid;
         const uint8_t* body = command->data + header_len;
         size_t body_len = command->data_len - header_len;
-        if(header_len > sizeof(ex->frame) || body_len > sizeof(ex->frame) - header_len ||
-           body_len + DFC_SM_MAX_CIPHER_BLOCK_SIZE > sizeof(ex->frame) - header_len) {
+        size_t wire_len;
+        wire_len = dfc_secure_messaging_command_payload_length(
+            &session->sm, false, DFC_COMM_ENCIPHERED, body_len);
+        if(wire_len == SIZE_MAX ||
+           header_len > sizeof(ex->frame) || wire_len > sizeof(ex->frame) - header_len) {
             return DfcReaderInvalid;
         }
         uint8_t head[1 + UPDATE_RECORD_HEADER_LENGTH];
@@ -1162,7 +1157,8 @@ static DfcReaderStatus
             body,
             body_len,
             ex->frame + header_len);
-        if(wrapped_len == 0) return fail_prepared_command(ex, DfcReaderIntegrityError);
+        if(wrapped_len == 0 || wrapped_len != wire_len)
+            return fail_prepared_command(ex, DfcReaderIntegrityError);
         ex->frame_len = header_len + wrapped_len;
         return DfcReaderOk;
     }
@@ -1242,12 +1238,13 @@ static DfcReaderStatus
     if(encrypted_header != SIZE_MAX && !is_file_read(ins)) {
         if(encrypted_header >= command->data_len) return DfcReaderInvalid;
         size_t clear_len = command->data_len - encrypted_header;
-        if(clear_len > SIZE_MAX - 1) return DfcReaderInvalid;
-        size_t padded_len = clear_len + 1;
-        size_t padding = (DFC_AES_KEY_LENGTH - padded_len % DFC_AES_KEY_LENGTH) %
-                         DFC_AES_KEY_LENGTH;
-        if(padded_len > SIZE_MAX - padding) return DfcReaderInvalid;
-        padded_len += padding;
+        size_t wire_len;
+        wire_len = dfc_secure_messaging_command_payload_length(
+            NULL, true, DFC_COMM_ENCIPHERED, clear_len);
+        if(wire_len == SIZE_MAX || wire_len < DFC_WIRE_MAC_LENGTH) {
+            return DfcReaderInvalid;
+        }
+        size_t padded_len = wire_len - DFC_WIRE_MAC_LENGTH;
         if(encrypted_header > sizeof(ex->frame) ||
            padded_len > sizeof(ex->frame) - encrypted_header ||
            DFC_WIRE_MAC_LENGTH > sizeof(ex->frame) - encrypted_header - padded_len) {
@@ -1269,8 +1266,10 @@ static DfcReaderStatus
         }
         secured_len = encrypted_header + encrypted_len;
     } else {
-        if(sizeof(ex->frame) < DFC_WIRE_MAC_LENGTH ||
-           command->data_len > sizeof(ex->frame) - DFC_WIRE_MAC_LENGTH) {
+        size_t wire_len;
+        wire_len = dfc_secure_messaging_command_payload_length(
+            NULL, true, DFC_COMM_MAC, command->data_len);
+        if(wire_len == SIZE_MAX || wire_len > sizeof(ex->frame)) {
             return DfcReaderInvalid;
         }
         memcpy(secured, command->data, command->data_len);

@@ -79,6 +79,42 @@ size_t dfc_secure_messaging_verify_ev1_transmitted_command_mac_full(
 // True for WriteData / Credit / Debit / LimitedCredit / WriteRecord / UpdateRecord
 // (EV1 MAC-mode commands that place MACt on the wire).
 bool dfc_secure_messaging_ev1_transmits_command_mac(uint8_t cmd);
+
+// Computes the transmitted payload length for a command before it is encoded.
+// `sm` identifies legacy or EV1 protection; pass NULL only for EV2. Returns
+// SIZE_MAX for invalid modes or arithmetic overflow.
+static inline size_t dfc_secure_messaging_command_payload_length(
+    const DfcSecureMessaging* sm,
+    bool ev2,
+    uint8_t comm_mode,
+    size_t clear_len) {
+    if((comm_mode != DFC_COMM_PLAIN && comm_mode != DFC_COMM_MAC &&
+        comm_mode != DFC_COMM_ENCIPHERED) ||
+       (ev2 && sm)) {
+        return SIZE_MAX;
+    }
+    if(comm_mode == DFC_COMM_PLAIN) return clear_len;
+    if(!ev2 && !sm) return SIZE_MAX;
+
+    size_t overhead;
+    size_t block = 1;
+    if(comm_mode == DFC_COMM_MAC) {
+        overhead = ev2 || sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY ?
+                       DFC_WIRE_MAC_LENGTH :
+                       DFC_SM_LEGACY_MAC_LENGTH;
+    } else if(ev2) {
+        overhead = 1;
+        block = DFC_AES_KEY_LENGTH;
+    } else {
+        overhead = sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 2 : 4;
+        block = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_AES_KEY_LENGTH :
+                                                            DFC_SM_LEGACY_BLOCK_SIZE;
+    }
+    size_t trailer = ev2 && comm_mode == DFC_COMM_ENCIPHERED ? DFC_WIRE_MAC_LENGTH : 0;
+    size_t maximum_extra = overhead + block - 1 + trailer;
+    if(clear_len > SIZE_MAX - maximum_extra) return SIZE_MAX;
+    return ((clear_len + overhead + block - 1) / block) * block + trailer;
+}
 size_t dfc_secure_messaging_generate_ev1_response(
     DfcSecureMessaging* sm,
     uint8_t status,

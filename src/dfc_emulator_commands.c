@@ -5049,10 +5049,6 @@ static size_t chained_write_header_len(uint8_t cmd) {
     }
 }
 
-static size_t round_up(size_t value, size_t block) {
-    return ((value + block - 1) / block) * block;
-}
-
 // Total logical native command length after all AF frames have been joined.
 // SIZE_MAX means that the first frame does not yet contain enough header.
 static size_t chained_write_expected_len(
@@ -5075,23 +5071,19 @@ static size_t chained_write_expected_len(
     // the reader to send data for a file that does not exist.
     if(!file) return buffer_len;
     uint8_t comm = file_effective_comm_settings(file, true);
-    size_t wire_len = clear_len;
+    size_t wire_len;
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     if(emulator->ev2_session_active && comm != DFC_COMM_PLAIN) {
-        if(comm == DFC_COMM_ENCIPHERED) wire_len = round_up(clear_len + 1, 16);
-        wire_len += DFC_WIRE_MAC_LENGTH;
+        wire_len = dfc_secure_messaging_command_payload_length(NULL, true, comm, clear_len);
     } else
 #endif
         if(dfc_emulator_native_authentication_active(emulator)) {
-        if(comm == DFC_COMM_MAC) {
-            wire_len += emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 4 : 8;
-        } else if(comm == DFC_COMM_ENCIPHERED) {
-            size_t block = emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
-            size_t crc = emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 2 : 4;
-            wire_len = round_up(clear_len + crc, block);
-        }
-    }
+        wire_len = dfc_secure_messaging_command_payload_length(
+            emulator->secure_messaging, false, comm, clear_len);
+    } else
+        wire_len = clear_len;
+    if(wire_len == SIZE_MAX) return 0;
     if(wire_len > DFC_EMULATOR_CHAIN_BUFFER_SIZE - header_len - 1) return 0;
     return 1 + header_len + wire_len;
 }

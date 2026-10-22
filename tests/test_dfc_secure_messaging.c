@@ -281,6 +281,78 @@ static MunitResult test_enciphered_encode_accepts_partial_overlap(const MunitPar
     return MUNIT_OK;
 }
 
+static MunitResult test_command_payload_lengths_match_encoder(const MunitParameter p[], void* d) {
+    (void)p;
+    (void)d;
+    static const struct {
+        uint8_t cipher;
+        size_t key_len;
+    } ciphers[] = {
+        {DFC_CMD_AUTHENTICATE_LEGACY, 8},
+        {DFC_CMD_AUTHENTICATE_ISO, 16},
+        {DFC_CMD_AUTHENTICATE_ISO, 24},
+        {DFC_CMD_AUTHENTICATE_AES, 16},
+    };
+    static const size_t lengths[] = {0, 1, 7, 8, 9, 15, 16, 17, DFC_MAX_FILE_DATA};
+    static const uint8_t modes[] = {DFC_COMM_PLAIN, DFC_COMM_MAC, DFC_COMM_ENCIPHERED};
+    static const uint8_t header[] = {DFC_CMD_WRITE_DATA, 1, 0, 0, 0, 0, 0, 0};
+    uint8_t plain[DFC_MAX_FILE_DATA] = {0};
+    uint8_t encoded[DFC_SM_MAX_CRYPTO_SIZE + DFC_WORKER_CMAC_SIZE];
+
+    for(size_t cipher_index = 0; cipher_index < sizeof(ciphers) / sizeof(ciphers[0]);
+        cipher_index++) {
+        for(size_t mode_index = 0; mode_index < sizeof(modes) / sizeof(modes[0]); mode_index++) {
+            for(size_t length_index = 0; length_index < sizeof(lengths) / sizeof(lengths[0]);
+                length_index++) {
+                DfcSecureMessaging* sm =
+                    alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
+                size_t predicted = dfc_secure_messaging_command_payload_length(
+                    sm, false, modes[mode_index], lengths[length_index]);
+                munit_assert_size(predicted, !=, SIZE_MAX);
+                size_t actual = dfc_secure_messaging_wrap(sm,
+                                                          modes[mode_index],
+                                                          header,
+                                                          sizeof(header),
+                                                          plain,
+                                                          lengths[length_index],
+                                                          encoded);
+                munit_assert_size(predicted, ==, actual);
+                dfc_secure_messaging_free(sm);
+            }
+        }
+    }
+
+    size_t length =
+        dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_MAC, 16);
+    munit_assert_size(length, ==, 16 + DFC_WIRE_MAC_LENGTH);
+    length = dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_ENCIPHERED, 15);
+    munit_assert_size(length, ==, DFC_AES_KEY_LENGTH + DFC_WIRE_MAC_LENGTH);
+    length = dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_ENCIPHERED, 16);
+    munit_assert_size(length, ==, 2 * DFC_AES_KEY_LENGTH + DFC_WIRE_MAC_LENGTH);
+    munit_assert_size(
+        dfc_secure_messaging_command_payload_length(
+            NULL, true, DFC_COMM_ENCIPHERED, SIZE_MAX),
+        ==,
+        SIZE_MAX);
+    munit_assert_size(
+        dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_MAC, SIZE_MAX),
+        ==,
+        SIZE_MAX);
+    munit_assert_size(
+        dfc_secure_messaging_command_payload_length(NULL, false, DFC_COMM_MAC, 1),
+        ==,
+        SIZE_MAX);
+    DfcSecureMessaging* sm = alloc_session(DFC_CMD_AUTHENTICATE_AES, DFC_AES_KEY_LENGTH);
+    munit_assert_size(
+        dfc_secure_messaging_command_payload_length(sm, false, 0x02, 1), ==, SIZE_MAX);
+    dfc_secure_messaging_free(sm);
+    munit_assert_size(
+        dfc_secure_messaging_command_payload_length(NULL, true, 0x02, 1), ==, SIZE_MAX);
+    munit_assert_size(
+        dfc_secure_messaging_command_payload_length(NULL, false, 0xFF, 1), ==, SIZE_MAX);
+    return MUNIT_OK;
+}
+
 // A corrupted MAC/ciphertext must be rejected (return 0), not silently accepted.
 static MunitResult test_mac_tamper_rejected(const MunitParameter p[], void* d) {
     (void)p;
@@ -675,6 +747,12 @@ static MunitTest tests[] = {
     {"/enciphered/aes", test_enciphered_aes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/partial-overlap",
      test_enciphered_encode_accepts_partial_overlap,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/boundaries/command-payload-lengths",
+     test_command_payload_lengths_match_encoder,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
