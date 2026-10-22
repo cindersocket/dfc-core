@@ -10,6 +10,7 @@ typedef struct {
     DfcVirtualPiccSession* session;
     DfcFile* app0_backup;
     DfcFile* app0_records;
+    DfcFile* app0_value;
     DfcFile* app1_backup;
 } SelectionFixture;
 
@@ -33,6 +34,23 @@ static void expect_native_status(
     munit_assert_size(response_len, ==, 2);
     munit_assert_uint8(response[0], ==, 0x91);
     munit_assert_uint8(response[1], ==, expected_status);
+}
+
+static void expect_native_trailing_status(
+    DfcVirtualPiccSession* session,
+    const uint8_t* command,
+    size_t command_len,
+    uint8_t expected_status) {
+    uint8_t response[64];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, command, command_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, >=, 2);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    munit_assert_uint8(response[response_len - 1], ==, expected_status);
 }
 
 static void
@@ -92,10 +110,23 @@ static DfcFile* add_record_file(DfcCredential* credential, size_t app_index, uin
     return file;
 }
 
+static DfcFile* add_value_file(DfcCredential* credential, size_t app_index, uint8_t number) {
+    DfcFile* file = dfc_credential_create_file(credential, app_index, number);
+    munit_assert_not_null(file);
+    file->type = DFC_FILE_TYPE_VALUE;
+    file->comm_settings = DFC_COMM_PLAIN;
+    file->access_rights = 0xEEEE;
+    file->value_lower_limit = 0;
+    file->value_upper_limit = 100;
+    file->value = 10;
+    return file;
+}
+
 static void fixture_open(SelectionFixture* fixture) {
     memset(fixture, 0, sizeof(*fixture));
     dfc_credential_clear(&fixture->credential);
     fixture->credential.card.generation = DfcGenerationEv3;
+    fixture->credential.picc_has_static_signature = true;
     fixture->credential.card.storage = DfcStorage4KByteCount;
     const uint8_t uid[] = {0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
     memcpy(fixture->credential.uid, uid, sizeof(uid));
@@ -105,6 +136,7 @@ static void fixture_open(SelectionFixture* fixture) {
     add_application(&fixture->credential, App1Aid, App1IsoAid, 0xE102);
     fixture->app0_backup = add_backup_file(&fixture->credential, 0, 2, 0x22);
     fixture->app0_records = add_record_file(&fixture->credential, 0, 3);
+    fixture->app0_value = add_value_file(&fixture->credential, 0, 4);
     fixture->app1_backup = add_backup_file(&fixture->credential, 1, 2, 0x33);
     dfc_credential_clear_dirty(&fixture->credential);
 
@@ -161,16 +193,30 @@ static void begin_transaction(SelectionFixture* fixture) {
         0xA3,
         0xA4,
         0x00};
+    const uint8_t credit_value[] = {
+        0x90, DFC_CMD_CREDIT, 0x00, 0x00, 0x05, 0x04, 0x05, 0x00, 0x00, 0x00, 0x00};
     expect_native_status(fixture->session, write_backup, sizeof(write_backup), DFC_STATUS_OK);
     expect_native_status(fixture->session, write_record, sizeof(write_record), DFC_STATUS_OK);
+    expect_native_status(fixture->session, credit_value, sizeof(credit_value), DFC_STATUS_OK);
 
     DfcEmulator* emulator = fixture->session->emulator;
+#if DFC_ENABLE_TRANSACTION_MAC
+    memset(emulator->transaction_input, 0xD4, 17);
+    emulator->transaction_input_len = 17;
+#endif
     munit_assert_true(emulator->transaction_snapshot_active);
     munit_assert_size(emulator->transaction_snapshot_app_index, ==, 0);
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     munit_assert_true(fixture->app0_backup->transaction_pending);
     munit_assert_true(fixture->app0_records->transaction_pending);
     munit_assert_uint32(fixture->app0_records->record_count, ==, 2);
+    munit_assert_true(fixture->app0_value->value_pending);
+    munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 5);
+#if DFC_ENABLE_TRANSACTION_MAC
+    munit_assert_size(emulator->transaction_input_len, ==, 17);
+    for(size_t i = 0; i < 17; i++)
+        munit_assert_uint8(emulator->transaction_input[i], ==, 0xD4);
+#endif
 }
 
 static void assert_transaction_rolled_back(SelectionFixture* fixture) {
@@ -180,6 +226,9 @@ static void assert_transaction_rolled_back(SelectionFixture* fixture) {
     munit_assert_false(fixture->app0_backup->transaction_pending);
     munit_assert_false(fixture->app0_records->transaction_pending);
     munit_assert_uint32(fixture->app0_records->record_count, ==, 1);
+    munit_assert_int32(fixture->app0_value->value, ==, 10);
+    munit_assert_false(fixture->app0_value->value_pending);
+    munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 0);
     munit_assert_memory_equal(
         4,
         dfc_file_data(&fixture->credential, fixture->app0_backup),
@@ -189,6 +238,232 @@ static void assert_transaction_rolled_back(SelectionFixture* fixture) {
         dfc_file_data(&fixture->credential, fixture->app0_records),
         ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0x00, 0x00, 0x00, 0x00}));
     munit_assert_false(fixture->credential.dirty);
+#if DFC_ENABLE_TRANSACTION_MAC
+    munit_assert_size(emulator->transaction_input_len, ==, 0);
+    munit_assert_memory_equal(
+        sizeof(emulator->transaction_input),
+        emulator->transaction_input,
+        ((uint8_t[sizeof(emulator->transaction_input)]){0}));
+#endif
+}
+
+static void assert_transaction_still_pending(SelectionFixture* fixture) {
+    DfcEmulator* emulator = fixture->session->emulator;
+    munit_assert_true(emulator->transaction_snapshot_active);
+    munit_assert_not_null(emulator->transaction_snapshot_pool);
+    munit_assert_true(fixture->app0_backup->transaction_pending);
+    munit_assert_true(fixture->app0_records->transaction_pending);
+    munit_assert_uint32(fixture->app0_records->record_count, ==, 2);
+    munit_assert_true(fixture->app0_value->value_pending);
+    munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 5);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data(&fixture->credential, fixture->app0_backup),
+        ((uint8_t[]){0xB1, 0xB1, 0xB1, 0xB1}));
+    munit_assert_memory_equal(
+        8,
+        dfc_file_data(&fixture->credential, fixture->app0_records),
+        ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0xA1, 0xA2, 0xA3, 0xA4}));
+#if DFC_ENABLE_TRANSACTION_MAC
+    munit_assert_size(emulator->transaction_input_len, ==, 17);
+    for(size_t i = 0; i < 17; i++)
+        munit_assert_uint8(emulator->transaction_input[i], ==, 0xD4);
+#endif
+}
+
+static void abort_open_transaction(SelectionFixture* fixture) {
+    const uint8_t abort[] = {0x90, DFC_CMD_ABORT_TRANSACTION, 0x00, 0x00, 0x00};
+    expect_native_status(fixture->session, abort, sizeof(abort), DFC_STATUS_OK);
+    assert_transaction_rolled_back(fixture);
+}
+
+static void assert_app0_has_nothing_to_commit(SelectionFixture* fixture);
+
+static MunitResult
+    test_terminal_native_errors_abort_transaction(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t missing_file[] = {
+        0x90, DFC_CMD_READ_DATA, 0x00, 0x00, 0x07, 0x1E, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
+    static const uint8_t malformed_read[] = {
+        0x90, DFC_CMD_READ_DATA, 0x00, 0x00, 0x01, 0x02, 0x00};
+    static const uint8_t out_of_bounds[] = {
+        0x90, DFC_CMD_READ_DATA, 0x00, 0x00, 0x07, 0x02, 0x08, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
+    static const uint8_t invalid_settings[] = {
+        0x90,
+        DFC_CMD_CHANGE_FILE_SETTINGS,
+        0x00,
+        0x00,
+        0x04,
+        0x02,
+        DFC_COMM_PLAIN,
+        0x4E,
+        0xEE,
+        0x00};
+    static const uint8_t unknown_command[] = {0x90, 0xFF, 0x00, 0x00, 0x00};
+    static const struct {
+        const uint8_t* command;
+        size_t length;
+        uint8_t status;
+    } cases[] = {
+        {missing_file, sizeof(missing_file), DFC_STATUS_FILE_NOT_FOUND},
+        {malformed_read, sizeof(malformed_read), DFC_STATUS_LENGTH_ERROR},
+        {out_of_bounds, sizeof(out_of_bounds), DFC_STATUS_BOUNDARY_ERROR},
+        {invalid_settings, sizeof(invalid_settings), DFC_STATUS_PARAMETER_ERROR},
+        {unknown_command, sizeof(unknown_command), DFC_STATUS_ILLEGAL_COMMAND_CODE},
+    };
+
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        SelectionFixture fixture;
+        fixture_open(&fixture);
+        begin_transaction(&fixture);
+        expect_native_status(fixture.session, cases[i].command, cases[i].length, cases[i].status);
+        assert_transaction_rolled_back(&fixture);
+        assert_app0_has_nothing_to_commit(&fixture);
+        fixture_close(&fixture);
+    }
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_interrupted_command_chain_aborts_transaction(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t first_write_frame[] = {
+        0x90,
+        DFC_CMD_WRITE_DATA,
+        0x00,
+        0x00,
+        0x08,
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x20,
+        0x00,
+        0x00,
+        0xA5,
+        0x00};
+    const uint8_t interrupt[] = {
+        0x90, DFC_CMD_READ_DATA, 0x00, 0x00, 0x07, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    begin_transaction(&fixture);
+    expect_native_status(
+        fixture.session, first_write_frame, sizeof(first_write_frame), DFC_CMD_ADDITIONAL_FRAME);
+    assert_transaction_still_pending(&fixture);
+    expect_native_status(
+        fixture.session, interrupt, sizeof(interrupt), DFC_STATUS_COMMAND_ABORTED);
+    assert_transaction_rolled_back(&fixture);
+    assert_app0_has_nothing_to_commit(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_success_and_additional_frame_keep_transaction(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t get_settings[] = {0x90, DFC_CMD_GET_FILE_SETTINGS, 0x00, 0x00, 0x01, 0x02, 0x00};
+    const uint8_t read_signature[] = {0x90, DFC_CMD_READ_SIGNATURE, 0x00, 0x00, 0x01, 0x00, 0x00};
+    const uint8_t first_write_frame[] = {
+        0x90,
+        DFC_CMD_WRITE_DATA,
+        0x00,
+        0x00,
+        0x08,
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x20,
+        0x00,
+        0x00,
+        0xA5,
+        0x00};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    begin_transaction(&fixture);
+    expect_native_trailing_status(
+        fixture.session, get_settings, sizeof(get_settings), DFC_STATUS_OK);
+    assert_transaction_still_pending(&fixture);
+    expect_native_trailing_status(
+        fixture.session, read_signature, sizeof(read_signature), DFC_STATUS_SPECIAL_SUCCESS);
+    assert_transaction_still_pending(&fixture);
+    expect_native_status(
+        fixture.session, first_write_frame, sizeof(first_write_frame), DFC_CMD_ADDITIONAL_FRAME);
+    assert_transaction_still_pending(&fixture);
+    dfc_emulator_discard_command_chain(fixture.session->emulator);
+    abort_open_transaction(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_internal_no_response_keeps_transaction(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t truncated_select[] = {DFC_CMD_SELECT_APPLICATION};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    begin_transaction(&fixture);
+    dfc_bytebuf_reset(fixture.session->emulator->tx_buffer);
+    munit_assert_false(dfc_emulator_handle_command(
+        fixture.session->emulator,
+        truncated_select,
+        sizeof(truncated_select),
+        fixture.session->emulator->tx_buffer,
+        NULL));
+    munit_assert_size(dfc_bytebuf_get_size_bytes(fixture.session->emulator->tx_buffer), ==, 0);
+    assert_transaction_still_pending(&fixture);
+    abort_open_transaction(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_terminal_error_capacity_retry_is_atomic(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t missing_file[] = {
+        0x90, DFC_CMD_READ_DATA, 0x00, 0x00, 0x07, 0x1E, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    begin_transaction(&fixture);
+
+    uint8_t response[2] = {0xA5, 0xA5};
+    size_t response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session, missing_file, sizeof(missing_file), response, 1, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(response_len, ==, 0);
+    munit_assert_uint8(response[0], ==, 0xA5);
+    assert_transaction_rolled_back(&fixture);
+
+    response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session,
+            missing_file,
+            sizeof(missing_file),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 2);
+    munit_assert_memory_equal(
+        response_len, response, ((uint8_t[]){0x91, DFC_STATUS_FILE_NOT_FOUND}));
+    assert_transaction_rolled_back(&fixture);
+    assert_app0_has_nothing_to_commit(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
 }
 
 static void assert_app0_has_nothing_to_commit(SelectionFixture* fixture) {
@@ -352,6 +627,36 @@ static MunitResult
 }
 
 static MunitTest tests[] = {
+    {"/terminal-native-errors",
+     test_terminal_native_errors_abort_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/interrupted-command-chain",
+     test_interrupted_command_chain_aborts_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/success-and-additional-frame",
+     test_success_and_additional_frame_keep_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/internal-no-response",
+     test_internal_no_response_keeps_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/terminal-error-capacity-retry",
+     test_terminal_error_capacity_retry_is_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/native", test_native_selection_aborts_transaction, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/native-cross-app-allows-new-transaction",
      test_cross_app_selection_allows_new_transaction,

@@ -1684,7 +1684,6 @@ static MunitResult test_record_transaction_visibility(const MunitParameter param
 
     assert_status(session, write_a, sizeof(write_a), DFC_STATUS_OK);
     assert_status(session, write_b, sizeof(write_b), DFC_STATUS_OK);
-    assert_status(session, read_all, sizeof(read_all), DFC_STATUS_BOUNDARY_ERROR);
     assert_status(session, commit, sizeof(commit), DFC_STATUS_OK);
 
     uint8_t response[16];
@@ -1698,7 +1697,7 @@ static MunitResult test_record_transaction_visibility(const MunitParameter param
     munit_assert_memory_equal(
         4, response, ((uint8_t[]){0xA1, 0xB2, 0x91, DFC_STATUS_OK}));
     assert_status(session, write_a, sizeof(write_a), DFC_STATUS_PERMISSION_DENIED);
-    assert_status(session, abort, sizeof(abort), DFC_STATUS_OK);
+    assert_status(session, abort, sizeof(abort), DFC_STATUS_NO_CHANGES);
     exchange(session, read_all, sizeof(read_all), response, sizeof(response), &response_len);
     munit_assert_memory_equal(
         4, response, ((uint8_t[]){0xA1, 0xB2, 0x91, DFC_STATUS_OK}));

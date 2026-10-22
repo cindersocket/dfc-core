@@ -753,7 +753,7 @@ static MunitResult test_native_initial_authentication_allocation_failure(
 }
 
 #if DFC_ENABLE_TRANSACTION_MAC && DFC_ENABLE_EV2_SECURE_MESSAGING
-static void assert_transaction_mac_failure_is_retryable(
+static void assert_transaction_mac_failure_aborts(
     bool return_transaction_mac,
     size_t failed_cmac_operation) {
     static DfcCredential credential;
@@ -786,9 +786,6 @@ static void assert_transaction_mac_failure_is_retryable(
     emulator->transaction_input_len = DFC_AES_KEY_LENGTH;
     for(size_t i = 0; i < emulator->transaction_input_len; i++)
         emulator->transaction_input[i] = (uint8_t)(0x70 + i);
-    uint8_t input_before[DFC_TRANSACTION_INPUT_MAX_LENGTH];
-    memcpy(input_before, emulator->transaction_input, sizeof(input_before));
-
     uint8_t command[2] = {DFC_CMD_COMMIT_TRANSACTION, DFC_TRANSACTION_COMMIT_RETURN_MAC_OPTION};
     size_t command_len = return_transaction_mac ? sizeof(command) : 1;
     uint8_t response[64];
@@ -800,37 +797,34 @@ static void assert_transaction_mac_failure_is_retryable(
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
     munit_assert_int(value->value, ==, 100);
-    munit_assert_true(value->value_pending);
-    munit_assert_int(value->value_pending_delta, ==, 7);
+    munit_assert_false(value->value_pending);
+    munit_assert_int(value->value_pending_delta, ==, 0);
     munit_assert_uint32(transaction->transaction_counter, ==, 9);
-    munit_assert_size(emulator->transaction_input_len, ==, DFC_AES_KEY_LENGTH);
-    munit_assert_memory_equal(
-        sizeof(input_before), emulator->transaction_input, input_before);
+    munit_assert_size(emulator->transaction_input_len, ==, 0);
+    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
 
     aes_operation = 0;
     fail_at = 0;
     fail_aes_operation = 0;
     response_len = fault_emulator_command(emulator, command, command_len, response, true);
-    munit_assert_size(
-        response_len, ==, return_transaction_mac ? 1 + 4 + DFC_WIRE_MAC_LENGTH : 1);
-    munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
-    munit_assert_int(value->value, ==, 107);
+    munit_assert_size(response_len, ==, 1);
+    munit_assert_uint8(response[0], ==, DFC_STATUS_NO_CHANGES);
+    munit_assert_int(value->value, ==, 100);
     munit_assert_false(value->value_pending);
     munit_assert_int(value->value_pending_delta, ==, 0);
-    munit_assert_uint32(transaction->transaction_counter, ==, 10);
+    munit_assert_uint32(transaction->transaction_counter, ==, 9);
     munit_assert_size(emulator->transaction_input_len, ==, 0);
     assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
     dfc_emulator_free(emulator);
 }
 
-static MunitResult test_transaction_mac_failures_are_retryable(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_transaction_mac_failures_abort(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     for(size_t return_mac = 0; return_mac < 2; return_mac++) {
         for(size_t operation = 1; operation <= 2; operation++)
-            assert_transaction_mac_failure_is_retryable(return_mac != 0, operation);
+            assert_transaction_mac_failure_aborts(return_mac != 0, operation);
     }
     fail_at = 0;
     fail_aes_operation = 0;
@@ -897,15 +891,13 @@ static MunitResult test_transaction_transcript_bounds(
     emulator->transaction_input_len =
         DFC_TRANSACTION_INPUT_MAX_LENGTH - DFC_AES_KEY_LENGTH + 1;
     memset(emulator->transaction_input, 0x5A, emulator->transaction_input_len);
-    uint8_t input_before[DFC_TRANSACTION_INPUT_MAX_LENGTH];
-    memcpy(input_before, emulator->transaction_input, sizeof(input_before));
     response_len = fault_emulator_command(emulator, credit, sizeof(credit), response, true);
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_BOUNDARY_ERROR);
     munit_assert_false(value->value_pending);
     munit_assert_int(value->value_pending_delta, ==, 0);
-    munit_assert_memory_equal(
-        sizeof(input_before), emulator->transaction_input, input_before);
+    munit_assert_size(emulator->transaction_input_len, ==, 0);
+    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
     dfc_emulator_free(emulator);
 
     const uint8_t commit_reader_id[1 + DFC_TRANSACTION_READER_ID_LENGTH] = {
@@ -941,13 +933,12 @@ static MunitResult test_transaction_transcript_bounds(
     emulator->transaction_input_len =
         DFC_TRANSACTION_INPUT_MAX_LENGTH - 3 * DFC_AES_KEY_LENGTH + 1;
     memset(emulator->transaction_input, 0x6C, emulator->transaction_input_len);
-    memcpy(input_before, emulator->transaction_input, sizeof(input_before));
     response_len = fault_emulator_command(
         emulator, commit_reader_id, sizeof(commit_reader_id), response, true);
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_memory_equal(
-        sizeof(input_before), emulator->transaction_input, input_before);
+    munit_assert_size(emulator->transaction_input_len, ==, 0);
+    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
     dfc_emulator_free(emulator);
     return MUNIT_OK;
 }
@@ -966,18 +957,17 @@ static MunitResult test_transaction_counter_does_not_wrap(
     value->value_pending_delta = 7;
     emulator->transaction_input_len = DFC_AES_KEY_LENGTH;
     memset(emulator->transaction_input, 0x33, emulator->transaction_input_len);
-    uint8_t input_before[DFC_TRANSACTION_INPUT_MAX_LENGTH];
-    memcpy(input_before, emulator->transaction_input, sizeof(input_before));
     uint8_t response[64];
     const uint8_t commit[] = {DFC_CMD_COMMIT_TRANSACTION};
     size_t response_len = fault_emulator_command(emulator, commit, sizeof(commit), response, true);
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
     munit_assert_uint32(transaction->transaction_counter, ==, UINT32_MAX);
-    munit_assert_true(value->value_pending);
+    munit_assert_false(value->value_pending);
+    munit_assert_int(value->value_pending_delta, ==, 0);
     munit_assert_int(value->value, ==, 100);
-    munit_assert_memory_equal(
-        sizeof(input_before), emulator->transaction_input, input_before);
+    munit_assert_size(emulator->transaction_input_len, ==, 0);
+    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
 
     const uint8_t commit_reader_id[1 + DFC_TRANSACTION_READER_ID_LENGTH] = {
         DFC_CMD_COMMIT_READER_ID};
@@ -986,8 +976,8 @@ static MunitResult test_transaction_counter_does_not_wrap(
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
     munit_assert_uint32(transaction->transaction_counter, ==, UINT32_MAX);
-    munit_assert_memory_equal(
-        sizeof(input_before), emulator->transaction_input, input_before);
+    munit_assert_size(emulator->transaction_input_len, ==, 0);
+    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
     dfc_emulator_free(emulator);
     return MUNIT_OK;
 }
@@ -2299,8 +2289,8 @@ static MunitTest tests[] = {
      NULL},
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC && DFC_ENABLE_EV2_SECURE_MESSAGING
-    {"/transaction-mac/retry",
-     test_transaction_mac_failures_are_retryable,
+    {"/transaction-mac/failure-aborts",
+     test_transaction_mac_failures_abort,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

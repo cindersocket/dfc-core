@@ -5200,7 +5200,17 @@ static void commit_ev1_command_update(
 }
 #endif
 
-bool dfc_emulator_handle_command(
+static void finalize_native_command(DfcEmulator* emulator, const DfcByteBuf* tx_buffer) {
+    size_t response_len = dfc_bytebuf_get_size_bytes(tx_buffer);
+    if(response_len == 0) return;
+    uint8_t status = dfc_bytebuf_get_data(tx_buffer)[0];
+    if(status == DFC_STATUS_OK || status == DFC_CMD_ADDITIONAL_FRAME ||
+       status == DFC_STATUS_SPECIAL_SUCCESS)
+        return;
+    dfc_emulator_abort_transaction(emulator);
+}
+
+static bool dispatch_native_command(
     DfcEmulator* emulator,
     const uint8_t* buffer,
     size_t buffer_len,
@@ -5239,7 +5249,7 @@ bool dfc_emulator_handle_command(
         size_t logical_len = emulator->command_chain_len;
         emulator->command_chain_active = false;
         emulator->command_chain_expected = SIZE_MAX;
-        bool handled = dfc_emulator_handle_command(
+        bool handled = dispatch_native_command(
             emulator, emulator->command_chain, logical_len, tx_buffer, context);
         dfc_emulator_discard_command_chain(emulator);
         return handled;
@@ -5677,6 +5687,17 @@ bool dfc_emulator_handle_command(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
         return true;
     }
+}
+
+bool dfc_emulator_handle_command(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer,
+    void* context) {
+    bool handled = dispatch_native_command(emulator, buffer, buffer_len, tx_buffer, context);
+    if(handled) finalize_native_command(emulator, tx_buffer);
+    return handled;
 }
 
 #endif // DFC_ENABLE_EMULATOR
