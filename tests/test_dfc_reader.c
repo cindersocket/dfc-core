@@ -853,6 +853,39 @@ static void assert_reader_pending_retry_is_atomic(
     munit_assert_size(*command_len, ==, required_capacity);
 }
 
+static MunitResult
+    test_stream_state_has_deterministic_representation(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcReaderSession session;
+    dfc_reader_session_init(&session);
+    uint8_t payload[] = {0xA5};
+    DfcReaderExchange exchange;
+    munit_assert_int(
+        dfc_reader_write_data_begin(&exchange,
+                                    &session,
+                                    DfcReaderFramingNative,
+                                    7,
+                                    3,
+                                    payload,
+                                    sizeof(payload),
+                                    DFC_COMM_PLAIN),
+        ==,
+        DfcReaderOk);
+
+    DfcReaderStream expected;
+    memset(&expected, 0, sizeof(expected));
+    expected.data = payload;
+    expected.length = sizeof(payload);
+    expected.offset = sizeof(payload);
+    expected.base_offset = 3;
+    expected.file_number = 7;
+    expected.comm_mode = DFC_COMM_PLAIN;
+    expected.kind = 1;
+    munit_assert_memory_equal(sizeof(expected), &expected, &exchange.stream);
+    return MUNIT_OK;
+}
+
 static DfcReaderStatus run_authentication_with_capacity_retries(
     Link* link,
     DfcReaderExchange* exchange,
@@ -2803,6 +2836,12 @@ static MunitTest tests[] = {
      NULL},
     {"/virtual-picc-output-capacity-retries",
      test_virtual_picc_output_capacity_retries,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/stream-state-deterministic-representation",
+     test_stream_state_has_deterministic_representation,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

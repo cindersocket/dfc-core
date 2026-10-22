@@ -1382,15 +1382,17 @@ static DfcReaderStatus begin_stream(
        data_len > DFC_COMMAND_UINT24_MAX - offset || record_number > DFC_COMMAND_UINT24_MAX) {
         return DfcReaderInvalid;
     }
-    DfcReaderStream stream = {
-        .data = data,
-        .length = data_len,
-        .base_offset = offset,
-        .record_number = record_number,
-        .file_number = file_number,
-        .comm_mode = comm_mode,
-        .kind = kind,
-    };
+    // The stream is copied as a complete object when an exchange is retried.
+    // Initialize its padding as well as its named fields.
+    DfcReaderStream stream;
+    memset(&stream, 0, sizeof(stream));
+    stream.data = data;
+    stream.length = data_len;
+    stream.base_offset = offset;
+    stream.record_number = record_number;
+    stream.file_number = file_number;
+    stream.comm_mode = comm_mode;
+    stream.kind = kind;
     return begin_stream_chunk(exchange, session, framing, &stream);
 }
 
