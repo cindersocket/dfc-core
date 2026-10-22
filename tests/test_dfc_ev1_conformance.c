@@ -1226,6 +1226,73 @@ static MunitResult test_change_file_settings_round_trips_logical_rights(
     return MUNIT_OK;
 }
 
+static void assert_file_settings_unchanged(
+    DfcVirtualPiccSession* session,
+    DfcFile* file,
+    const uint8_t* command,
+    size_t command_len,
+    uint8_t expected_status) {
+    DfcFile before = *file;
+    bool dirty_before = session->credential->dirty;
+    assert_status(session, command, command_len, expected_status);
+    munit_assert_memory_equal(sizeof(before), &before, file);
+    munit_assert_int(session->credential->dirty, ==, dirty_before);
+}
+
+static MunitResult test_change_file_settings_rejects_missing_files_and_keys(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = open_rights_file_over_the_air(&credential, 0xE0, 0xEE);
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+    dfc_credential_clear_dirty(&credential);
+
+    const uint8_t missing_file[] = {
+        0x90, 0x5F, 0x00, 0x00, 0x04, 0x1E, DFC_COMM_PLAIN, 0xEE, 0xEE, 0x00};
+    assert_file_settings_unchanged(
+        session, file, missing_file, sizeof(missing_file), DFC_STATUS_FILE_NOT_FOUND);
+
+    const uint8_t unauthorised_invalid_key[] = {
+        0x90, 0x5F, 0x00, 0x00, 0x04, 0x01, DFC_COMM_PLAIN, 0xE0, 0x4E, 0x00};
+    assert_file_settings_unchanged(
+        session,
+        file,
+        unauthorised_invalid_key,
+        sizeof(unauthorised_invalid_key),
+        DFC_STATUS_AUTHENTICATION_ERR);
+
+    const uint8_t invalid_rights[][2] = {
+        {0xE0, 0x4E},
+        {0xE0, 0xE4},
+        {0x40, 0xEE},
+        {0xE4, 0xEE},
+    };
+    for(size_t i = 0; i < sizeof(invalid_rights) / sizeof(invalid_rights[0]); i++) {
+        reselect_and_authenticate(session, 0x00);
+        uint8_t command[] = {
+            0x90,
+            0x5F,
+            0x00,
+            0x00,
+            0x04,
+            0x01,
+            DFC_COMM_PLAIN,
+            invalid_rights[i][0],
+            invalid_rights[i][1],
+            0x00,
+        };
+        assert_file_settings_unchanged(
+            session, file, command, sizeof(command), DFC_STATUS_PARAMETER_ERROR);
+    }
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
 static void assert_change_file_settings_rejected_atomically(
     DfcVirtualPiccSession* session,
     DfcCredential* credential,
@@ -1301,10 +1368,10 @@ static MunitResult
         }
         dfc_credential_clear_dirty(&credential);
         const uint8_t change[] = {
-            0x90, 0x5F, 0x00, 0x00, 0x04, 0x01, DFC_COMM_MAC, 0xCD, 0xAB, 0x00};
+            0x90, 0x5F, 0x00, 0x00, 0x04, 0x01, DFC_COMM_MAC, 0xE0, 0x1E, 0x00};
         assert_status(session, change, sizeof(change), DFC_STATUS_OK);
         munit_assert_uint8(credential.files[0].comm_settings, ==, DFC_COMM_MAC);
-        munit_assert_uint16(credential.files[0].access_rights, ==, 0xABCD);
+        munit_assert_uint16(credential.files[0].access_rights, ==, 0x1EE0);
         munit_assert_true(credential.dirty);
         dfc_virtual_picc_session_free(session);
     }
@@ -1422,6 +1489,13 @@ static MunitResult
          DFC_STATUS_PARAMETER_ERROR},
         {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x01, 0xFF, 0xFF, 0x00},
          9,
+         DFC_STATUS_PARAMETER_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xFF, 0x1F, 0x00, 0x00, 0x00},
+         11,
+         DFC_STATUS_PARAMETER_ERROR},
+        {(const uint8_t[]){
+             0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xFF, 0xE1, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00},
+         14,
          DFC_STATUS_PARAMETER_ERROR},
     };
 
@@ -1676,6 +1750,12 @@ static MunitTest tests[] = {
      NULL},
     {"/change-file-settings-round-trips-logical-rights",
      test_change_file_settings_round_trips_logical_rights,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-rejects-missing-files-and-keys",
+     test_change_file_settings_rejects_missing_files_and_keys,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

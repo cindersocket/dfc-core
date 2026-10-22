@@ -236,6 +236,14 @@ static uint8_t access_change_nibble(uint16_t access_rights) {
     return access_nibble(access_rights, 0);
 }
 
+static bool access_rights_keys_exist(uint16_t access_rights, size_t key_count) {
+    for(unsigned shift = 0; shift < 16; shift += 4) {
+        uint8_t key = access_nibble(access_rights, shift);
+        if(key < DFC_ACCESS_FREE && key >= key_count) return false;
+    }
+    return true;
+}
+
 // APDU boundary conversions. `first` is the first access-rights octet on the
 // wire, which is the low octet of the logical value.
 static uint16_t access_rights_from_wire(uint8_t first, uint8_t second) {
@@ -1352,6 +1360,22 @@ static uint8_t parse_file_settings_update(
     return DFC_STATUS_OK;
 }
 
+static bool file_settings_keys_exist(const DfcFileSettingsUpdate* update, size_t key_count) {
+    if(!access_rights_keys_exist(update->access_rights, key_count)) return false;
+#if DFC_ENABLE_SDM
+    if((update->comm_settings & DFC_SDM_ENABLED_MASK) != 0) {
+        uint8_t meta_read = (uint8_t)(update->sdm_access_rights >> DFC_SDM_META_READ_SHIFT);
+        uint8_t file_read = (uint8_t)((update->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) &
+                                      DFC_SDM_ACCESS_MASK);
+        if((meta_read < DFC_SDM_FREE_ACCESS && meta_read >= key_count) ||
+           (file_read != DFC_SDM_DENIED_ACCESS && file_read >= key_count)) {
+            return false;
+        }
+    }
+#endif
+    return true;
+}
+
 static void apply_file_settings_update(
     DfcEmulator* emulator,
     DfcFile* file,
@@ -1391,7 +1415,7 @@ static void handle_change_file_settings(
     DfcFile* file = dfc_credential_find_file_in_app(
         emulator->credential, emulator->selected_app_index, apdu[1]);
     if(!file) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
         return;
     }
 
@@ -1409,6 +1433,10 @@ static void handle_change_file_settings(
     uint8_t status = parse_file_settings_update(apdu, apdu_len, &update);
     if(status != DFC_STATUS_OK) {
         dfc_bytebuf_append_byte(tx_buffer, status);
+        return;
+    }
+    if(!file_settings_keys_exist(&update, emulator_num_keys(emulator))) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
 
