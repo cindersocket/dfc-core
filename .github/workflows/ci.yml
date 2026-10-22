@@ -233,6 +233,23 @@ jobs:
             --target thumbv7em-none-eabihf --no-default-features \
             --features bundled,role-target,profile-full-ev3
 
+  rust-msrv:
+    name: Rust 1.85 minimum version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: thumbv7em-none-eabihf
+      - name: Install the ARM C toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Check the workspace at the declared MSRV
+        run: |
+          cargo check --workspace --all-targets
+          cargo check --manifest-path bindings/rust/dfc-core/Cargo.toml \
+            --target thumbv7em-none-eabihf --no-default-features \
+            --features bundled,role-target,profile-full-ev3
+
   pack:
     name: NuGet package
     needs: [native, dotnet]

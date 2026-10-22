@@ -247,11 +247,11 @@ unsafe extern "C" fn random_callback(
     let context = unsafe { &mut *context.cast::<RandomContext>() };
     let generated =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (context.source)(len)));
-    if let Ok(bytes) = generated
-        && bytes.len() == len
-    {
-        unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
-        return 0;
+    if let Ok(bytes) = generated {
+        if bytes.len() == len {
+            unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
+            return 0;
+        }
     }
     -5
 }
