@@ -5208,6 +5208,8 @@ static void finalize_native_command(DfcEmulator* emulator, const DfcByteBuf* tx_
        status == DFC_STATUS_SPECIAL_SUCCESS)
         return;
     dfc_emulator_abort_transaction(emulator);
+    if(emulator->auth_cipher != DFC_CMD_AUTHENTICATE_LEGACY)
+        dfc_emulator_clear_active_authentication(emulator);
 }
 
 static bool dispatch_native_command(
@@ -5695,9 +5697,9 @@ bool dfc_emulator_handle_command(
     size_t buffer_len,
     DfcByteBuf* tx_buffer,
     void* context) {
-    bool handled = dispatch_native_command(emulator, buffer, buffer_len, tx_buffer, context);
-    if(handled) finalize_native_command(emulator, tx_buffer);
-    return handled;
+    if(!dispatch_native_command(emulator, buffer, buffer_len, tx_buffer, context)) return false;
+    finalize_native_command(emulator, tx_buffer);
+    return true;
 }
 
 #endif // DFC_ENABLE_EMULATOR

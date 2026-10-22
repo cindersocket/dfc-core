@@ -1495,36 +1495,10 @@ static DfcReaderStatus finish_command(DfcReaderExchange* ex, DfcReaderStatus sta
 
 static DfcReaderStatus card_error(DfcReaderExchange* ex) {
     DfcReaderSession* session = ex->session;
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-    if(session->auth_mode == DFC_READER_AUTH_EV2 && ex->response_plan != PlanPlain) {
-        // An EV2 card MACs its error answers too, and counts the command.
-        if(ex->data_len >= DFC_WIRE_MAC_LENGTH) {
-            uint16_t next = (uint16_t)(session->ev2_command_counter + 1);
-            size_t body = ex->data_len - DFC_WIRE_MAC_LENGTH;
-            uint8_t mac[DFC_WIRE_MAC_LENGTH];
-            if(!dfc_ev2_mac(
-                   session->ev2_mac_key,
-                   ex->status,
-                   next,
-                   session->ev2_transaction_identifier,
-                   ex->data,
-                   body,
-                   NULL,
-                   0,
-                   mac) ||
-               !dfc_ct_equal(mac, ex->data + body, sizeof(mac))) {
-                dfc_reader_session_clear(session);
-                return finish_command(ex, DfcReaderIntegrityError);
-            }
-            session->ev2_command_counter = next;
-            ex->data_len = body;
-            return finish_command(ex, DfcReaderCardError);
-        }
-    }
-#endif
-    // Any other error ends the card's session.
-    dfc_reader_session_clear(session);
-    return finish_command(ex, DfcReaderCardError);
+    bool malformed = ex->data_len != 0;
+    if(malformed || session->auth_mode != DFC_CMD_AUTHENTICATE_LEGACY)
+        dfc_reader_session_clear(session);
+    return finish_command(ex, malformed ? DfcReaderProtocolError : DfcReaderCardError);
 }
 
 static DfcReaderStatus verify_ev1_frame(DfcReaderExchange* ex, size_t frame_start, uint8_t status);

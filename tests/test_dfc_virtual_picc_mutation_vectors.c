@@ -283,6 +283,7 @@ static MunitResult
                     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
                         DFC_CMD_AUTHENTICATE_LEGACY, zero_key, key_len, NULL);
                     munit_assert_not_null(session->emulator->secure_messaging);
+                    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_LEGACY;
                     session->emulator->auth_key_no = 0;
                     memcpy(session_key, zero_key, key_len);
                     session_key_len = key_len;
