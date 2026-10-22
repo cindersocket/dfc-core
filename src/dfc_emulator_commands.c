@@ -1969,6 +1969,35 @@ static void fail_pending_authentication(DfcEmulator* emulator) {
     dfc_emulator_clear_active_authentication(emulator);
 }
 
+bool dfc_emulator_abort_pending_native_work(DfcEmulator* emulator) {
+    if(!emulator ||
+       (!emulator->command_chain_active && !has_pending_additional_work(emulator))) {
+        return false;
+    }
+
+    dfc_emulator_discard_command_chain(emulator);
+    if(emulator->awaiting_step2) {
+        fail_pending_authentication(emulator);
+    } else {
+        clear_pending_authentication(emulator);
+    }
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(emulator->ev2_authentication_pending) {
+        fail_pending_ev2_authentication(emulator);
+    } else {
+        clear_pending_ev2_authentication(emulator);
+    }
+#endif
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+    emulator->delegated_creation_pending = false;
+    emulator->delegated_creation_header_length = 0;
+    dfc_secure_wipe(
+        emulator->delegated_creation_header, sizeof(emulator->delegated_creation_header));
+#endif
+    clear_pending_chain(emulator);
+    return true;
+}
+
 static void handle_authenticate_step1(
     DfcEmulator* emulator,
     uint8_t cipher,
@@ -5190,20 +5219,7 @@ bool dfc_emulator_handle_command(
         return handled;
     }
 
-    if(has_pending_additional_work(emulator) && cmd != DFC_CMD_ADDITIONAL_FRAME) {
-        if(emulator->awaiting_step2) {
-            fail_pending_authentication(emulator);
-        } else {
-            clear_pending_authentication(emulator);
-        }
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-        if(emulator->ev2_authentication_pending) {
-            fail_pending_ev2_authentication(emulator);
-        } else {
-            clear_pending_ev2_authentication(emulator);
-        }
-#endif
-        clear_pending_chain(emulator);
+    if(cmd != DFC_CMD_ADDITIONAL_FRAME && dfc_emulator_abort_pending_native_work(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COMMAND_ABORTED);
         return true;
     }

@@ -1299,8 +1299,6 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
             if(virtual_card_status != DfcVirtualPiccStatusUnsupportedProtocol)
                 return virtual_card_status;
 #endif
-            return handle_iso_select(
-                session, command, command_len, response, response_capacity, response_len);
         }
 #if DFC_ENABLE_VIRTUAL_CARD
         if(command[1] == DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE &&
@@ -1308,6 +1306,20 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
             return handle_virtual_card_external_authenticate(
                 session, command, command_len, response, response_capacity, response_len);
 #endif
+        if(response_capacity < DFC_ISO7816_STATUS_WORD_LENGTH)
+            return DfcVirtualPiccStatusBufferTooSmall;
+        if(dfc_emulator_abort_pending_native_work(session->emulator)) {
+            return write_status_word(
+                DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_HI,
+                DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_LO,
+                response,
+                response_capacity,
+                response_len);
+        }
+        if(command[1] == DFC_ISO7816_INS_SELECT) {
+            return handle_iso_select(
+                session, command, command_len, response, response_capacity, response_len);
+        }
 #if DFC_ENABLE_ISO7816_AUTH
         if(command[1] == DFC_ISO7816_INS_GET_CHALLENGE ||
            command[1] == DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE ||

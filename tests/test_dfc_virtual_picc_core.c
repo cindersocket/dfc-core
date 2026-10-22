@@ -21,6 +21,11 @@ static void observe_virtual_picc_free(const void* pointer, void* context) {
     }
 }
 
+static void assert_zeroed_bytes(const uint8_t* bytes, size_t length) {
+    for(size_t i = 0; i < length; i++)
+        munit_assert_uint8(bytes[i], ==, 0);
+}
+
 static void activate_iso_dep(
     DfcVirtualPiccSession* session,
     uint8_t cid,
@@ -37,6 +42,632 @@ static void activate_iso_dep(
         ==,
         DfcVirtualPiccStatusOk);
 }
+
+static void assert_iso_abort_preflight_is_atomic(DfcVirtualPiccSession* session) {
+    const uint8_t read_binary[] = {0, DFC_ISO7816_INS_READ_BINARY, 0, 0, 1};
+    uint8_t response[1];
+    size_t response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, read_binary, sizeof(read_binary), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(response_len, ==, 0);
+}
+
+static void assert_iso_abort_and_no_native_continuation(DfcVirtualPiccSession* session) {
+    const uint8_t read_binary[] = {0, DFC_ISO7816_INS_READ_BINARY, 0, 0, 1};
+    const uint8_t additional_frame[] = {
+        DFC_ISO7816_CLA_WRAPPER, DFC_CMD_ADDITIONAL_FRAME, 0, 0, 0};
+    uint8_t response[2];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, read_binary, sizeof(read_binary), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(
+        2,
+        response,
+        ((uint8_t[]){DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_HI,
+                     DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_LO}));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session,
+            additional_frame,
+            sizeof(additional_frame),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_ILLEGAL_COMMAND_CODE}));
+}
+
+static void add_applications_for_chained_listing(DfcCredential* credential) {
+    for(size_t i = credential->num_apps; i < 24; i++) {
+        const uint8_t aid[3] = {(uint8_t)i, 0xA5, 0x5A};
+        munit_assert_not_null(dfc_credential_create_application_desfire_order(
+            credential, aid, 0x0F, DFC_KEY_TYPE_AES | 1));
+    }
+}
+
+static void start_application_id_response_chain(
+    DfcVirtualPiccSession* session,
+    uint8_t* response,
+    size_t response_capacity,
+    size_t* response_len) {
+    const uint8_t get_application_ids[] = {
+        DFC_ISO7816_CLA_WRAPPER, DFC_CMD_GET_APPLICATION_IDS, 0, 0, 0};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session,
+            get_application_ids,
+            sizeof(get_application_ids),
+            response,
+            response_capacity,
+            response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_uint8(response[*response_len - 1], ==, DFC_CMD_ADDITIONAL_FRAME);
+    munit_assert_size(
+        session->emulator->pending_chain_len, >, session->emulator->pending_chain_offset);
+}
+
+static MunitResult test_iso_command_aborts_native_response_chain(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    DfcCredential credential;
+    load_standard_credential(&credential);
+    credential.card.generation = DfcGenerationEv3;
+    add_applications_for_chained_listing(&credential);
+    DfcFile* file = &credential.files[0];
+    file->sdm_enabled = true;
+    file->sdm_read_counter = 41;
+
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+    munit_assert_not_null(session);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    session->iso_file_selected = true;
+    session->iso_file_index = 0;
+
+    uint8_t response[128];
+    size_t response_len = 0;
+    start_application_id_response_chain(session, response, sizeof(response), &response_len);
+
+    const size_t pending_len = session->emulator->pending_chain_len;
+    const size_t pending_offset = session->emulator->pending_chain_offset;
+    const uint32_t sdm_counter = file->sdm_read_counter;
+    const bool sdm_cache_valid = session->emulator->sdm_read_cache_valid;
+    uint8_t sdm_cache[DFC_SDM_READ_CACHE_SIZE];
+    memcpy(sdm_cache, session->emulator->sdm_read_cache, sizeof(sdm_cache));
+    const uint8_t read_binary[] = {0, DFC_ISO7816_INS_READ_BINARY, 0, 0, 3};
+
+    assert_iso_abort_preflight_is_atomic(session);
+    munit_assert_size(session->emulator->pending_chain_len, ==, pending_len);
+    munit_assert_size(session->emulator->pending_chain_offset, ==, pending_offset);
+    munit_assert_uint32(file->sdm_read_counter, ==, sdm_counter);
+    munit_assert_true(session->emulator->sdm_read_cache_valid == sdm_cache_valid);
+    munit_assert_memory_equal(
+        sizeof(sdm_cache), session->emulator->sdm_read_cache, sdm_cache);
+
+    assert_iso_abort_and_no_native_continuation(session);
+    munit_assert_size(session->emulator->pending_chain_len, ==, 0);
+    assert_zeroed_bytes(session->emulator->pending_chain, pending_len);
+    munit_assert_uint32(file->sdm_read_counter, ==, sdm_counter);
+    munit_assert_true(session->emulator->sdm_read_cache_valid == sdm_cache_valid);
+    munit_assert_memory_equal(
+        sizeof(sdm_cache), session->emulator->sdm_read_cache, sdm_cache);
+
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session,
+            read_binary,
+            sizeof(read_binary),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 5);
+    munit_assert_memory_equal(2, response + 3, ((uint8_t[]){0x90, 0x00}));
+    munit_assert_uint32(file->sdm_read_counter, ==, sdm_counter + 1);
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult test_iso_command_aborts_pending_native_authentication(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    DfcCredential credential;
+    load_standard_credential(&credential);
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+    munit_assert_not_null(session);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+
+    const uint8_t active_key[16] = {0xA7};
+    session->emulator->secure_messaging = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_ISO, active_key, sizeof(active_key), NULL);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    DfcSecureMessaging* retained_secure_messaging = session->emulator->secure_messaging;
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_ISO;
+    session->emulator->auth_key_no = 1;
+    memset(session->emulator->rnd_a, 0xA8, sizeof(session->emulator->rnd_a));
+
+    uint8_t response[64];
+    size_t response_len = 0;
+    const uint8_t authenticate[] = {
+        DFC_ISO7816_CLA_WRAPPER, DFC_CMD_AUTHENTICATE_LEGACY, 0, 0, 1, 0, 0};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session,
+            authenticate,
+            sizeof(authenticate),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_CMD_ADDITIONAL_FRAME);
+    munit_assert_true(session->emulator->awaiting_step2);
+
+    assert_iso_abort_preflight_is_atomic(session);
+    munit_assert_true(session->emulator->awaiting_step2);
+    assert_iso_abort_and_no_native_continuation(session);
+    munit_assert_false(session->emulator->awaiting_step2);
+    munit_assert_uint8(session->emulator->pending_auth_cipher, ==, 0);
+    munit_assert_ptr_equal(session->emulator->secure_messaging, retained_secure_messaging);
+    munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
+    munit_assert_uint8(session->emulator->auth_cipher, ==, 0);
+    munit_assert_uint8(session->emulator->auth_key_no, ==, 0);
+    assert_zeroed_bytes(
+        (const uint8_t*)retained_secure_messaging, sizeof(*retained_secure_messaging));
+    assert_zeroed_bytes(session->emulator->rnd_a, sizeof(session->emulator->rnd_a));
+    munit_assert_memory_equal(
+        sizeof(session->emulator->rnd_b),
+        session->emulator->rnd_b,
+        ((uint8_t[sizeof(session->emulator->rnd_b)]){0}));
+    munit_assert_memory_equal(
+        sizeof(session->emulator->enc_rnd_b),
+        session->emulator->enc_rnd_b,
+        ((uint8_t[sizeof(session->emulator->enc_rnd_b)]){0}));
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult test_iso_command_aborts_incoming_native_write_chain(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    DfcCredential credential;
+    load_standard_credential(&credential);
+    DfcFile* file = &credential.files[0];
+    file->comm_settings = DFC_COMM_PLAIN;
+    file->access_rights = 0xEEEE;
+    munit_assert_true(dfc_file_resize(&credential, file, 100));
+
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+    munit_assert_not_null(session);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    uint8_t response[64];
+    size_t response_len = 0;
+    const uint8_t select[] = {
+        DFC_ISO7816_CLA_WRAPPER,
+        DFC_CMD_SELECT_APPLICATION,
+        0,
+        0,
+        3,
+        0x4F,
+        0x49,
+        0xD3,
+        0};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, select, sizeof(select), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_OK}));
+
+    DfcCredential* credential_before = dfc_credential_alloc();
+    munit_assert_not_null(credential_before);
+    dfc_credential_copy_model(credential_before, &credential);
+    uint8_t first[6 + DFC_EV1_MAX_FRAME_PAYLOAD] = {0};
+    first[0] = DFC_ISO7816_CLA_WRAPPER;
+    first[1] = DFC_CMD_WRITE_DATA;
+    first[4] = DFC_EV1_MAX_FRAME_PAYLOAD;
+    first[5] = file->number;
+    first[9] = 100;
+    for(size_t i = 0; i < 52; i++)
+        first[12 + i] = (uint8_t)(i + 1);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, first, sizeof(first), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(
+        2, response, ((uint8_t[]){0x91, DFC_CMD_ADDITIONAL_FRAME}));
+    munit_assert_true(session->emulator->command_chain_active);
+    munit_assert_memory_equal(sizeof(credential), &credential, credential_before);
+
+    VirtualPiccFreeAudit audit = {
+        .target = session->emulator->command_chain,
+        .length = session->emulator->command_chain_len,
+    };
+    const uint8_t* command_chain = session->emulator->command_chain;
+    const size_t command_chain_len = session->emulator->command_chain_len;
+    uint8_t command_chain_before[DFC_EV1_MAX_FRAME_PAYLOAD + 1];
+    munit_assert_size(command_chain_len, <=, sizeof(command_chain_before));
+    memcpy(command_chain_before, command_chain, command_chain_len);
+    assert_iso_abort_preflight_is_atomic(session);
+    munit_assert_true(session->emulator->command_chain_active);
+    munit_assert_ptr_equal(session->emulator->command_chain, command_chain);
+    munit_assert_size(session->emulator->command_chain_len, ==, command_chain_len);
+    munit_assert_memory_equal(command_chain_len, session->emulator->command_chain, command_chain_before);
+    munit_assert_memory_equal(sizeof(credential), &credential, credential_before);
+
+    dfc_host_set_free_observer(observe_virtual_picc_free, &audit);
+    assert_iso_abort_and_no_native_continuation(session);
+    dfc_host_set_free_observer(NULL, NULL);
+    munit_assert_true(audit.observed);
+    munit_assert_true(audit.zeroed);
+    munit_assert_false(session->emulator->command_chain_active);
+    munit_assert_null(session->emulator->command_chain);
+    munit_assert_memory_equal(sizeof(credential), &credential, credential_before);
+
+    dfc_credential_free(credential_before);
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult test_iso_command_aborts_native_continuation_states(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    enum {
+        PendingGetVersion,
+        PendingDfNames,
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        PendingDelegatedCreation,
+#endif
+        PendingContinuationCount,
+    };
+    const uint8_t commands[][5] = {
+        {DFC_ISO7816_CLA_WRAPPER, DFC_CMD_GET_VERSION, 0, 0, 0},
+        {DFC_ISO7816_CLA_WRAPPER, DFC_CMD_GET_DF_NAMES, 0, 0, 0},
+    };
+    for(size_t kind = PendingGetVersion; kind < PendingContinuationCount; kind++) {
+        DfcCredential credential;
+        load_standard_credential(&credential);
+        if(kind == PendingDfNames) {
+            credential.picc_key_settings_1 |= DFC_KS1_FREE_DIRECTORY_ACCESS;
+            credential.apps[0].has_iso_file_id = true;
+            credential.apps[0].iso_file_id = 0x1001;
+            const uint8_t aid[3] = {1, 2, 3};
+            DfcApplication* second = dfc_credential_create_application_desfire_order(
+                &credential, aid, 0x0F, DFC_KEY_TYPE_AES | 1);
+            munit_assert_not_null(second);
+            second->has_iso_file_id = true;
+            second->iso_file_id = 0x1002;
+            second->iso_aid[0] = 0xA5;
+            second->iso_aid_len = 1;
+        }
+
+        DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+        munit_assert_not_null(session);
+        DfcVirtualPiccActivation activation;
+        munit_assert_int(
+            dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+        uint8_t response[64];
+        size_t response_len = 0;
+        if(kind <= PendingDfNames) {
+            munit_assert_int(
+                dfc_virtual_picc_iso_dep_exchange(
+                    session,
+                    commands[kind],
+                    sizeof(commands[kind]),
+                    response,
+                    sizeof(response),
+                    &response_len),
+                ==,
+                DfcVirtualPiccStatusOk);
+            munit_assert_uint8(response[response_len - 1], ==, DFC_CMD_ADDITIONAL_FRAME);
+        }
+        if(kind == PendingGetVersion) {
+            munit_assert_size(session->emulator->get_version_frame, !=, 0);
+        } else if(kind == PendingDfNames) {
+            munit_assert_true(session->emulator->df_names_pending);
+            munit_assert_size(session->emulator->df_names_next, ==, 1);
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        } else {
+            session->emulator->delegated_creation_pending = true;
+            session->emulator->delegated_creation_header_length =
+                sizeof(session->emulator->delegated_creation_header) - 3;
+            memset(
+                session->emulator->delegated_creation_header,
+                0xD5,
+                sizeof(session->emulator->delegated_creation_header));
+#endif
+        }
+
+        const size_t scratch_len = 19;
+        memset(session->emulator->pending_chain, 0xC7, scratch_len);
+        session->emulator->pending_chain_len = scratch_len;
+        session->emulator->pending_chain_offset = scratch_len;
+        assert_iso_abort_preflight_is_atomic(session);
+        if(kind == PendingGetVersion) {
+            munit_assert_size(session->emulator->get_version_frame, !=, 0);
+        } else if(kind == PendingDfNames) {
+            munit_assert_true(session->emulator->df_names_pending);
+            munit_assert_size(session->emulator->df_names_next, ==, 1);
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        } else {
+            munit_assert_true(session->emulator->delegated_creation_pending);
+            munit_assert_size(
+                session->emulator->delegated_creation_header_length,
+                ==,
+                sizeof(session->emulator->delegated_creation_header) - 3);
+            munit_assert_uint8(session->emulator->delegated_creation_header[0], ==, 0xD5);
+#endif
+        }
+        for(size_t i = 0; i < scratch_len; i++)
+            munit_assert_uint8(session->emulator->pending_chain[i], ==, 0xC7);
+
+        assert_iso_abort_and_no_native_continuation(session);
+        munit_assert_size(session->emulator->get_version_frame, ==, 0);
+        munit_assert_false(session->emulator->df_names_pending);
+        munit_assert_size(session->emulator->df_names_next, ==, 0);
+        munit_assert_size(session->emulator->pending_chain_len, ==, 0);
+        assert_zeroed_bytes(session->emulator->pending_chain, scratch_len);
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        if(kind == PendingDelegatedCreation) {
+            munit_assert_false(session->emulator->delegated_creation_pending);
+            munit_assert_size(session->emulator->delegated_creation_header_length, ==, 0);
+            assert_zeroed_bytes(
+                session->emulator->delegated_creation_header,
+                sizeof(session->emulator->delegated_creation_header));
+        }
+#endif
+
+        dfc_virtual_picc_session_free(session);
+    }
+    return MUNIT_OK;
+}
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+static MunitResult test_iso_command_aborts_ev2_first_and_non_first(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    const uint8_t authenticate_first[] = {
+        DFC_ISO7816_CLA_WRAPPER,
+        DFC_CMD_AUTHENTICATE_EV2_FIRST,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0};
+    const uint8_t authenticate_non_first[] = {
+        DFC_ISO7816_CLA_WRAPPER,
+        DFC_CMD_AUTHENTICATE_EV2_NON_FIRST,
+        0,
+        0,
+        1,
+        0,
+        0};
+    for(size_t non_first = 0; non_first < 2; non_first++) {
+        DfcCredential credential;
+        load_standard_credential(&credential);
+        credential.card.generation = DfcGenerationEv3;
+        credential.picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
+        credential.picc_has_auth_commands = false;
+        munit_assert_true(
+            dfc_credential_keys_resize(&credential, NULL, 1, DFC_AES_KEY_LENGTH));
+        memset(
+            dfc_credential_key(&credential, NULL, 0),
+            0x11,
+            DFC_AES_KEY_LENGTH);
+
+        DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+        munit_assert_not_null(session);
+        DfcVirtualPiccActivation activation;
+        munit_assert_int(
+            dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+        DfcEmulator* emulator = session->emulator;
+        emulator->ev2_session_active = true;
+        emulator->ev2_authenticated_key_no = 4;
+        emulator->ev2_command_counter = 0x1234;
+        memset(
+            emulator->ev2_session_encryption_key,
+            0x51,
+            sizeof(emulator->ev2_session_encryption_key));
+        memset(emulator->ev2_session_mac_key, 0x52, sizeof(emulator->ev2_session_mac_key));
+        memset(
+            emulator->ev2_transaction_identifier,
+            0x53,
+            sizeof(emulator->ev2_transaction_identifier));
+        memset(
+            emulator->ev2_card_capabilities, 0x54, sizeof(emulator->ev2_card_capabilities));
+        memset(
+            emulator->ev2_reader_capabilities,
+            0x55,
+            sizeof(emulator->ev2_reader_capabilities));
+
+        const uint8_t* authenticate =
+            non_first ? authenticate_non_first : authenticate_first;
+        const size_t authenticate_len =
+            non_first ? sizeof(authenticate_non_first) : sizeof(authenticate_first);
+        uint8_t response[64];
+        size_t response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                session,
+                authenticate,
+                authenticate_len,
+                response,
+                sizeof(response),
+                &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_uint8(response[response_len - 1], ==, DFC_CMD_ADDITIONAL_FRAME);
+        munit_assert_true(emulator->ev2_authentication_pending);
+        munit_assert_true(emulator->ev2_authentication_non_first == (non_first != 0));
+        munit_assert_uint8(emulator->ev2_static_key[0], ==, 0x11);
+        munit_assert_false(emulator->ev2_session_active);
+        munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, 0);
+        munit_assert_uint16(emulator->ev2_command_counter, ==, 0);
+        assert_zeroed_bytes(
+            emulator->ev2_session_encryption_key,
+            sizeof(emulator->ev2_session_encryption_key));
+        assert_zeroed_bytes(
+            emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));
+        if(non_first) {
+            munit_assert_uint8(emulator->ev2_transaction_identifier[0], ==, 0x53);
+            munit_assert_uint8(emulator->ev2_card_capabilities[0], ==, 0x54);
+            munit_assert_uint8(emulator->ev2_reader_capabilities[0], ==, 0x55);
+        } else {
+            assert_zeroed_bytes(
+                emulator->ev2_transaction_identifier,
+                sizeof(emulator->ev2_transaction_identifier));
+            assert_zeroed_bytes(
+                emulator->ev2_card_capabilities, sizeof(emulator->ev2_card_capabilities));
+            assert_zeroed_bytes(
+                emulator->ev2_reader_capabilities,
+                sizeof(emulator->ev2_reader_capabilities));
+        }
+
+        uint8_t pending_random[DFC_EV2_RANDOM_LENGTH];
+        uint8_t pending_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
+        memcpy(pending_random, emulator->ev2_random_b, sizeof(pending_random));
+        memcpy(
+            pending_transaction_identifier,
+            emulator->ev2_pending_transaction_identifier,
+            sizeof(pending_transaction_identifier));
+        assert_iso_abort_preflight_is_atomic(session);
+        munit_assert_true(emulator->ev2_authentication_pending);
+        munit_assert_memory_equal(
+            sizeof(pending_random), emulator->ev2_random_b, pending_random);
+        munit_assert_memory_equal(
+            sizeof(pending_transaction_identifier),
+            emulator->ev2_pending_transaction_identifier,
+            pending_transaction_identifier);
+
+        assert_iso_abort_and_no_native_continuation(session);
+        munit_assert_false(emulator->ev2_authentication_pending);
+        munit_assert_false(emulator->ev2_authentication_non_first);
+        munit_assert_uint8(emulator->ev2_pending_authenticated_key_no, ==, 0);
+        assert_zeroed_bytes(emulator->ev2_static_key, sizeof(emulator->ev2_static_key));
+        assert_zeroed_bytes(emulator->ev2_random_b, sizeof(emulator->ev2_random_b));
+        assert_zeroed_bytes(
+            emulator->ev2_pending_transaction_identifier,
+            sizeof(emulator->ev2_pending_transaction_identifier));
+        assert_zeroed_bytes(
+            emulator->ev2_pending_card_capabilities,
+            sizeof(emulator->ev2_pending_card_capabilities));
+        assert_zeroed_bytes(
+            emulator->ev2_pending_reader_capabilities,
+            sizeof(emulator->ev2_pending_reader_capabilities));
+        assert_zeroed_bytes(
+            emulator->ev2_transaction_identifier,
+            sizeof(emulator->ev2_transaction_identifier));
+        assert_zeroed_bytes(
+            emulator->ev2_card_capabilities, sizeof(emulator->ev2_card_capabilities));
+        assert_zeroed_bytes(
+            emulator->ev2_reader_capabilities,
+            sizeof(emulator->ev2_reader_capabilities));
+
+        dfc_virtual_picc_session_free(session);
+    }
+    return MUNIT_OK;
+}
+#endif
+
+#if DFC_ENABLE_VIRTUAL_CARD
+static MunitResult test_virtual_card_select_does_not_abort_native_response_chain(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    static const uint8_t installation_id[] = {0x11, 0x22, 0x33};
+    DfcCredential credential;
+    load_standard_credential(&credential);
+    credential.card.generation = DfcGenerationEv3;
+    add_applications_for_chained_listing(&credential);
+    credential.virtual_card_configured = true;
+    credential.virtual_card_authentication_mandatory = true;
+    memcpy(
+        credential.virtual_card_installation_id, installation_id, sizeof(installation_id));
+    credential.virtual_card_installation_id_len = sizeof(installation_id);
+    memcpy(credential.virtual_card_uid, credential.uid, credential.uid_len);
+    credential.virtual_card_uid_len = credential.uid_len;
+
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+    munit_assert_not_null(session);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+
+    uint8_t response[128];
+    size_t response_len = 0;
+    start_application_id_response_chain(session, response, sizeof(response), &response_len);
+    const size_t pending_len = session->emulator->pending_chain_len;
+    const size_t pending_offset = session->emulator->pending_chain_offset;
+
+    const uint8_t select_virtual_card[] = {
+        DFC_ISO7816_CLA_STANDARD,
+        DFC_ISO7816_INS_SELECT,
+        0x04,
+        0x00,
+        sizeof(installation_id),
+        installation_id[0],
+        installation_id[1],
+        installation_id[2]};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session,
+            select_virtual_card,
+            sizeof(select_virtual_card),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(2, response + response_len - 2, ((uint8_t[]){0x90, 0x00}));
+    munit_assert_true(session->emulator->virtual_card_authentication_expected);
+    munit_assert_size(session->emulator->pending_chain_len, ==, pending_len);
+    munit_assert_size(session->emulator->pending_chain_offset, ==, pending_offset);
+
+    const uint8_t additional_frame[] = {
+        DFC_ISO7816_CLA_WRAPPER, DFC_CMD_ADDITIONAL_FRAME, 0, 0, 0};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session,
+            additional_frame,
+            sizeof(additional_frame),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_uint8(response[0], !=, DFC_STATUS_ILLEGAL_COMMAND_CODE);
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+#endif
 
 static MunitResult
     test_scan_and_iso_wrapped_exchange(const MunitParameter params[], void* user_data) {
@@ -1662,6 +2293,46 @@ static MunitResult
 }
 
 static MunitTest tests[] = {
+    {"/iso-command-aborts-native-response-chain",
+     test_iso_command_aborts_native_response_chain,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-command-aborts-pending-native-authentication",
+     test_iso_command_aborts_pending_native_authentication,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-command-aborts-incoming-native-write-chain",
+     test_iso_command_aborts_incoming_native_write_chain,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-command-aborts-native-continuation-states",
+     test_iso_command_aborts_native_continuation_states,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    {"/iso-command-aborts-ev2-first-and-non-first",
+     test_iso_command_aborts_ev2_first_and_non_first,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
+#if DFC_ENABLE_VIRTUAL_CARD
+    {"/virtual-card-select-preserves-native-response-chain",
+     test_virtual_card_select_does_not_abort_native_response_chain,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {"/iso-auth-terminal-scratch-wipe",
      test_iso_auth_terminal_paths_clear_pending_scratch,
      NULL,
