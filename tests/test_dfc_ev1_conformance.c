@@ -1226,6 +1226,92 @@ static MunitResult test_change_file_settings_round_trips_logical_rights(
     return MUNIT_OK;
 }
 
+static void assert_change_file_settings_rejected_atomically(
+    DfcVirtualPiccSession* session,
+    DfcCredential* credential,
+    uint8_t expected_status) {
+    DfcFile* file = dfc_credential_find_file_in_app(credential, 0, 1);
+    munit_assert_not_null(file);
+    uint8_t file_before[sizeof(*file)];
+    memcpy(file_before, file, sizeof(file_before));
+#if DFC_ENABLE_SDM
+    session->emulator->sdm_read_cache_valid = true;
+    session->emulator->sdm_read_cache_file_number = file->number;
+    session->emulator->sdm_read_cache_len = 23;
+    memset(session->emulator->sdm_read_cache, 0xA5, sizeof(session->emulator->sdm_read_cache));
+    uint8_t cache_before[DFC_SDM_READ_CACHE_SIZE];
+    memcpy(cache_before, session->emulator->sdm_read_cache, sizeof(cache_before));
+#endif
+    dfc_credential_clear_dirty(credential);
+
+    const uint8_t change[] = {0x90, 0x5F, 0x00, 0x00, 0x04, 0x01, DFC_COMM_MAC, 0xCD, 0xAB, 0x00};
+    assert_status(session, change, sizeof(change), expected_status);
+
+    munit_assert_memory_equal(sizeof(file_before), file_before, file);
+    munit_assert_false(credential->dirty);
+#if DFC_ENABLE_SDM
+    munit_assert_true(session->emulator->sdm_read_cache_valid);
+    munit_assert_uint8(session->emulator->sdm_read_cache_file_number, ==, file->number);
+    munit_assert_size(session->emulator->sdm_read_cache_len, ==, 23);
+    munit_assert_memory_equal(
+        sizeof(cache_before), cache_before, session->emulator->sdm_read_cache);
+#endif
+}
+
+static MunitResult
+    test_change_file_settings_enforces_change_access(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+
+    const struct {
+        uint8_t change_access;
+        int8_t authenticated_key;
+        uint8_t expected_status;
+    } rejected[] = {
+        {DFC_ACCESS_DENY, -1, DFC_STATUS_PERMISSION_DENIED},
+        {DFC_ACCESS_DENY, 0, DFC_STATUS_PERMISSION_DENIED},
+        {1, -1, DFC_STATUS_AUTHENTICATION_ERR},
+        {1, 0, DFC_STATUS_AUTHENTICATION_ERR},
+    };
+    for(size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++) {
+        DfcCredential credential;
+        DfcVirtualPiccSession* session = open_rights_file_over_the_air(
+            &credential, (uint8_t)(0xE0 | rejected[i].change_access), 0xEE);
+        if(rejected[i].authenticated_key >= 0) {
+            reselect_and_authenticate(session, (uint8_t)rejected[i].authenticated_key);
+        }
+        assert_change_file_settings_rejected_atomically(
+            session, &credential, rejected[i].expected_status);
+        dfc_virtual_picc_session_free(session);
+    }
+
+    const struct {
+        uint8_t change_access;
+        int8_t authenticated_key;
+    } accepted[] = {
+        {DFC_ACCESS_FREE, -1},
+        {1, 1},
+    };
+    for(size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
+        DfcCredential credential;
+        DfcVirtualPiccSession* session = open_rights_file_over_the_air(
+            &credential, (uint8_t)(0xE0 | accepted[i].change_access), 0xEE);
+        if(accepted[i].authenticated_key >= 0) {
+            reselect_and_authenticate(session, (uint8_t)accepted[i].authenticated_key);
+        }
+        dfc_credential_clear_dirty(&credential);
+        const uint8_t change[] = {
+            0x90, 0x5F, 0x00, 0x00, 0x04, 0x01, DFC_COMM_MAC, 0xCD, 0xAB, 0x00};
+        assert_status(session, change, sizeof(change), DFC_STATUS_OK);
+        munit_assert_uint8(credential.files[0].comm_settings, ==, DFC_COMM_MAC);
+        munit_assert_uint16(credential.files[0].access_rights, ==, 0xABCD);
+        munit_assert_true(credential.dirty);
+        dfc_virtual_picc_session_free(session);
+    }
+
+    return MUNIT_OK;
+}
+
 #if DFC_ENABLE_SDM
 static void set_sdm_settings_sentinels(DfcVirtualPiccSession* session, DfcFile* file) {
     file->comm_settings = DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN;
@@ -1590,6 +1676,12 @@ static MunitTest tests[] = {
      NULL},
     {"/change-file-settings-round-trips-logical-rights",
      test_change_file_settings_round_trips_logical_rights,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-enforces-change-access",
+     test_change_file_settings_enforces_change_access,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

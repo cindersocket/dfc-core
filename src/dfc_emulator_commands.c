@@ -1396,7 +1396,11 @@ static void handle_change_file_settings(
     }
 
     uint8_t change_key = access_change_nibble(file->access_rights);
-    if(change_key != DFC_ACCESS_FREE && !dfc_emulator_native_authentication_active(emulator)) {
+    if(change_key == DFC_ACCESS_DENY) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+    if(!access_nibble_allows(change_key, emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
