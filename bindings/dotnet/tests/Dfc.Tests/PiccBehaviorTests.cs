@@ -14,6 +14,152 @@ using NUnit.Framework;
 [TestFixture]
 public sealed class PiccBehaviorTests
 {
+    private static int freeCalls;
+    private static nint freedPicc;
+    private static int clockCreatorCalls;
+
+    [Test]
+    public unsafe void Create_QueriesClockBeforeTakingNativeOwnership()
+    {
+        clockCreatorCalls = 0;
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () =>
+                DfcVirtualPicc.CreateForTesting(
+                    Fixtures.Credential(),
+                    new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty),
+                    new ThrowingTimeProvider(),
+                    new DfcVirtualPicc.CreationHooks(CountingPiccCreate)
+                )
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("injected clock failure"));
+            Assert.That(clockCreatorCalls, Is.Zero);
+        });
+    }
+
+    private static unsafe int CountingPiccCreate(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    )
+    {
+        Interlocked.Increment(ref clockCreatorCalls);
+        return -1;
+    }
+
+    private sealed class ThrowingTimeProvider : TimeProvider
+    {
+        public override long GetTimestamp() => throw new InvalidOperationException("injected clock failure");
+    }
+
+    [Test]
+    public void Create_ReleasesRandomSourceWhenNativeEntryPointThrows()
+    {
+        var random = CreateWithThrowingNativeEntryPoint();
+
+        CollectUntilDead(random);
+
+        Assert.That(random.IsAlive, Is.False);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static unsafe WeakReference CreateWithThrowingNativeEntryPoint()
+    {
+        var random = new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty);
+        var weak = new WeakReference(random);
+        var exception = Assert.Throws<EntryPointNotFoundException>(
+            () =>
+                DfcVirtualPicc.CreateForTesting(
+                    Fixtures.Credential(),
+                    random,
+                    null,
+                    new DfcVirtualPicc.CreationHooks(ThrowingPiccCreate)
+                )
+        );
+        Assert.That(exception!.Message, Is.EqualTo("injected missing native entry point"));
+        return weak;
+    }
+
+    private static unsafe int ThrowingPiccCreate(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    ) => throw new EntryPointNotFoundException("injected missing native entry point");
+
+    [Test]
+    public void Create_ReleasesNativeCardAndRandomSourceWhenManagedWrappingThrows()
+    {
+        freeCalls = 0;
+        freedPicc = 0;
+        var random = CreateWithThrowingManagedWrapper();
+
+        CollectUntilDead(random);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(random.IsAlive, Is.False);
+            Assert.That(freeCalls, Is.EqualTo(1));
+            Assert.That(freedPicc, Is.EqualTo((nint)0x58));
+        });
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static unsafe WeakReference CreateWithThrowingManagedWrapper()
+    {
+        var random = new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty);
+        var weak = new WeakReference(random);
+        var exception = Assert.Throws<InvalidOperationException>(
+            () =>
+                DfcVirtualPicc.CreateForTesting(
+                    Fixtures.Credential(),
+                    random,
+                    null,
+                    new DfcVirtualPicc.CreationHooks(
+                        SuccessfulPiccCreate,
+                        ThrowingManagedWrapper,
+                        TrackingPiccFree
+                    )
+                )
+        );
+        Assert.That(exception!.Message, Is.EqualTo("injected managed wrapping failure"));
+        return weak;
+    }
+
+    private static void ThrowingManagedWrapper(nint picc) =>
+        throw new InvalidOperationException("injected managed wrapping failure");
+
+    private static unsafe int SuccessfulPiccCreate(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    )
+    {
+        *output = 0x58;
+        return 0;
+    }
+
+    private static void TrackingPiccFree(nint picc)
+    {
+        Interlocked.Increment(ref freeCalls);
+        freedPicc = picc;
+    }
+
+    private static void CollectUntilDead(WeakReference reference)
+    {
+        for (var i = 0; i < 10 && reference.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+    }
+
     [Test]
     public void Dispose_IsIdempotent_WithoutReleasingOtherCallbackRoots()
     {

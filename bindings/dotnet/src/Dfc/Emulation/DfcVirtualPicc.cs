@@ -59,16 +59,29 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     private const int ResponseCapacity = 1024;
     private const int NoCard = 1;
 
+    internal delegate int PiccCreator(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    );
+
+    internal readonly record struct CreationHooks(
+        PiccCreator Create,
+        Action<nint>? AfterCreate = null,
+        Action<nint>? Free = null
+    );
+
     private readonly PiccHandle handle;
     private readonly TimeProvider? clock;
     private long lastTimestamp;
     private readonly Lock gate = new();
 
-    private DfcVirtualPicc(PiccHandle handle, TimeProvider? clock)
+    private DfcVirtualPicc(PiccHandle handle, TimeProvider? clock, long lastTimestamp)
     {
         this.handle = handle;
         this.clock = clock;
-        lastTimestamp = clock?.GetTimestamp() ?? 0;
+        this.lastTimestamp = lastTimestamp;
     }
 
     /// <summary>
@@ -80,6 +93,20 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         DfcCredential credential,
         IDfcRandomSource? random = null,
         TimeProvider? clock = null
+    ) => CreateCore(credential, random, clock, null);
+
+    internal static Result<DfcVirtualPicc, DfcError> CreateForTesting(
+        DfcCredential credential,
+        IDfcRandomSource? random,
+        TimeProvider? clock,
+        CreationHooks hooks
+    ) => CreateCore(credential, random, clock, hooks);
+
+    private static Result<DfcVirtualPicc, DfcError> CreateCore(
+        DfcCredential credential,
+        IDfcRandomSource? random,
+        TimeProvider? clock,
+        CreationHooks? hooks
     )
     {
         var written = CredentialMarshaller.Write(credential);
@@ -89,36 +116,89 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         }
 
         using var source = written.Value;
-        var root = random is null ? default : GCHandle.Alloc(random);
-        nint picc;
-        int st;
-        bool added = false;
-        source.DangerousAddRef(ref added);
+        var initialTimestamp = clock?.GetTimestamp() ?? 0;
+        GCHandle root = default;
+        nint picc = 0;
+        PiccHandle? pendingHandle = null;
         try
         {
-            st = random is null
-                ? Native.dfc_ffi_picc_create(source.DangerousGetHandle(), null, 0, &picc)
-                : Native.dfc_ffi_picc_create(source.DangerousGetHandle(), &RandomTrampoline, GCHandle.ToIntPtr(root), &picc);
+            root = random is null ? default : GCHandle.Alloc(random);
+            int st;
+            bool added = false;
+            source.DangerousAddRef(ref added);
+            try
+            {
+                var create = hooks?.Create;
+                st = create is null
+                    ? Native.dfc_ffi_picc_create(
+                        source.DangerousGetHandle(),
+                        random is null ? null : &RandomTrampoline,
+                        random is null ? 0 : GCHandle.ToIntPtr(root),
+                        &picc
+                    )
+                    : create(
+                        source.DangerousGetHandle(),
+                        random is null ? null : &RandomTrampoline,
+                        random is null ? 0 : GCHandle.ToIntPtr(root),
+                        &picc
+                    );
+            }
+            finally
+            {
+                if (added)
+                {
+                    source.DangerousRelease();
+                }
+            }
+
+            if (st != 0)
+            {
+                return DfcError.FromStatus(st, "the virtual PICC could not be created");
+            }
+
+            if (hooks?.AfterCreate is { } afterCreate)
+            {
+                afterCreate(picc);
+            }
+
+            pendingHandle = new PiccHandle(picc, root);
+            picc = 0;
+            root = default;
+            var card = new DfcVirtualPicc(pendingHandle, clock, initialTimestamp);
+            pendingHandle = null;
+            return card;
         }
         finally
         {
-            if (added)
+            if (pendingHandle is not null)
             {
-                source.DangerousRelease();
+                pendingHandle.Dispose();
+            }
+            else
+            {
+                try
+                {
+                    if (picc != 0)
+                    {
+                        if (hooks?.Free is { } free)
+                        {
+                            free(picc);
+                        }
+                        else
+                        {
+                            Native.dfc_ffi_picc_free(picc);
+                        }
+                    }
+                }
+                finally
+                {
+                    if (root.IsAllocated)
+                    {
+                        root.Free();
+                    }
+                }
             }
         }
-
-        if (st != 0)
-        {
-            if (root.IsAllocated)
-            {
-                root.Free();
-            }
-
-            return DfcError.FromStatus(st, "the virtual PICC could not be created");
-        }
-
-        return new DfcVirtualPicc(new PiccHandle(picc, root), clock);
     }
 
     /// <summary>Runs anticollision and reports what the card presented.</summary>
