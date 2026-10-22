@@ -35,6 +35,7 @@ option(DFC_BUILD_STATIC_FFI "Build a static library with the flat interface" OFF
 option(DFC_BUILD_RUST_TARGET_BRIDGE "Build the allocation-neutral Rust target bridge" OFF)
 option(DFC_BUILD_TESTS "Build the smoke test for the shared library" ${DFC_BUILD_SHARED})
 option(DFC_BUILD_JNI "Build the self-contained Java/Android JNI library" OFF)
+option(DFC_BUILD_FOOTPRINT_PROBE "Build the embedded footprint metadata probe" OFF)
 # Workstation sizes for the credential model. A device build keeps the small
 # defaults in dfc_common.h.
 if(DFC_ROLE STREQUAL "target")
@@ -163,6 +164,13 @@ add_library(dfc_core STATIC $<TARGET_OBJECTS:dfc_objects>)
 target_include_directories(dfc_core PUBLIC src port)
 target_compile_definitions(dfc_core PUBLIC ${DFC_DEFINITIONS})
 target_link_libraries(dfc_core PUBLIC ${DFC_CRYPTO_LIBRARIES})
+
+if(DFC_BUILD_FOOTPRINT_PROBE)
+    add_library(dfc_footprint_probe OBJECT tests/embedded_footprint_probe.c)
+    target_include_directories(dfc_footprint_probe PRIVATE src port)
+    target_compile_definitions(dfc_footprint_probe PRIVATE ${DFC_DEFINITIONS})
+    target_compile_options(dfc_footprint_probe PRIVATE ${DFC_WARNINGS})
+endif()
 
 set(DFC_FFI_SOURCES
         $<TARGET_OBJECTS:dfc_objects>

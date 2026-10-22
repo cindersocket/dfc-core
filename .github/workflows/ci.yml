@@ -20,6 +20,8 @@ jobs:
         run: ./scripts/check-format.sh
       - name: Test documentation link checker
         run: python3 tests/test_check_docs.py
+      - name: Test stack-usage checker
+        run: python3 tests/test_check_stack_usage.py
       - name: Check documentation links
         run: python3 scripts/check-docs.py
       - name: Check version metadata
@@ -62,6 +64,28 @@ jobs:
           path: dependencies/tiny-crypto-c
       - name: Verify position-independent code selection
         run: TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" python3 scripts/check-cmake-pic.py
+
+  embedded-footprint:
+    name: Cortex-M4 footprint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
+        with:
+          release: "13.3.Rel1"
+      - name: Fetch tiny-crypto-c
+        uses: actions/checkout@v4
+        with:
+          repository: mistial-dev/tiny-crypto-c
+          ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
+          path: dependencies/tiny-crypto-c
+      - name: Check the full EV3 target footprint
+        run: TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" ./scripts/check-embedded-footprint.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cortex-m4-footprint
+          path: build-embedded-footprint/report.txt
 
   unit:
     name: Unit suite (${{ matrix.backend }}${{ matrix.sanitize && format(', {0}', matrix.sanitize) || '' }})

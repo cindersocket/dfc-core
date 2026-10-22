@@ -14,6 +14,8 @@
   supported binding language.
 - Generate target and Rust static libraries with the toolchain's native code
   model, and reserve position-independent objects for shared and JNI libraries.
+- Add a reproducible Cortex-M4 footprint gate for code, static data, stack
+  frames, model structures, and configured storage capacities.
 - Refactor credential validation and serialization around explicit model invariants.
 - Accept zero-initialized credentials with empty file and key pools.
 - Make credential and file-pool updates transactional.

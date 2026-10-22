@@ -185,7 +185,25 @@ native engine keeps its existing fixed capacities and uses the platform port
 for the protocol session. This avoids a second credential model and leaves file
 and application capacity unchanged.
 
-## 7. Verify the integration
+## 7. Measure the embedded footprint
+
+The Cortex-M4 CI job configures the full EV3 target through CMake at `-Os` with
+Arm GNU Toolchain 13.3.Rel1 and the pinned tiny-crypto-c revision. It records
+linked and per-object text, data, and BSS sizes, the largest static stack
+frames, public model sizes, and configured storage capacities. A missing
+stack-usage record or a dynamically sized stack frame fails the gate.
+
+Run the same gate with a clean checkout of the pinned tiny-crypto-c revision:
+
+```sh
+TINY_CRYPTO_DIR=/path/to/tiny-crypto-c ./scripts/check-embedded-footprint.sh
+```
+
+The report is written to `build-embedded-footprint/report.txt`. The capacity
+assertions hold the target defaults at 28 applications, 32 files, 14 keys,
+8,192 file-pool bytes, 4,096 key-pool bytes, and 2,048 bytes per file.
+
+## 8. Verify the integration
 
 Run the host tests before you build for the target:
 
