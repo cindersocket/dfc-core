@@ -831,6 +831,7 @@ int32_t dfc_ffi_credential_add_application(
 #if DFC_ENABLE_KEY_SETS
         if(!dfc_credential_key_sets_resize(
                c, app, a->num_key_sets, a->num_keys, a->key_len, a->key_set_max_size)) {
+            dfc_credential_reset_application(app);
             return DfcDerCapacity;
         }
         app->key_set_settings = a->key_set_settings;
@@ -841,7 +842,10 @@ int32_t dfc_ffi_credential_add_application(
         }
 #endif
     } else if(a->num_keys > 0) {
-        if(!dfc_credential_keys_resize(c, app, a->num_keys, a->key_len)) return DfcDerCapacity;
+        if(!dfc_credential_keys_resize(c, app, a->num_keys, a->key_len)) {
+            dfc_credential_reset_application(app);
+            return DfcDerCapacity;
+        }
     }
     if(a->has_capability_data) {
 #if DFC_ENABLE_APPLICATION_CAPABILITY_DATA

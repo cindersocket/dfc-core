@@ -1,13 +1,19 @@
-// Smoke test for the shared library, driven only through ffi/dfc_ffi.h the
-// way a foreign runtime drives it.
+// Smoke test for the shared library. Calls use the public FFI; the internal
+// credential layout is visible only for rollback assertions.
 
 #include "dfc_ffi.h"
+#include "dfc_credential.h"
+#include "dfc_der.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static int failures;
+
+struct DfcFfiCredential {
+    DfcCredential model;
+};
 
 // Credential builders return the stable model-status family described by the
 // FFI, where capacity is the third nonzero status.
@@ -87,6 +93,151 @@ static uint8_t* encode(const DfcFfiCredential* credential, size_t* len) {
     uint8_t* out = malloc(*len);
     CHECK(dfc_ffi_credential_encode(credential, out, *len, len) == 0);
     return out;
+}
+
+static DfcFfiApplication capacity_test_application(uint8_t id, bool multiple_key_sets) {
+    DfcFfiApplication application = {0};
+    application.aid[0] = id;
+    application.aid[1] = 0x45;
+    application.aid[2] = 0x01;
+    application.has_iso_file_id = 1;
+    application.iso_file_id = (uint16_t)(0xE100u + id);
+    application.df_name_len = 16;
+    memset(application.df_name, id, application.df_name_len);
+    application.key_settings_1 = 0x0F;
+    application.key_settings_2 = (uint8_t)(DFC_KEY_TYPE_3K3DES | DFC_MAX_KEYS);
+    application.auth_command = 0x1A;
+    application.has_auth_commands = 1;
+    application.auth_commands = DFC_AUTH_COMMAND_ISO_NATIVE;
+    application.has_preferred_auth_command = 1;
+    application.preferred_auth_command = DFC_AUTH_COMMAND_ISO_NATIVE;
+    application.num_keys = DFC_MAX_KEYS;
+    application.key_len = 24;
+    if(multiple_key_sets) {
+        application.num_key_sets = DFC_MAX_KEY_SETS;
+        application.key_set_max_size = 24;
+        application.key_set_settings = 0x5A;
+        for(size_t i = 0; i < DFC_MAX_KEY_SETS; i++) {
+            application.key_set_versions[i] = (uint8_t)i;
+            application.key_set_types[i] = 1;
+            application.key_set_initialized[i] = 1;
+        }
+    }
+    return application;
+}
+
+static void initialize_test_card(DfcFfiCredential* credential, uint32_t generation) {
+    DfcFfiCard card;
+    CHECK(dfc_ffi_credential_get_card(credential, &card) == DFC_FFI_OK);
+    card.generation = generation;
+    card.uid_len = 7;
+    memset(card.uid, 0x45, card.uid_len);
+    CHECK(dfc_ffi_credential_set_card(credential, &card) == DFC_FFI_OK);
+}
+
+static void check_rejected_application_is_atomic(
+    DfcFfiCredential* credential,
+    const DfcFfiApplication* application,
+    int32_t expected_status) {
+    size_t before_len = 0;
+    uint8_t* before_bytes = encode(credential, &before_len);
+    DfcCredential* before = malloc(sizeof(*before));
+    CHECK(before != NULL);
+    if(!before) {
+        free(before_bytes);
+        return;
+    }
+    memcpy(before, &credential->model, sizeof(*before));
+
+    uint32_t index = UINT32_C(0xA5A5A5A5);
+    CHECK(dfc_ffi_credential_add_application(credential, application, &index) == expected_status);
+    CHECK(index == UINT32_C(0xA5A5A5A5));
+    CHECK(memcmp(&credential->model, before, sizeof(*before)) == 0);
+
+    size_t after_len = 0;
+    uint8_t* after_bytes = encode(credential, &after_len);
+    CHECK(after_len == before_len);
+    CHECK(after_len != before_len || memcmp(after_bytes, before_bytes, before_len) == 0);
+
+    if(credential->model.num_apps < DFC_MAX_APPS) {
+        DfcApplication empty;
+        dfc_credential_reset_application(&empty);
+        CHECK(
+            memcmp(&credential->model.apps[credential->model.num_apps], &empty, sizeof(empty)) ==
+            0);
+    }
+
+    free(after_bytes);
+    free(before);
+    free(before_bytes);
+}
+
+static void check_application_creation_rollback(void) {
+    for(size_t multiple_key_sets = 0; multiple_key_sets < 2; multiple_key_sets++) {
+        DfcFfiCredential* credential = NULL;
+        CHECK(dfc_ffi_credential_new(&credential) == DFC_FFI_OK);
+        if(!credential) continue;
+
+        initialize_test_card(credential, DfcGenerationEv2);
+
+        DfcFfiApplication rejected = capacity_test_application(
+            (uint8_t)(0x80u + multiple_key_sets), multiple_key_sets != 0);
+        size_t allocation = (size_t)rejected.num_keys *
+                            (multiple_key_sets ? rejected.num_key_sets : 1u) *
+                            dfc_credential_stored_key_length(rejected.key_len);
+        DfcFfiApplication large_filler =
+            capacity_test_application((uint8_t)(credential->model.num_apps + 1u), true);
+        size_t large_allocation = (size_t)large_filler.num_keys * large_filler.num_key_sets *
+                                  dfc_credential_stored_key_length(large_filler.key_len);
+        while(dfc_credential_key_pool_free(&credential->model) >= large_allocation &&
+              credential->model.num_apps < DFC_MAX_APPS) {
+            large_filler.aid[0] = (uint8_t)(credential->model.num_apps + 1u);
+            uint32_t index = UINT32_MAX;
+            CHECK(
+                dfc_ffi_credential_add_application(credential, &large_filler, &index) ==
+                DFC_FFI_OK);
+        }
+        while(dfc_credential_key_pool_free(&credential->model) >= allocation &&
+              credential->model.num_apps < DFC_MAX_APPS) {
+            DfcFfiApplication filler =
+                capacity_test_application((uint8_t)(credential->model.num_apps + 1u), false);
+            uint32_t index = UINT32_MAX;
+            CHECK(dfc_ffi_credential_add_application(credential, &filler, &index) == DFC_FFI_OK);
+        }
+        CHECK(credential->model.num_apps < DFC_MAX_APPS);
+        CHECK(dfc_credential_key_pool_free(&credential->model) < allocation);
+        check_rejected_application_is_atomic(credential, &rejected, model_capacity_status);
+        dfc_ffi_credential_free(credential);
+    }
+
+    DfcFfiCredential* duplicate = NULL;
+    CHECK(dfc_ffi_credential_new(&duplicate) == DFC_FFI_OK);
+    if(duplicate) {
+        initialize_test_card(duplicate, DfcGenerationEv1);
+        DfcFfiApplication application = capacity_test_application(0x31, false);
+        application.num_keys = 1;
+        uint32_t index = UINT32_MAX;
+        CHECK(dfc_ffi_credential_add_application(duplicate, &application, &index) == DFC_FFI_OK);
+        check_rejected_application_is_atomic(duplicate, &application, DfcDerMalformed);
+        dfc_ffi_credential_free(duplicate);
+    }
+
+    DfcFfiCredential* full = NULL;
+    CHECK(dfc_ffi_credential_new(&full) == DFC_FFI_OK);
+    if(full) {
+        initialize_test_card(full, DfcGenerationEv1);
+        for(size_t i = 0; i < DFC_MAX_APPS; i++) {
+            DfcFfiApplication application = capacity_test_application((uint8_t)(i + 1u), false);
+            application.num_keys = 1;
+            application.key_len = 8;
+            application.key_settings_2 = (uint8_t)(DFC_KEY_TYPE_DES_2K3DES | 1u);
+            uint32_t index = UINT32_MAX;
+            CHECK(dfc_ffi_credential_add_application(full, &application, &index) == DFC_FFI_OK);
+        }
+        DfcFfiApplication rejected = capacity_test_application(0xF0, false);
+        check_rejected_application_is_atomic(full, &rejected, model_capacity_status);
+        dfc_ffi_credential_free(full);
+    }
 }
 
 static DfcFfiKey repeated_key(uint32_t len, uint8_t value, uint8_t version) {
@@ -172,6 +323,8 @@ static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
 }
 
 int main(void) {
+    check_application_creation_rollback();
+
     CHECK(dfc_ffi_abi_version() == DFC_FFI_ABI_VERSION);
     CHECK(dfc_ffi_layout_fingerprint() != 0);
     enum {
