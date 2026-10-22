@@ -4,6 +4,7 @@ import ctypes as C
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -349,7 +350,13 @@ def test_reader_close_waits_for_in_flight_run(monkeypatch: pytest.MonkeyPatch) -
     ids=[name for name, _, _ in REENTRANT_CLOSE_READER_CALLS],
 )
 @pytest.mark.parametrize(
-    "transport_result", ["returns_after_close", "raises_after_close", "raises_while_open"]
+    "transport_result",
+    [
+        "returns_after_close",
+        "raises_after_close",
+        "conversion_raises_after_close",
+        "raises_while_open",
+    ],
 )
 def test_transport_reentry_is_safe_for_every_reader_exchange_path(
     name: str,
@@ -362,6 +369,11 @@ def test_transport_reentry_is_safe_for_every_reader_exchange_path(
         pass
 
     failure = TransportFailure("transport failed after close")
+
+    class ConversionFailure:
+        def __bytes__(self) -> bytes:
+            raise failure
+
     reader: Reader
 
     class ClosingTransport:
@@ -370,8 +382,10 @@ def test_transport_reentry_is_safe_for_every_reader_exchange_path(
                 reader.close()
                 assert reader._session.value is None
                 assert reader._exchange.value is None
-            if transport_result != "returns_after_close":
+            if transport_result in ("raises_after_close", "raises_while_open"):
                 raise failure
+            if transport_result == "conversion_raises_after_close":
+                return cast(bytes, ConversionFailure())
             return b""
 
     reader = Reader(ClosingTransport())
@@ -421,6 +435,38 @@ def test_transport_reentry_is_safe_for_every_reader_exchange_path(
     assert step_calls == 1
     assert clear_calls == (1 if transport_result == "raises_while_open" else 0)
     reader.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "invoke"),
+    CLOSED_READER_CALLS,
+    ids=[name for name, _ in CLOSED_READER_CALLS],
+)
+def test_transport_callback_rejects_every_reader_native_call(
+    name: str, invoke: Callable[[Reader], object]
+) -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+    reader: Reader
+    attempted = False
+
+    with VirtualPicc(credential) as picc:
+        picc.activate()
+
+        class ReentrantTransport:
+            def transceive(self, command: bytes) -> bytes:
+                nonlocal attempted
+                if not attempted:
+                    attempted = True
+                    with pytest.raises(RuntimeError, match="reader transport callback is active"):
+                        invoke(reader)
+                return picc.transceive(command)
+
+        with Reader(ReentrantTransport()) as reader:
+            response = reader.exchange(Command.get_version())
+            assert response.status == 0
+            assert len(response.data) == 28
+
+    assert attempted, f"{name} did not reach the transport callback"
 
 
 def test_abi_sizes_and_field_fingerprint() -> None:

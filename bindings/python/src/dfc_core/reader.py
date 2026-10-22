@@ -82,6 +82,7 @@ class Reader:
     def __init__(self, transport: Transport, framing: int = 0) -> None:
         self.transport, self.framing = transport, framing
         self._lock = threading.RLock()
+        self._in_transport_callback = False
         self._session, self._exchange = N.Handle(), N.Handle()
         lib = N.library()
         N.raise_status(lib.dfc_ffi_reader_session_new(C.byref(self._session)))
@@ -98,6 +99,8 @@ class Reader:
         lib.dfc_ffi_reader_session_free(session)
 
     def _open(self) -> None:
+        if self._in_transport_callback:
+            raise RuntimeError("reader transport callback is active")
         if not self._finalizer.alive:
             raise RuntimeError("reader is closed")
 
@@ -147,7 +150,11 @@ class Reader:
                 )
                 if status == PENDING:
                     try:
-                        answer = bytes(self.transport.transceive(bytes(out[: length.value])))
+                        self._in_transport_callback = True
+                        try:
+                            answer = bytes(self.transport.transceive(bytes(out[: length.value])))
+                        finally:
+                            self._in_transport_callback = False
                     except BaseException:
                         if self._finalizer.alive:
                             self.clear()
