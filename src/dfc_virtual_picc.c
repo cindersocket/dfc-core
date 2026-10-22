@@ -76,10 +76,15 @@ static bool direct_response_is_pending(const DfcVirtualPiccSession* session) {
     return session->pending_response_offset == DFC_DIRECT_RESPONSE_PENDING;
 }
 
+static void truncate_pending_command(DfcVirtualPiccSession* session, size_t retained_len) {
+    dfc_secure_wipe(
+        session->pending_command + retained_len, session->pending_command_len - retained_len);
+    session->pending_command_len = retained_len;
+}
+
 static void clear_direct_response(DfcVirtualPiccSession* session) {
-    dfc_secure_wipe(session->pending_command, session->pending_command_len);
+    truncate_pending_command(session, 0);
     dfc_secure_wipe(session->pending_response, session->pending_response_len);
-    session->pending_command_len = 0;
     session->pending_response_len = 0;
     session->pending_response_offset = 0;
 }
@@ -900,8 +905,7 @@ static DfcVirtualPiccStatus replay_staged_iso_dep_response(
     DfcVirtualPiccStatus status = write_and_remember_iso_dep_response_block(
         session, response, response_capacity, response_len);
     if(status == DfcVirtualPiccStatusOk) {
-        dfc_secure_wipe(session->pending_command, session->pending_command_len);
-        session->pending_command_len = 0;
+        truncate_pending_command(session, 0);
         session->expected_pcd_sequence ^= 0x01;
     }
     return status;
@@ -1495,10 +1499,10 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             &apdu_response_len,
             false);
         if(status != DfcVirtualPiccStatusOk) {
-            session->pending_command_len = pending_command_len_before;
+            truncate_pending_command(session, pending_command_len_before);
             return status;
         }
-        session->pending_command_len = 0;
+        truncate_pending_command(session, 0);
         session->pending_response_len = apdu_response_len;
         session->pending_response_offset = 0;
         session->picc_sequence = sequence;

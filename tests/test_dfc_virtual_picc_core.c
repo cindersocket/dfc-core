@@ -954,6 +954,9 @@ static MunitResult test_iso_dep_reader_chaining(const MunitParameter params[], v
     munit_assert_size(response_len, ==, 3);
     munit_assert_memory_equal(3, response, ((uint8_t[]){0x02, 0x90, 0x00}));
     munit_assert_size(session->pending_command_len, ==, 0);
+    assert_zeroed_bytes(
+        session->pending_command,
+        (sizeof(first) - 1) + (sizeof(middle) - 1) + (sizeof(last) - 1));
     for(unsigned i = 0; i < 2; i++) {
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
@@ -1252,6 +1255,7 @@ static MunitResult test_iso_dep_capacity_stages_chained_commands(
             final_len++;
             response_block_len++;
         }
+        const size_t assembled_command_len = 6;
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
                 session, final, final_len, response, response_block_len - 1, &response_len),
@@ -1260,6 +1264,8 @@ static MunitResult test_iso_dep_capacity_stages_chained_commands(
         munit_assert_uint8(file_data[0], ==, 0xA6);
         munit_assert_size(session->pending_command_len, ==, final_len);
         munit_assert_memory_equal(final_len, session->pending_command, final);
+        assert_zeroed_bytes(
+            session->pending_command + final_len, assembled_command_len - final_len);
         munit_assert_uint8(session->expected_pcd_sequence, ==, 1);
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
@@ -1268,8 +1274,59 @@ static MunitResult test_iso_dep_capacity_stages_chained_commands(
             DfcVirtualPiccStatusOk);
         munit_assert_uint8(file_data[0], ==, 0xA6);
         munit_assert_size(session->pending_command_len, ==, 0);
+        assert_zeroed_bytes(session->pending_command, assembled_command_len);
         dfc_virtual_picc_session_free(session);
     }
+    return MUNIT_OK;
+}
+
+static MunitResult test_iso_dep_chained_terminal_failure_wipes_retired_tail(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    DfcCredential credential;
+    load_standard_credential(&credential);
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+    munit_assert_not_null(session);
+    uint8_t response[32];
+    size_t response_len = 0;
+    activate_iso_dep(session, 0, response, sizeof(response), &response_len);
+
+    const uint8_t first[] = {0x12, 0x00, DFC_ISO7816_INS_GET_CHALLENGE, 0x00};
+    const uint8_t final[] = {0x03, 0x00, DFC_ISO7816_AUTH_CHALLENGE_2TDEA};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            session, first, sizeof(first), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(session->pending_command_len, ==, sizeof(first) - 1);
+
+    const uint8_t empty_script = 0;
+    dfc_host_clear_random_buffer();
+    dfc_host_set_random_buffer(&empty_script, 0);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            session, final, sizeof(final), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(session->pending_command_len, ==, sizeof(first) - 1);
+    assert_zeroed_bytes(
+        session->pending_command + session->pending_command_len, sizeof(final) - 1);
+
+    uint8_t random_script[DFC_ISO7816_AUTH_CHALLENGE_2TDEA];
+    memset(random_script, 0x5A, sizeof(random_script));
+    dfc_host_set_random_buffer(random_script, sizeof(random_script));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            session, final, sizeof(final), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(session->pending_command_len, ==, 0);
+    assert_zeroed_bytes(
+        session->pending_command, (sizeof(first) - 1) + (sizeof(final) - 1));
+    dfc_host_clear_random_buffer();
+    dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
 }
 
@@ -2347,6 +2404,12 @@ static MunitTest tests[] = {
      NULL},
     {"/iso-dep-capacity-stages-chained-command",
      test_iso_dep_capacity_stages_chained_commands,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-dep-chained-terminal-failure-wipes-retired-tail",
+     test_iso_dep_chained_terminal_failure_wipes_retired_tail,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
