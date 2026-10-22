@@ -851,8 +851,6 @@ int32_t dfc_ffi_credential_add_application(
 #if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
         app->has_capability_data = true;
         memcpy(app->capability_data, a->capability_data, sizeof(app->capability_data));
-#else
-        return DfcDerUnsupported;
 #endif
     }
     if(a->delegated) {
@@ -862,8 +860,6 @@ int32_t dfc_ffi_credential_add_application(
         app->delegated_slot_version = a->delegated_slot_version;
         app->delegated_quota_limit = a->delegated_quota_limit;
         app->delegated_free_blocks = a->delegated_free_blocks;
-#else
-        return DfcDerUnsupported;
 #endif
     }
     if(index) *index = (uint32_t)c->num_apps;
@@ -941,8 +937,6 @@ int32_t dfc_ffi_credential_add_file(
         file->sdm_has_counter_limit = f->sdm_has_counter_limit != 0;
         file->sdm_counter_limit = f->sdm_counter_limit;
         file->sdm_read_counter = f->sdm_read_counter;
-#else
-        return DfcDerUnsupported;
 #endif
     }
     if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) {
@@ -954,8 +948,6 @@ int32_t dfc_ffi_credential_add_file(
         file->transaction_counter = f->transaction_counter;
         memcpy(file->transaction_mac, f->transaction_mac, sizeof(file->transaction_mac));
         memcpy(file->previous_reader_id, f->previous_reader_id, sizeof(file->previous_reader_id));
-#else
-        return DfcDerUnsupported;
 #endif
     }
     if(index) *index = (uint32_t)c->num_files;
