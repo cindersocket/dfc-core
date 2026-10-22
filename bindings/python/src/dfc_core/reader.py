@@ -104,6 +104,8 @@ class Reader:
     def close(self) -> None:
         with self._lock:
             self._finalizer()
+            self._session = N.Handle()
+            self._exchange = N.Handle()
 
     def __enter__(self) -> Self:
         self._open()
@@ -133,24 +135,26 @@ class Reader:
             N.library().dfc_ffi_reader_session_clear(self._session)
 
     def _run(self) -> Response:
-        answer = b""
-        while True:
-            _raw, pointer = N.byte_pointer(answer)
-            capacity, length = 1024, C.c_size_t()
-            out = (C.c_uint8 * capacity)()
-            status = N.library().dfc_ffi_reader_step(
-                self._exchange, pointer, len(answer), out, capacity, C.byref(length)
-            )
-            if status == PENDING:
-                try:
-                    answer = bytes(self.transport.transceive(bytes(out[: length.value])))
-                except BaseException:
-                    self.clear()
-                    raise
-                continue
-            N.raise_status(status)
-            data = N.variable_output(N.library().dfc_ffi_reader_result_data, self._exchange)
-            return Response(N.library().dfc_ffi_reader_result_status(self._exchange), data)
+        with self._lock:
+            self._open()
+            answer = b""
+            while True:
+                _raw, pointer = N.byte_pointer(answer)
+                capacity, length = 1024, C.c_size_t()
+                out = (C.c_uint8 * capacity)()
+                status = N.library().dfc_ffi_reader_step(
+                    self._exchange, pointer, len(answer), out, capacity, C.byref(length)
+                )
+                if status == PENDING:
+                    try:
+                        answer = bytes(self.transport.transceive(bytes(out[: length.value])))
+                    except BaseException:
+                        self.clear()
+                        raise
+                    continue
+                N.raise_status(status)
+                data = N.variable_output(N.library().dfc_ffi_reader_result_data, self._exchange)
+                return Response(N.library().dfc_ffi_reader_result_status(self._exchange), data)
 
     def exchange(self, command: Command, comm_mode: int = 0, header_len: int = -1) -> Response:
         with self._lock:
@@ -179,6 +183,7 @@ class Reader:
         randbuf, randptr = N.byte_pointer(challenge)
         try:
             with self._lock:
+                self._open()
                 status = N.library().dfc_ffi_reader_authenticate_begin(
                     self._exchange,
                     self._session,
@@ -211,6 +216,7 @@ class Reader:
         _cb, cp = N.byte_pointer(capabilities)
         try:
             with self._lock:
+                self._open()
                 status = N.library().dfc_ffi_reader_authenticate_ev2_begin(
                     self._exchange,
                     self._session,
@@ -246,6 +252,7 @@ class Reader:
         sb, sp = N.byte_pointer(second)
         try:
             with self._lock:
+                self._open()
                 status = N.library().dfc_ffi_reader_authenticate_iso7816_begin(
                     self._exchange,
                     self._session,
@@ -279,6 +286,7 @@ class Reader:
         ]
         try:
             with self._lock:
+                self._open()
                 status = N.library().dfc_ffi_reader_create_delegated_application_begin(
                     self._exchange,
                     self._session,
@@ -306,16 +314,18 @@ class Reader:
         new, newp = N.byte_pointer(new_key)
         old, oldp = N.byte_pointer(current_key)
         try:
-            return N.variable_output(
-                N.library().dfc_ffi_reader_change_key_cryptogram,
-                self._session,
-                key_no,
-                newp,
-                len(new_key),
-                oldp,
-                int(aes_key),
-                new_version,
-            )
+            with self._lock:
+                self._open()
+                return N.variable_output(
+                    N.library().dfc_ffi_reader_change_key_cryptogram,
+                    self._session,
+                    key_no,
+                    newp,
+                    len(new_key),
+                    oldp,
+                    int(aes_key),
+                    new_version,
+                )
         finally:
             C.memset(new, 0, len(new_key))
             C.memset(old, 0, len(current_key))
@@ -328,15 +338,17 @@ class Reader:
         new, newp = N.byte_pointer(new_key)
         old, oldp = N.byte_pointer(current_key)
         try:
-            return N.variable_output(
-                N.library().dfc_ffi_reader_change_key_ev2_data,
-                self._session,
-                key_set_no,
-                key_no,
-                newp,
-                oldp,
-                new_version,
-            )
+            with self._lock:
+                self._open()
+                return N.variable_output(
+                    N.library().dfc_ffi_reader_change_key_ev2_data,
+                    self._session,
+                    key_set_no,
+                    key_no,
+                    newp,
+                    oldp,
+                    new_version,
+                )
         finally:
             C.memset(new, 0, 16)
             C.memset(old, 0, 16)
@@ -352,6 +364,7 @@ class Reader:
     ) -> Response:
         _raw, pointer = N.byte_pointer(data)
         with self._lock:
+            self._open()
             function = getattr(N.library(), f"dfc_ffi_reader_{kind}_begin")
             prefix = (self._exchange, self._session, self.framing, file_number)
             status = function(

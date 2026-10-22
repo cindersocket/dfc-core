@@ -70,6 +70,9 @@ with VirtualPicc(Credential.load(content)) as picc:
     picc.mark_persisted()
 ```
 
+Calling `Reader.close()` more than once is safe. Other reader operations raise
+`RuntimeError` after the reader is closed.
+
 Calls on one handle are serialized. A physical transport remains responsible for
 its own thread safety.
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ctypes as C
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,47 @@ from dfc_core import (
 )
 
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
+
+
+CLOSED_READER_CALLS: list[tuple[str, Callable[[Reader], object]]] = [
+    ("state", lambda reader: reader.state),
+    ("clear", lambda reader: reader.clear()),
+    ("run", lambda reader: reader._run()),
+    ("exchange", lambda reader: reader.exchange(Command.get_version())),
+    (
+        "authenticate",
+        lambda reader: reader.authenticate(0x1A, 0, bytes(16), random_a=bytes(8)),
+    ),
+    (
+        "authenticate_ev2",
+        lambda reader: reader.authenticate_ev2(0, bytes(16), random_a=bytes(16)),
+    ),
+    (
+        "authenticate_iso7816",
+        lambda reader: reader.authenticate_iso7816(
+            0, 0x09, bytes(16), random_first=bytes(16), random_second=bytes(16)
+        ),
+    ),
+    (
+        "create_delegated_application",
+        lambda reader: reader.create_delegated_application(
+            bytes(19), bytes(16), bytes(16), bytes(7), bytes(16), 0
+        ),
+    ),
+    (
+        "change_key_cryptogram",
+        lambda reader: reader.change_key_cryptogram(
+            0, bytes(16), bytes(16), aes_key=True, new_version=0
+        ),
+    ),
+    (
+        "change_key_ev2_data",
+        lambda reader: reader.change_key_ev2_data(0, 0, bytes(16), bytes(16), 0),
+    ),
+    ("write_data", lambda reader: reader.write_data(0, 0, b"data")),
+    ("write_record", lambda reader: reader.write_record(0, 0, b"data")),
+    ("update_record", lambda reader: reader.update_record(0, 0, 0, b"data")),
+]
 
 
 def test_reader_native_signatures_are_complete() -> None:
@@ -170,6 +213,86 @@ def test_reader_authenticate_reaches_the_native_begin_function() -> None:
 
             assert response.status == 0
             assert reader.state.auth_mode == 0x1A
+
+
+@pytest.mark.parametrize(
+    ("name", "invoke"), CLOSED_READER_CALLS, ids=[name for name, _ in CLOSED_READER_CALLS]
+)
+def test_closed_reader_rejects_every_native_call(
+    name: str, invoke: Callable[[Reader], object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+    with VirtualPicc(credential) as picc:
+        reader = Reader(picc)
+        reader.close()
+
+        def unexpected_native_access() -> None:
+            pytest.fail(f"{name} accessed the native library after close")
+
+        monkeypatch.setattr(_native, "library", unexpected_native_access)
+        with pytest.raises(RuntimeError, match="reader is closed"):
+            invoke(reader)
+
+
+def test_reader_close_is_idempotent() -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+    with VirtualPicc(credential) as picc:
+        reader = Reader(picc)
+        reader.close()
+        reader.close()
+
+        assert reader._session.value is None
+        assert reader._exchange.value is None
+
+
+def test_reader_close_waits_for_in_flight_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+    with VirtualPicc(credential) as picc:
+        reader = Reader(picc)
+        library = _native.library()
+        step_entered = threading.Event()
+        release_step = threading.Event()
+        close_started = threading.Event()
+        close_returned = threading.Event()
+        run_errors: list[BaseException] = []
+
+        def blocked_step(*_: object) -> int:
+            step_entered.set()
+            if not release_step.wait(5):
+                raise TimeoutError("reader step was not released")
+            return _native.INVALID_ARGUMENT
+
+        def run() -> None:
+            try:
+                reader._run()
+            except BaseException as exc:  # noqa: BLE001, reported in the test thread
+                run_errors.append(exc)
+
+        def close() -> None:
+            close_started.set()
+            reader.close()
+            close_returned.set()
+
+        monkeypatch.setattr(library, "dfc_ffi_reader_step", blocked_step)
+        run_thread = threading.Thread(target=run)
+        close_thread = threading.Thread(target=close)
+        run_thread.start()
+        assert step_entered.wait(5)
+        close_thread.start()
+        assert close_started.wait(5)
+        try:
+            assert not close_returned.wait(0.1)
+        finally:
+            release_step.set()
+            run_thread.join(5)
+            close_thread.join(5)
+
+        assert not run_thread.is_alive()
+        assert not close_thread.is_alive()
+        assert len(run_errors) == 1
+        assert close_returned.is_set()
+        assert reader._session.value is None
+        assert reader._exchange.value is None
 
 
 def test_abi_sizes_and_field_fingerprint() -> None:
