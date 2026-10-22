@@ -215,6 +215,72 @@ static MunitResult test_enciphered_aes(const MunitParameter p[], void* d) {
     return MUNIT_OK;
 }
 
+static size_t encode_for_overlap_test(
+    DfcSecureMessaging* sm,
+    bool response,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t* out) {
+    static const uint8_t header[] = {DFC_CMD_WRITE_DATA, 1, 0, 0, 0, 0, 0, 0};
+    if(response) {
+        return dfc_secure_messaging_generate_response(
+            sm, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, plain, plain_len, out);
+    }
+    sm->pcd = true;
+    return dfc_secure_messaging_wrap(
+        sm, DFC_COMM_ENCIPHERED, header, sizeof(header), plain, plain_len, out);
+}
+
+static MunitResult test_enciphered_encode_accepts_partial_overlap(const MunitParameter p[], void* d) {
+    (void)p;
+    (void)d;
+    static const struct {
+        uint8_t cipher;
+        size_t key_len;
+    } ciphers[] = {
+        {DFC_CMD_AUTHENTICATE_LEGACY, 8},
+        {DFC_CMD_AUTHENTICATE_ISO, 16},
+        {DFC_CMD_AUTHENTICATE_ISO, 24},
+        {DFC_CMD_AUTHENTICATE_AES, 16},
+    };
+    static const size_t lengths[] = {1, 7, 8, 9, 15, 16, 17};
+    static const ptrdiff_t offsets[] = {0, 3, -3};
+
+    for(size_t cipher_index = 0; cipher_index < sizeof(ciphers) / sizeof(ciphers[0]);
+        cipher_index++) {
+        for(size_t response = 0; response < 2; response++) {
+            for(size_t length_index = 0; length_index < sizeof(lengths) / sizeof(lengths[0]);
+                length_index++) {
+                uint8_t plain[17];
+                for(size_t i = 0; i < sizeof(plain); i++) plain[i] = (uint8_t)(0x31u + i);
+                DfcSecureMessaging* baseline =
+                    alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
+                uint8_t expected[DFC_SM_MAX_SIZE];
+                size_t expected_len = encode_for_overlap_test(
+                    baseline, response != 0, plain, lengths[length_index], expected);
+                munit_assert_size(expected_len, >, 0);
+                dfc_secure_messaging_free(baseline);
+
+                for(size_t offset_index = 0; offset_index < sizeof(offsets) / sizeof(offsets[0]);
+                    offset_index++) {
+                    uint8_t workspace[DFC_SM_MAX_SIZE + 32];
+                    uint8_t* source = workspace + 16;
+                    uint8_t* destination = source + offsets[offset_index];
+                    memcpy(source, plain, lengths[length_index]);
+                    DfcSecureMessaging* overlap =
+                        alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
+                    size_t actual_len = encode_for_overlap_test(
+                        overlap, response != 0, source, lengths[length_index], destination);
+                    munit_assert_size(actual_len, ==, expected_len);
+                    munit_assert_memory_equal(expected_len, destination, expected);
+                    dfc_secure_messaging_free(overlap);
+                }
+            }
+        }
+    }
+    return MUNIT_OK;
+}
+
 // A corrupted MAC/ciphertext must be rejected (return 0), not silently accepted.
 static MunitResult test_mac_tamper_rejected(const MunitParameter p[], void* d) {
     (void)p;
@@ -607,6 +673,12 @@ static MunitTest tests[] = {
     {"/enciphered/legacy", test_enciphered_legacy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/iso", test_enciphered_iso, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/aes", test_enciphered_aes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/enciphered/partial-overlap",
+     test_enciphered_encode_accepts_partial_overlap,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/mac/tamper_rejected", test_mac_tamper_rejected, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/ev1/get_file_settings_response",
      test_ev1_get_file_settings_response_is_mac_protected,

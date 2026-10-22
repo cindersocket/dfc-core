@@ -526,16 +526,23 @@ static size_t enciphered_encode(
     }
     if(padded_len > DFC_SM_MAX_CRYPTO_SIZE) return 0;
 
-    memmove(out, plain, plain_len);
+    uint32_t crc;
     if(sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        uint16_t crc = crc16_iso14443(plain, plain_len);
-        out[plain_len] = crc & 0xFF;
-        out[plain_len + 1] = (crc >> 8) & 0xFF;
+        crc = crc16_iso14443(plain, plain_len);
     } else {
-        uint32_t crc = 0xFFFFFFFF;
+        crc = 0xFFFFFFFF;
         crc = crc32_dfc_extend(crc, crc_prefix, crc_prefix_len);
         crc = crc32_dfc_extend(crc, plain, plain_len);
         crc = crc32_dfc_extend(crc, crc_suffix, crc_suffix_len);
+    }
+
+    // The public API permits in-place operation. Compute the checksum before
+    // moving a partially overlapping input so it always covers the original bytes.
+    memmove(out, plain, plain_len);
+    if(sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
+        out[plain_len] = crc & 0xFF;
+        out[plain_len + 1] = (crc >> 8) & 0xFF;
+    } else {
         out[plain_len] = crc & 0xFF;
         out[plain_len + 1] = (crc >> 8) & 0xFF;
         out[plain_len + 2] = (crc >> 16) & 0xFF;
