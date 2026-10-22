@@ -178,6 +178,7 @@ DfcEv2CommandSecurity dfc_ev2_prepare_command(
 
     if(1 + secured_data_len > clear_capacity) return DfcEv2CommandInvalid;
     DfcFile* file = target_file(emulator, command, command_len);
+    bool full_command = file && file->comm_settings == DFC_COMM_ENCIPHERED;
     size_t encrypted_header_len = 0;
     bool decrypt_data = false;
     if(file && file->comm_settings == DFC_COMM_ENCIPHERED) {
@@ -217,7 +218,7 @@ DfcEv2CommandSecurity dfc_ev2_prepare_command(
         memmove(clear_command, command, 1 + secured_data_len);
         *clear_len = 1 + secured_data_len;
     }
-    return DfcEv2CommandSecured;
+    return full_command || decrypt_data ? DfcEv2CommandFull : DfcEv2CommandSecured;
 }
 
 bool dfc_ev2_protect_response(

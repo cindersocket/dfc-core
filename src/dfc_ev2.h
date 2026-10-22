@@ -5,6 +5,7 @@
 typedef enum {
     DfcEv2CommandPlain,
     DfcEv2CommandSecured,
+    DfcEv2CommandFull,
     DfcEv2CommandInvalid,
 } DfcEv2CommandSecurity;
 

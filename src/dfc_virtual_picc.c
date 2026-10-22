@@ -1152,6 +1152,11 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         response_len);
 }
 
+static void abort_ev2_secure_command(DfcVirtualPiccSession* session) {
+    dfc_emulator_abort_transaction(session->emulator);
+    dfc_emulator_reset_session(session->emulator);
+}
+
 static DfcVirtualPiccStatus handle_native_exchange(
     DfcVirtualPiccSession* session,
     const uint8_t* command,
@@ -1176,6 +1181,7 @@ static DfcVirtualPiccStatus handle_native_exchange(
         &clear_command_len);
     if(security == DfcEv2CommandInvalid) {
         const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
+        abort_ev2_secure_command(session);
         bool written = !iso_wrapped ? write_response(
                                           integrity_error,
                                           sizeof(integrity_error),
@@ -1215,8 +1221,18 @@ static DfcVirtualPiccStatus handle_native_exchange(
     size_t tx_len = dfc_bytebuf_get_size_bytes(tx);
     if(tx_len == 0) goto cleanup;
 
+    const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
+    bool full_command_error = security == DfcEv2CommandFull && tx_data[0] != DFC_STATUS_OK &&
+                              tx_data[0] != DFC_CMD_ADDITIONAL_FRAME;
+    if(full_command_error) {
+        abort_ev2_secure_command(session);
+        tx_data = integrity_error;
+        tx_len = sizeof(integrity_error);
+    }
+
     size_t secured_response_len = 0;
-    bool protect_ev2_response = security == DfcEv2CommandSecured;
+    bool protect_ev2_response = security == DfcEv2CommandSecured || security == DfcEv2CommandFull;
+    protect_ev2_response = protect_ev2_response && !full_command_error;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     protect_ev2_response = protect_ev2_response && !session->emulator->ev2_response_plain;
 #endif

@@ -217,6 +217,31 @@ static void dfc_emulator_clear_pending_value_transactions(DfcEmulator* emulator)
     }
 }
 
+bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
+    bool changed = false;
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(emulator->transaction_input_len > 0) {
+        dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+        emulator->transaction_input_len = 0;
+        changed = true;
+    }
+#endif
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    changed = dfc_emulator_abort_transaction_snapshot(emulator) || changed;
+#endif
+    for(size_t i = 0; i < emulator->credential->num_files; i++) {
+        DfcFile* file = &emulator->credential->files[i];
+        if(file->app_index != emulator->selected_app_index || file->type != DFC_FILE_TYPE_VALUE ||
+           !file->value_pending) {
+            continue;
+        }
+        file->value_pending = false;
+        file->value_pending_delta = 0;
+        changed = true;
+    }
+    return changed;
+}
+
 void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
 #if DFC_ENABLE_ISO7816_AUTH
     emulator->iso_auth_phase = 0;
@@ -271,6 +296,7 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     dfc_secure_wipe(emulator->proximity_transcript, sizeof(emulator->proximity_transcript));
 #endif
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
+    emulator->ev2_response_plain = false;
     emulator->ev2_authentication_pending = false;
     emulator->ev2_authentication_non_first = false;
     emulator->ev2_session_active = false;
