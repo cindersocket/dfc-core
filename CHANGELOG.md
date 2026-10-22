@@ -8,17 +8,37 @@
 - Add runnable transceive examples for .NET, Java, Android, Python, and Rust.
 - Make semantic application-selection helpers consistently accept the
   human-readable application identifier order in every binding.
+- Correct Java communication-mode values and validate key-set storage widths
+  at the FFI boundary.
 - Add one-command formatting and documentation-link verification for every
   supported binding language.
 - Refactor credential validation and serialization around explicit model invariants.
-- Harden authentication comparisons, secret cleanup, key updates, and SDM range validation.
-- Reuse prepared cipher contexts during CMAC and legacy CBC operations.
-- Stream EV2 MAC input segments instead of assembling a 519-byte temporary message.
-- Propagate every CMAC cipher failure and reject overflowing message lengths.
+- Accept zero-initialized credentials with empty file and key pools.
+- Make credential and file-pool updates transactional.
+- Reuse prepared cipher contexts and stream segmented AES, DES, and TDEA MAC input,
+  removing message-sized secure-messaging scratch buffers.
+- Propagate cipher and MAC failures, reject overflowing or malformed inputs,
+  and wipe staged output and secret material consistently.
+- Make reader, native, ISO, ISO-DEP, EV1, and EV2 retries state-atomic across
+  authentication, response-capacity, chaining, and transport failures.
+- Roll back failed SDM, delegated-application, transaction-MAC, CommitReaderID,
+  value, file-creation, and key-update operations.
+- Reuse authenticated-session allocations and keep pending authentication identity
+  separate from active authorization state.
+- Reduce each secure-messaging and reader-session object by 2,256 bytes by
+  eliminating message-sized scratch storage.
+- Harden .NET virtual-card lifetime ownership across disposal, finalization, and
+  concurrent native calls.
+- Use constant-time authentication-secret comparisons and expand teardown and
+  JNI secret-wipe verification.
+- Standardize replay-random exhaustion across the hosted bindings.
 - Make random providers fallible in ABI 4 and fail random-dependent operations
   atomically, with consistent error propagation through every binding.
 - Make credential factory and blank initialization, and virtual-card
   anticollision, report random-source failures through boolean return values.
+- Abort rejected ISO authentication handshakes and require a fresh challenge.
+- Expand fault-injection, sanitizer, reduced-profile, teardown-wipe, capacity,
+  long-transfer, and cross-binding corpus coverage.
 
 ## 1.2.1 (2026-10-01)
 
