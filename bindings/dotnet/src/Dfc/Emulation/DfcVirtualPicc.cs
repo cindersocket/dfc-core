@@ -385,7 +385,14 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         {
             this.handle = handle;
             bool added = false;
-            handle.DangerousAddRef(ref added);
+            try
+            {
+                handle.DangerousAddRef(ref added);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw new ObjectDisposedException(nameof(DfcVirtualPicc));
+            }
             Raw = handle.DangerousGetHandle();
         }
 

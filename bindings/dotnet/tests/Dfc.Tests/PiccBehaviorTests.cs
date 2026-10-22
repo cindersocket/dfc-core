@@ -55,6 +55,40 @@ public sealed class PiccBehaviorTests
     }
 
     [Test]
+    public void DisposedCalls_ReportThePublicTypeName()
+    {
+        var picc = Fixtures.Picc(Fixtures.Credential());
+        picc.Dispose();
+
+        (string Name, Action Call)[] calls =
+        [
+            (nameof(DfcVirtualPicc.Activate), () => _ = picc.Activate()),
+            (nameof(DfcVirtualPicc.Exchange), () => _ = picc.Exchange(ReadOnlySpan<byte>.Empty)),
+            (nameof(DfcVirtualPicc.ExchangeFrame), () => _ = picc.ExchangeFrame(ReadOnlySpan<byte>.Empty)),
+            (
+                nameof(DfcVirtualPicc.TransmitAsync),
+                () => _ = picc.TransmitAsync(ReadOnlyMemory<byte>.Empty, CancellationToken.None)
+            ),
+            (nameof(DfcVirtualPicc.FieldOff), picc.FieldOff),
+            (nameof(DfcVirtualPicc.ResetProtocol), picc.ResetProtocol),
+            (nameof(DfcVirtualPicc.AdvanceTime), () => picc.AdvanceTime(TimeSpan.Zero)),
+            (nameof(DfcVirtualPicc.Snapshot), () => _ = picc.Snapshot()),
+            (nameof(DfcVirtualPicc.IsDirty), () => _ = picc.IsDirty),
+            (nameof(DfcVirtualPicc.ExportCredential), () => _ = picc.ExportCredential()),
+            (nameof(DfcVirtualPicc.MarkPersisted), picc.MarkPersisted),
+        ];
+
+        Assert.Multiple(() =>
+        {
+            foreach (var (name, call) in calls)
+            {
+                var exception = Assert.Throws<ObjectDisposedException>(() => call(), name);
+                Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)), name);
+            }
+        });
+    }
+
+    [Test]
     public async Task Dispose_WaitsForInFlightNativeCallback()
     {
         var random = new BlockingRandomSource();
@@ -85,7 +119,47 @@ public sealed class PiccBehaviorTests
         {
             Assert.That(disposedDuringCallback, Is.False);
             Assert.DoesNotThrow(picc.Dispose);
+            var exception = Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+            Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
         });
+    }
+
+    [Test]
+    public async Task ConcurrentCallAndDispose_UseThePublicTypeNameWhenDisposeWins()
+    {
+        for (var iteration = 0; iteration < 64; iteration++)
+        {
+            var picc = Fixtures.Picc(Fixtures.Credential());
+            using var start = new ManualResetEventSlim();
+            ObjectDisposedException? observed = null;
+            var call = Task.Run(() =>
+            {
+                start.Wait();
+                try
+                {
+                    _ = picc.Snapshot();
+                }
+                catch (ObjectDisposedException exception)
+                {
+                    observed = exception;
+                }
+            });
+            var dispose = Task.Run(() =>
+            {
+                start.Wait();
+                picc.Dispose();
+            });
+
+            start.Set();
+            await Task.WhenAll(call, dispose);
+
+            if (observed is not null)
+            {
+                Assert.That(observed.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
+            }
+            var after = Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+            Assert.That(after!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
+        }
     }
 
     [Test]
@@ -116,7 +190,8 @@ public sealed class PiccBehaviorTests
         Assert.Multiple(() =>
         {
             Assert.That(response[^2..], Is.EqualTo(new byte[] { 0x91, 0xAF }));
-            Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+            var exception = Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+            Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
         });
     }
 
