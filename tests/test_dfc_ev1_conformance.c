@@ -1497,6 +1497,10 @@ static MunitResult
              0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xFF, 0xE1, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00},
          14,
          DFC_STATUS_PARAMETER_ERROR},
+        {(const uint8_t[]){
+             0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xFF, 0xFE, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00},
+         14,
+         DFC_STATUS_PARAMETER_ERROR},
     };
 
     for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -1553,6 +1557,73 @@ static MunitResult test_change_file_settings_success_replaces_sdm_settings(
     munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
     munit_assert_true(credential.dirty);
     munit_assert_false(session->emulator->sdm_read_cache_valid);
+
+    set_sdm_settings_sentinels(session, file);
+    const uint8_t all_sdm_fields[] = {
+        0x90, 0x5F, 0x00, 0x00, 0x1C, 0x01, 0x40, 0xEE, 0xEE, 0xF1, 0xEE, 0xE0,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
+        0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x00,
+    };
+    assert_status(session, all_sdm_fields, sizeof(all_sdm_fields), DFC_STATUS_OK);
+    munit_assert_true(file->sdm_has_uid_offset);
+    munit_assert_uint32(file->sdm_uid_offset, ==, 0x030201);
+    munit_assert_true(file->sdm_has_counter_offset);
+    munit_assert_uint32(file->sdm_counter_offset, ==, 0x060504);
+    munit_assert_false(file->sdm_has_picc_data_offset);
+    munit_assert_true(file->sdm_has_mac_input_offset);
+    munit_assert_uint32(file->sdm_mac_input_offset, ==, 0x090807);
+    munit_assert_true(file->sdm_has_encrypted_file_offset);
+    munit_assert_uint32(file->sdm_encrypted_file_offset, ==, 0x0C0B0A);
+    munit_assert_uint32(file->sdm_encrypted_file_length, ==, 0x0F0E0D);
+    munit_assert_true(file->sdm_has_mac_offset);
+    munit_assert_uint32(file->sdm_mac_offset, ==, 0x121110);
+    munit_assert_true(file->sdm_has_counter_limit);
+    munit_assert_uint32(file->sdm_counter_limit, ==, 0x151413);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
+
+    set_sdm_settings_sentinels(session, file);
+    const uint8_t hidden_counter[] = {
+        0x90, 0x5F, 0x00, 0x00, 0x10, 0x01, 0x40, 0xEE, 0xEE, 0xE1, 0xFF,
+        0xEF, 0x01, 0x02, 0x03, 0xFF, 0xFF, 0xFF, 0x07, 0x08, 0x09, 0x00,
+    };
+    assert_status(session, hidden_counter, sizeof(hidden_counter), DFC_STATUS_OK);
+    munit_assert_true(file->sdm_has_uid_offset);
+    munit_assert_uint32(file->sdm_uid_offset, ==, 0x030201);
+    munit_assert_false(file->sdm_has_counter_offset);
+    munit_assert_uint32(file->sdm_counter_offset, ==, DFC_SDM_HIDDEN_COUNTER_OFFSET);
+    munit_assert_true(file->sdm_has_counter_limit);
+    munit_assert_uint32(file->sdm_counter_limit, ==, 0x090807);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
+
+    set_sdm_settings_sentinels(session, file);
+    const uint8_t keyed_picc_data[] = {
+        0x90,
+        0x5F,
+        0x00,
+        0x00,
+        0x0A,
+        0x01,
+        0x40,
+        0xEE,
+        0xEE,
+        0x01,
+        0xFF,
+        0x0F,
+        0x21,
+        0x22,
+        0x23,
+        0x00,
+    };
+    assert_status(session, keyed_picc_data, sizeof(keyed_picc_data), DFC_STATUS_OK);
+    munit_assert_false(file->sdm_has_uid_offset);
+    munit_assert_false(file->sdm_has_counter_offset);
+    munit_assert_true(file->sdm_has_picc_data_offset);
+    munit_assert_uint32(file->sdm_picc_data_offset, ==, 0x232221);
+    munit_assert_false(file->sdm_has_mac_input_offset);
+    munit_assert_false(file->sdm_has_encrypted_file_offset);
+    munit_assert_false(file->sdm_has_mac_offset);
+    munit_assert_false(file->sdm_has_counter_limit);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;

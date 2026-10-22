@@ -1,10 +1,18 @@
 #include "dfc_emulator_i.h"
 #include "dfc_crypto_internal.h"
 
+#include <string.h>
+
 #if DFC_ENABLE_EMULATOR
 
 uint32_t dfc_emulator_read_uint24_le(const uint8_t* data) {
+#if (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) || defined(_WIN32)
+    uint16_t low;
+    memcpy(&low, data, sizeof(low));
+    return (uint32_t)low | ((uint32_t)data[2] << 16);
+#else
     return (uint32_t)data[0] | ((uint32_t)data[1] << 8) | ((uint32_t)data[2] << 16);
+#endif
 }
 
 uint16_t dfc_emulator_crc16_iso14443(const uint8_t* data, size_t len) {

@@ -1172,6 +1172,9 @@ static DfcVirtualPiccStatus handle_native_exchange(
     size_t clear_command_len = 0;
     DfcByteBuf* tx = NULL;
     DfcVirtualPiccStatus status = DfcVirtualPiccStatusProtocolError;
+    const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
+    const uint8_t* tx_data = integrity_error;
+    size_t tx_len = sizeof(integrity_error);
     DfcEv2CommandSecurity security = dfc_ev2_prepare_command(
         session->emulator,
         command,
@@ -1179,52 +1182,21 @@ static DfcVirtualPiccStatus handle_native_exchange(
         clear_command,
         sizeof(clear_command),
         &clear_command_len);
-    if(security == DfcEv2CommandInvalid) {
-        const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
-        abort_ev2_secure_command(session);
-        bool written = !iso_wrapped ? write_response(
-                                          integrity_error,
-                                          sizeof(integrity_error),
-                                          response,
-                                          response_capacity,
-                                          response_len) :
-                                      dfc_wrap_native_response_as_iso7816(
-                                          integrity_error,
-                                          sizeof(integrity_error),
-                                          0,
-                                          response,
-                                          response_capacity,
-                                          response_len);
-        if(written) {
-            status = DfcVirtualPiccStatusOk;
-        } else {
-            status = stage_direct_response(
-                         session,
-                         retry_command,
-                         retry_command_len,
-                         integrity_error,
-                         sizeof(integrity_error),
-                         iso_wrapped) ?
-                         DfcVirtualPiccStatusBufferTooSmall :
-                         DfcVirtualPiccStatusProtocolError;
-        }
-        goto cleanup;
+    bool terminal_error = security == DfcEv2CommandInvalid;
+    if(!terminal_error) {
+        tx = dfc_bytebuf_alloc(DFC_WORKER_MAX_BUFFER_SIZE);
+        if(!tx) goto cleanup;
+        bool handled = dfc_emulator_handle_command(
+            session->emulator, clear_command, clear_command_len, tx, NULL);
+        DFC_UNUSED(handled);
+
+        tx_data = dfc_bytebuf_get_data(tx);
+        tx_len = dfc_bytebuf_get_size_bytes(tx);
+        if(tx_len == 0) goto cleanup;
+        terminal_error = security == DfcEv2CommandFull && tx_data[0] != DFC_STATUS_OK &&
+                         tx_data[0] != DFC_CMD_ADDITIONAL_FRAME;
     }
-
-    tx = dfc_bytebuf_alloc(DFC_WORKER_MAX_BUFFER_SIZE);
-    if(!tx) goto cleanup;
-    bool handled =
-        dfc_emulator_handle_command(session->emulator, clear_command, clear_command_len, tx, NULL);
-    DFC_UNUSED(handled);
-
-    const uint8_t* tx_data = dfc_bytebuf_get_data(tx);
-    size_t tx_len = dfc_bytebuf_get_size_bytes(tx);
-    if(tx_len == 0) goto cleanup;
-
-    const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
-    bool full_command_error = security == DfcEv2CommandFull && tx_data[0] != DFC_STATUS_OK &&
-                              tx_data[0] != DFC_CMD_ADDITIONAL_FRAME;
-    if(full_command_error) {
+    if(terminal_error) {
         abort_ev2_secure_command(session);
         tx_data = integrity_error;
         tx_len = sizeof(integrity_error);
@@ -1232,7 +1204,7 @@ static DfcVirtualPiccStatus handle_native_exchange(
 
     size_t secured_response_len = 0;
     bool protect_ev2_response = security == DfcEv2CommandSecured || security == DfcEv2CommandFull;
-    protect_ev2_response = protect_ev2_response && !full_command_error;
+    protect_ev2_response = protect_ev2_response && !terminal_error;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     protect_ev2_response = protect_ev2_response && !session->emulator->ev2_response_plain;
 #endif
