@@ -2706,7 +2706,7 @@ static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
         return true;
     }
 
-    uint8_t value_bytes[4];
+    uint8_t value_bytes[4] = {0};
     uint32_t raw = (uint32_t)file->value;
     value_bytes[0] = (uint8_t)(raw & 0xFF);
     value_bytes[1] = (uint8_t)((raw >> 8) & 0xFF);
@@ -2717,9 +2717,11 @@ static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
     bool ev1_sm = dfc_emulator_native_authentication_active(emulator) &&
                   dfc_secure_messaging_applies_ev1(emulator->secure_messaging, DFC_CMD_GET_VALUE);
 
-    if(dfc_emulator_native_authentication_active(emulator) && !ev1_sm &&
-       comm != DFC_COMM_PLAIN) {
-        uint8_t wrapped[DFC_SM_MAX_CIPHER_BLOCK_SIZE];
+    bool protect_here = dfc_emulator_native_authentication_active(emulator) &&
+                        comm != DFC_COMM_PLAIN &&
+                        (!ev1_sm || comm == DFC_COMM_ENCIPHERED);
+    if(protect_here) {
+        uint8_t wrapped[DFC_SM_MAX_CIPHER_BLOCK_SIZE] = {0};
         size_t wrapped_len = dfc_secure_messaging_generate_response(
             emulator->secure_messaging,
             comm,
@@ -2727,26 +2729,23 @@ static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
             value_bytes,
             sizeof(value_bytes),
             wrapped);
+        dfc_secure_wipe(value_bytes, sizeof(value_bytes));
+        if(wrapped_len == 0) {
+            dfc_secure_wipe(wrapped, sizeof(wrapped));
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_reset(tx_buffer);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return false;
+        }
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         dfc_bytebuf_append_bytes(tx_buffer, wrapped, wrapped_len);
-        return true;
-    }
-    if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
-        uint8_t wrapped[DFC_SM_MAX_CIPHER_BLOCK_SIZE];
-        size_t wrapped_len = dfc_secure_messaging_generate_response(
-            emulator->secure_messaging,
-            DFC_COMM_ENCIPHERED,
-            DFC_STATUS_OK,
-            value_bytes,
-            sizeof(value_bytes),
-            wrapped);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-        dfc_bytebuf_append_bytes(tx_buffer, wrapped, wrapped_len);
-        return false;
+        dfc_secure_wipe(wrapped, sizeof(wrapped));
+        return !ev1_sm;
     }
 
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
     dfc_bytebuf_append_bytes(tx_buffer, value_bytes, sizeof(value_bytes));
+    dfc_secure_wipe(value_bytes, sizeof(value_bytes));
     return true;
 }
 

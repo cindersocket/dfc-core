@@ -14,8 +14,10 @@
 static size_t aes_block_call;
 static size_t aes_operation;
 static size_t des_block_call;
+static size_t des_operation;
 static size_t fail_at;
 static size_t fail_aes_operation;
+static size_t fail_des_operation;
 static size_t aes_cbc_operation;
 static size_t fail_aes_cbc_operation;
 static bool fail_cbc;
@@ -60,6 +62,7 @@ bool dfc_crypto_des_block_init(
     block->encrypt = encrypt;
     block->initialized = true;
     des_block_call = 0;
+    des_operation++;
     return true;
 }
 
@@ -69,7 +72,9 @@ bool dfc_crypto_des_block_crypt(
     uint8_t output[8]) {
     if(!block || !block->initialized || !input || !output) return false;
     des_block_call++;
-    if(des_block_call == fail_at) return false;
+    if(des_block_call == fail_at &&
+       (fail_des_operation == 0 || des_operation == fail_des_operation))
+        return false;
     for(size_t i = 0; i < 8; i++)
         output[i] = input[i] ^ (uint8_t)(0x51 + des_block_call);
     return true;
@@ -389,7 +394,6 @@ static void fault_link_close(FaultLink* link) {
     dfc_virtual_picc_session_free(link->picc);
 }
 
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
 static size_t fault_emulator_command(
     DfcEmulator* emulator,
     const uint8_t* command,
@@ -407,6 +411,113 @@ static size_t fault_emulator_command(
     dfc_bytebuf_free(tx);
     return response_len;
 }
+
+static DfcEmulator* get_value_fault_emulator(
+    DfcCredential* credential,
+    uint8_t cipher,
+    size_t key_len,
+    uint8_t comm_mode) {
+    munit_assert_true(dfc_credential_clear(credential));
+    credential->card.generation = DfcGenerationEv1;
+    const uint8_t aid[3] = {1, 2, 3};
+    uint8_t key_type = cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_KEY_TYPE_AES :
+                       key_len == DFC_MAX_KEY_LEN         ? DFC_KEY_TYPE_3K3DES :
+                                                           DFC_KEY_TYPE_DES_2K3DES;
+    munit_assert_not_null(dfc_credential_create_application_desfire_order(
+        credential, aid, 0x0F, key_type | 1));
+    DfcFile* file = dfc_credential_create_file(credential, 0, 1);
+    munit_assert_not_null(file);
+    file->type = DFC_FILE_TYPE_VALUE;
+    file->comm_settings = comm_mode;
+    file->access_rights = 0;
+    file->value = 0x12345678;
+
+    DfcEmulator* emulator = dfc_emulator_alloc(credential);
+    munit_assert_not_null(emulator);
+    emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    emulator->selected_app_index = 0;
+    emulator->auth_cipher = cipher;
+    emulator->auth_key_no = 0;
+    uint8_t key[DFC_MAX_KEY_LEN];
+    memset(key, 0x42, sizeof(key));
+    emulator->secure_messaging = dfc_secure_messaging_alloc(cipher, key, key_len, NULL);
+    dfc_secure_wipe(key, sizeof(key));
+    munit_assert_not_null(emulator->secure_messaging);
+    return emulator;
+}
+
+static void assert_get_value_protection_failure(
+    uint8_t cipher,
+    size_t key_len,
+    uint8_t comm_mode,
+    size_t failed_block,
+    size_t failed_operation,
+    bool cbc_failure) {
+    DfcCredential credential;
+    DfcEmulator* emulator =
+        get_value_fault_emulator(&credential, cipher, key_len, comm_mode);
+    const uint8_t command[] = {DFC_CMD_GET_VALUE, 1};
+    uint8_t response[64];
+
+    aes_block_call = 0;
+    aes_operation = 0;
+    des_block_call = 0;
+    des_operation = 0;
+    fail_at = failed_block;
+    fail_aes_operation = cipher == DFC_CMD_AUTHENTICATE_AES ? failed_operation : 0;
+    fail_des_operation = cipher == DFC_CMD_AUTHENTICATE_AES ? 0 : failed_operation;
+    fail_cbc = cbc_failure;
+    size_t response_len =
+        fault_emulator_command(emulator, command, sizeof(command), response, true);
+
+    munit_assert_size(response_len, ==, 1);
+    munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
+    munit_assert_false(dfc_emulator_native_authentication_active(emulator));
+    munit_assert_memory_equal(
+        sizeof(*emulator->secure_messaging),
+        emulator->secure_messaging,
+        ((uint8_t[sizeof(*emulator->secure_messaging)]){0}));
+    munit_assert_uint8(emulator->auth_cipher, ==, 0);
+    munit_assert_uint8(emulator->auth_key_no, ==, 0);
+
+    fail_at = 0;
+    fail_aes_operation = 0;
+    fail_des_operation = 0;
+    fail_cbc = false;
+    dfc_emulator_free(emulator);
+}
+
+static MunitResult
+    test_get_value_protection_failures_fail_closed(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+
+    for(size_t key_len = 8; key_len <= 16; key_len += 8) {
+        assert_get_value_protection_failure(
+            DFC_CMD_AUTHENTICATE_LEGACY, key_len, DFC_COMM_MAC, 1, 1, false);
+        assert_get_value_protection_failure(
+            DFC_CMD_AUTHENTICATE_LEGACY, key_len, DFC_COMM_ENCIPHERED, 1, 1, false);
+    }
+
+    for(size_t key_len = 8; key_len <= 24; key_len += 8) {
+        for(size_t block = 1; block <= 2; block++) {
+            assert_get_value_protection_failure(
+                DFC_CMD_AUTHENTICATE_ISO, key_len, DFC_COMM_MAC, block, 2, false);
+        }
+        assert_get_value_protection_failure(
+            DFC_CMD_AUTHENTICATE_ISO, key_len, DFC_COMM_ENCIPHERED, 0, 0, true);
+    }
+
+    for(size_t block = 1; block <= 2; block++) {
+        assert_get_value_protection_failure(
+            DFC_CMD_AUTHENTICATE_AES, 16, DFC_COMM_MAC, block, 2, false);
+    }
+    assert_get_value_protection_failure(
+        DFC_CMD_AUTHENTICATE_AES, 16, DFC_COMM_ENCIPHERED, 0, 0, true);
+    return MUNIT_OK;
+}
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
 
 static void assert_ev2_active_capabilities(
     const DfcEmulator* emulator,
@@ -2273,6 +2384,12 @@ static MunitTest tests[] = {
      NULL},
     {"/reader/prepare-crypto-terminal",
      test_reader_prepare_crypto_failures_are_terminal,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/get-value/protection-failures",
+     test_get_value_protection_failures_fail_closed,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
