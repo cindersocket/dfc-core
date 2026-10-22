@@ -61,18 +61,10 @@ static void handle_select_application(
     bool is_app = app != NULL;
 
     if(is_picc || is_app) {
-        dfc_emulator_reset_session(emulator);
-        emulator->selected_application = is_app ? DfcEmulatorSelectedApplicationApp :
-                                                  DfcEmulatorSelectedApplicationPicc;
-        emulator->selected_app_index =
-            is_app ? dfc_credential_application_index(emulator->credential, app) : 0;
-#if DFC_ENABLE_TRANSACTION_TIMER
-        emulator->transaction_timer_enabled =
-            is_app && app->has_capability_data &&
-            app->capability_data[DFC_TRANSACTION_TIMER_CAPABILITY_OFFSET] ==
-                DFC_TRANSACTION_TIMER_SHORT;
-        emulator->transaction_timer_elapsed_milliseconds = 0;
-#endif
+        dfc_emulator_select_application(
+            emulator,
+            is_app ? DfcEmulatorSelectedApplicationApp : DfcEmulatorSelectedApplicationPicc,
+            is_app ? dfc_credential_application_index(emulator->credential, app) : 0);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         if(dfc && is_app) {
             dfc_port_notify(dfc, DfcEventApplicationSelected);
@@ -3255,32 +3247,6 @@ static void transaction_snapshot_commit(DfcEmulator* emulator) {
     }
 }
 
-static bool transaction_snapshot_abort(DfcEmulator* emulator) {
-    if(!emulator->transaction_snapshot_active ||
-       emulator->transaction_snapshot_app_index != emulator->selected_app_index) {
-        return false;
-    }
-
-    memcpy(
-        emulator->credential->file_pool,
-        emulator->transaction_snapshot_pool,
-        emulator->transaction_snapshot_pool_length);
-    for(size_t index = 0; index < emulator->credential->num_files; index++) {
-        DfcFile* file = &emulator->credential->files[index];
-        if(file->app_index != emulator->selected_app_index) continue;
-        file->record_count = emulator->transaction_snapshot_record_counts[index];
-        file->transaction_pending = false;
-    }
-    emulator->credential->dirty = emulator->transaction_snapshot_dirty;
-    emulator->transaction_snapshot_active = false;
-    dfc_emulator_discard_transaction_snapshot(emulator);
-    memset(
-        emulator->transaction_record_operations,
-        RecordTransactionNone,
-        sizeof(emulator->transaction_record_operations));
-    return true;
-}
-
 static size_t transaction_file_index(const DfcEmulator* emulator, const DfcFile* file) {
     return (size_t)(file - emulator->credential->files);
 }
@@ -3395,7 +3361,7 @@ static void handle_abort_transaction(DfcEmulator* emulator, DfcByteBuf* tx_buffe
     }
 #endif
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
-    changed = transaction_snapshot_abort(emulator) || changed;
+    changed = dfc_emulator_abort_transaction_snapshot(emulator) || changed;
 #endif
     for(size_t i = 0; i < emulator->credential->num_files; i++) {
         DfcFile* file = &emulator->credential->files[i];

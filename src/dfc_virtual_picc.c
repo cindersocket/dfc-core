@@ -951,9 +951,8 @@ static DfcVirtualPiccStatus handle_iso_select(
             DfcApplication* app = &session->credential->apps[i];
             if(app->iso_aid_len > 0 && lc == app->iso_aid_len &&
                memcmp(data, app->iso_aid, lc) == 0) {
-                dfc_emulator_reset_session(session->emulator);
-                session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
-                session->emulator->selected_app_index = i;
+                dfc_emulator_select_application(
+                    session->emulator, DfcEmulatorSelectedApplicationApp, i);
                 session->iso_file_selected = false;
                 return write_status_word(
                     DFC_ISO7816_SW_OK_HI,
@@ -965,9 +964,8 @@ static DfcVirtualPiccStatus handle_iso_select(
         }
 
         if(lc == sizeof(DFC_ISO_AID) && memcmp(data, DFC_ISO_AID, lc) == 0) {
-            dfc_emulator_reset_session(session->emulator);
-            session->emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
-            session->emulator->selected_app_index = 0;
+            dfc_emulator_select_application(
+                session->emulator, DfcEmulatorSelectedApplicationPicc, 0);
             session->iso_file_selected = false;
             return write_status_word(
                 DFC_ISO7816_SW_OK_HI,
@@ -982,9 +980,8 @@ static DfcVirtualPiccStatus handle_iso_select(
        lc == DFC_ISO7816_STATUS_WORD_LENGTH) {
         uint16_t file_id = (uint16_t)(((uint16_t)data[0] << 8) | data[1]);
         if(file_id == DFC_ISO7816_MASTER_FILE_ID) {
-            dfc_emulator_reset_session(session->emulator);
-            session->emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
-            session->emulator->selected_app_index = 0;
+            dfc_emulator_select_application(
+                session->emulator, DfcEmulatorSelectedApplicationPicc, 0);
             session->iso_file_selected = false;
             return write_status_word(
                 DFC_ISO7816_SW_OK_HI,
@@ -996,9 +993,8 @@ static DfcVirtualPiccStatus handle_iso_select(
         for(size_t i = 0; i < session->credential->num_apps; i++) {
             DfcApplication* app = &session->credential->apps[i];
             if(app->has_iso_file_id && app->iso_file_id == file_id) {
-                dfc_emulator_reset_session(session->emulator);
-                session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
-                session->emulator->selected_app_index = i;
+                dfc_emulator_select_application(
+                    session->emulator, DfcEmulatorSelectedApplicationApp, i);
                 session->iso_file_selected = false;
                 return write_status_word(
                     DFC_ISO7816_SW_OK_HI,

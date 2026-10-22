@@ -60,6 +60,31 @@ void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator) {
     emulator->transaction_snapshot_pool = NULL;
     emulator->transaction_snapshot_pool_length = 0;
 }
+
+bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
+    if(!emulator->transaction_snapshot_active) return false;
+
+    size_t app_index = emulator->transaction_snapshot_app_index;
+    memcpy(
+        emulator->credential->file_pool,
+        emulator->transaction_snapshot_pool,
+        emulator->transaction_snapshot_pool_length);
+    for(size_t index = 0; index < emulator->credential->num_files; index++) {
+        DfcFile* file = &emulator->credential->files[index];
+        if(file->app_index != app_index) continue;
+        file->record_count = emulator->transaction_snapshot_record_counts[index];
+        file->transaction_pending = false;
+    }
+    emulator->credential->dirty = emulator->transaction_snapshot_dirty;
+    emulator->transaction_snapshot_active = false;
+    dfc_emulator_discard_transaction_snapshot(emulator);
+    memset(
+        emulator->transaction_record_operations,
+        0,
+        sizeof(emulator->transaction_record_operations));
+    memset(emulator->transaction_record_numbers, 0, sizeof(emulator->transaction_record_numbers));
+    return true;
+}
 #endif
 
 DfcApplication* dfc_emulator_current_app(DfcEmulator* emulator) {
@@ -284,6 +309,28 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     dfc_emulator_clear_pending_value_transactions(emulator);
     dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
     dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
+}
+
+void dfc_emulator_select_application(
+    DfcEmulator* emulator,
+    DfcEmulatorSelectedApplication selection,
+    size_t app_index) {
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    dfc_emulator_abort_transaction_snapshot(emulator);
+#endif
+    dfc_emulator_reset_session(emulator);
+    emulator->selected_application = selection;
+    emulator->selected_app_index = selection == DfcEmulatorSelectedApplicationApp ? app_index : 0;
+#if DFC_ENABLE_TRANSACTION_TIMER
+    DfcApplication* app = selection == DfcEmulatorSelectedApplicationApp ?
+                              dfc_credential_get_application(emulator->credential, app_index) :
+                              NULL;
+    emulator->transaction_timer_enabled =
+        app && app->has_capability_data &&
+        app->capability_data[DFC_TRANSACTION_TIMER_CAPABILITY_OFFSET] ==
+            DFC_TRANSACTION_TIMER_SHORT;
+    emulator->transaction_timer_elapsed_milliseconds = 0;
+#endif
 }
 
 void dfc_emulator_reset_activation(DfcEmulator* emulator) {

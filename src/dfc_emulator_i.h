@@ -28,7 +28,12 @@ typedef enum {
 void dfc_emulator_commit_auth_family(DfcEmulator* emulator, DfcEmulatorAuthFamily family);
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
 void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator);
+bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator);
 #endif
+void dfc_emulator_select_application(
+    DfcEmulator* emulator,
+    DfcEmulatorSelectedApplication selection,
+    size_t app_index);
 
 uint32_t dfc_emulator_read_uint24_le(const uint8_t* data);
 uint16_t dfc_emulator_crc16_iso14443(const uint8_t* data, size_t len);
