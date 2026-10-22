@@ -386,6 +386,7 @@ static void dfc_key_pool_compact_after_release(
             tail);
     }
     credential->key_pool_used -= freed_len;
+    dfc_secure_wipe(credential->key_pool + credential->key_pool_used, freed_len);
     // Every record that indexes past the hole, not only the created ones: an
     // application is given its slice before it is counted.
     for(size_t i = 0; i < DFC_MAX_APPS; i++) {

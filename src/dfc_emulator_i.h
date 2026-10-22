@@ -14,6 +14,14 @@ size_t dfc_emulator_num_keys(DfcEmulator* emulator);
 uint8_t* dfc_emulator_key(DfcEmulator* emulator, uint8_t key_no);
 uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no);
 void dfc_emulator_discard_command_chain(DfcEmulator* emulator);
+void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator);
+
+typedef enum {
+    DfcEmulatorAuthFamilyNative,
+    DfcEmulatorAuthFamilyEv2,
+} DfcEmulatorAuthFamily;
+
+void dfc_emulator_commit_auth_family(DfcEmulator* emulator, DfcEmulatorAuthFamily family);
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
 void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator);
 #endif
@@ -21,14 +29,13 @@ void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator);
 uint32_t dfc_emulator_read_uint24_le(const uint8_t* data);
 uint16_t dfc_emulator_crc16_iso14443(const uint8_t* data, size_t len);
 uint32_t dfc_emulator_crc32(const uint8_t* data, size_t len);
-void dfc_emulator_d40_receive_plain(
+bool dfc_emulator_d40_receive_plain(
     const uint8_t* key,
     size_t key_len,
     const uint8_t* encrypted,
     size_t encrypted_len,
     uint8_t* plain);
 uint8_t dfc_emulator_des_key_version(const uint8_t* key);
-
 
 bool dfc_emulator_handle_iso7816_select(
     DfcEmulator* emulator,

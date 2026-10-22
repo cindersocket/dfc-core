@@ -3,6 +3,8 @@
 #include "dfc_credential.h"
 #include "dfc_secure_messaging.h"
 
+#define DFC_SDM_READ_CACHE_SIZE 192
+
 typedef enum {
     DfcEmulatorSelectedApplicationNone,
     DfcEmulatorSelectedApplicationPicc,
@@ -14,6 +16,8 @@ typedef struct {
 
     uint8_t auth_cipher;
     uint8_t auth_key_no;
+    uint8_t pending_auth_cipher;
+    uint8_t pending_auth_key_no;
     uint8_t rnd_a[16];
     uint8_t rnd_b[16];
     uint8_t enc_rnd_b[16]; // ciphertext PICC sent in step 1, needed to chain the IV in step 2
@@ -107,7 +111,7 @@ typedef struct {
 #if DFC_ENABLE_SDM
     bool sdm_read_cache_valid;
     uint8_t sdm_read_cache_file_number;
-    uint8_t sdm_read_cache[DFC_SM_MAX_SIZE];
+    uint8_t sdm_read_cache[DFC_SDM_READ_CACHE_SIZE];
     size_t sdm_read_cache_len;
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
@@ -127,12 +131,15 @@ typedef struct {
     bool ev2_authentication_non_first;
     bool ev2_session_active;
     uint8_t ev2_authenticated_key_no;
+    uint8_t ev2_pending_authenticated_key_no;
     uint8_t ev2_static_key[DFC_AES_KEY_LENGTH];
-    uint8_t ev2_random_a[DFC_EV2_RANDOM_LENGTH];
     uint8_t ev2_random_b[DFC_EV2_RANDOM_LENGTH];
     uint8_t ev2_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
+    uint8_t ev2_pending_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
     uint8_t ev2_card_capabilities[DFC_EV2_CAPABILITY_LENGTH];
     uint8_t ev2_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH];
+    uint8_t ev2_pending_card_capabilities[DFC_EV2_CAPABILITY_LENGTH];
+    uint8_t ev2_pending_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH];
     uint8_t ev2_session_encryption_key[DFC_AES_KEY_LENGTH];
     uint8_t ev2_session_mac_key[DFC_AES_KEY_LENGTH];
     uint16_t ev2_command_counter;
@@ -140,7 +147,6 @@ typedef struct {
 
     DfcCredential* credential;
 } DfcEmulator;
-
 
 #if DFC_ENABLE_EMULATOR
 

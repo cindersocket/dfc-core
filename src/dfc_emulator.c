@@ -5,8 +5,7 @@
 DfcEmulator* dfc_emulator_alloc(DfcCredential* credential) {
     if(!credential) return NULL;
 
-    DfcEmulator* emulator =
-        dfc_platform_alloc(sizeof(DfcEmulator), DfcAllocEmulator);
+    DfcEmulator* emulator = dfc_platform_alloc(sizeof(DfcEmulator), DfcAllocEmulator);
     if(!emulator) return NULL;
     memset(emulator, 0, sizeof(DfcEmulator));
 
@@ -72,8 +71,8 @@ bool dfc_emulator_accepts_auth_cipher(DfcEmulator* emulator, uint8_t cipher) {
     DfcApplication* app = dfc_emulator_current_app(emulator);
     uint8_t commands = app ? dfc_credential_app_auth_commands(emulator->credential, app) :
                              dfc_credential_picc_auth_commands(emulator->credential);
-    uint8_t disabled = emulator->credential->picc_has_sm_disable ?
-                           emulator->credential->picc_sm_disable : 0;
+    uint8_t disabled =
+        emulator->credential->picc_has_sm_disable ? emulator->credential->picc_sm_disable : 0;
     if(app && app->has_sm_disable) disabled |= app->sm_disable;
     uint8_t bit;
     switch(cipher) {
@@ -99,6 +98,34 @@ bool dfc_emulator_accepts_auth_cipher(DfcEmulator* emulator, uint8_t cipher) {
         return false;
     }
     return (commands & bit) != 0;
+}
+
+void dfc_emulator_commit_auth_family(DfcEmulator* emulator, DfcEmulatorAuthFamily family) {
+    if(family == DfcEmulatorAuthFamilyEv2) {
+        if(emulator->secure_messaging) {
+            dfc_secure_messaging_free(emulator->secure_messaging);
+            emulator->secure_messaging = NULL;
+        }
+        emulator->auth_cipher = 0;
+        emulator->auth_key_no = 0;
+        dfc_secure_wipe(emulator->rnd_a, sizeof(emulator->rnd_a));
+        return;
+    }
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    emulator->ev2_session_active = false;
+    emulator->ev2_authenticated_key_no = 0;
+    emulator->ev2_command_counter = 0;
+    dfc_secure_wipe(
+        emulator->ev2_transaction_identifier, sizeof(emulator->ev2_transaction_identifier));
+    dfc_secure_wipe(
+        emulator->ev2_session_encryption_key, sizeof(emulator->ev2_session_encryption_key));
+    dfc_secure_wipe(emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));
+    dfc_secure_wipe(emulator->ev2_card_capabilities, sizeof(emulator->ev2_card_capabilities));
+    dfc_secure_wipe(emulator->ev2_reader_capabilities, sizeof(emulator->ev2_reader_capabilities));
+#else
+    DFC_UNUSED(emulator);
+#endif
 }
 
 size_t dfc_emulator_key_len(DfcEmulator* emulator) {
@@ -139,8 +166,7 @@ static void dfc_emulator_clear_pending_value_transactions(DfcEmulator* emulator)
     }
 }
 
-void dfc_emulator_reset_session(DfcEmulator* emulator) {
-    emulator->awaiting_step2 = false;
+void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
 #if DFC_ENABLE_ISO7816_AUTH
     emulator->iso_auth_phase = 0;
     emulator->iso_auth_challenge_len = 0;
@@ -148,13 +174,24 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->iso_auth_cipher = 0;
     emulator->iso_auth_reference = 0;
     emulator->iso_auth_key_len = 0;
-    memset(emulator->iso_auth_card_first, 0, sizeof(emulator->iso_auth_card_first));
-    memset(emulator->iso_auth_host_first, 0, sizeof(emulator->iso_auth_host_first));
-    memset(emulator->iso_auth_external_iv, 0, sizeof(emulator->iso_auth_external_iv));
-    memset(emulator->iso_auth_key, 0, sizeof(emulator->iso_auth_key));
+    dfc_secure_wipe(emulator->iso_auth_card_first, sizeof(emulator->iso_auth_card_first));
+    dfc_secure_wipe(emulator->iso_auth_host_first, sizeof(emulator->iso_auth_host_first));
+    dfc_secure_wipe(emulator->iso_auth_external_iv, sizeof(emulator->iso_auth_external_iv));
+    dfc_secure_wipe(emulator->iso_auth_key, sizeof(emulator->iso_auth_key));
+#else
+    (void)emulator;
 #endif
+}
+
+void dfc_emulator_reset_session(DfcEmulator* emulator) {
+    emulator->awaiting_step2 = false;
+    dfc_emulator_clear_iso_authentication(emulator);
     emulator->auth_cipher = 0;
     emulator->auth_key_no = 0;
+    emulator->pending_auth_cipher = 0;
+    emulator->pending_auth_key_no = 0;
+    dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
+    dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
     emulator->get_version_frame = 0;
     emulator->pending_chain_len = 0;
     emulator->pending_chain_offset = 0;
@@ -162,16 +199,16 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->pending_chain_last = 0;
     emulator->pending_chain_chunk_count = 0;
     emulator->pending_chain_chunk_index = 0;
+    dfc_secure_wipe(emulator->pending_chain, sizeof(emulator->pending_chain));
+    dfc_secure_wipe(emulator->pending_chain_chunks, sizeof(emulator->pending_chain_chunks));
     dfc_emulator_discard_command_chain(emulator);
     emulator->df_names_pending = false;
     emulator->df_names_next = 0;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
     emulator->delegated_creation_pending = false;
     emulator->delegated_creation_header_length = 0;
-    memset(
-        emulator->delegated_creation_header,
-        0,
-        sizeof(emulator->delegated_creation_header));
+    dfc_secure_wipe(
+        emulator->delegated_creation_header, sizeof(emulator->delegated_creation_header));
 #endif
 #if DFC_ENABLE_PROXIMITY_CHECK
     emulator->proximity_active = false;
@@ -179,39 +216,50 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->proximity_offset = 0;
     emulator->proximity_published_len = 0;
     emulator->proximity_transcript_len = 0;
-    memset(emulator->proximity_random, 0, sizeof(emulator->proximity_random));
-    memset(emulator->proximity_published, 0, sizeof(emulator->proximity_published));
-    memset(emulator->proximity_transcript, 0, sizeof(emulator->proximity_transcript));
+    dfc_secure_wipe(emulator->proximity_random, sizeof(emulator->proximity_random));
+    dfc_secure_wipe(emulator->proximity_published, sizeof(emulator->proximity_published));
+    dfc_secure_wipe(emulator->proximity_transcript, sizeof(emulator->proximity_transcript));
 #endif
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     emulator->ev2_authentication_pending = false;
     emulator->ev2_authentication_non_first = false;
     emulator->ev2_session_active = false;
     emulator->ev2_authenticated_key_no = 0;
+    emulator->ev2_pending_authenticated_key_no = 0;
     emulator->ev2_command_counter = 0;
-    memset(emulator->ev2_static_key, 0, sizeof(emulator->ev2_static_key));
-    memset(emulator->ev2_random_a, 0, sizeof(emulator->ev2_random_a));
-    memset(emulator->ev2_random_b, 0, sizeof(emulator->ev2_random_b));
-    memset(
-        emulator->ev2_transaction_identifier,
-        0,
-        sizeof(emulator->ev2_transaction_identifier));
-    memset(emulator->ev2_card_capabilities, 0, sizeof(emulator->ev2_card_capabilities));
-    memset(emulator->ev2_reader_capabilities, 0, sizeof(emulator->ev2_reader_capabilities));
-    memset(
-        emulator->ev2_session_encryption_key,
-        0,
-        sizeof(emulator->ev2_session_encryption_key));
-    memset(emulator->ev2_session_mac_key, 0, sizeof(emulator->ev2_session_mac_key));
+    dfc_secure_wipe(emulator->ev2_static_key, sizeof(emulator->ev2_static_key));
+    dfc_secure_wipe(emulator->ev2_random_b, sizeof(emulator->ev2_random_b));
+    dfc_secure_wipe(
+        emulator->ev2_transaction_identifier, sizeof(emulator->ev2_transaction_identifier));
+    dfc_secure_wipe(
+        emulator->ev2_pending_transaction_identifier,
+        sizeof(emulator->ev2_pending_transaction_identifier));
+    dfc_secure_wipe(emulator->ev2_card_capabilities, sizeof(emulator->ev2_card_capabilities));
+    dfc_secure_wipe(emulator->ev2_reader_capabilities, sizeof(emulator->ev2_reader_capabilities));
+    dfc_secure_wipe(
+        emulator->ev2_pending_card_capabilities,
+        sizeof(emulator->ev2_pending_card_capabilities));
+    dfc_secure_wipe(
+        emulator->ev2_pending_reader_capabilities,
+        sizeof(emulator->ev2_pending_reader_capabilities));
+    dfc_secure_wipe(
+        emulator->ev2_session_encryption_key, sizeof(emulator->ev2_session_encryption_key));
+    dfc_secure_wipe(emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));
 #endif
 #if DFC_ENABLE_SDM
     emulator->sdm_read_cache_valid = false;
+    emulator->sdm_read_cache_file_number = 0;
     emulator->sdm_read_cache_len = 0;
+    dfc_secure_wipe(emulator->sdm_read_cache, sizeof(emulator->sdm_read_cache));
+#endif
+#if DFC_ENABLE_TRANSACTION_MAC
+    emulator->transaction_input_len = 0;
+    dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
 #endif
     dfc_emulator_clear_pending_value_transactions(emulator);
-    memset(emulator->rnd_a, 0, sizeof(emulator->rnd_a));
-    memset(emulator->rnd_b, 0, sizeof(emulator->rnd_b));
-    memset(emulator->enc_rnd_b, 0, sizeof(emulator->enc_rnd_b));
+    dfc_secure_wipe(emulator->rnd_a, sizeof(emulator->rnd_a));
+    dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
+    dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
     if(emulator->secure_messaging) {
         dfc_secure_messaging_free(emulator->secure_messaging);
         emulator->secure_messaging = NULL;
