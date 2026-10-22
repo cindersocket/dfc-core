@@ -54,6 +54,13 @@ public final class DfcReader implements AutoCloseable {
         throw new IllegalStateException("reader is closed");
       return value;
     }
+    boolean owns(long expected) {
+      return handle.get() == expected;
+    }
+    void require(long expected) {
+      if (!owns(expected))
+        throw new IllegalStateException("reader is closed");
+    }
     @Override
     public void run() {
       long value = handle.getAndSet(0);
@@ -200,8 +207,10 @@ public final class DfcReader implements AutoCloseable {
         return new DfcResponse(DfcNative.readerResult(handle), DfcNative.readerStatus(handle));
       try {
         answer = Objects.requireNonNull(transport.transceive(command), "transport returned null");
+        state.require(handle);
       } catch (IOException | RuntimeException error) {
-        DfcNative.readerClear(handle);
+        if (state.owns(handle))
+          DfcNative.readerClear(handle);
         throw error;
       }
     }

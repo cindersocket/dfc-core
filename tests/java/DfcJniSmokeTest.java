@@ -63,5 +63,60 @@ public final class DfcJniSmokeTest {
             check(reader.session().authenticationMode() == 0x71, "EV2 reader session");
             check(picc.snapshot().ev2Active(), "EV2 PICC session");
         }
+
+        DfcReader[] callbackReader = new DfcReader[1];
+        try {
+            callbackReader[0] = new DfcReader(command -> {
+                callbackReader[0].close();
+                return new byte[] {(byte) 0x91, (byte) 0xaf};
+            });
+            try {
+                callbackReader[0].exchange(DfcCommand.getVersion(),
+                    DfcReader.Framing.ISO_7816, DfcReader.Communication.PLAIN);
+                throw new AssertionError("reentrant close unexpectedly completed the exchange");
+            } catch (IllegalStateException expected) {
+                check(expected.getMessage().equals("reader is closed"),
+                    "reentrant close must report the closed reader");
+            }
+        } finally {
+            if (callbackReader[0] != null) callbackReader[0].close();
+        }
+
+        int[] callbackCount = new int[1];
+        try {
+            callbackReader[0] = new DfcReader(command -> {
+                if (++callbackCount[0] == 2) callbackReader[0].close();
+                return callbackCount[0] == 1
+                    ? new byte[] {(byte) 0x91, (byte) 0xaf}
+                    : new byte[] {(byte) 0x91, 0x00};
+            });
+            try {
+                callbackReader[0].exchange(DfcCommand.getVersion(),
+                    DfcReader.Framing.ISO_7816, DfcReader.Communication.PLAIN);
+                throw new AssertionError("chained reentrant close unexpectedly completed the exchange");
+            } catch (IllegalStateException expected) {
+                check(expected.getMessage().equals("reader is closed"),
+                    "chained reentrant close must report the closed reader");
+            }
+        } finally {
+            if (callbackReader[0] != null) callbackReader[0].close();
+        }
+
+        try {
+            callbackReader[0] = new DfcReader(command -> {
+                callbackReader[0].close();
+                throw new java.io.IOException("transport sentinel");
+            });
+            try {
+                callbackReader[0].exchange(DfcCommand.getVersion(),
+                    DfcReader.Framing.ISO_7816, DfcReader.Communication.PLAIN);
+                throw new AssertionError("throwing transport unexpectedly completed the exchange");
+            } catch (java.io.IOException expected) {
+                check(expected.getMessage().equals("transport sentinel"),
+                    "reentrant close must preserve the transport exception");
+            }
+        } finally {
+            if (callbackReader[0] != null) callbackReader[0].close();
+        }
     }
 }
