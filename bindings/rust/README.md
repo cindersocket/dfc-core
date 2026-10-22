@@ -11,7 +11,7 @@ EV3 profile. No preinstalled `libdfc` is required:
 
 ```toml
 [dependencies]
-dfc-core = "1.2.1"
+dfc-core = "2.0.0"
 ```
 
 Load a text or binary credential, validate it, and transfer ownership into a
@@ -64,7 +64,7 @@ Target builds are `no_std` with `alloc`. Select exactly one role and profile:
 
 ```toml
 [dependencies]
-dfc-core = { version = "1.2.1", default-features = false, features = [
+dfc-core = { version = "2.0.0", default-features = false, features = [
     "bundled",
     "role-target",
     "profile-minimal-ev3",

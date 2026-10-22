@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 (Unreleased)
 
 - Add Java and Android JNI bindings, an Android library, and a sample application.
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`

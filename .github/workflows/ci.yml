@@ -20,6 +20,8 @@ jobs:
         run: ./scripts/check-format.sh
       - name: Check documentation links
         run: python3 scripts/check-docs.py
+      - name: Check version metadata
+        run: python3 scripts/check-version.py
 
   fuzz:
     name: Credential invariant fuzzing
