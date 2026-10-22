@@ -82,6 +82,11 @@ DfcVirtualPiccStatus dfc_virtual_picc_reset_protocol(DfcVirtualPiccSession* sess
 DfcVirtualPiccStatus dfc_virtual_picc_scan_iso14443a(
     DfcVirtualPiccSession* session,
     DfcVirtualPiccActivation* activation);
+// Exchange one APDU or native command. If a completed native operation does
+// not fit `response`, its response is retained in the session; retry the exact
+// same command with a larger buffer. Other commands are rejected until that
+// response is retrieved or the protocol is reset. ISO command handlers that
+// can preflight their exact response leave state unchanged on capacity errors.
 DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_exchange(
     DfcVirtualPiccSession* session,
     const uint8_t* command,
