@@ -107,7 +107,8 @@ It provides the credential records and codec, `DfcVirtualPicc` and
 command builders, and blocking reader secure messaging. `bindings/android`
 packages that API and the native core as a four-ABI AAR, adds an Android
 `IsoDep` transport, and includes a sample application. See the
-[Java and Android README](bindings/java/README.md).
+[Java README](bindings/java/README.md) and
+[Android README](bindings/android/README.md).
 
 ## Use it from Python
 

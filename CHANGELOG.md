@@ -2,14 +2,15 @@
 
 ## 2.0.0 (Unreleased)
 
-- Add Java and Android JNI bindings, an Android library, and a sample application.
+- Add Java and Android JNI bindings and an Android library.
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
   target builds, with ABI-layout checks and caller-owned target storage.
 - Add runnable transceive examples for .NET, Java, Android, Python, and Rust.
 - Make semantic application-selection helpers consistently accept the
   human-readable application identifier order in every binding.
-- Correct Java communication-mode values and validate key-set storage widths
-  at the FFI boundary.
+- Correct Java communication-mode values and Python reader FFI declarations,
+  validate key-set storage widths at the FFI boundary, and enforce Rust 1.85
+  compatibility in CI.
 - Add one-command formatting and documentation-link verification for every
   supported binding language.
 - Generate target and Rust static libraries with the toolchain's native code
@@ -22,7 +23,8 @@
 - Reuse prepared cipher contexts and stream segmented AES, DES, and TDEA MAC input,
   removing message-sized secure-messaging scratch buffers.
 - Propagate cipher and MAC failures, reject overflowing or malformed inputs,
-  and wipe staged output and secret material consistently.
+  and consistently wipe staged output, retired ISO-DEP requests, file-pool
+  bytes, replay buffers, and secret scratch storage.
 - Make reader, native, ISO, ISO-DEP, EV1, and EV2 retries state-atomic across
   authentication, response-capacity, chaining, and transport failures.
 - Roll back failed SDM, delegated-application, transaction-MAC, CommitReaderID,
@@ -31,8 +33,9 @@
   separate from active authorization state.
 - Reduce each secure-messaging and reader-session object by 2,256 bytes by
   eliminating message-sized scratch storage.
-- Harden .NET virtual-card lifetime ownership across disposal, finalization, and
-  concurrent native calls.
+- Harden Python and .NET native-handle ownership across construction,
+  closed-object access, callback reentry, disposal, finalization, and concurrent
+  calls.
 - Use constant-time authentication-secret comparisons and expand teardown and
   JNI secret-wipe verification.
 - Standardize replay-random exhaustion across the hosted bindings.
