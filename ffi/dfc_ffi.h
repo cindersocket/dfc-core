@@ -428,7 +428,10 @@ DFC_FFI_EXPORT int32_t dfc_ffi_picc_create_take(
     DfcFfiPicc** out);
 DFC_FFI_EXPORT void dfc_ffi_picc_free(DfcFfiPicc* picc);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_activate(DfcFfiPicc* picc, DfcFfiActivation* out);
-// One APDU (ISO 7816 or native framing) or one ISO-DEP block.
+// One APDU (ISO 7816 or native framing) or one ISO-DEP block. After the
+// virtual-PICC buffer-too-small status from a native operation, retry the exact
+// command with a larger response buffer; the completed response is retained
+// and the operation is not executed again.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_exchange(
     DfcFfiPicc* picc,
     const uint8_t* command,
@@ -556,6 +559,8 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_create_delegated_application_begin(
     const uint8_t* initial_key,
     size_t initial_key_len,
     uint8_t initial_version);
+// The reader buffer-too-small status leaves the response and exchange
+// unconsumed. Retry the same call with a larger output buffer.
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_step(
     DfcFfiReaderExchange* exchange,
     const uint8_t* response,

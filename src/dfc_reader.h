@@ -57,7 +57,7 @@ typedef enum {
     DfcReaderPending,
     // An argument is out of range, or the operation does not fit the session.
     DfcReaderInvalid,
-    // A caller buffer, or one of the reader's own bounds, is too small.
+    // The caller-provided output buffer is too small; retry with more space.
     DfcReaderBufferTooSmall,
     // The card's answer is malformed or not the answer this step expects.
     DfcReaderProtocolError,
@@ -173,7 +173,8 @@ size_t dfc_reader_challenge_length(uint8_t cipher, size_t key_len);
 
 // Legacy (D40), ISO or AES three-pass authentication. `random_a` must hold
 // dfc_reader_challenge_length octets. The session is replaced when the card
-// accepts, and cleared when it refuses.
+// accepts. An incomplete or refused reauthentication leaves the previous
+// session unchanged.
 DfcReaderStatus dfc_reader_authenticate_begin(
     DfcReaderExchange* exchange,
     DfcReaderSession* session,
@@ -257,7 +258,9 @@ DfcReaderStatus dfc_reader_update_record_begin(
 
 // Advance an operation. Pass NULL and 0 on the first call, then each answer.
 // Returns DfcReaderPending with the next frame in `out`, DfcReaderOk when the
-// operation is complete, or the reason it failed.
+// operation is complete, or the reason it failed. DfcReaderBufferTooSmall does
+// not consume the input answer or advance the exchange; retry the same call
+// with a larger output buffer.
 DfcReaderStatus dfc_reader_step(
     DfcReaderExchange* exchange,
     const uint8_t* response,

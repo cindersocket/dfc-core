@@ -51,7 +51,8 @@ static size_t decode_hex(const char* hex, uint8_t* bytes, size_t capacity) {
     return digits / 2;
 }
 
-static void assert_apdu(DfcVirtualPiccSession* session, const char* request, const char* expected) {
+static void
+    assert_apdu(DfcVirtualPiccSession* session, const char* request, const char* expected) {
     uint8_t input[64], wanted[64], actual[64];
     size_t input_len = decode_hex(request, input, sizeof(input));
     size_t wanted_len = decode_hex(expected, wanted, sizeof(wanted));
@@ -122,8 +123,151 @@ static void authenticate(
     authenticate_with_key(emulator, reader_capabilities, reader_len, expected_card, zero_key);
 }
 
-static MunitResult test_v6_maximal_capability_exchange(
-    const MunitParameter params[], void* data) {
+static void assert_ev2_pending_authentication_cleared(const DfcEmulator* emulator) {
+    const uint8_t zero[DFC_AES_KEY_LENGTH] = {0};
+    munit_assert_false(emulator->ev2_authentication_pending);
+    munit_assert_false(emulator->ev2_authentication_non_first);
+    munit_assert_uint8(emulator->ev2_pending_authenticated_key_no, ==, 0);
+    munit_assert_memory_equal(sizeof(emulator->ev2_static_key), emulator->ev2_static_key, zero);
+    munit_assert_memory_equal(sizeof(emulator->ev2_random_b), emulator->ev2_random_b, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_pending_transaction_identifier),
+        emulator->ev2_pending_transaction_identifier,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_pending_card_capabilities),
+        emulator->ev2_pending_card_capabilities,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_pending_reader_capabilities),
+        emulator->ev2_pending_reader_capabilities,
+        zero);
+}
+
+static MunitResult
+    test_ev2_reauthentication_aborts_are_atomic(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    enum {
+        AbortWithShortContinuation,
+        AbortWithLongContinuation,
+        AbortWithOtherCommand,
+    };
+    DfcCredential credential;
+    credential_init(&credential);
+    const uint8_t active_card_capabilities[DFC_EV2_CAPABILITY_LENGTH] = {1, 2, 3, 4, 5, 6};
+    const uint8_t active_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH] = {7, 8, 9, 10, 11, 12};
+    const uint8_t pending_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH] = {
+        13, 14, 15, 16, 17, 18};
+    const uint8_t pending_card_capabilities[DFC_EV2_CAPABILITY_LENGTH] = {19, 20, 21, 22, 23, 24};
+    credential.picc_has_ev2_capabilities = true;
+    memcpy(
+        credential.picc_ev2_capabilities,
+        active_card_capabilities,
+        sizeof(active_card_capabilities));
+    DfcEmulator* emulator = dfc_emulator_alloc(&credential);
+    munit_assert_not_null(emulator);
+    authenticate(
+        emulator,
+        active_reader_capabilities,
+        sizeof(active_reader_capabilities),
+        active_card_capabilities);
+    munit_assert_true(emulator->ev2_session_active);
+    munit_assert_memory_equal(
+        sizeof(active_card_capabilities),
+        emulator->ev2_card_capabilities,
+        active_card_capabilities);
+    munit_assert_memory_equal(
+        sizeof(active_reader_capabilities),
+        emulator->ev2_reader_capabilities,
+        active_reader_capabilities);
+    memcpy(
+        credential.picc_ev2_capabilities,
+        pending_card_capabilities,
+        sizeof(pending_card_capabilities));
+
+    for(size_t abort_kind = AbortWithShortContinuation; abort_kind <= AbortWithOtherCommand;
+        abort_kind++) {
+        uint8_t old_key_no = emulator->ev2_authenticated_key_no;
+        uint16_t old_counter = emulator->ev2_command_counter;
+        uint8_t old_transaction[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
+        uint8_t old_encryption_key[DFC_AES_KEY_LENGTH];
+        uint8_t old_mac_key[DFC_AES_KEY_LENGTH];
+        memcpy(old_transaction, emulator->ev2_transaction_identifier, sizeof(old_transaction));
+        memcpy(
+            old_encryption_key, emulator->ev2_session_encryption_key, sizeof(old_encryption_key));
+        memcpy(old_mac_key, emulator->ev2_session_mac_key, sizeof(old_mac_key));
+
+        const uint8_t begin[] = {
+            DFC_CMD_AUTHENTICATE_EV2_FIRST,
+            0,
+            sizeof(pending_reader_capabilities),
+            13,
+            14,
+            15,
+            16,
+            17,
+            18};
+        uint8_t response[64];
+        size_t len = command(emulator, begin, sizeof(begin), response);
+        munit_assert_size(len, ==, 1 + DFC_EV2_RANDOM_LENGTH);
+        munit_assert_uint8(response[0], ==, DFC_CMD_ADDITIONAL_FRAME);
+        munit_assert_true(emulator->ev2_authentication_pending);
+
+        if(abort_kind == AbortWithOtherCommand) {
+            const uint8_t other[] = {DFC_CMD_GET_VERSION};
+            len = command(emulator, other, sizeof(other), response);
+            munit_assert_size(len, ==, 1);
+            munit_assert_uint8(response[0], ==, DFC_STATUS_COMMAND_ABORTED);
+        } else {
+            uint8_t continuation[1 + DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH + 1] = {
+                DFC_CMD_ADDITIONAL_FRAME};
+            size_t continuation_len = abort_kind == AbortWithShortContinuation ?
+                                          sizeof(continuation) - 2 :
+                                          sizeof(continuation);
+            len = command(emulator, continuation, continuation_len, response);
+            munit_assert_size(len, ==, 1);
+            munit_assert_uint8(response[0], ==, DFC_STATUS_AUTHENTICATION_ERR);
+        }
+
+        assert_ev2_pending_authentication_cleared(emulator);
+        munit_assert_true(emulator->ev2_session_active);
+        munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, old_key_no);
+        munit_assert_uint16(emulator->ev2_command_counter, ==, old_counter);
+        munit_assert_memory_equal(
+            sizeof(old_transaction), emulator->ev2_transaction_identifier, old_transaction);
+        munit_assert_memory_equal(
+            sizeof(old_encryption_key), emulator->ev2_session_encryption_key, old_encryption_key);
+        munit_assert_memory_equal(sizeof(old_mac_key), emulator->ev2_session_mac_key, old_mac_key);
+        munit_assert_memory_equal(
+            sizeof(active_card_capabilities),
+            emulator->ev2_card_capabilities,
+            active_card_capabilities);
+        munit_assert_memory_equal(
+            sizeof(active_reader_capabilities),
+            emulator->ev2_reader_capabilities,
+            active_reader_capabilities);
+    }
+
+    authenticate(
+        emulator,
+        pending_reader_capabilities,
+        sizeof(pending_reader_capabilities),
+        pending_card_capabilities);
+    munit_assert_memory_equal(
+        sizeof(pending_card_capabilities),
+        emulator->ev2_card_capabilities,
+        pending_card_capabilities);
+    munit_assert_memory_equal(
+        sizeof(pending_reader_capabilities),
+        emulator->ev2_reader_capabilities,
+        pending_reader_capabilities);
+
+    dfc_emulator_free(emulator);
+    return MUNIT_OK;
+}
+
+static MunitResult test_v6_maximal_capability_exchange(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     static DfcCredential from_text, from_binary;
@@ -208,8 +352,8 @@ static MunitResult test_card_and_reader_capabilities(const MunitParameter params
     return MUNIT_OK;
 }
 
-static MunitResult test_wrapped_apdu_after_credential_round_trips(
-    const MunitParameter params[], void* data) {
+static MunitResult
+    test_wrapped_apdu_after_credential_round_trips(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     static DfcCredential original, from_text, from_der;
@@ -219,8 +363,7 @@ static MunitResult test_wrapped_apdu_after_credential_round_trips(
 
     static char text[DFC_TEXT_MAX_SIZE];
     size_t text_len = 0;
-    munit_assert_int(
-        dfc_text_write(&original, text, sizeof(text), &text_len), ==, DfcTextOk);
+    munit_assert_int(dfc_text_write(&original, text, sizeof(text), &text_len), ==, DfcTextOk);
     DfcTextError detail = {0};
     munit_assert_int(dfc_text_parse(&from_text, text, text_len, &detail), ==, DfcTextOk);
     munit_assert_true(from_text.picc_has_ev2_capabilities);
@@ -253,8 +396,7 @@ static MunitResult test_wrapped_apdu_after_credential_round_trips(
         uint8_t random[20];
         decode_hex("000102030405060708090A0B0C0D0E0FA1B2C3D4", random, sizeof(random));
         dfc_host_set_random_buffer(random, sizeof(random));
-        assert_apdu(
-            session, vectors[i].request, "7ACA0FD9BCD6EC7C9F97466616E6A28291AF");
+        assert_apdu(session, vectors[i].request, "7ACA0FD9BCD6EC7C9F97466616E6A28291AF");
         assert_apdu(
             session,
             "90AF000020358D5B59ADB65D04107676586F4734468AE4FC4E8630324D15ABDA99C0D0202C00",
@@ -265,8 +407,8 @@ static MunitResult test_wrapped_apdu_after_credential_round_trips(
     return MUNIT_OK;
 }
 
-static MunitResult test_non_first_has_no_capability_exchange(
-    const MunitParameter params[], void* data) {
+static MunitResult
+    test_non_first_has_no_capability_exchange(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     DfcCredential credential;
@@ -352,6 +494,12 @@ static MunitTest tests[] = {
      NULL},
     {"/bad_lengths",
      test_bad_lengths_do_not_start_authentication,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/reauthentication_aborts_are_atomic",
+     test_ev2_reauthentication_aborts_are_atomic,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
