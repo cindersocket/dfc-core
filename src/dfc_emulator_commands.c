@@ -96,7 +96,8 @@ static bool require_selected_application(DfcEmulator* emulator, DfcByteBuf* tx_b
 }
 
 static bool is_authenticated_with_key(const DfcEmulator* emulator, uint8_t key_no) {
-    return (emulator->secure_messaging != NULL && emulator->auth_key_no == key_no)
+    return (dfc_emulator_native_authentication_active(emulator) &&
+            emulator->auth_key_no == key_no)
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
            || (emulator->ev2_session_active && emulator->ev2_authenticated_key_no == key_no)
 #endif
@@ -428,9 +429,9 @@ static void emit_payload_with_chaining_comm(
     // carry secured octets and the final frame carries the MAC where there is one.
     bool secured_in_pending = false;
     size_t pending_used = 0;
-    bool ev1 = emulator->secure_messaging &&
+    bool ev1 = dfc_emulator_native_authentication_active(emulator) &&
                dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd);
-    bool legacy = emulator->secure_messaging && !ev1;
+    bool legacy = dfc_emulator_native_authentication_active(emulator) && !ev1;
     bool is_secured = false;
     bool block_aligned = false;
     if(ev1 && comm == DFC_COMM_ENCIPHERED) {
@@ -576,7 +577,7 @@ static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf*
     }
     bool final_frame = chunk == remaining;
     // These octets were secured as one response before being split.
-    if(emulator->secure_messaging) emulator->response_secured = true;
+    if(dfc_emulator_native_authentication_active(emulator)) emulator->response_secured = true;
     uint8_t status = final_frame ? DFC_STATUS_OK : DFC_CMD_ADDITIONAL_FRAME;
     append_status_payload(
         tx_buffer, status, emulator->pending_chain + emulator->pending_chain_offset, chunk);
@@ -640,7 +641,7 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     }
     if(!require_directory_access(emulator, tx_buffer)) return;
 
-    bool ev1 = emulator->secure_messaging &&
+    bool ev1 = dfc_emulator_native_authentication_active(emulator) &&
                dfc_secure_messaging_applies_ev1(emulator->secure_messaging, DFC_CMD_GET_DF_NAMES);
     // D40 does not add a response CMAC here. Every application still occupies
     // one frame, whether or not authentication is active.
@@ -708,7 +709,7 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
 }
 
 static void handle_get_card_uid(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
-    if(!emulator->secure_messaging) {
+    if(!dfc_emulator_native_authentication_active(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
@@ -1102,7 +1103,7 @@ static void handle_change_key(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
-    if(!emulator->secure_messaging) {
+    if(!dfc_emulator_native_authentication_active(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
@@ -1134,7 +1135,7 @@ static void handle_change_key_settings(
     const uint8_t* apdu,
     size_t apdu_len,
     DfcByteBuf* tx_buffer) {
-    if(!emulator->secure_messaging ||
+    if(!dfc_emulator_native_authentication_active(emulator) ||
        emulator->secure_messaging->cipher != DFC_CMD_AUTHENTICATE_LEGACY) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
@@ -1260,7 +1261,7 @@ static void handle_change_file_settings(
     }
 
     uint8_t change_key = access_change_nibble(file->access_rights);
-    if(change_key != DFC_ACCESS_FREE && !emulator->secure_messaging) {
+    if(change_key != DFC_ACCESS_FREE && !dfc_emulator_native_authentication_active(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
@@ -1688,6 +1689,11 @@ static void clear_pending_ev2_authentication(DfcEmulator* emulator) {
         sizeof(emulator->ev2_pending_reader_capabilities));
 }
 
+static void fail_pending_ev2_authentication(DfcEmulator* emulator) {
+    clear_pending_ev2_authentication(emulator);
+    dfc_emulator_clear_active_authentication(emulator);
+}
+
 static bool handle_authenticate_ev2_start(
     DfcEmulator* emulator,
     const uint8_t* apdu,
@@ -1750,6 +1756,12 @@ static bool handle_authenticate_ev2_start(
         return false;
     }
 
+    if(non_first) {
+        dfc_emulator_retire_ev2_non_first_authentication(emulator);
+    } else {
+        dfc_emulator_clear_active_authentication(emulator);
+    }
+
     memcpy(emulator->ev2_static_key, key, DFC_AES_KEY_LENGTH);
     emulator->ev2_pending_authenticated_key_no = key_no;
     emulator->ev2_authentication_non_first = non_first;
@@ -1807,9 +1819,13 @@ static void handle_authenticate_ev2_continuation(
     const uint8_t* apdu,
     size_t apdu_len,
     DfcByteBuf* tx_buffer) {
-    if(!emulator->ev2_authentication_pending ||
-       apdu_len != 1 + DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH) {
+    if(!emulator->ev2_authentication_pending) {
         clear_pending_ev2_authentication(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+        return;
+    }
+    if(apdu_len != 1 + DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH) {
+        fail_pending_ev2_authentication(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
@@ -1817,7 +1833,7 @@ static void handle_authenticate_ev2_continuation(
     uint8_t clear[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
     if(!dfc_worker_aes_cbc_decrypt(
            emulator->ev2_static_key, DFC_AES_KEY_LENGTH, iv, sizeof(clear), apdu + 1, clear)) {
-        clear_pending_ev2_authentication(emulator);
+        fail_pending_ev2_authentication(emulator);
         dfc_secure_wipe(clear, sizeof(clear));
         dfc_secure_wipe(iv, sizeof(iv));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
@@ -1826,7 +1842,7 @@ static void handle_authenticate_ev2_continuation(
     uint8_t rotated_b[DFC_EV2_RANDOM_LENGTH];
     dfc_ev2_rotate_left(emulator->ev2_random_b, rotated_b);
     if(!dfc_ct_equal(clear + DFC_EV2_RANDOM_LENGTH, rotated_b, sizeof(rotated_b))) {
-        clear_pending_ev2_authentication(emulator);
+        fail_pending_ev2_authentication(emulator);
         dfc_secure_wipe(clear, sizeof(clear));
         dfc_secure_wipe(rotated_b, sizeof(rotated_b));
         dfc_secure_wipe(iv, sizeof(iv));
@@ -1843,7 +1859,7 @@ static void handle_authenticate_ev2_continuation(
            emulator->ev2_random_b,
            candidate_encryption_key,
            candidate_mac_key)) {
-        clear_pending_ev2_authentication(emulator);
+        fail_pending_ev2_authentication(emulator);
         dfc_secure_wipe(clear, sizeof(clear));
         dfc_secure_wipe(rotated_b, sizeof(rotated_b));
         dfc_secure_wipe(candidate_random_a, sizeof(candidate_random_a));
@@ -1881,7 +1897,7 @@ static void handle_authenticate_ev2_continuation(
     uint8_t encrypted[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
     if(!dfc_worker_aes_cbc_encrypt(
            emulator->ev2_static_key, DFC_AES_KEY_LENGTH, iv, response_len, response, encrypted)) {
-        clear_pending_ev2_authentication(emulator);
+        fail_pending_ev2_authentication(emulator);
         dfc_secure_wipe(candidate_random_a, sizeof(candidate_random_a));
         dfc_secure_wipe(candidate_encryption_key, sizeof(candidate_encryption_key));
         dfc_secure_wipe(candidate_mac_key, sizeof(candidate_mac_key));
@@ -1948,6 +1964,11 @@ static void clear_pending_authentication(DfcEmulator* emulator) {
     dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
 }
 
+static void fail_pending_authentication(DfcEmulator* emulator) {
+    clear_pending_authentication(emulator);
+    dfc_emulator_clear_active_authentication(emulator);
+}
+
 static void handle_authenticate_step1(
     DfcEmulator* emulator,
     uint8_t cipher,
@@ -2002,6 +2023,7 @@ static void handle_authenticate_step1(
         dfc_secure_wipe(encrypted, sizeof(encrypted));
         return;
     }
+    dfc_emulator_clear_active_authentication(emulator);
     memcpy(emulator->rnd_b, rnd_b, challenge_len);
     memcpy(emulator->enc_rnd_b, encrypted, challenge_len);
 
@@ -2041,7 +2063,7 @@ static void handle_authenticate_step2(
     if(apdu_len != 1 + challenge_len * 2) {
         DFC_LOG_W(TAG, "Authenticate step 2: unexpected frame");
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        clear_pending_authentication(emulator);
+        fail_pending_authentication(emulator);
         dfc_secure_wipe(factory, sizeof(factory));
         return;
     }
@@ -2065,7 +2087,7 @@ static void handle_authenticate_step2(
             dfc_worker_des_cbc_decrypt(key, key_len, iv, challenge_len * 2, apdu + 1, plain);
     }
     if(!decrypted_ok) {
-        clear_pending_authentication(emulator);
+        fail_pending_authentication(emulator);
         dfc_secure_wipe(plain, sizeof(plain));
         dfc_secure_wipe(iv, sizeof(iv));
         dfc_secure_wipe(factory, sizeof(factory));
@@ -2082,7 +2104,7 @@ static void handle_authenticate_step2(
 
     if(!dfc_ct_equal(rnd_b_rot, expected_rnd_b_rot, challenge_len)) {
         DFC_LOG_W(TAG, "Authenticate step 2: RndB' mismatch");
-        clear_pending_authentication(emulator);
+        fail_pending_authentication(emulator);
         dfc_secure_wipe(expected_rnd_b_rot, sizeof(expected_rnd_b_rot));
         dfc_secure_wipe(plain, sizeof(plain));
         dfc_secure_wipe(iv, sizeof(iv));
@@ -2105,7 +2127,7 @@ static void handle_authenticate_step2(
             dfc_worker_aes_cbc_encrypt(key, key_len, iv, challenge_len, rnd_a_rot, encrypted) :
             dfc_worker_des_cbc_encrypt(key, key_len, iv, challenge_len, rnd_a_rot, encrypted);
     if(!response_ok) {
-        clear_pending_authentication(emulator);
+        fail_pending_authentication(emulator);
         dfc_secure_wipe(encrypted, sizeof(encrypted));
         dfc_secure_wipe(rnd_a_rot, sizeof(rnd_a_rot));
         dfc_secure_wipe(expected_rnd_b_rot, sizeof(expected_rnd_b_rot));
@@ -2123,7 +2145,7 @@ static void handle_authenticate_step2(
 
     DfcSecureMessaging candidate;
     if(!dfc_secure_messaging_init(&candidate, cipher, session_key, session_key_len, NULL)) {
-        clear_pending_authentication(emulator);
+        fail_pending_authentication(emulator);
         dfc_secure_wipe(session_key, sizeof(session_key));
         dfc_secure_wipe(encrypted, sizeof(encrypted));
         dfc_secure_wipe(rnd_a_rot, sizeof(rnd_a_rot));
@@ -2134,11 +2156,11 @@ static void handle_authenticate_step2(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         return;
     }
-    DfcSecureMessaging* new_session = emulator->secure_messaging;
-    if(!new_session) {
-        new_session = dfc_secure_messaging_alloc(cipher, session_key, session_key_len, NULL);
-        if(!new_session) {
-            clear_pending_authentication(emulator);
+    if(!emulator->secure_messaging) {
+        emulator->secure_messaging =
+            dfc_secure_messaging_alloc(cipher, session_key, session_key_len, NULL);
+        if(!emulator->secure_messaging) {
+            fail_pending_authentication(emulator);
             dfc_secure_wipe(&candidate, sizeof(candidate));
             dfc_secure_wipe(session_key, sizeof(session_key));
             dfc_secure_wipe(encrypted, sizeof(encrypted));
@@ -2150,10 +2172,8 @@ static void handle_authenticate_step2(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
-        emulator->secure_messaging = new_session;
-    } else {
-        *new_session = candidate;
     }
+    *emulator->secure_messaging = candidate;
     dfc_secure_wipe(&candidate, sizeof(candidate));
     emulator->auth_cipher = cipher;
     emulator->auth_key_no = emulator->pending_auth_key_no;
@@ -2694,10 +2714,11 @@ static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
     value_bytes[3] = (uint8_t)((raw >> 24) & 0xFF);
 
     uint8_t comm = file_effective_comm_settings(file, false);
-    bool ev1_sm = emulator->secure_messaging &&
+    bool ev1_sm = dfc_emulator_native_authentication_active(emulator) &&
                   dfc_secure_messaging_applies_ev1(emulator->secure_messaging, DFC_CMD_GET_VALUE);
 
-    if(emulator->secure_messaging && !ev1_sm && comm != DFC_COMM_PLAIN) {
+    if(dfc_emulator_native_authentication_active(emulator) && !ev1_sm &&
+       comm != DFC_COMM_PLAIN) {
         uint8_t wrapped[DFC_SM_MAX_CIPHER_BLOCK_SIZE];
         size_t wrapped_len = dfc_secure_messaging_generate_response(
             emulator->secure_messaging,
@@ -2789,7 +2810,7 @@ static void handle_value_delta(
     size_t body_len = apdu_len - 1;
     int32_t amount = 0;
 
-    if(emulator->secure_messaging &&
+    if(dfc_emulator_native_authentication_active(emulator) &&
        dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
         uint8_t comm = file_effective_comm_settings(file, true);
         if(comm == DFC_COMM_MAC && dfc_secure_messaging_ev1_transmits_command_mac(cmd)) {
@@ -2841,7 +2862,7 @@ static void handle_value_delta(
             amount = read_int32_le(body + 1);
         }
     } else if(
-        emulator->secure_messaging &&
+        dfc_emulator_native_authentication_active(emulator) &&
         !dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
         // D40: Amount may be MAC/ENC under file comm mode.
         uint8_t comm = file_effective_comm_settings(file, true);
@@ -4226,7 +4247,8 @@ static bool handle_read_data(
     }
 #endif
 #if DFC_ENABLE_SDM
-    if(file->sdm_enabled && !emulator->secure_messaging && !emulator->ev2_session_active) {
+    if(file->sdm_enabled && !dfc_emulator_native_authentication_active(emulator) &&
+       !emulator->ev2_session_active) {
         if(!emulator->sdm_read_cache_valid && file->sdm_has_counter_limit &&
            file->sdm_read_counter >= file->sdm_counter_limit) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
@@ -4337,7 +4359,7 @@ static void handle_write_data(
     const uint8_t* clear = wrapped;
     size_t out_len = wrapped_len;
     size_t scratch_len = 0;
-    if(emulator->secure_messaging) {
+    if(dfc_emulator_native_authentication_active(emulator)) {
         bool ev1_sm =
             dfc_secure_messaging_applies_ev1(emulator->secure_messaging, DFC_CMD_WRITE_DATA);
         if(ev1_sm && comm == DFC_COMM_MAC &&
@@ -4555,7 +4577,7 @@ static size_t unwrap_write_payload(
     if(apdu_len < cmd_header) return SIZE_MAX;
     const uint8_t* wrapped = apdu + cmd_header;
     size_t wrapped_len = apdu_len - cmd_header;
-    if(!emulator->secure_messaging) {
+    if(!dfc_emulator_native_authentication_active(emulator)) {
         if(wrapped_len > out_cap) return SIZE_MAX;
         memcpy(out, wrapped, wrapped_len);
         return wrapped_len;
@@ -4778,7 +4800,7 @@ static void handle_clear_record_file(
 
 static void
     apply_ev1_response_secure_messaging(DfcEmulator* emulator, uint8_t cmd, DfcByteBuf* tx_buffer) {
-    if(!emulator->secure_messaging ||
+    if(!dfc_emulator_native_authentication_active(emulator) ||
        !dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd))
         return;
     // Already secured as one response before being split into frames.
@@ -5033,7 +5055,7 @@ static size_t chained_write_expected_len(
         wire_len += DFC_WIRE_MAC_LENGTH;
     } else
 #endif
-        if(emulator->secure_messaging) {
+        if(dfc_emulator_native_authentication_active(emulator)) {
         if(comm == DFC_COMM_MAC) {
             wire_len += emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 4 : 8;
         } else if(comm == DFC_COMM_ENCIPHERED) {
@@ -5079,7 +5101,7 @@ static bool update_ev1_command_if_active(
     uint8_t cmd,
     const uint8_t* data,
     size_t data_len) {
-    if(emulator->secure_messaging &&
+    if(dfc_emulator_native_authentication_active(emulator) &&
        dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
         return dfc_secure_messaging_update_ev1_command(
             emulator->secure_messaging, cmd, data, data_len);
@@ -5096,7 +5118,7 @@ static bool prepare_ev1_command_update(
     uint8_t candidate_iv[DFC_SM_MAX_CIPHER_BLOCK_SIZE],
     bool* has_candidate) {
     *has_candidate = false;
-    if(!emulator->secure_messaging ||
+    if(!dfc_emulator_native_authentication_active(emulator) ||
        !dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
         return true;
     }
@@ -5117,7 +5139,7 @@ static void commit_ev1_command_update(
     DfcEmulator* emulator,
     const uint8_t candidate_iv[DFC_SM_MAX_CIPHER_BLOCK_SIZE],
     bool has_candidate) {
-    if(has_candidate && emulator->secure_messaging) {
+    if(has_candidate && dfc_emulator_native_authentication_active(emulator)) {
         memcpy(
             emulator->secure_messaging->iv, candidate_iv, sizeof(emulator->secure_messaging->iv));
     }
@@ -5170,9 +5192,17 @@ bool dfc_emulator_handle_command(
     }
 
     if(has_pending_additional_work(emulator) && cmd != DFC_CMD_ADDITIONAL_FRAME) {
-        clear_pending_authentication(emulator);
+        if(emulator->awaiting_step2) {
+            fail_pending_authentication(emulator);
+        } else {
+            clear_pending_authentication(emulator);
+        }
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
-        clear_pending_ev2_authentication(emulator);
+        if(emulator->ev2_authentication_pending) {
+            fail_pending_ev2_authentication(emulator);
+        } else {
+            clear_pending_ev2_authentication(emulator);
+        }
 #endif
         clear_pending_chain(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COMMAND_ABORTED);
@@ -5514,7 +5544,7 @@ bool dfc_emulator_handle_command(
             emulator->awaiting_step2) {
             handle_authenticate_step2(emulator, buffer, buffer_len, tx_buffer, dfc);
         } else if(emulator->get_version_frame != 0) {
-            if(emulator->secure_messaging) {
+            if(dfc_emulator_native_authentication_active(emulator)) {
                 if(!dfc_secure_messaging_update_ev1_command(
                        emulator->secure_messaging, cmd, buffer + 1, buffer_len - 1)) {
                     clear_pending_chain(emulator);

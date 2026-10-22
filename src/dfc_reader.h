@@ -173,8 +173,8 @@ size_t dfc_reader_challenge_length(uint8_t cipher, size_t key_len);
 
 // Legacy (D40), ISO or AES three-pass authentication. `random_a` must hold
 // dfc_reader_challenge_length octets. The session is replaced when the card
-// accepts. An incomplete or refused reauthentication leaves the previous
-// session unchanged.
+// accepts. Once the first handshake frame is emitted, the previous session is
+// no longer authenticated; a terminal failure leaves the session clear.
 DfcReaderStatus dfc_reader_authenticate_begin(
     DfcReaderExchange* exchange,
     DfcReaderSession* session,

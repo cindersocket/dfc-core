@@ -5,6 +5,7 @@
 #include "munit/munit.h"
 
 #include "dfc_credential.h"
+#include "dfc_emulator_i.h"
 #include "dfc_port_host.h"
 #include "dfc_reader.h"
 #include "dfc_virtual_picc.h"
@@ -143,7 +144,7 @@ static void assert_native_authentication_pending_cleared(const DfcEmulator* emul
     munit_assert_memory_equal(sizeof(emulator->enc_rnd_b), emulator->enc_rnd_b, zero);
 }
 
-static MunitResult test_aborted_native_reauthentication_preserves_authorization(
+static MunitResult test_aborted_native_reauthentication_clears_authorization(
     const MunitParameter params[],
     void* data) {
     (void)params;
@@ -165,9 +166,7 @@ static MunitResult test_aborted_native_reauthentication_preserves_authorization(
             DfcReaderOk);
 
         DfcEmulator* emulator = link.picc->emulator;
-        DfcSecureMessaging* old_session = emulator->secure_messaging;
-        munit_assert_not_null(old_session);
-        DfcSecureMessaging old_session_value = *old_session;
+        munit_assert_not_null(emulator->secure_messaging);
         munit_assert_uint8(emulator->auth_key_no, ==, 1);
 
         uint8_t response[64];
@@ -187,7 +186,7 @@ static MunitResult test_aborted_native_reauthentication_preserves_authorization(
         munit_assert_true(emulator->awaiting_step2);
         munit_assert_uint8(emulator->pending_auth_cipher, ==, DFC_CMD_AUTHENTICATE_AES);
         munit_assert_uint8(emulator->pending_auth_key_no, ==, 0);
-        munit_assert_uint8(emulator->auth_key_no, ==, 1);
+        munit_assert_uint8(emulator->auth_key_no, ==, 0);
 
         uint8_t abort_apdu[5 + DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH + 2] = {0};
         size_t abort_len;
@@ -217,11 +216,14 @@ static MunitResult test_aborted_native_reauthentication_preserves_authorization(
                                                   DFC_STATUS_AUTHENTICATION_ERR);
 
         assert_native_authentication_pending_cleared(emulator);
-        munit_assert_ptr_equal(emulator->secure_messaging, old_session);
+        munit_assert_not_null(emulator->secure_messaging);
+        munit_assert_false(dfc_emulator_native_authentication_active(emulator));
         munit_assert_memory_equal(
-            sizeof(old_session_value), emulator->secure_messaging, &old_session_value);
-        munit_assert_uint8(emulator->auth_cipher, ==, DFC_CMD_AUTHENTICATE_AES);
-        munit_assert_uint8(emulator->auth_key_no, ==, 1);
+            sizeof(*emulator->secure_messaging),
+            emulator->secure_messaging,
+            ((uint8_t[sizeof(*emulator->secure_messaging)]){0}));
+        munit_assert_uint8(emulator->auth_cipher, ==, 0);
+        munit_assert_uint8(emulator->auth_key_no, ==, 0);
 
         DfcCommand privileged;
         DfcReaderExchange exchange;
@@ -663,7 +665,13 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
         DFC_ISO7816_STATUS_WORD_LENGTH,
         response,
         ((uint8_t[]){DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO}));
-    munit_assert_null(link.picc->emulator->secure_messaging);
+    munit_assert_ptr_equal(
+        link.picc->emulator->secure_messaging, select_emulator_before.secure_messaging);
+    munit_assert_false(dfc_emulator_native_authentication_active(link.picc->emulator));
+    munit_assert_memory_equal(
+        sizeof(*link.picc->emulator->secure_messaging),
+        link.picc->emulator->secure_messaging,
+        ((uint8_t[sizeof(*link.picc->emulator->secure_messaging)]){0}));
     munit_assert_int(
         link.picc->emulator->selected_application, ==, DfcEmulatorSelectedApplicationApp);
     munit_assert_size(link.picc->emulator->selected_app_index, ==, 0);
@@ -2196,7 +2204,7 @@ static MunitResult test_get_version_under_session(const MunitParameter params[],
     return MUNIT_OK;
 }
 
-static MunitResult test_wrong_key_preserves_session(const MunitParameter params[], void* data) {
+static MunitResult test_wrong_key_clears_session(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     static Link link;
@@ -2204,11 +2212,15 @@ static MunitResult test_wrong_key_preserves_session(const MunitParameter params[
     select_app(&link, AID_AES);
     munit_assert_int(
         authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, 16), ==, DfcReaderOk);
-    DfcReaderSession session_before = link.session;
     munit_assert_int(
         authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_1, 16), ==, DfcReaderCardError);
-    munit_assert_memory_equal(sizeof(session_before), &session_before, &link.session);
-    read_file(&link, FileMac, DFC_COMM_MAC, 0, 8);
+    munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
+    munit_assert_not_null(link.picc->emulator->secure_messaging);
+    munit_assert_false(dfc_emulator_native_authentication_active(link.picc->emulator));
+    munit_assert_memory_equal(
+        sizeof(*link.picc->emulator->secure_messaging),
+        link.picc->emulator->secure_messaging,
+        ((uint8_t[sizeof(*link.picc->emulator->secure_messaging)]){0}));
     link_close(&link);
     return MUNIT_OK;
 }
@@ -2852,8 +2864,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/aborted-native-reauthentication-preserves-authorization",
-     test_aborted_native_reauthentication_preserves_authorization,
+    {"/aborted-native-reauthentication-clears-authorization",
+     test_aborted_native_reauthentication_clears_authorization,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
@@ -2909,8 +2921,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/wrong-key-preserves-session",
-     test_wrong_key_preserves_session,
+    {"/wrong-key-clears-session",
+     test_wrong_key_clears_session,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

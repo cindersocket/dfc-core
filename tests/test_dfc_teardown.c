@@ -235,7 +235,8 @@ static DfcReaderStatus reader_auth_audit_iso7816(
 static DfcReaderStatus reader_auth_audit_ev2(
     ReaderAuthAudit* audit,
     DfcReaderExchange* exchange,
-    const uint8_t key[DFC_AES_KEY_LENGTH]) {
+    const uint8_t key[DFC_AES_KEY_LENGTH],
+    bool first) {
     const uint8_t random_a[DFC_EV2_RANDOM_LENGTH] = {0xA3};
     const uint8_t capabilities[DFC_EV2_CAPABILITY_LENGTH] = {1, 2, 3, 4, 5, 6};
     munit_assert_int(
@@ -243,12 +244,12 @@ static DfcReaderStatus reader_auth_audit_ev2(
             exchange,
             &audit->reader,
             DfcReaderFramingIso7816,
-            true,
+            first,
             0,
             key,
             random_a,
-            capabilities,
-            sizeof(capabilities)),
+            first ? capabilities : NULL,
+            first ? sizeof(capabilities) : 0),
         ==,
         DfcReaderOk);
     return reader_auth_audit_run(audit, exchange);
@@ -272,30 +273,23 @@ static void assert_emulator_ev2_retired(const DfcEmulator* emulator) {
         sizeof(emulator->ev2_reader_capabilities), emulator->ev2_reader_capabilities, zero);
 }
 
-static void assert_emulator_ev2_matches_reader(
-    const DfcEmulator* emulator,
-    const DfcReaderSession* reader) {
-    munit_assert_true(emulator->ev2_session_active);
-    munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, reader->key_no);
-    munit_assert_uint16(emulator->ev2_command_counter, ==, reader->ev2_command_counter);
-    munit_assert_memory_equal(
-        sizeof(emulator->ev2_transaction_identifier),
-        emulator->ev2_transaction_identifier,
-        reader->ev2_transaction_identifier);
-    munit_assert_memory_equal(
-        sizeof(emulator->ev2_session_encryption_key),
-        emulator->ev2_session_encryption_key,
-        reader->ev2_encryption_key);
-    munit_assert_memory_equal(
-        sizeof(emulator->ev2_session_mac_key), emulator->ev2_session_mac_key, reader->ev2_mac_key);
-    munit_assert_memory_equal(
-        sizeof(emulator->ev2_card_capabilities),
-        emulator->ev2_card_capabilities,
-        reader->ev2_card_capabilities);
-    munit_assert_memory_equal(
-        sizeof(emulator->ev2_reader_capabilities),
-        emulator->ev2_reader_capabilities,
-        reader->ev2_reader_capabilities);
+static void assert_reader_session_retired(const DfcReaderSession* reader) {
+    DfcReaderSession clear;
+    dfc_reader_session_init(&clear);
+    munit_assert_memory_equal(sizeof(clear), reader, &clear);
+}
+
+static void assert_emulator_authentication_retired(const DfcEmulator* emulator) {
+    munit_assert_false(dfc_emulator_native_authentication_active(emulator));
+    if(emulator->secure_messaging) {
+        munit_assert_memory_equal(
+            sizeof(*emulator->secure_messaging),
+            emulator->secure_messaging,
+            ((uint8_t[sizeof(*emulator->secure_messaging)]){0}));
+    }
+    munit_assert_uint8(emulator->auth_cipher, ==, 0);
+    munit_assert_uint8(emulator->auth_key_no, ==, 0);
+    assert_emulator_ev2_retired(emulator);
 }
 
 static MunitResult test_reader_authentication_transients_and_family_commit(
@@ -339,14 +333,12 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
             native_cases[i].key_len);
         reader_auth_audit_seed_ev2(&audit);
         DfcReaderExchange exchange;
-        DfcReaderSession ev2_before = audit.reader;
         DfcReaderStatus cross_family_failure = reader_auth_audit_native(
             &audit, &exchange, native_cases[i].cipher, wrong_key, native_cases[i].key_len);
         munit_assert_int(cross_family_failure, !=, DfcReaderOk);
         assert_reader_auth_transients_wiped(&exchange);
-        munit_assert_memory_equal(sizeof(ev2_before), &audit.reader, &ev2_before);
-        assert_emulator_ev2_matches_reader(audit.picc->emulator, &ev2_before);
-        munit_assert_null(audit.picc->emulator->secure_messaging);
+        assert_reader_session_retired(&audit.reader);
+        assert_emulator_authentication_retired(audit.picc->emulator);
 
         munit_assert_int(
             reader_auth_audit_native(
@@ -363,19 +355,14 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
         munit_assert_uint8(audit.picc->emulator->auth_cipher, ==, native_cases[i].cipher);
         assert_emulator_ev2_retired(audit.picc->emulator);
 
-        DfcReaderSession reader_before = audit.reader;
-        DfcSecureMessaging* card_pointer = audit.picc->emulator->secure_messaging;
-        DfcSecureMessaging card_before = *card_pointer;
         DfcReaderStatus failure = reader_auth_audit_native(
             &audit, &exchange, native_cases[i].cipher, wrong_key, native_cases[i].key_len);
         munit_assert_int(failure, !=, DfcReaderOk);
         munit_assert_int(failure, !=, DfcReaderPending);
         munit_assert_int(failure, !=, DfcReaderBufferTooSmall);
         assert_reader_auth_transients_wiped(&exchange);
-        munit_assert_memory_equal(sizeof(reader_before), &audit.reader, &reader_before);
-        munit_assert_ptr_equal(audit.picc->emulator->secure_messaging, card_pointer);
-        munit_assert_memory_equal(sizeof(card_before), card_pointer, &card_before);
-        assert_emulator_ev2_retired(audit.picc->emulator);
+        assert_reader_session_retired(&audit.reader);
+        assert_emulator_authentication_retired(audit.picc->emulator);
         reader_auth_audit_close(&audit);
     }
 
@@ -391,14 +378,12 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
             sizeof(AuditAesKey));
         reader_auth_audit_seed_ev2(&audit);
         DfcReaderExchange exchange;
-        DfcReaderSession ev2_before = audit.reader;
         DfcReaderStatus cross_family_failure =
             reader_auth_audit_iso7816(&audit, &exchange, wrong_key);
         munit_assert_int(cross_family_failure, !=, DfcReaderOk);
         assert_reader_auth_transients_wiped(&exchange);
-        munit_assert_memory_equal(sizeof(ev2_before), &audit.reader, &ev2_before);
-        assert_emulator_ev2_matches_reader(audit.picc->emulator, &ev2_before);
-        munit_assert_null(audit.picc->emulator->secure_messaging);
+        assert_reader_session_retired(&audit.reader);
+        assert_emulator_authentication_retired(audit.picc->emulator);
 
         munit_assert_int(
             reader_auth_audit_iso7816(&audit, &exchange, AuditAesKey), ==, DfcReaderOk);
@@ -407,16 +392,11 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
         munit_assert_not_null(audit.picc->emulator->secure_messaging);
         assert_emulator_ev2_retired(audit.picc->emulator);
 
-        DfcReaderSession reader_before = audit.reader;
-        DfcSecureMessaging* card_pointer = audit.picc->emulator->secure_messaging;
-        DfcSecureMessaging card_before = *card_pointer;
         DfcReaderStatus failure = reader_auth_audit_iso7816(&audit, &exchange, wrong_key);
         munit_assert_int(failure, !=, DfcReaderOk);
         assert_reader_auth_transients_wiped(&exchange);
-        munit_assert_memory_equal(sizeof(reader_before), &audit.reader, &reader_before);
-        munit_assert_ptr_equal(audit.picc->emulator->secure_messaging, card_pointer);
-        munit_assert_memory_equal(sizeof(card_before), card_pointer, &card_before);
-        assert_emulator_ev2_retired(audit.picc->emulator);
+        assert_reader_session_retired(&audit.reader);
+        assert_emulator_authentication_retired(audit.picc->emulator);
         reader_auth_audit_close(&audit);
     }
 #endif
@@ -438,36 +418,24 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
             ==,
             DfcReaderOk);
         munit_assert_not_null(audit.picc->emulator->secure_messaging);
-        DfcReaderSession native_before = audit.reader;
-        DfcSecureMessaging* native_card_pointer = audit.picc->emulator->secure_messaging;
-        DfcSecureMessaging native_card_before = *native_card_pointer;
-        DfcReaderStatus cross_family_failure = reader_auth_audit_ev2(&audit, &exchange, wrong_key);
+        DfcReaderStatus cross_family_failure =
+            reader_auth_audit_ev2(&audit, &exchange, wrong_key, true);
         munit_assert_int(cross_family_failure, !=, DfcReaderOk);
         assert_reader_auth_transients_wiped(&exchange);
-        munit_assert_uint8(audit.reader.auth_mode, ==, native_before.auth_mode);
-        munit_assert_uint8(audit.reader.key_no, ==, native_before.key_no);
-        munit_assert_memory_equal(
-            sizeof(audit.reader.sm.session_key),
-            audit.reader.sm.session_key,
-            native_before.sm.session_key);
-        munit_assert_ptr_equal(audit.picc->emulator->secure_messaging, native_card_pointer);
-        munit_assert_uint8(native_card_pointer->cipher, ==, native_card_before.cipher);
-        munit_assert_memory_equal(
-            sizeof(native_card_pointer->session_key),
-            native_card_pointer->session_key,
-            native_card_before.session_key);
-        munit_assert_memory_equal(
-            sizeof(audit.reader.sm.iv), audit.reader.sm.iv, native_card_pointer->iv);
-        munit_assert_false(audit.picc->emulator->ev2_session_active);
+        assert_reader_session_retired(&audit.reader);
+        assert_emulator_authentication_retired(audit.picc->emulator);
 
-        munit_assert_int(reader_auth_audit_ev2(&audit, &exchange, AuditAesKey), ==, DfcReaderOk);
+        munit_assert_int(
+            reader_auth_audit_ev2(&audit, &exchange, AuditAesKey, true), ==, DfcReaderOk);
         assert_reader_auth_transients_wiped(&exchange);
         munit_assert_uint8(audit.reader.auth_mode, ==, DFC_READER_AUTH_EV2);
         munit_assert_memory_equal(
             sizeof(audit.reader.sm.session_key),
             audit.reader.sm.session_key,
             ((uint8_t[sizeof(audit.reader.sm.session_key)]){0}));
-        munit_assert_null(audit.picc->emulator->secure_messaging);
+        munit_assert_not_null(audit.picc->emulator->secure_messaging);
+        munit_assert_false(
+            dfc_emulator_native_authentication_active(audit.picc->emulator));
         munit_assert_uint8(audit.picc->emulator->auth_cipher, ==, 0);
         munit_assert_uint8(audit.picc->emulator->auth_key_no, ==, 0);
         munit_assert_memory_equal(
@@ -476,35 +444,11 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
             ((uint8_t[sizeof(audit.picc->emulator->rnd_a)]){0}));
         munit_assert_true(audit.picc->emulator->ev2_session_active);
 
-        DfcReaderSession reader_before = audit.reader;
-        uint8_t card_encryption_key[DFC_AES_KEY_LENGTH];
-        uint8_t card_mac_key[DFC_AES_KEY_LENGTH];
-        uint8_t card_transaction[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
-        memcpy(
-            card_encryption_key,
-            audit.picc->emulator->ev2_session_encryption_key,
-            sizeof(card_encryption_key));
-        memcpy(card_mac_key, audit.picc->emulator->ev2_session_mac_key, sizeof(card_mac_key));
-        memcpy(
-            card_transaction,
-            audit.picc->emulator->ev2_transaction_identifier,
-            sizeof(card_transaction));
-        DfcReaderStatus failure = reader_auth_audit_ev2(&audit, &exchange, wrong_key);
+        DfcReaderStatus failure = reader_auth_audit_ev2(&audit, &exchange, wrong_key, false);
         munit_assert_int(failure, !=, DfcReaderOk);
         assert_reader_auth_transients_wiped(&exchange);
-        munit_assert_memory_equal(sizeof(reader_before), &audit.reader, &reader_before);
-        munit_assert_true(audit.picc->emulator->ev2_session_active);
-        munit_assert_memory_equal(
-            sizeof(card_encryption_key),
-            audit.picc->emulator->ev2_session_encryption_key,
-            card_encryption_key);
-        munit_assert_memory_equal(
-            sizeof(card_mac_key), audit.picc->emulator->ev2_session_mac_key, card_mac_key);
-        munit_assert_memory_equal(
-            sizeof(card_transaction),
-            audit.picc->emulator->ev2_transaction_identifier,
-            card_transaction);
-        munit_assert_null(audit.picc->emulator->secure_messaging);
+        assert_reader_session_retired(&audit.reader);
+        assert_emulator_authentication_retired(audit.picc->emulator);
         reader_auth_audit_close(&audit);
     }
 #endif

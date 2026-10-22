@@ -250,6 +250,7 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
         uint8_t challenge[DFC_ISO7816_AUTH_CHALLENGE_LONG];
         if(!dfc_random_fill(challenge, challenge_len)) return DfcVirtualPiccStatusProtocolError;
         dfc_emulator_clear_iso_authentication(emulator);
+        dfc_emulator_clear_active_authentication(emulator);
         memcpy(emulator->iso_auth_card_first, challenge, challenge_len);
         emulator->iso_auth_challenge_len = (uint8_t)challenge_len;
         emulator->iso_auth_phase = 1;
@@ -419,11 +420,10 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
         dfc_secure_wipe(response, challenge_len * 2);
         return DfcVirtualPiccStatusProtocolError;
     }
-    DfcSecureMessaging* new_session = emulator->secure_messaging;
-    if(!new_session) {
-        new_session = dfc_secure_messaging_alloc(
+    if(!emulator->secure_messaging) {
+        emulator->secure_messaging = dfc_secure_messaging_alloc(
             emulator->iso_auth_cipher, session_key, session_key_len, NULL);
-        if(!new_session) {
+        if(!emulator->secure_messaging) {
             dfc_secure_wipe(&candidate, sizeof(candidate));
             dfc_secure_wipe(clear, sizeof(clear));
             dfc_secure_wipe(iv, sizeof(iv));
@@ -431,10 +431,8 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
             dfc_secure_wipe(response, challenge_len * 2);
             return DfcVirtualPiccStatusProtocolError;
         }
-        emulator->secure_messaging = new_session;
-    } else {
-        *new_session = candidate;
     }
+    *emulator->secure_messaging = candidate;
     dfc_secure_wipe(&candidate, sizeof(candidate));
     emulator->auth_cipher = emulator->iso_auth_cipher;
     emulator->auth_key_no = emulator->iso_auth_key_no;

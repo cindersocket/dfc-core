@@ -1,6 +1,7 @@
 #include "munit.h"
 
 #include "dfc_crypto_internal.h"
+#include "dfc_emulator_i.h"
 #include "dfc_ev2_crypto.h"
 #include "dfc_port.h"
 #include "dfc_reader.h"
@@ -416,6 +417,27 @@ static void assert_ev2_active_capabilities(
         DFC_EV2_CAPABILITY_LENGTH, emulator->ev2_reader_capabilities, reader);
 }
 
+static void assert_ev2_session_cleared(const DfcEmulator* emulator) {
+    const uint8_t zero[DFC_AES_KEY_LENGTH] = {0};
+    munit_assert_false(emulator->ev2_session_active);
+    munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, 0);
+    munit_assert_uint16(emulator->ev2_command_counter, ==, 0);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_transaction_identifier),
+        emulator->ev2_transaction_identifier,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_session_encryption_key),
+        emulator->ev2_session_encryption_key,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_session_mac_key), emulator->ev2_session_mac_key, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_card_capabilities), emulator->ev2_card_capabilities, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_reader_capabilities), emulator->ev2_reader_capabilities, zero);
+}
+
 static void assert_ev2_pending_cleared(const DfcEmulator* emulator) {
     const uint8_t zero[DFC_AES_KEY_LENGTH] = {0};
     munit_assert_false(emulator->ev2_authentication_pending);
@@ -450,7 +472,7 @@ static void prepare_ev2_continuation(
 }
 
 static MunitResult
-    test_ev2_capabilities_survive_crypto_failures(const MunitParameter params[], void* user_data) {
+    test_ev2_crypto_failures_clear_accepted_session(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
@@ -517,7 +539,7 @@ static MunitResult
             ==,
             1);
         munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
-        assert_ev2_active_capabilities(emulator, active_card, active_reader);
+        assert_ev2_session_cleared(emulator);
         assert_ev2_pending_cleared(emulator);
     }
 
@@ -529,7 +551,7 @@ static MunitResult
 }
 #endif
 
-static MunitResult test_native_reauthentication_reuses_session_allocation(
+static MunitResult test_native_reauthentication_reuses_retired_session_allocation(
     const MunitParameter params[],
     void* user_data) {
     (void)params;
@@ -545,7 +567,6 @@ static MunitResult test_native_reauthentication_reuses_session_allocation(
     munit_assert_not_null(old_session);
     old_session->iv[0] = 0x5A;
     DfcSecureMessaging old_value = *old_session;
-    link.picc->emulator->auth_key_no = 0x5A;
 
     const uint8_t random_a[DFC_EV2_RANDOM_LENGTH] = {0xA0};
     DfcReaderExchange exchange;
@@ -568,7 +589,9 @@ static MunitResult test_native_reauthentication_reuses_session_allocation(
 
     munit_assert_ptr_equal(link.picc->emulator->secure_messaging, old_session);
     munit_assert_memory_not_equal(sizeof(old_value), old_session, &old_value);
+    munit_assert_true(dfc_emulator_native_authentication_active(link.picc->emulator));
     munit_assert_uint8(link.picc->emulator->auth_key_no, ==, 0);
+    munit_assert_true(dfc_reader_session_is_authenticated(&link.reader));
     fault_link_close(&link);
     return MUNIT_OK;
 }
@@ -1044,7 +1067,7 @@ static MunitResult test_transaction_file_creation_rolls_back(
 }
 #endif
 
-static MunitResult test_iso7816_reauthentication_reuses_session_allocation(
+static MunitResult test_iso7816_reauthentication_reuses_retired_session_allocation(
     const MunitParameter params[],
     void* user_data) {
     (void)params;
@@ -1063,7 +1086,6 @@ static MunitResult test_iso7816_reauthentication_reuses_session_allocation(
     munit_assert_not_null(old_session);
     old_session->iv[0] = 0x5A;
     DfcSecureMessaging old_value = *old_session;
-    link.picc->emulator->auth_key_no = 0x5A;
 
     DfcReaderExchange exchange;
     munit_assert_int(
@@ -1114,6 +1136,7 @@ static MunitResult test_iso7816_reauthentication_reuses_session_allocation(
 
     munit_assert_ptr_equal(link.picc->emulator->secure_messaging, old_session);
     munit_assert_memory_not_equal(sizeof(old_value), old_session, &old_value);
+    munit_assert_true(dfc_emulator_native_authentication_active(link.picc->emulator));
     munit_assert_uint8(link.picc->emulator->auth_key_no, ==, 0);
     fault_link_close(&link);
     return MUNIT_OK;
@@ -2133,7 +2156,7 @@ static MunitResult
 
 static MunitTest tests[] = {
     {"/authentication/native-allocation",
-     test_native_reauthentication_reuses_session_allocation,
+     test_native_reauthentication_reuses_retired_session_allocation,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
@@ -2145,7 +2168,7 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/authentication/iso7816-allocation",
-     test_iso7816_reauthentication_reuses_session_allocation,
+     test_iso7816_reauthentication_reuses_retired_session_allocation,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
@@ -2158,7 +2181,7 @@ static MunitTest tests[] = {
      NULL},
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     {"/authentication/ev2-capability-failures",
-     test_ev2_capabilities_survive_crypto_failures,
+     test_ev2_crypto_failures_clear_accepted_session,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

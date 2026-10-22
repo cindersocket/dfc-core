@@ -156,6 +156,14 @@ void dfc_emulator_free(DfcEmulator* dfc_emulator);
 
 void dfc_emulator_reset_session(DfcEmulator* emulator);
 
+// Retire the active authentication without disturbing unrelated command state.
+void dfc_emulator_clear_active_authentication(DfcEmulator* emulator);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// EV2 NonFirst needs the transaction identifier and capabilities to finish, but
+// the old keys stop authorizing commands as soon as the handshake is accepted.
+void dfc_emulator_retire_ev2_non_first_authentication(DfcEmulator* emulator);
+#endif
+
 // Restore the emulator to its power-on PICC state without replacing its
 // allocated object or response buffer. This is safe for bounded firmware
 // lifecycle paths where allocation is forbidden.

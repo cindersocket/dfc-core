@@ -463,15 +463,32 @@ static void clear_auth_transients(DfcReaderExchange* ex) {
 }
 
 static DfcReaderStatus finish_auth(DfcReaderExchange* ex, DfcReaderStatus status) {
-    // A new handshake replaces the session only after it succeeds. Until then,
-    // the previous session remains usable by both peers.
     clear_auth_transients(ex);
     ex->phase = PhaseDone;
     return status;
 }
 
 static DfcReaderStatus fail_auth(DfcReaderExchange* ex, DfcReaderStatus status) {
+    if(ex->phase != PhaseStart) dfc_reader_session_clear(ex->session);
     return finish_auth(ex, status);
+}
+
+static void retire_reader_authentication(DfcReaderSession* session, bool keep_ev2_context) {
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(keep_ev2_context && session->auth_mode == DFC_READER_AUTH_EV2) {
+        session->auth_mode = DFC_READER_AUTH_NONE;
+        session->key_no = 0;
+        dfc_secure_wipe(&session->sm, sizeof(session->sm));
+        session->sm.pcd = true;
+        session->ev2_command_counter = 0;
+        dfc_secure_wipe(session->ev2_encryption_key, sizeof(session->ev2_encryption_key));
+        dfc_secure_wipe(session->ev2_mac_key, sizeof(session->ev2_mac_key));
+        return;
+    }
+#else
+    DFC_UNUSED(keep_ev2_context);
+#endif
+    dfc_reader_session_clear(session);
 }
 
 #if DFC_ENABLE_ISO7816_AUTH
@@ -512,7 +529,10 @@ static DfcReaderStatus step_authenticate_iso7816(
         const uint8_t apdu[IsoApduHeaderLength] = {
             DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_GET_CHALLENGE, 0, 0, (uint8_t)challenge};
         DfcReaderStatus status = emit_iso_auth_apdu(apdu, sizeof(apdu), out, cap, out_len);
-        if(status == DfcReaderPending) ex->phase = PhaseAuthChallenge;
+        if(status == DfcReaderPending) {
+            ex->phase = PhaseAuthChallenge;
+            retire_reader_authentication(ex->session, false);
+        }
         return status;
     }
     if(!response || response_len < IsoApduStatusLength)
@@ -632,7 +652,10 @@ static DfcReaderStatus step_authenticate(
 
     if(ex->phase == PhaseStart) {
         DfcReaderStatus status = emit(ex, cipher, &ex->auth_key_no, 1, out, cap, out_len);
-        if(status == DfcReaderPending) ex->phase = PhaseAuthChallenge;
+        if(status == DfcReaderPending) {
+            ex->phase = PhaseAuthChallenge;
+            retire_reader_authentication(ex->session, false);
+        }
         return status;
     }
 
@@ -777,7 +800,10 @@ static DfcReaderStatus step_authenticate_ev2(
         dfc_secure_wipe(command_cmac, sizeof(command_cmac));
         DfcReaderStatus status = emit(ex, ex->ins, data, data_len, out, cap, out_len);
         dfc_secure_wipe(head, sizeof(head));
-        if(status == DfcReaderPending) ex->phase = PhaseAuthChallenge;
+        if(status == DfcReaderPending) {
+            ex->phase = PhaseAuthChallenge;
+            retire_reader_authentication(ex->session, !ex->auth_first);
+        }
         return status;
     }
 
