@@ -147,6 +147,11 @@ These cache variables select the build:
 | `DFC_FEATURE_DEFINITIONS` | empty | Semicolon-separated `DFC_ENABLE_*` values ending in `=0` or `=1` |
 | `DFC_MAX_APPS`, `DFC_MAX_FILES`, `DFC_MAX_KEYS`, `DFC_FILE_POOL_SIZE`, `DFC_KEY_POOL_SIZE`, `DFC_MAX_FILE_DATA` | profile defaults | Set fixed model and transfer buffers for the device |
 
+Shared and JNI libraries enable position-independent code. Static core, static
+FFI, and Rust target libraries use the toolchain's native code model. Set
+`CMAKE_POSITION_INDEPENDENT_CODE=ON` when a downstream static-library consumer
+requires position-independent objects.
+
 For a small embedded card build with only the binary decoder:
 
 ```sh

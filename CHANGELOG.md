@@ -12,6 +12,8 @@
   at the FFI boundary.
 - Add one-command formatting and documentation-link verification for every
   supported binding language.
+- Generate target and Rust static libraries with the toolchain's native code
+  model, and reserve position-independent objects for shared and JNI libraries.
 - Refactor credential validation and serialization around explicit model invariants.
 - Accept zero-initialized credentials with empty file and key pools.
 - Make credential and file-pool updates transactional.

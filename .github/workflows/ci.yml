@@ -45,6 +45,24 @@ jobs:
           path: build-fuzz/artifacts
           if-no-files-found: ignore
 
+  cmake-configuration:
+    name: CMake build configuration
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Fetch tiny-crypto-c
+        uses: actions/checkout@v4
+        with:
+          repository: mistial-dev/tiny-crypto-c
+          ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
+          path: dependencies/tiny-crypto-c
+      - name: Verify position-independent code selection
+        run: TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" python3 scripts/check-cmake-pic.py
+
   unit:
     name: Unit suite (${{ matrix.backend }}${{ matrix.sanitize && format(', {0}', matrix.sanitize) || '' }})
     runs-on: ubuntu-24.04
