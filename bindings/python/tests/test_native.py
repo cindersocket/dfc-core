@@ -60,6 +60,54 @@ CLOSED_READER_CALLS: list[tuple[str, Callable[[Reader], object]]] = [
     ("update_record", lambda reader: reader.update_record(0, 0, 0, b"data")),
 ]
 
+REENTRANT_CLOSE_READER_CALLS: list[tuple[str, Callable[[Reader], object], str | None]] = [
+    ("run", lambda reader: reader._run(), None),
+    (
+        "exchange",
+        lambda reader: reader.exchange(Command.get_version()),
+        "dfc_ffi_reader_exchange_begin",
+    ),
+    (
+        "authenticate",
+        lambda reader: reader.authenticate(0x1A, 0, bytes(16), random_a=bytes(8)),
+        "dfc_ffi_reader_authenticate_begin",
+    ),
+    (
+        "authenticate_ev2",
+        lambda reader: reader.authenticate_ev2(0, bytes(16), random_a=bytes(16)),
+        "dfc_ffi_reader_authenticate_ev2_begin",
+    ),
+    (
+        "authenticate_iso7816",
+        lambda reader: reader.authenticate_iso7816(
+            0, 0x09, bytes(16), random_first=bytes(16), random_second=bytes(16)
+        ),
+        "dfc_ffi_reader_authenticate_iso7816_begin",
+    ),
+    (
+        "create_delegated_application",
+        lambda reader: reader.create_delegated_application(
+            bytes(19), bytes(16), bytes(16), bytes(7), bytes(16), 0
+        ),
+        "dfc_ffi_reader_create_delegated_application_begin",
+    ),
+    (
+        "write_data",
+        lambda reader: reader.write_data(0, 0, b"data"),
+        "dfc_ffi_reader_write_data_begin",
+    ),
+    (
+        "write_record",
+        lambda reader: reader.write_record(0, 0, b"data"),
+        "dfc_ffi_reader_write_record_begin",
+    ),
+    (
+        "update_record",
+        lambda reader: reader.update_record(0, 0, 0, b"data"),
+        "dfc_ffi_reader_update_record_begin",
+    ),
+]
+
 
 def test_reader_native_signatures_are_complete() -> None:
     library = _native.library()
@@ -293,6 +341,86 @@ def test_reader_close_waits_for_in_flight_run(monkeypatch: pytest.MonkeyPatch) -
         assert close_returned.is_set()
         assert reader._session.value is None
         assert reader._exchange.value is None
+
+
+@pytest.mark.parametrize(
+    ("name", "invoke", "begin_name"),
+    REENTRANT_CLOSE_READER_CALLS,
+    ids=[name for name, _, _ in REENTRANT_CLOSE_READER_CALLS],
+)
+@pytest.mark.parametrize(
+    "transport_result", ["returns_after_close", "raises_after_close", "raises_while_open"]
+)
+def test_transport_reentry_is_safe_for_every_reader_exchange_path(
+    name: str,
+    invoke: Callable[[Reader], object],
+    begin_name: str | None,
+    transport_result: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class TransportFailure(Exception):
+        pass
+
+    failure = TransportFailure("transport failed after close")
+    reader: Reader
+
+    class ClosingTransport:
+        def transceive(self, _: bytes) -> bytes:
+            if transport_result != "raises_while_open":
+                reader.close()
+                assert reader._session.value is None
+                assert reader._exchange.value is None
+            if transport_result != "returns_after_close":
+                raise failure
+            return b""
+
+    reader = Reader(ClosingTransport())
+    library = _native.library()
+    native_clear = library.dfc_ffi_reader_session_clear
+    step_calls = 0
+    clear_calls = 0
+
+    if begin_name is not None:
+        monkeypatch.setattr(library, begin_name, lambda *_: 0)
+
+    def pending_once(
+        exchange: _native.Handle,
+        _answer: object,
+        _answer_len: int,
+        output: object,
+        _capacity: int,
+        output_len: object,
+    ) -> int:
+        nonlocal step_calls
+        step_calls += 1
+        if step_calls != 1:
+            pytest.fail(f"{name} called native step after the transport closed the reader")
+        assert exchange.value is not None
+        C.cast(output, _native.P8)[0] = 0x60
+        C.cast(output_len, C.POINTER(C.c_size_t))[0] = 1
+        return 1
+
+    monkeypatch.setattr(library, "dfc_ffi_reader_step", pending_once)
+
+    def checked_clear(session: _native.Handle) -> None:
+        nonlocal clear_calls
+        clear_calls += 1
+        assert session.value is not None
+        native_clear(session)
+
+    monkeypatch.setattr(library, "dfc_ffi_reader_session_clear", checked_clear)
+
+    if transport_result == "returns_after_close":
+        with pytest.raises(RuntimeError, match="reader is closed"):
+            invoke(reader)
+    else:
+        with pytest.raises(TransportFailure) as caught:
+            invoke(reader)
+        assert caught.value is failure
+
+    assert step_calls == 1
+    assert clear_calls == (1 if transport_result == "raises_while_open" else 0)
+    reader.close()
 
 
 def test_abi_sizes_and_field_fingerprint() -> None:

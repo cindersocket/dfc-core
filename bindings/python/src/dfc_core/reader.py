@@ -149,8 +149,10 @@ class Reader:
                     try:
                         answer = bytes(self.transport.transceive(bytes(out[: length.value])))
                     except BaseException:
-                        self.clear()
+                        if self._finalizer.alive:
+                            self.clear()
                         raise
+                    self._open()
                     continue
                 N.raise_status(status)
                 data = N.variable_output(N.library().dfc_ffi_reader_result_data, self._exchange)
