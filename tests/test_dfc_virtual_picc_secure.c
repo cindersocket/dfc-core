@@ -1,4 +1,5 @@
 #include "dfc_virtual_picc_test_helpers.h"
+#include "dfc_emulator_i.h"
 
 static MunitResult test_iso_authentication_resets_ev1_secure_messaging_iv(
     const MunitParameter params[],
@@ -192,7 +193,8 @@ static MunitResult test_ev1_error_response_clears_authenticated_session(
     munit_assert_size(response_len, ==, 2);
     munit_assert_uint8(response[0], ==, 0x91);
     munit_assert_uint8(response[1], ==, DFC_STATUS_PARAMETER_ERROR);
-    munit_assert_null(session->emulator->secure_messaging);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
@@ -432,7 +434,8 @@ static MunitResult test_get_version_length_error_clears_ev1_session(
         munit_assert_size(response_len, ==, 2);
         munit_assert_uint8(response[0], ==, 0x91);
         munit_assert_uint8(response[1], ==, DFC_STATUS_LENGTH_ERROR);
-        munit_assert_null(session->emulator->secure_messaging);
+        munit_assert_not_null(session->emulator->secure_messaging);
+        munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
         munit_assert_uint8(session->emulator->get_version_frame, ==, 0);
         dfc_virtual_picc_session_free(session);
     }

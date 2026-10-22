@@ -3,6 +3,7 @@
 
 #include "dfc_virtual_picc_test_helpers.h"
 #include "dfc_der.h"
+#include "dfc_emulator_i.h"
 
 #include <string.h>
 
@@ -855,7 +856,8 @@ static MunitResult test_ev1_write_data_mac_requires_transmitted_cmac(
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     exchange(session, write_bad_mac, sizeof(write_bad_mac), response, sizeof(response), &response_len);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_INTEGRITY_ERROR}));
-    munit_assert_null(session->emulator->secure_messaging);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
 
     // Restore session for positive path.
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
