@@ -95,6 +95,74 @@ static uint8_t* encode(const DfcFfiCredential* credential, size_t* len) {
     return out;
 }
 
+typedef struct {
+    DfcCredential* model;
+    uint8_t* encoded;
+    size_t encoded_len;
+} CredentialState;
+
+static CredentialState capture_credential_state(const DfcFfiCredential* credential) {
+    CredentialState state = {0};
+    state.model = malloc(sizeof(*state.model));
+    CHECK(state.model != NULL);
+    if(state.model) memcpy(state.model, &credential->model, sizeof(*state.model));
+    state.encoded = encode(credential, &state.encoded_len);
+    CHECK(state.encoded != NULL);
+    return state;
+}
+
+static void check_credential_state_unchanged(
+    const DfcFfiCredential* credential,
+    const CredentialState* before) {
+    if(before->model) {
+        CHECK(memcmp(&credential->model, before->model, sizeof(*before->model)) == 0);
+    }
+    size_t after_len = 0;
+    uint8_t* after = encode(credential, &after_len);
+    CHECK(after_len == before->encoded_len);
+    if(after && before->encoded && after_len == before->encoded_len) {
+        CHECK(memcmp(after, before->encoded, after_len) == 0);
+    }
+    free(after);
+}
+
+static void free_credential_state(CredentialState* state) {
+    free(state->encoded);
+    free(state->model);
+    memset(state, 0, sizeof(*state));
+}
+
+static DfcFfiCredential* parse_test_credential(void) {
+    DfcFfiCredential* credential = NULL;
+    DfcFfiError error;
+    int32_t status =
+        dfc_ffi_credential_parse_text(CREDENTIAL, sizeof(CREDENTIAL) - 1, &credential, &error);
+    if(status != DFC_FFI_OK) {
+        fprintf(stderr, "parse: %d line %u %s\n", status, error.line, error.message);
+    }
+    CHECK(status == DFC_FFI_OK);
+    CHECK(credential != NULL);
+    return credential;
+}
+
+static void check_encoded_round_trip(const DfcFfiCredential* credential) {
+    size_t first_len = 0;
+    uint8_t* first = encode(credential, &first_len);
+    DfcFfiCredential* decoded = NULL;
+    DfcFfiError error;
+    CHECK(dfc_ffi_credential_decode(first, first_len, &decoded, &error) == DFC_FFI_OK);
+    if(decoded) {
+        size_t second_len = 0;
+        uint8_t* second = encode(decoded, &second_len);
+        CHECK(second_len == first_len);
+        if(second && first && second_len == first_len)
+            CHECK(memcmp(second, first, first_len) == 0);
+        free(second);
+    }
+    dfc_ffi_credential_free(decoded);
+    free(first);
+}
+
 static DfcFfiApplication capacity_test_application(uint8_t id, bool multiple_key_sets) {
     DfcFfiApplication application = {0};
     application.aid[0] = id;
@@ -240,6 +308,223 @@ static void check_application_creation_rollback(void) {
     }
 }
 
+static void check_rejected_card_and_picc_updates(void) {
+    DfcFfiCredential* credential = parse_test_credential();
+    if(!credential) return;
+
+    CredentialState before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_set_card(credential, NULL) == DFC_FFI_INVALID_ARGUMENT);
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    DfcFfiCard card;
+    CHECK(dfc_ffi_credential_get_card(credential, &card) == DFC_FFI_OK);
+    card.uid_len = 5;
+    before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_set_card(credential, &card) == DFC_FFI_INVALID_ARGUMENT);
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_set_picc(credential, NULL) == DFC_FFI_INVALID_ARGUMENT);
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    DfcFfiPiccSettings valid;
+    CHECK(dfc_ffi_credential_get_picc(credential, &valid) == DFC_FFI_OK);
+    DfcFfiPiccSettings invalid[5];
+    for(size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++)
+        invalid[i] = valid;
+    invalid[0].ats_len = (uint8_t)(DFC_PICC_ATS_MAX + 1);
+    invalid[1].num_keys = DFC_MAX_KEYS + 1;
+    invalid[2].key_len = DFC_MAX_KEY_LEN + 1;
+    invalid[3].virtual_card_configured = 1;
+    invalid[3].virtual_card_installation_id_len =
+        (uint8_t)(DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH + 1);
+    invalid[3].virtual_card_uid_len = 7;
+    invalid[4].virtual_card_configured = 1;
+    invalid[4].virtual_card_installation_id_len = 1;
+    invalid[4].virtual_card_uid_len = 5;
+
+    for(size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        before = capture_credential_state(credential);
+        CHECK(dfc_ffi_credential_set_picc(credential, &invalid[i]) == DFC_FFI_INVALID_ARGUMENT);
+        check_credential_state_unchanged(credential, &before);
+        free_credential_state(&before);
+    }
+    dfc_ffi_credential_free(credential);
+}
+
+static DfcFfiFile plain_file(int32_t owner, uint8_t number) {
+    DfcFfiFile file = {0};
+    file.owner = owner;
+    file.number = number;
+    file.type = DFC_FILE_TYPE_STANDARD_DATA;
+    file.comm_settings = DFC_COMM_PLAIN;
+    file.access_rights = 0xEEEE;
+    file.declared_size = 1;
+    return file;
+}
+
+static void check_rejected_file_creation_is_atomic(void) {
+    DfcFfiCredential* credential = parse_test_credential();
+    if(!credential) return;
+
+    DfcFfiFile duplicate;
+    CHECK(dfc_ffi_credential_get_file(credential, 0, &duplicate) == DFC_FFI_OK);
+    uint32_t index = UINT32_C(0xA5A5A5A5);
+    CredentialState before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_add_file(credential, &duplicate, &index) == DfcDerMalformed);
+    CHECK(index == UINT32_C(0xA5A5A5A5));
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    const int32_t invalid_owners[] = {-2, 1};
+    for(size_t i = 0; i < sizeof(invalid_owners) / sizeof(invalid_owners[0]); i++) {
+        DfcFfiFile invalid = plain_file(invalid_owners[i], DFC_EV1_MAX_FILE_NUMBER);
+        index = UINT32_C(0xA5A5A5A5);
+        before = capture_credential_state(credential);
+        CHECK(
+            dfc_ffi_credential_add_file(credential, &invalid, &index) == DFC_FFI_INVALID_ARGUMENT);
+        CHECK(index == UINT32_C(0xA5A5A5A5));
+        check_credential_state_unchanged(credential, &before);
+        free_credential_state(&before);
+    }
+
+    while(credential->model.num_apps < 16) {
+        DfcFfiApplication application =
+            capacity_test_application((uint8_t)(0x40u + credential->model.num_apps), false);
+        application.num_keys = 1;
+        application.key_len = 8;
+        application.key_settings_2 = (uint8_t)(DFC_KEY_TYPE_DES_2K3DES | 1u);
+        index = UINT32_MAX;
+        CHECK(dfc_ffi_credential_add_application(credential, &application, &index) == DFC_FFI_OK);
+    }
+    for(int32_t owner = DFC_FFI_OWNER_PICC;
+        owner < (int32_t)credential->model.num_apps && credential->model.num_files < DFC_MAX_FILES;
+        owner++) {
+        for(uint32_t number = 0;
+            number <= DFC_EV1_MAX_FILE_NUMBER && credential->model.num_files < DFC_MAX_FILES;
+            number++) {
+            DfcFfiFile file = plain_file(owner, (uint8_t)number);
+            index = UINT32_MAX;
+            int32_t status = dfc_ffi_credential_add_file(credential, &file, &index);
+            CHECK(status == DFC_FFI_OK || status == DfcDerMalformed);
+        }
+    }
+    CHECK(credential->model.num_files == DFC_MAX_FILES);
+    CHECK(dfc_ffi_credential_validate(credential) == DFC_FFI_OK);
+    DfcFfiFile full = plain_file(DFC_FFI_OWNER_PICC, 0xFF);
+    index = UINT32_C(0xA5A5A5A5);
+    before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_add_file(credential, &full, &index) == DfcDerCapacity);
+    CHECK(index == UINT32_C(0xA5A5A5A5));
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+    dfc_ffi_credential_free(credential);
+}
+
+static void check_pool_resize_boundaries(void) {
+    DfcFfiCredential* credential = parse_test_credential();
+    if(!credential) return;
+
+    uint8_t byte = 0xA5;
+    CredentialState before = capture_credential_state(credential);
+    CHECK(
+        dfc_ffi_credential_set_file_data(credential, 0, &byte, (size_t)DFC_MAX_FILE_DATA + 1) ==
+        DfcDerCapacity);
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    DfcApplication* app = &credential->model.apps[0];
+    before = capture_credential_state(credential);
+    CHECK(!dfc_credential_keys_resize(
+        &credential->model, app, (size_t)DFC_MAX_KEYS + 1, DFC_MAX_KEY_LEN));
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    DfcFile no_file_slice = {.data_offset = DFC_FILE_POOL_NONE, .data_len = 1};
+    DfcFile no_file_slice_before = no_file_slice;
+    before = capture_credential_state(credential);
+    CHECK(!dfc_file_resize(&credential->model, &no_file_slice, 1));
+    CHECK(memcmp(&no_file_slice, &no_file_slice_before, sizeof(no_file_slice)) == 0);
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    DfcApplication no_key_slice;
+    dfc_credential_reset_application(&no_key_slice);
+    no_key_slice.key_pool_len = 1;
+    DfcApplication no_key_slice_before = no_key_slice;
+    before = capture_credential_state(credential);
+    CHECK(!dfc_credential_keys_resize(&credential->model, &no_key_slice, 1, 16));
+    CHECK(memcmp(&no_key_slice, &no_key_slice_before, sizeof(no_key_slice)) == 0);
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    size_t file_used = credential->model.file_pool_used;
+    credential->model.file_pool_used = DFC_FILE_POOL_SIZE + 1;
+    DfcCredential invalid_before = credential->model;
+    size_t before_len = SIZE_MAX;
+    int32_t before_status = dfc_ffi_credential_encode(credential, NULL, 0, &before_len);
+    CHECK(before_status != DFC_FFI_OK);
+    CHECK(!dfc_file_resize(&credential->model, &credential->model.files[0], 16));
+    CHECK(memcmp(&credential->model, &invalid_before, sizeof(invalid_before)) == 0);
+    size_t after_len = SIZE_MAX;
+    CHECK(dfc_ffi_credential_encode(credential, NULL, 0, &after_len) == before_status);
+    CHECK(after_len == before_len);
+    credential->model.file_pool_used = file_used;
+
+    size_t key_used = credential->model.key_pool_used;
+    credential->model.key_pool_used = DFC_KEY_POOL_SIZE + 1;
+    invalid_before = credential->model;
+    before_len = SIZE_MAX;
+    before_status = dfc_ffi_credential_encode(credential, NULL, 0, &before_len);
+    CHECK(before_status != DFC_FFI_OK);
+    CHECK(!dfc_credential_keys_resize(&credential->model, app, app->num_keys, app->key_len));
+    CHECK(memcmp(&credential->model, &invalid_before, sizeof(invalid_before)) == 0);
+    after_len = SIZE_MAX;
+    CHECK(dfc_ffi_credential_encode(credential, NULL, 0, &after_len) == before_status);
+    CHECK(after_len == before_len);
+    credential->model.key_pool_used = key_used;
+
+    credential->model.files[0].contents_complete = false;
+    size_t initial_file_pool = credential->model.file_pool_used;
+    CHECK(dfc_file_resize(&credential->model, &credential->model.files[0], 0));
+    CHECK(credential->model.files[0].data_offset == DFC_FILE_POOL_NONE);
+    CHECK(credential->model.files[0].data_len == 0);
+    CHECK(credential->model.file_pool_used + 16 == initial_file_pool);
+    check_encoded_round_trip(credential);
+
+    DfcFfiPiccSettings picc;
+    CHECK(dfc_ffi_credential_get_picc(credential, &picc) == DFC_FFI_OK);
+    size_t initial_key_pool = credential->model.key_pool_used;
+    size_t initial_app_offset = app->key_offset;
+    uint8_t app_key[16];
+    memcpy(app_key, dfc_credential_key_const(&credential->model, app, 0), sizeof(app_key));
+    picc.num_keys = 0;
+    picc.key_len = 0;
+    CHECK(dfc_ffi_credential_set_picc(credential, &picc) == DFC_FFI_OK);
+    CHECK(credential->model.picc_key_offset == DFC_KEY_POOL_NONE);
+    CHECK(credential->model.picc_key_pool_len == 0);
+    CHECK(credential->model.picc_num_keys == 0);
+    CHECK(credential->model.key_pool_used + 16 == initial_key_pool);
+    CHECK(app->key_offset + 16 == initial_app_offset);
+    CHECK(
+        memcmp(dfc_credential_key_const(&credential->model, app, 0), app_key, sizeof(app_key)) ==
+        0);
+    check_encoded_round_trip(credential);
+
+    initial_key_pool = credential->model.key_pool_used;
+    CHECK(dfc_credential_keys_resize(&credential->model, app, 0, 16));
+    CHECK(app->key_offset == DFC_KEY_POOL_NONE);
+    CHECK(app->key_pool_len == 0);
+    CHECK(app->num_keys == 0);
+    CHECK(credential->model.key_pool_used + 32 == initial_key_pool);
+    check_encoded_round_trip(credential);
+
+    dfc_ffi_credential_free(credential);
+}
+
 static DfcFfiKey repeated_key(uint32_t len, uint8_t value, uint8_t version) {
     DfcFfiKey key = {.len = len, .version = version};
     memset(key.value, value, len);
@@ -323,7 +608,10 @@ static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
 }
 
 int main(void) {
+    check_rejected_card_and_picc_updates();
     check_application_creation_rollback();
+    check_rejected_file_creation_is_atomic();
+    check_pool_resize_boundaries();
 
     CHECK(dfc_ffi_abi_version() == DFC_FFI_ABI_VERSION);
     CHECK(dfc_ffi_layout_fingerprint() != 0);
