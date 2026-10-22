@@ -257,6 +257,7 @@ static void dfc_file_pool_compact_after_release(
             tail);
     }
     credential->file_pool_used -= freed_len;
+    dfc_secure_wipe(credential->file_pool + credential->file_pool_used, freed_len);
     for(size_t i = 0; i < credential->num_files; i++) {
         DfcFile* other = &credential->files[i];
         if(other->data_offset != DFC_FILE_POOL_NONE && other->data_offset > freed_offset) {

@@ -3,6 +3,13 @@
 
 #include <string.h>
 
+static void assert_released_pool_bytes_are_zero(const DfcCredential* credential, size_t old_used) {
+    munit_assert_size(credential->file_pool_used, <=, old_used);
+    for(size_t i = credential->file_pool_used; i < old_used; i++) {
+        munit_assert_uint8(credential->file_pool[i], ==, 0);
+    }
+}
+
 static MunitResult test_resize_allocate_and_release(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -38,6 +45,72 @@ static MunitResult test_resize_allocate_and_release(const MunitParameter params[
     munit_assert_not_null(pb);
     munit_assert_uint8(pb[0], ==, 0xBB);
     munit_assert_uint8(pb[199], ==, 0xBB);
+
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_release_wipes_compacted_and_cloned_pool_bytes(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    memset(&credential, 0, sizeof(credential));
+    dfc_credential_clear(&credential);
+
+    const uint8_t aid[] = {0x01, 0x02, 0x03};
+    munit_assert_not_null(
+        dfc_credential_create_application_desfire_order(&credential, aid, 0x0F, 0x01));
+
+    DfcFile* first = dfc_credential_create_file(&credential, 0, 0x01);
+    DfcFile* second = dfc_credential_create_file(&credential, 0, 0x02);
+    munit_assert_not_null(first);
+    munit_assert_not_null(second);
+    munit_assert_true(dfc_file_resize(&credential, first, 32));
+    munit_assert_true(dfc_file_resize(&credential, second, 32));
+    memset(dfc_file_data(&credential, first), 0x11, 32);
+    memset(dfc_file_data(&credential, second), 0xEE, 32);
+
+    size_t old_used = credential.file_pool_used;
+    munit_assert_true(dfc_credential_delete_file(&credential, 0, 0x02));
+    munit_assert_size(credential.file_pool_used, ==, 32);
+    first = dfc_credential_find_file_in_app(&credential, 0, 0x01);
+    munit_assert_not_null(first);
+    munit_assert_size(first->data_offset, ==, 0);
+    for(size_t i = 0; i < first->data_len; i++) {
+        munit_assert_uint8(dfc_file_data(&credential, first)[i], ==, 0x11);
+    }
+    assert_released_pool_bytes_are_zero(&credential, old_used);
+
+    second = dfc_credential_create_file(&credential, 0, 0x02);
+    munit_assert_not_null(second);
+    munit_assert_true(dfc_file_resize(&credential, second, 32));
+    memset(dfc_file_data(&credential, second), 0xEE, 32);
+
+    old_used = credential.file_pool_used;
+    munit_assert_true(dfc_credential_delete_file(&credential, 0, 0x01));
+    second = dfc_credential_find_file_in_app(&credential, 0, 0x02);
+    munit_assert_not_null(second);
+    munit_assert_size(second->data_offset, ==, 0);
+    munit_assert_size(second->data_len, ==, 32);
+    for(size_t i = 0; i < second->data_len; i++) {
+        munit_assert_uint8(dfc_file_data(&credential, second)[i], ==, 0xEE);
+    }
+    assert_released_pool_bytes_are_zero(&credential, old_used);
+
+    old_used = credential.file_pool_used;
+    munit_assert_true(dfc_file_resize(&credential, second, 8));
+    munit_assert_size(second->data_offset, ==, 0);
+    munit_assert_size(second->data_len, ==, 8);
+    munit_assert_size(credential.file_pool_used, ==, 8);
+    assert_released_pool_bytes_are_zero(&credential, old_used);
+
+    DfcCredential clone;
+    memset(&clone, 0xA5, sizeof(clone));
+    dfc_credential_copy_model(&clone, &credential);
+    munit_assert_size(clone.file_pool_used, ==, credential.file_pool_used);
+    munit_assert_size(clone.files[0].data_offset, ==, credential.files[0].data_offset);
+    munit_assert_memory_equal(credential.file_pool_used, clone.file_pool, credential.file_pool);
+    assert_released_pool_bytes_are_zero(&clone, old_used);
 
     return MUNIT_OK;
 }
@@ -272,6 +345,12 @@ static MunitResult test_copy_model_carries_pool(const MunitParameter params[], v
 static MunitTest tests[] = {
     {"/resize-allocate-and-release",
      test_resize_allocate_and_release,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/release-wipes-compacted-and-cloned-pool-bytes",
+     test_release_wipes_compacted_and_cloned_pool_bytes,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
