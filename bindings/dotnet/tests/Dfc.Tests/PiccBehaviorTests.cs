@@ -1,6 +1,7 @@
 namespace Dfc.Tests;
 
 using System;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -166,6 +167,36 @@ public sealed class PiccBehaviorTests
             Assert.That(source.Remaining, Is.Zero);
         });
     }
+
+    [Test]
+    public void ScriptedRandomSource_WipesConsumedCompactedAndRetiredStorage()
+    {
+        var source = new DfcScriptedRandomSource(Enumerable.Range(1, 16).Select(value => (byte)value).ToArray());
+        var original = ScriptedRandomBuffer(source);
+
+        source.Fill(new byte[4]);
+        Assert.That(original[..4], Is.EqualTo(new byte[4]), "consumed bytes");
+        Assert.That(original[4..], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value)));
+
+        source.Append(new byte[] { 0xA5 });
+        Assert.That(original[..13], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value).Append((byte)0xA5)));
+        Assert.That(original[13..], Is.EqualTo(new byte[3]), "vacated compaction bytes");
+
+        source.Append(new byte[20]);
+        Assert.That(ScriptedRandomBuffer(source), Is.Not.SameAs(original));
+        Assert.That(original, Is.EqualTo(new byte[16]), "retired allocation");
+
+        var replay = new byte[33];
+        source.Fill(replay);
+        Assert.That(replay[..13], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value).Append((byte)0xA5)));
+        Assert.That(replay[13..], Is.EqualTo(new byte[20]));
+        Assert.That(source.Remaining, Is.Zero);
+    }
+
+    private static byte[] ScriptedRandomBuffer(DfcScriptedRandomSource source) =>
+        (byte[])typeof(DfcScriptedRandomSource)
+            .GetField("buffer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(source)!;
 
     [Test]
     public void GetVersion_UsesThreeNativeResponseFrames()

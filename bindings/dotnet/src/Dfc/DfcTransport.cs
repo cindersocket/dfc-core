@@ -1,6 +1,7 @@
 namespace Dfc;
 
 using System;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpFunctionalExtensions;
@@ -112,6 +113,7 @@ public sealed class DfcScriptedRandomSource : IDfcRandomSource
             if (offset != 0)
             {
                 buffer.AsSpan(offset, remaining).CopyTo(buffer);
+                CryptographicOperations.ZeroMemory(buffer.AsSpan(remaining, count - remaining));
                 offset = 0;
                 count = remaining;
             }
@@ -121,6 +123,7 @@ public sealed class DfcScriptedRandomSource : IDfcRandomSource
                 var doubled = buffer.Length <= int.MaxValue / 2 ? buffer.Length * 2 : required;
                 var grown = new byte[Math.Max(required, Math.Max(16, doubled))];
                 buffer.AsSpan(0, remaining).CopyTo(grown);
+                CryptographicOperations.ZeroMemory(buffer);
                 buffer = grown;
             }
             bytes.CopyTo(buffer.AsSpan(count));
@@ -139,7 +142,13 @@ public sealed class DfcScriptedRandomSource : IDfcRandomSource
             }
 
             buffer.AsSpan(offset, destination.Length).CopyTo(destination);
+            CryptographicOperations.ZeroMemory(buffer.AsSpan(offset, destination.Length));
             offset += destination.Length;
+            if (offset == count)
+            {
+                offset = 0;
+                count = 0;
+            }
         }
     }
 }
