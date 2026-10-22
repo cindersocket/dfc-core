@@ -1725,6 +1725,12 @@ cleanup:
 }
 #endif
 
+static void
+    reject_authentication_start(DfcEmulator* emulator, DfcByteBuf* tx_buffer, uint8_t status) {
+    dfc_emulator_clear_active_authentication(emulator);
+    dfc_bytebuf_append_byte(tx_buffer, status);
+}
+
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
 static void clear_pending_ev2_authentication(DfcEmulator* emulator) {
     emulator->ev2_authentication_pending = false;
@@ -1755,22 +1761,22 @@ static bool handle_authenticate_ev2_start(
     DfcByteBuf* tx_buffer) {
     clear_pending_ev2_authentication(emulator);
     if(emulator->credential->card.generation < DfcGenerationEv2) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
         return true;
     }
     if((non_first && apdu_len != 2) || (!non_first && apdu_len < 3) ||
        (!non_first && apdu_len != (size_t)3 + apdu[2])) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return true;
     }
     if(non_first && !emulator->ev2_session_active) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return true;
     }
     uint8_t key_no = apdu[1];
 #if DFC_ENABLE_SPECIAL_KEY_STATUS
     if(picc_disabled_special_key(emulator, key_no)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return true;
     }
 #endif
@@ -1778,7 +1784,7 @@ static bool handle_authenticate_ev2_start(
        !emulator_accepts_auth_cipher(
            emulator,
            non_first ? DFC_CMD_AUTHENTICATE_EV2_NON_FIRST : DFC_CMD_AUTHENTICATE_EV2_FIRST)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return true;
     }
 
@@ -1787,7 +1793,7 @@ static bool handle_authenticate_ev2_start(
     const uint8_t* key = emulator_auth_key(emulator, key_no, factory, sizeof(factory), &key_len);
     if(key_len != DFC_AES_KEY_LENGTH) {
         dfc_secure_wipe(factory, sizeof(factory));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return true;
     }
     uint8_t random_material[DFC_EV2_RANDOM_LENGTH + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
@@ -2061,14 +2067,14 @@ static void handle_authenticate_step1(
 
 #if DFC_ENABLE_SPECIAL_KEY_STATUS
     if(picc_disabled_special_key(emulator, key_no)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
 #endif
 
     if(key_no >= emulator_num_keys(emulator)) {
         DFC_LOG_W(TAG, "Authenticate: key_no %u beyond the key count", key_no);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
     if(!emulator_accepts_auth_cipher(emulator, cipher)) {
@@ -2076,7 +2082,7 @@ static void handle_authenticate_step1(
         // not a missing key: the two statuses say different things and the key
         // number here is perfectly valid.
         DFC_LOG_W(TAG, "Authenticate: cipher %02X not this key type's", cipher);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
 

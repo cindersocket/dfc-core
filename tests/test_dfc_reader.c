@@ -144,6 +144,42 @@ static void assert_native_authentication_pending_cleared(const DfcEmulator* emul
     munit_assert_memory_equal(sizeof(emulator->enc_rnd_b), emulator->enc_rnd_b, zero);
 }
 
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+static void assert_ev2_authentication_cleared(const DfcEmulator* emulator) {
+    const uint8_t zero[DFC_AES_KEY_LENGTH] = {0};
+    munit_assert_false(emulator->ev2_authentication_pending);
+    munit_assert_false(emulator->ev2_authentication_non_first);
+    munit_assert_false(emulator->ev2_session_active);
+    munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, 0);
+    munit_assert_uint8(emulator->ev2_pending_authenticated_key_no, ==, 0);
+    munit_assert_uint16(emulator->ev2_command_counter, ==, 0);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_session_encryption_key), emulator->ev2_session_encryption_key, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_session_mac_key), emulator->ev2_session_mac_key, zero);
+    munit_assert_memory_equal(sizeof(emulator->ev2_static_key), emulator->ev2_static_key, zero);
+    munit_assert_memory_equal(sizeof(emulator->ev2_random_b), emulator->ev2_random_b, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_transaction_identifier), emulator->ev2_transaction_identifier, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_pending_transaction_identifier),
+        emulator->ev2_pending_transaction_identifier,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_card_capabilities), emulator->ev2_card_capabilities, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_reader_capabilities), emulator->ev2_reader_capabilities, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_pending_card_capabilities),
+        emulator->ev2_pending_card_capabilities,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_pending_reader_capabilities),
+        emulator->ev2_pending_reader_capabilities,
+        zero);
+}
+#endif
+
 static MunitResult test_aborted_native_reauthentication_clears_authorization(
     const MunitParameter params[],
     void* data) {
@@ -233,6 +269,101 @@ static MunitResult test_aborted_native_reauthentication_clears_authorization(
         munit_assert_uint8(dfc_reader_result_status(&exchange), ==, DFC_STATUS_AUTHENTICATION_ERR);
         link_close(&link);
     }
+    return MUNIT_OK;
+}
+
+static MunitResult test_rejected_authentication_start_clears_authorization(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    const struct {
+        const uint8_t* command;
+        size_t command_len;
+        uint8_t expected_status;
+    } native_cases[] = {
+        {(const uint8_t[]){0x90, DFC_CMD_AUTHENTICATE_AES, 0, 0, 1, 9, 0},
+         7,
+         DFC_STATUS_NO_SUCH_KEY},
+        {(const uint8_t[]){0x90, DFC_CMD_AUTHENTICATE_ISO, 0, 0, 1, 0, 0},
+         7,
+         DFC_STATUS_AUTHENTICATION_ERR},
+    };
+
+    for(size_t i = 0; i < sizeof(native_cases) / sizeof(native_cases[0]); i++) {
+        link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+        select_app(&link, AID_AES);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+            ==,
+            DfcReaderOk);
+
+        uint8_t response[64];
+        size_t response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc,
+                native_cases[i].command,
+                native_cases[i].command_len,
+                response,
+                sizeof(response),
+                &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_uint8(response[response_len - 1], ==, native_cases[i].expected_status);
+        assert_native_authentication_pending_cleared(link.picc->emulator);
+        munit_assert_false(dfc_emulator_native_authentication_active(link.picc->emulator));
+        munit_assert_uint8(link.picc->emulator->auth_cipher, ==, 0);
+        munit_assert_uint8(link.picc->emulator->auth_key_no, ==, 0);
+        munit_assert_memory_equal(
+            sizeof(link.picc->emulator->rnd_a),
+            link.picc->emulator->rnd_a,
+            ((uint8_t[sizeof(link.picc->emulator->rnd_a)]){0}));
+        munit_assert_memory_equal(
+            sizeof(*link.picc->emulator->secure_messaging),
+            link.picc->emulator->secure_messaging,
+            ((uint8_t[sizeof(*link.picc->emulator->secure_messaging)]){0}));
+        link_close(&link);
+    }
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    const struct {
+        const uint8_t* command;
+        size_t command_len;
+        uint8_t expected_status;
+    } ev2_cases[] = {
+        {(const uint8_t[]){0x90, DFC_CMD_AUTHENTICATE_EV2_FIRST, 0, 0, 2, 9, 0, 0},
+         8,
+         DFC_STATUS_NO_SUCH_KEY},
+        {(const uint8_t[]){0x90, DFC_CMD_AUTHENTICATE_EV2_FIRST, 0, 0, 1, 0, 0},
+         7,
+         DFC_STATUS_LENGTH_ERROR},
+    };
+
+    for(size_t i = 0; i < sizeof(ev2_cases) / sizeof(ev2_cases[0]); i++) {
+        link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+        select_app(&link, AID_AES);
+        munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+        uint8_t response[64];
+        size_t response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc,
+                ev2_cases[i].command,
+                ev2_cases[i].command_len,
+                response,
+                sizeof(response),
+                &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_uint8(response[response_len - 1], ==, ev2_cases[i].expected_status);
+        assert_ev2_authentication_cleared(link.picc->emulator);
+        link_close(&link);
+    }
+#endif
+
     return MUNIT_OK;
 }
 
@@ -2866,6 +2997,12 @@ static MunitTest tests[] = {
      NULL},
     {"/aborted-native-reauthentication-clears-authorization",
      test_aborted_native_reauthentication_clears_authorization,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/rejected-authentication-start-clears-authorization",
+     test_rejected_authentication_start_clears_authorization,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
