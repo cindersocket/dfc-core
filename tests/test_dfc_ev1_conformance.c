@@ -860,6 +860,7 @@ static MunitResult test_ev1_write_data_mac_requires_transmitted_cmac(
     munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
 
     // Restore session for positive path.
+    dfc_secure_messaging_free(session->emulator->secure_messaging);
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     session->emulator->auth_key_no = 0x00;
