@@ -478,7 +478,7 @@ static MunitResult test_iso_auth_terminal_paths_clear_pending_scratch(
     return MUNIT_OK;
 }
 
-static MunitResult test_iso_dep_capacity_is_atomic_for_mutation_and_randomness(
+static MunitResult test_iso_dep_capacity_stages_mutation_and_randomness(
     const MunitParameter params[],
     void* user_data) {
     (void)params;
@@ -502,7 +502,6 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_mutation_and_randomness(
             update_len++;
             required++;
         }
-        uint8_t original = file_data[0];
         uint8_t expected_sequence = session->expected_pcd_sequence;
         uint8_t picc_sequence = session->picc_sequence;
         munit_assert_int(
@@ -511,10 +510,12 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_mutation_and_randomness(
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
         munit_assert_size(response_len, ==, 0);
-        munit_assert_uint8(file_data[0], ==, original);
+        munit_assert_uint8(file_data[0], ==, 0xA5);
         munit_assert_uint8(session->expected_pcd_sequence, ==, expected_sequence);
         munit_assert_uint8(session->picc_sequence, ==, picc_sequence);
-        munit_assert_size(session->pending_response_len, ==, 0);
+        munit_assert_size(session->pending_response_len, >, 0);
+        munit_assert_size(session->pending_command_len, ==, update_len);
+        munit_assert_memory_equal(update_len, session->pending_command, update);
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
                 session, update, update_len, response, required, &response_len),
@@ -522,6 +523,7 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_mutation_and_randomness(
             DfcVirtualPiccStatusOk);
         munit_assert_uint8(file_data[0], ==, 0xA5);
         munit_assert_size(response_len, ==, required);
+        munit_assert_size(session->pending_command_len, ==, 0);
         dfc_virtual_picc_session_free(session);
     }
 
@@ -554,8 +556,8 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_mutation_and_randomness(
                 session, challenge, challenge_len, response, required - 1, &response_len),
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
-        munit_assert_size(dfc_host_random_remaining(), ==, sizeof(random_script));
-        munit_assert_uint8(session->emulator->iso_auth_phase, ==, 0);
+        munit_assert_size(dfc_host_random_remaining(), ==, 0);
+        munit_assert_uint8(session->emulator->iso_auth_phase, ==, 1);
         munit_assert_uint8(session->expected_pcd_sequence, ==, 0);
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
@@ -563,6 +565,7 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_mutation_and_randomness(
             ==,
             DfcVirtualPiccStatusOk);
         munit_assert_size(dfc_host_random_remaining(), ==, 0);
+        munit_assert_uint8(session->emulator->iso_auth_phase, ==, 1);
         munit_assert_size(response_len, ==, required);
         dfc_host_clear_random_buffer();
         dfc_virtual_picc_session_free(session);
@@ -571,7 +574,7 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_mutation_and_randomness(
     return MUNIT_OK;
 }
 
-static MunitResult test_iso_dep_capacity_is_atomic_for_chained_commands(
+static MunitResult test_iso_dep_capacity_stages_chained_commands(
     const MunitParameter params[],
     void* user_data) {
     (void)params;
@@ -618,14 +621,14 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_chained_commands(
             final_len++;
             response_block_len++;
         }
-        uint8_t original = file_data[0];
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
                 session, final, final_len, response, response_block_len - 1, &response_len),
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
-        munit_assert_uint8(file_data[0], ==, original);
-        munit_assert_size(session->pending_command_len, ==, 3);
+        munit_assert_uint8(file_data[0], ==, 0xA6);
+        munit_assert_size(session->pending_command_len, ==, final_len);
+        munit_assert_memory_equal(final_len, session->pending_command, final);
         munit_assert_uint8(session->expected_pcd_sequence, ==, 1);
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
@@ -636,6 +639,138 @@ static MunitResult test_iso_dep_capacity_is_atomic_for_chained_commands(
         munit_assert_size(session->pending_command_len, ==, 0);
         dfc_virtual_picc_session_free(session);
     }
+    return MUNIT_OK;
+}
+
+static MunitResult test_iso_dep_completed_response_retry_is_exact(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    uint8_t response[64];
+    size_t response_len = 0;
+
+    for(uint8_t cid = 0; cid <= 3; cid += 3) {
+        DfcCredential credential;
+        load_standard_credential(&credential);
+        credential.picc_key_settings_1 |= DFC_KS1_FREE_CREATE_DELETE;
+        DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+        munit_assert_not_null(session);
+        activate_iso_dep(session, cid, response, sizeof(response), &response_len);
+
+        uint8_t frame[13] = {
+            0x02,
+            DFC_ISO7816_CLA_WRAPPER,
+            DFC_CMD_CREATE_APPLICATION,
+            0,
+            0,
+            5,
+            0x66,
+            0x55,
+            0x44,
+            0x0F,
+            0x81,
+            0,
+        };
+        size_t frame_len = 12;
+        size_t required = 3;
+        if(cid != 0) {
+            memmove(frame + 2, frame + 1, frame_len - 1);
+            frame[0] = 0x0A;
+            frame[1] = cid;
+            frame_len++;
+            required++;
+        }
+        size_t app_count_before = credential.num_apps;
+        response_len = SIZE_MAX;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_frame_exchange(
+                session, frame, frame_len, response, required - 1, &response_len),
+            ==,
+            DfcVirtualPiccStatusBufferTooSmall);
+        munit_assert_size(response_len, ==, 0);
+        munit_assert_size(credential.num_apps, ==, app_count_before + 1);
+        munit_assert_uint8(session->expected_pcd_sequence, ==, 0);
+        munit_assert_uint8(session->picc_sequence, ==, 0);
+        munit_assert_size(session->pending_command_len, ==, frame_len);
+        munit_assert_memory_equal(frame_len, session->pending_command, frame);
+
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_frame_exchange(
+                session, frame, frame_len, response, required - 1, &response_len),
+            ==,
+            DfcVirtualPiccStatusBufferTooSmall);
+        munit_assert_size(credential.num_apps, ==, app_count_before + 1);
+
+        uint8_t different[sizeof(frame)];
+        memcpy(different, frame, frame_len);
+        different[frame_len - 4] ^= 0x01;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_frame_exchange(
+                session, different, frame_len, response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusProtocolError);
+        munit_assert_size(session->pending_command_len, ==, frame_len);
+        munit_assert_size(credential.num_apps, ==, app_count_before + 1);
+
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_frame_exchange(
+                session, frame, frame_len, response, required, &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_size(response_len, ==, required);
+        munit_assert_uint8(response[required - 2], ==, 0x91);
+        munit_assert_uint8(response[required - 1], ==, DFC_STATUS_OK);
+        munit_assert_size(credential.num_apps, ==, app_count_before + 1);
+        munit_assert_uint8(session->expected_pcd_sequence, ==, 1);
+        munit_assert_size(session->pending_command_len, ==, 0);
+        dfc_virtual_picc_session_free(session);
+    }
+
+    DfcCredential credential;
+    load_standard_credential(&credential);
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+    munit_assert_not_null(session);
+    activate_iso_dep(session, 0, response, sizeof(response), &response_len);
+    uint8_t random_script[DFC_ISO7816_AUTH_CHALLENGE_2TDEA];
+    memset(random_script, 0x5A, sizeof(random_script));
+    dfc_host_clear_random_buffer();
+    dfc_host_set_random_buffer(random_script, sizeof(random_script));
+    const uint8_t challenge[] = {
+        0x02,
+        DFC_ISO7816_CLA_STANDARD,
+        DFC_ISO7816_INS_GET_CHALLENGE,
+        0,
+        0,
+        DFC_ISO7816_AUTH_CHALLENGE_2TDEA,
+    };
+    size_t challenge_response_len = 1 + sizeof(random_script) + DFC_ISO7816_STATUS_WORD_LENGTH;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(session,
+                                                challenge,
+                                                sizeof(challenge),
+                                                response,
+                                                challenge_response_len - 1,
+                                                &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(dfc_host_random_remaining(), ==, 0);
+    munit_assert_uint8(session->emulator->iso_auth_phase, ==, 1);
+    munit_assert_uint8(session->expected_pcd_sequence, ==, 0);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(session,
+                                                challenge,
+                                                sizeof(challenge),
+                                                response,
+                                                challenge_response_len,
+                                                &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, challenge_response_len);
+    munit_assert_size(dfc_host_random_remaining(), ==, 0);
+    munit_assert_uint8(session->expected_pcd_sequence, ==, 1);
+    dfc_host_clear_random_buffer();
+    dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
 }
 
@@ -1533,14 +1668,20 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/iso-dep-capacity-atomic-mutation-random",
-     test_iso_dep_capacity_is_atomic_for_mutation_and_randomness,
+    {"/iso-dep-capacity-stages-mutation-random",
+     test_iso_dep_capacity_stages_mutation_and_randomness,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/iso-dep-capacity-atomic-chained-command",
-     test_iso_dep_capacity_is_atomic_for_chained_commands,
+    {"/iso-dep-capacity-stages-chained-command",
+     test_iso_dep_capacity_stages_chained_commands,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-dep-completed-response-retry-is-exact",
+     test_iso_dep_completed_response_retry_is_exact,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

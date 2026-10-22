@@ -94,6 +94,10 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_exchange(
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len);
+// Exchange one ISO-DEP frame. If a completed I-block response does not fit,
+// retry the exact frame with a larger response buffer. The command is executed
+// once, and other frames are rejected until its response is emitted or the
+// protocol is reset.
 DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
     DfcVirtualPiccSession* session,
     const uint8_t* frame,

@@ -881,6 +881,32 @@ static DfcVirtualPiccStatus write_and_remember_iso_dep_response_block(
     return status;
 }
 
+static bool iso_dep_initial_response_is_staged(const DfcVirtualPiccSession* session) {
+    return session->pending_command_len > 0 && session->pending_response_len > 0 &&
+           session->pending_response_offset != DFC_DIRECT_RESPONSE_PENDING;
+}
+
+static DfcVirtualPiccStatus replay_staged_iso_dep_response(
+    DfcVirtualPiccSession* session,
+    const uint8_t* frame,
+    size_t frame_len,
+    uint8_t* response,
+    size_t response_capacity,
+    size_t* response_len) {
+    if(frame_len != session->pending_command_len ||
+       memcmp(frame, session->pending_command, frame_len) != 0) {
+        return DfcVirtualPiccStatusProtocolError;
+    }
+    DfcVirtualPiccStatus status = write_and_remember_iso_dep_response_block(
+        session, response, response_capacity, response_len);
+    if(status == DfcVirtualPiccStatusOk) {
+        dfc_secure_wipe(session->pending_command, session->pending_command_len);
+        session->pending_command_len = 0;
+        session->expected_pcd_sequence ^= 0x01;
+    }
+    return status;
+}
+
 static DfcVirtualPiccStatus handle_iso_select(
     DfcVirtualPiccSession* session,
     const uint8_t* command,
@@ -1366,161 +1392,6 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_exchange(
         session, command, command_len, response, response_capacity, response_len, true);
 }
 
-typedef struct {
-    const uint8_t* first;
-    size_t first_len;
-    const uint8_t* second;
-    size_t second_len;
-} DfcVirtualCommandView;
-
-static size_t virtual_command_view_len(const DfcVirtualCommandView* view) {
-    return view->first_len + view->second_len;
-}
-
-static uint8_t virtual_command_view_byte(const DfcVirtualCommandView* view, size_t offset) {
-    return offset < view->first_len ? view->first[offset] : view->second[offset - view->first_len];
-}
-
-#if DFC_ENABLE_VIRTUAL_CARD
-static bool virtual_command_view_equal(
-    const DfcVirtualCommandView* view,
-    size_t offset,
-    const uint8_t* expected,
-    size_t length) {
-    size_t view_len = virtual_command_view_len(view);
-    if(offset > view_len || length > view_len - offset) return false;
-    for(size_t i = 0; i < length; i++) {
-        if(virtual_command_view_byte(view, offset + i) != expected[i]) return false;
-    }
-    return true;
-}
-#endif
-
-static bool iso_file_response_length(
-    const DfcVirtualPiccSession* session,
-    const DfcVirtualCommandView* command,
-    size_t* response_len) {
-    if(!session->iso_file_selected || session->iso_file_index >= session->credential->num_files) {
-        *response_len = DFC_ISO7816_STATUS_WORD_LENGTH;
-        return true;
-    }
-    const DfcFile* file = &session->credential->files[session->iso_file_index];
-    size_t command_len = virtual_command_view_len(command);
-    uint8_t ins = virtual_command_view_byte(command, 1);
-    if(ins == DFC_ISO7816_INS_READ_BINARY &&
-       (file->type == DFC_FILE_TYPE_STANDARD_DATA || file->type == DFC_FILE_TYPE_BACKUP_DATA)) {
-        if(command_len != 5) {
-            *response_len = DFC_ISO7816_STATUS_WORD_LENGTH;
-            return true;
-        }
-        size_t offset = ((size_t)virtual_command_view_byte(command, 2) << 8) |
-                        virtual_command_view_byte(command, 3);
-        size_t requested = virtual_command_view_byte(command, 4);
-        if(offset > file->data_len) {
-            *response_len = DFC_ISO7816_STATUS_WORD_LENGTH;
-            return true;
-        }
-        if(requested == 0) requested = file->data_len - offset;
-        *response_len = requested <= file->data_len - offset ?
-                            requested + DFC_ISO7816_STATUS_WORD_LENGTH :
-                            DFC_ISO7816_STATUS_WORD_LENGTH;
-        return true;
-    }
-    if(ins == DFC_ISO7816_INS_READ_RECORD &&
-       (file->type == DFC_FILE_TYPE_LINEAR_RECORD || file->type == DFC_FILE_TYPE_CYCLIC_RECORD)) {
-        size_t record = command_len >= 3 ? virtual_command_view_byte(command, 2) : 0;
-        *response_len = command_len == 5 && record > 0 && record <= file->record_count ?
-                            file->record_size + DFC_ISO7816_STATUS_WORD_LENGTH :
-                            DFC_ISO7816_STATUS_WORD_LENGTH;
-        return true;
-    }
-    *response_len = DFC_ISO7816_STATUS_WORD_LENGTH;
-    return true;
-}
-
-static bool iso7816_response_length(
-    const DfcVirtualPiccSession* session,
-    const DfcVirtualCommandView* command,
-    size_t* response_len) {
-    size_t command_len = virtual_command_view_len(command);
-    if(command_len < 4 || virtual_command_view_byte(command, 0) != DFC_ISO7816_CLA_STANDARD)
-        return false;
-    uint8_t ins = virtual_command_view_byte(command, 1);
-    if(ins == DFC_ISO7816_INS_SELECT) {
-#if DFC_ENABLE_VIRTUAL_CARD
-        const DfcCredential* credential = session->credential;
-        if(credential->virtual_card_configured &&
-           credential->virtual_card_authentication_mandatory && command_len >= 5) {
-            size_t identifier_len = virtual_command_view_byte(command, 4);
-            if(identifier_len == credential->virtual_card_installation_id_len &&
-               command_len >= 5 + identifier_len &&
-               virtual_command_view_equal(
-                   command, 5, credential->virtual_card_installation_id, identifier_len)) {
-                *response_len = 4 + DFC_VIRTUAL_CARD_CHALLENGE_LENGTH +
-                                DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH +
-                                DFC_ISO7816_STATUS_WORD_LENGTH;
-                return true;
-            }
-        }
-#endif
-        *response_len = DFC_ISO7816_STATUS_WORD_LENGTH;
-        return true;
-    }
-#if DFC_ENABLE_ISO7816_AUTH
-    if(ins == DFC_ISO7816_INS_GET_CHALLENGE) {
-        size_t challenge_len = command_len == 5 ? virtual_command_view_byte(command, 4) : 0;
-        bool valid = command_len == 5 && virtual_command_view_byte(command, 2) == 0 &&
-                     virtual_command_view_byte(command, 3) == 0 &&
-                     (challenge_len == DFC_ISO7816_AUTH_CHALLENGE_2TDEA ||
-                      challenge_len == DFC_ISO7816_AUTH_CHALLENGE_LONG);
-        *response_len = valid ? challenge_len + DFC_ISO7816_STATUS_WORD_LENGTH :
-                                DFC_ISO7816_STATUS_WORD_LENGTH;
-        return true;
-    }
-    if(ins == DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE) {
-        *response_len = DFC_ISO7816_STATUS_WORD_LENGTH;
-        return true;
-    }
-    if(ins == DFC_ISO7816_INS_INTERNAL_AUTHENTICATE) {
-        const DfcEmulator* emulator = session->emulator;
-        size_t challenge_len = emulator->iso_auth_challenge_len;
-        uint8_t algorithm = virtual_command_view_byte(command, 2);
-        uint8_t expected_algorithm = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
-                                         DFC_ISO7816_AUTH_ALGORITHM_AES :
-                                     emulator->iso_auth_key_len == DFC_MAX_KEY_LEN ?
-                                         DFC_ISO7816_AUTH_ALGORITHM_3TDEA :
-                                         DFC_ISO7816_AUTH_ALGORITHM_2TDEA;
-        bool valid =
-            emulator->iso_auth_phase == 2 && command_len == challenge_len + 6 &&
-            virtual_command_view_byte(command, 4) == challenge_len &&
-            virtual_command_view_byte(command, command_len - 1) == 0 &&
-            virtual_command_view_byte(command, 3) == emulator->iso_auth_reference &&
-            (algorithm == DFC_ISO7816_AUTH_ALGORITHM_CONTEXT || algorithm == expected_algorithm);
-        *response_len = valid ? challenge_len * 2 + DFC_ISO7816_STATUS_WORD_LENGTH :
-                                DFC_ISO7816_STATUS_WORD_LENGTH;
-        return true;
-    }
-#endif
-    if(ins == DFC_ISO7816_INS_READ_BINARY || ins == DFC_ISO7816_INS_UPDATE_BINARY ||
-       ins == DFC_ISO7816_INS_READ_RECORD) {
-        return iso_file_response_length(session, command, response_len);
-    }
-    *response_len = DFC_ISO7816_STATUS_WORD_LENGTH;
-    return true;
-}
-
-static bool first_iso_dep_response_fits(
-    const DfcVirtualPiccSession* session,
-    const DfcVirtualCommandView* command,
-    size_t prefix_len,
-    size_t response_capacity) {
-    size_t command_response_len = 0;
-    if(!iso7816_response_length(session, command, &command_response_len)) return true;
-    size_t first_inf_len = command_response_len > DFC_ISO_DEP_MAX_INF ? DFC_ISO_DEP_MAX_INF :
-                                                                        command_response_len;
-    return response_capacity >= prefix_len + first_inf_len;
-}
-
 DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
     DfcVirtualPiccSession* session,
     const uint8_t* frame,
@@ -1549,6 +1420,11 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
     if(!session->iso_dep_selected || frame_len == 0) return DfcVirtualPiccStatusProtocolError;
 
     uint8_t pcb = frame[0];
+    if(iso_dep_initial_response_is_staged(session)) {
+        if(!is_i_block(pcb)) return DfcVirtualPiccStatusProtocolError;
+        return replay_staged_iso_dep_response(
+            session, frame, frame_len, response, response_capacity, response_len);
+    }
     if(is_i_block(pcb)) {
         // The advertised ATS supports CID but not NAD.
         if(pcb & DFC_ISO_DEP_NAD) return DfcVirtualPiccStatusProtocolError;
@@ -1574,21 +1450,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
            inf_len > sizeof(session->pending_command) - session->pending_command_len)
             return DfcVirtualPiccStatusBufferTooSmall;
         if(more && response_capacity < offset) return DfcVirtualPiccStatusBufferTooSmall;
-
-        DfcVirtualCommandView command_view;
-        if(session->pending_command_len > 0) {
-            command_view.first = session->pending_command;
-            command_view.first_len = session->pending_command_len;
-            command_view.second = inf;
-            command_view.second_len = inf_len;
-        } else {
-            command_view.first = inf;
-            command_view.first_len = inf_len;
-            command_view.second = NULL;
-            command_view.second_len = 0;
-        }
-        if(!more &&
-           !first_iso_dep_response_fits(session, &command_view, offset, response_capacity))
+        if(!more && frame_len > sizeof(session->pending_command))
             return DfcVirtualPiccStatusBufferTooSmall;
 
         if(more || session->pending_command_len) {
@@ -1625,7 +1487,6 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             return status;
         }
         session->pending_command_len = 0;
-        session->expected_pcd_sequence ^= 0x01;
         session->pending_response_len = apdu_response_len;
         session->pending_response_offset = 0;
         session->picc_sequence = sequence;
@@ -1635,8 +1496,15 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
         } else {
             session->pending_response_prefix_len = 0;
         }
-        return write_and_remember_iso_dep_response_block(
+        status = write_and_remember_iso_dep_response_block(
             session, response, response_capacity, response_len);
+        if(status == DfcVirtualPiccStatusBufferTooSmall) {
+            memcpy(session->pending_command, frame, frame_len);
+            session->pending_command_len = frame_len;
+        } else if(status == DfcVirtualPiccStatusOk) {
+            session->expected_pcd_sequence ^= 0x01;
+        }
+        return status;
     }
 
     if(is_r_block(pcb)) {
