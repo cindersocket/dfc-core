@@ -59,7 +59,6 @@ bool dfc_emulator_handle_iso7816_select(
 
     DFC_LOG_T(TAG, "ISO7816 SELECT not found p1=%02X lc=%u", p1, lc);
     dfc_emulator_reset_session(emulator);
-    emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
     dfc_bytebuf_append_byte(tx_buffer, DFC_ISO7816_SW_NOT_FOUND_HI);
     dfc_bytebuf_append_byte(tx_buffer, DFC_ISO7816_SW_NOT_FOUND_LO);
     return dfc_bytebuf_get_size_bytes(tx_buffer) > prefix_len;

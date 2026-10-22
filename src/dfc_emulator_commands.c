@@ -1007,11 +1007,11 @@ static void handle_change_key_d40(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
+    dfc_emulator_reset_session(emulator);
     memcpy(target, clear, key_len);
     *emulator_key_version(emulator, key_no) = des_key_version(clear);
     dfc_credential_mark_dirty(emulator->credential);
     dfc_secure_wipe(clear, sizeof(clear));
-    dfc_emulator_reset_session(emulator);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
 
@@ -1126,7 +1126,11 @@ static void handle_change_key_ev1(
         }
     }
 
-    memcpy(sm->iv, candidate_iv, sizeof(sm->iv));
+    if(different) {
+        memcpy(sm->iv, candidate_iv, sizeof(sm->iv));
+    } else {
+        dfc_emulator_reset_session(emulator);
+    }
     dfc_secure_wipe(candidate_iv, sizeof(candidate_iv));
     memcpy(old_key, new_key, key_len);
     if(aes_key) {
@@ -1143,9 +1147,6 @@ static void handle_change_key_ev1(
     if(different) {
         // Keep session; response CMAC uses IV left from CBC (last cryptogram block).
         apply_ev1_response_secure_messaging(emulator, DFC_CMD_CHANGE_KEY, tx_buffer);
-    } else {
-        // Changing the currently authenticated key ends the session; no CMAC.
-        dfc_emulator_reset_session(emulator);
     }
 }
 
@@ -2532,11 +2533,9 @@ static void
         return;
     }
 
+    dfc_emulator_select_application(emulator, DfcEmulatorSelectedApplicationPicc, 0);
     dfc_credential_delete_application_at(credential, app_index);
     dfc_credential_mark_dirty(credential);
-    dfc_emulator_reset_session(emulator);
-    emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
-    emulator->selected_app_index = 0;
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
 
@@ -3621,15 +3620,13 @@ static void handle_change_key_ev2(
         }
     }
 
+    if(changes_authenticated_key) dfc_emulator_reset_session(emulator);
     memcpy(stored_key, new_key, sizeof(new_key));
     *stored_version = clear_key[DFC_AES_KEY_LENGTH];
     dfc_credential_mark_dirty(emulator->credential);
     dfc_secure_wipe(new_key, sizeof(new_key));
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-    if(changes_authenticated_key) {
-        dfc_emulator_reset_session(emulator);
-        emulator->ev2_response_plain = true;
-    }
+    if(changes_authenticated_key) emulator->ev2_response_plain = true;
 }
 #endif
 

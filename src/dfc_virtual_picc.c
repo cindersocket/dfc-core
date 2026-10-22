@@ -1026,6 +1026,7 @@ static DfcVirtualPiccStatus handle_iso_select(
         }
     }
 
+    dfc_emulator_reset_session(session->emulator);
     return write_status_word(
         DFC_ISO7816_SW_NOT_FOUND_HI,
         DFC_ISO7816_SW_NOT_FOUND_LO,
@@ -1152,11 +1153,6 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         response_len);
 }
 
-static void abort_invalid_ev2_command(DfcVirtualPiccSession* session) {
-    dfc_emulator_abort_transaction(session->emulator);
-    dfc_emulator_reset_session(session->emulator);
-}
-
 static DfcVirtualPiccStatus handle_native_exchange(
     DfcVirtualPiccSession* session,
     const uint8_t* command,
@@ -1184,7 +1180,7 @@ static DfcVirtualPiccStatus handle_native_exchange(
         &clear_command_len);
     bool invalid_command = security == DfcEv2CommandInvalid;
     if(invalid_command) {
-        abort_invalid_ev2_command(session);
+        dfc_emulator_reset_session(session->emulator);
     } else {
         tx = dfc_bytebuf_alloc(DFC_WORKER_MAX_BUFFER_SIZE);
         if(!tx) goto cleanup;

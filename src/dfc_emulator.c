@@ -208,15 +208,6 @@ uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no) {
     return app ? &app->key_versions[key_no] : &emulator->credential->picc_key_versions[0];
 }
 
-static void dfc_emulator_clear_pending_value_transactions(DfcEmulator* emulator) {
-    for(size_t i = 0; i < emulator->credential->num_files; i++) {
-        DfcFile* file = &emulator->credential->files[i];
-        if(file->type != DFC_FILE_TYPE_VALUE) continue;
-        file->value_pending = false;
-        file->value_pending_delta = 0;
-    }
-}
-
 bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
     bool changed = false;
 #if DFC_ENABLE_TRANSACTION_MAC
@@ -260,6 +251,7 @@ void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
 }
 
 void dfc_emulator_reset_session(DfcEmulator* emulator) {
+    dfc_emulator_abort_transaction(emulator);
     emulator->awaiting_step2 = false;
     dfc_emulator_clear_iso_authentication(emulator);
     clear_native_authentication(emulator);
@@ -328,11 +320,6 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
     emulator->sdm_read_cache_len = 0;
     dfc_secure_wipe(emulator->sdm_read_cache, sizeof(emulator->sdm_read_cache));
 #endif
-#if DFC_ENABLE_TRANSACTION_MAC
-    emulator->transaction_input_len = 0;
-    dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
-#endif
-    dfc_emulator_clear_pending_value_transactions(emulator);
     dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
     dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
 }
@@ -341,9 +328,6 @@ void dfc_emulator_select_application(
     DfcEmulator* emulator,
     DfcEmulatorSelectedApplication selection,
     size_t app_index) {
-#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
-    dfc_emulator_abort_transaction_snapshot(emulator);
-#endif
     dfc_emulator_reset_session(emulator);
     emulator->selected_application = selection;
     emulator->selected_app_index = selection == DfcEmulatorSelectedApplicationApp ? app_index : 0;

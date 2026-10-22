@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "dfc_virtual_picc_test_helpers.h"
 #include "dfc_emulator_i.h"
 #include "dfc_virtual_picc.h"
 
@@ -195,9 +196,12 @@ static void begin_transaction(SelectionFixture* fixture) {
         0x00};
     const uint8_t credit_value[] = {
         0x90, DFC_CMD_CREDIT, 0x00, 0x00, 0x05, 0x04, 0x05, 0x00, 0x00, 0x00, 0x00};
-    expect_native_status(fixture->session, write_backup, sizeof(write_backup), DFC_STATUS_OK);
-    expect_native_status(fixture->session, write_record, sizeof(write_record), DFC_STATUS_OK);
-    expect_native_status(fixture->session, credit_value, sizeof(credit_value), DFC_STATUS_OK);
+    expect_native_trailing_status(
+        fixture->session, write_backup, sizeof(write_backup), DFC_STATUS_OK);
+    expect_native_trailing_status(
+        fixture->session, write_record, sizeof(write_record), DFC_STATUS_OK);
+    expect_native_trailing_status(
+        fixture->session, credit_value, sizeof(credit_value), DFC_STATUS_OK);
 
     DfcEmulator* emulator = fixture->session->emulator;
 #if DFC_ENABLE_TRANSACTION_MAC
@@ -219,7 +223,8 @@ static void begin_transaction(SelectionFixture* fixture) {
 #endif
 }
 
-static void assert_transaction_rolled_back(SelectionFixture* fixture) {
+static void
+    assert_transaction_rolled_back_with_dirty(SelectionFixture* fixture, bool expected_dirty) {
     DfcEmulator* emulator = fixture->session->emulator;
     munit_assert_false(emulator->transaction_snapshot_active);
     munit_assert_null(emulator->transaction_snapshot_pool);
@@ -237,7 +242,7 @@ static void assert_transaction_rolled_back(SelectionFixture* fixture) {
         8,
         dfc_file_data(&fixture->credential, fixture->app0_records),
         ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0x00, 0x00, 0x00, 0x00}));
-    munit_assert_false(fixture->credential.dirty);
+    munit_assert_true(fixture->credential.dirty == expected_dirty);
 #if DFC_ENABLE_TRANSACTION_MAC
     munit_assert_size(emulator->transaction_input_len, ==, 0);
     munit_assert_memory_equal(
@@ -245,6 +250,10 @@ static void assert_transaction_rolled_back(SelectionFixture* fixture) {
         emulator->transaction_input,
         ((uint8_t[sizeof(emulator->transaction_input)]){0}));
 #endif
+}
+
+static void assert_transaction_rolled_back(SelectionFixture* fixture) {
+    assert_transaction_rolled_back_with_dirty(fixture, false);
 }
 
 static void assert_transaction_still_pending(SelectionFixture* fixture) {
@@ -278,6 +287,216 @@ static void abort_open_transaction(SelectionFixture* fixture) {
 }
 
 static void assert_app0_has_nothing_to_commit(SelectionFixture* fixture);
+
+static MunitResult
+    test_session_reset_aborts_complete_transaction(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    begin_transaction(&fixture);
+    dfc_emulator_reset_session(fixture.session->emulator);
+    assert_transaction_rolled_back(&fixture);
+    assert_app0_has_nothing_to_commit(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_current_key_change_aborts_complete_transaction(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t old_key[16] = {0};
+    static const uint8_t new_key[16] = {
+        0x10,
+        0x11,
+        0x12,
+        0x13,
+        0x14,
+        0x15,
+        0x16,
+        0x17,
+        0x18,
+        0x19,
+        0x1A,
+        0x1B,
+        0x1C,
+        0x1D,
+        0x1E,
+        0x1F};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    fixture.credential.apps[0].key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    fixture.credential.apps[0].has_auth_commands = false;
+    uint8_t response[64];
+    size_t response_len = 0;
+    uint8_t session_key[DFC_MAX_KEY_LEN];
+    size_t session_key_len = 0;
+    uint8_t session_iv[16];
+    authenticate_aes_key(
+        fixture.session,
+        0,
+        old_key,
+        sizeof(old_key),
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        session_iv,
+        DFC_STATUS_OK);
+    begin_transaction(&fixture);
+    memcpy(session_iv, fixture.session->emulator->secure_messaging->iv, sizeof(session_iv));
+
+    uint8_t payload[49];
+    size_t payload_len = build_ev1_change_key_payload(
+        DFC_CMD_AUTHENTICATE_AES,
+        session_key,
+        session_key_len,
+        session_iv,
+        0,
+        0,
+        old_key,
+        new_key,
+        sizeof(new_key),
+        true,
+        0x42,
+        payload);
+    uint8_t change_key[5 + sizeof(payload) + 1] = {0x90, DFC_CMD_CHANGE_KEY, 0, 0};
+    change_key[4] = (uint8_t)payload_len;
+    memcpy(change_key + 5, payload, payload_len);
+    change_key[5 + payload_len] = 0;
+    expect_native_status(fixture.session, change_key, 6 + payload_len, DFC_STATUS_OK);
+
+    assert_transaction_rolled_back_with_dirty(&fixture, true);
+    munit_assert_memory_equal(
+        sizeof(new_key),
+        dfc_credential_key_const(&fixture.credential, &fixture.credential.apps[0], 0),
+        new_key);
+    munit_assert_uint8(fixture.credential.apps[0].key_versions[0], ==, 0x42);
+    assert_app0_has_nothing_to_commit(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_d40_current_key_change_aborts_complete_transaction(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t old_key[16] = {0};
+    static const uint8_t new_key[16] = {
+        0x10,
+        0x32,
+        0x54,
+        0x76,
+        0x98,
+        0xBA,
+        0xDC,
+        0xFE,
+        0x01,
+        0x23,
+        0x45,
+        0x67,
+        0x89,
+        0xAB,
+        0xCD,
+        0xEF};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    uint8_t response[64];
+    size_t response_len = 0;
+    uint8_t session_key[DFC_MAX_KEY_LEN];
+    size_t session_key_len = 0;
+    authenticate_legacy_key0(
+        fixture.session,
+        old_key,
+        sizeof(old_key),
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        DFC_STATUS_OK);
+    begin_transaction(&fixture);
+
+    uint8_t payload[1 + 24];
+    size_t payload_len = build_legacy_change_key_payload(
+        session_key, session_key_len, new_key, sizeof(new_key), 0x5A, payload);
+    uint8_t change_key[5 + sizeof(payload) + 1] = {0x90, DFC_CMD_CHANGE_KEY, 0, 0};
+    change_key[4] = (uint8_t)payload_len;
+    memcpy(change_key + 5, payload, payload_len);
+    change_key[5 + payload_len] = 0;
+    expect_native_status(fixture.session, change_key, 6 + payload_len, DFC_STATUS_OK);
+
+    assert_transaction_rolled_back_with_dirty(&fixture, true);
+    munit_assert_false(dfc_emulator_native_authentication_active(fixture.session->emulator));
+    const uint8_t* stored_key =
+        dfc_credential_key_const(&fixture.credential, &fixture.credential.apps[0], 0);
+    for(size_t i = 0; i < sizeof(new_key); i++)
+        munit_assert_uint8(stored_key[i] & 0xFE, ==, new_key[i] & 0xFE);
+    munit_assert_uint8(fixture.credential.apps[0].key_versions[0], ==, 0x5A);
+    assert_app0_has_nothing_to_commit(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING && DFC_ENABLE_KEY_SETS
+static MunitResult test_ev2_current_key_change_aborts_complete_transaction(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t new_key[DFC_AES_KEY_LENGTH] = {
+        0x10,
+        0x11,
+        0x12,
+        0x13,
+        0x14,
+        0x15,
+        0x16,
+        0x17,
+        0x18,
+        0x19,
+        0x1A,
+        0x1B,
+        0x1C,
+        0x1D,
+        0x1E,
+        0x1F};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    DfcApplication* app = &fixture.credential.apps[0];
+    app->key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
+    begin_transaction(&fixture);
+
+    DfcEmulator* emulator = fixture.session->emulator;
+    emulator->ev2_session_active = true;
+    emulator->ev2_authenticated_key_no = 0;
+    uint8_t change_key[DFC_CHANGE_KEY_EV2_SAME_KEY_CLEAR_LENGTH] = {DFC_CMD_CHANGE_KEY_EV2, 0, 0};
+    memcpy(change_key + DFC_CHANGE_KEY_EV2_HEADER_LENGTH, new_key, sizeof(new_key));
+    change_key[DFC_CHANGE_KEY_EV2_HEADER_LENGTH + sizeof(new_key)] = 0x42;
+    dfc_bytebuf_reset(emulator->tx_buffer);
+    munit_assert_true(dfc_emulator_handle_command(
+        emulator, change_key, sizeof(change_key), emulator->tx_buffer, NULL));
+    munit_assert_size(dfc_bytebuf_get_size_bytes(emulator->tx_buffer), ==, 1);
+    munit_assert_uint8(dfc_bytebuf_get_data(emulator->tx_buffer)[0], ==, DFC_STATUS_OK);
+
+    assert_transaction_rolled_back_with_dirty(&fixture, true);
+    munit_assert_false(emulator->ev2_session_active);
+    munit_assert_memory_equal(
+        sizeof(new_key), dfc_credential_key_const(&fixture.credential, app, 0), new_key);
+    munit_assert_uint8(app->key_versions[0], ==, 0x42);
+    assert_app0_has_nothing_to_commit(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+#endif
 
 static MunitResult
     test_terminal_native_errors_abort_transaction(const MunitParameter params[], void* data) {
@@ -548,6 +767,73 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult test_delete_application_rolls_back_before_pool_compaction(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t zero_key[16] = {0};
+    static const uint8_t delete_app0[] = {
+        0x90, DFC_CMD_DELETE_APPLICATION, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03, 0x00};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    uint8_t response[64];
+    size_t response_len = 0;
+    authenticate_legacy_key0(
+        fixture.session,
+        zero_key,
+        sizeof(zero_key),
+        response,
+        sizeof(response),
+        &response_len,
+        NULL,
+        NULL,
+        DFC_STATUS_OK);
+    begin_transaction(&fixture);
+
+    memset(response, 0xA5, sizeof(response));
+    response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session, delete_app0, sizeof(delete_app0), response, 1, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(response_len, ==, 0);
+    munit_assert_uint8(response[0], ==, 0xA5);
+    munit_assert_size(fixture.credential.num_apps, ==, 1);
+    munit_assert_size(fixture.credential.num_files, ==, 1);
+    munit_assert_memory_equal(
+        sizeof(App1Aid), fixture.credential.apps[0].aid, ((uint8_t[]){0x06, 0x05, 0x04}));
+    munit_assert_size(fixture.credential.files[0].app_index, ==, 0);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data(&fixture.credential, &fixture.credential.files[0]),
+        ((uint8_t[]){0x33, 0x33, 0x33, 0x33}));
+    munit_assert_false(fixture.session->emulator->transaction_snapshot_active);
+    munit_assert_int(
+        fixture.session->emulator->selected_application, ==, DfcEmulatorSelectedApplicationPicc);
+    munit_assert_size(fixture.session->emulator->selected_app_index, ==, 0);
+
+    DfcCredential post_delete = fixture.credential;
+    response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session,
+            delete_app0,
+            sizeof(delete_app0),
+            response,
+            DFC_ISO7816_STATUS_WORD_LENGTH,
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 2);
+    munit_assert_memory_equal(response_len, response, ((uint8_t[]){0x91, DFC_STATUS_OK}));
+    munit_assert_memory_equal(sizeof(post_delete), &fixture.credential, &post_delete);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
 static MunitResult
     test_iso_selection_aborts_transaction(const MunitParameter params[], void* data) {
     (void)params;
@@ -626,7 +912,142 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult test_failed_shared_iso_selection_aborts_and_retains_selection(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t zero_key[16] = {0};
+    static const uint8_t unknown_select[] = {0x00, 0xA4, 0x04, 0x00, 0x03, 0xA0, 0x0F, 0x0F, 0x00};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    uint8_t response[64];
+    size_t response_len = 0;
+    authenticate_legacy_key0(
+        fixture.session,
+        zero_key,
+        sizeof(zero_key),
+        response,
+        sizeof(response),
+        &response_len,
+        NULL,
+        NULL,
+        DFC_STATUS_OK);
+    begin_transaction(&fixture);
+
+    bool app_selected = true;
+    dfc_bytebuf_reset(fixture.session->emulator->tx_buffer);
+    munit_assert_true(dfc_emulator_handle_iso7816_select(
+        fixture.session->emulator,
+        unknown_select,
+        sizeof(unknown_select),
+        fixture.session->emulator->tx_buffer,
+        0,
+        &app_selected));
+    munit_assert_false(app_selected);
+    munit_assert_memory_equal(
+        2,
+        dfc_bytebuf_get_data(fixture.session->emulator->tx_buffer),
+        ((uint8_t[]){DFC_ISO7816_SW_NOT_FOUND_HI, DFC_ISO7816_SW_NOT_FOUND_LO}));
+    assert_transaction_rolled_back(&fixture);
+    munit_assert_false(dfc_emulator_native_authentication_active(fixture.session->emulator));
+    munit_assert_int(
+        fixture.session->emulator->selected_application, ==, DfcEmulatorSelectedApplicationApp);
+    munit_assert_size(fixture.session->emulator->selected_app_index, ==, 0);
+    assert_app0_has_nothing_to_commit(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_host_failed_iso_selection_capacity_retry_is_atomic(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t zero_key[16] = {0};
+    static const uint8_t unknown_select[] = {0x00, 0xA4, 0x04, 0x00, 0x03, 0xA0, 0x0F, 0x0F, 0x00};
+
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    uint8_t auth_response[64];
+    size_t response_len = 0;
+    authenticate_legacy_key0(
+        fixture.session,
+        zero_key,
+        sizeof(zero_key),
+        auth_response,
+        sizeof(auth_response),
+        &response_len,
+        NULL,
+        NULL,
+        DFC_STATUS_OK);
+    begin_transaction(&fixture);
+
+    uint8_t response[2] = {0xA5, 0xA5};
+    response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session, unknown_select, sizeof(unknown_select), response, 1, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(response_len, ==, 0);
+    munit_assert_uint8(response[0], ==, 0xA5);
+    assert_transaction_still_pending(&fixture);
+    munit_assert_true(dfc_emulator_native_authentication_active(fixture.session->emulator));
+
+    response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session,
+            unknown_select,
+            sizeof(unknown_select),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 2);
+    munit_assert_memory_equal(
+        response_len,
+        response,
+        ((uint8_t[]){DFC_ISO7816_SW_NOT_FOUND_HI, DFC_ISO7816_SW_NOT_FOUND_LO}));
+    assert_transaction_rolled_back(&fixture);
+    munit_assert_false(dfc_emulator_native_authentication_active(fixture.session->emulator));
+    munit_assert_int(
+        fixture.session->emulator->selected_application, ==, DfcEmulatorSelectedApplicationApp);
+    munit_assert_size(fixture.session->emulator->selected_app_index, ==, 0);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+    {"/session-reset-complete-rollback",
+     test_session_reset_aborts_complete_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/current-key-change-complete-rollback",
+     test_current_key_change_aborts_complete_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/d40-current-key-change-complete-rollback",
+     test_d40_current_key_change_aborts_complete_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#if DFC_ENABLE_EV2_SECURE_MESSAGING && DFC_ENABLE_KEY_SETS
+    {"/ev2-current-key-change-complete-rollback",
+     test_ev2_current_key_change_aborts_complete_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {"/terminal-native-errors",
      test_terminal_native_errors_abort_transaction,
      NULL,
@@ -664,9 +1085,27 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
+    {"/delete-before-pool-compaction",
+     test_delete_application_rolls_back_before_pool_compaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/iso", test_iso_selection_aborts_transaction, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/shared-iso",
      test_shared_iso_selection_aborts_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/shared-iso-not-found",
+     test_failed_shared_iso_selection_aborts_and_retains_selection,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/host-iso-not-found-capacity-retry",
+     test_host_failed_iso_selection_capacity_retry_is_atomic,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
