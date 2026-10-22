@@ -70,6 +70,24 @@ public final class DfcJniReplayRandomTest {
                 "replay exhaustion must not poison unrelated operations");
         }
 
+        byte[] replacement = new byte[8];
+        Arrays.fill(replacement, (byte) 0xa5);
+        byte[] initial = new byte[11];
+        Arrays.fill(initial, (byte) 0x3c);
+        try (DfcVirtualPicc reset = DfcVirtualPicc.createForReplay(credential, initial);
+             DfcVirtualPicc fresh = DfcVirtualPicc.createForReplay(credential, replacement)) {
+            reset.activate();
+            fresh.activate();
+            check(reset.exchange(ISO_AUTHENTICATE).length > 2, "initial replay draw");
+            check(reset.replayRandomRemaining() == 3, "initial draw leaves an unread tail");
+            reset.resetProtocol();
+            reset.clearReplayRandom();
+            check(reset.replayRandomRemaining() == 0, "clear discards unread replay bytes");
+            reset.appendReplayRandom(replacement);
+            check(Arrays.equals(reset.exchange(ISO_AUTHENTICATE), fresh.exchange(ISO_AUTHENTICATE)),
+                "the next draw after clear must start with replacement bytes");
+        }
+
         byte[] exact = new byte[8];
         Arrays.fill(exact, (byte) 0xa5);
         try (DfcVirtualPicc picc = DfcVirtualPicc.createForReplay(credential, exact)) {

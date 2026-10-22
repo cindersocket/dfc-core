@@ -169,6 +169,24 @@ public sealed class PiccBehaviorTests
     }
 
     [Test]
+    public void ScriptedRandomSource_ClearDiscardsUnreadBytes()
+    {
+        var source = new DfcScriptedRandomSource(new byte[] { 0x11, 0x22, 0x33 });
+        var storage = ScriptedRandomBuffer(source);
+        source.Fill(new byte[1]);
+        Assert.That(source.Remaining, Is.EqualTo(2));
+
+        source.Clear();
+
+        Assert.That(source.Remaining, Is.Zero);
+        Assert.That(storage, Is.EqualTo(new byte[3]), "clear must wipe unread bytes");
+        source.Append(new byte[] { 0xA5, 0x5A });
+        var replacement = new byte[2];
+        source.Fill(replacement);
+        Assert.That(replacement, Is.EqualTo(new byte[] { 0xA5, 0x5A }));
+    }
+
+    [Test]
     public void ScriptedRandomSource_WipesConsumedCompactedAndRetiredStorage()
     {
         var source = new DfcScriptedRandomSource(Enumerable.Range(1, 16).Select(value => (byte)value).ToArray());

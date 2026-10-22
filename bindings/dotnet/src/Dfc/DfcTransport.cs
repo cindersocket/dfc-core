@@ -131,6 +131,17 @@ public sealed class DfcScriptedRandomSource : IDfcRandomSource
         }
     }
 
+    /// <summary>Discards and wipes every unread octet.</summary>
+    public void Clear()
+    {
+        lock (gate)
+        {
+            CryptographicOperations.ZeroMemory(buffer);
+            offset = 0;
+            count = 0;
+        }
+    }
+
     /// <inheritdoc />
     public void Fill(Span<byte> destination)
     {

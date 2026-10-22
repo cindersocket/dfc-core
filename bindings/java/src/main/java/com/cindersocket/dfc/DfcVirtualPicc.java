@@ -62,6 +62,10 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
   public synchronized void appendReplayRandom(byte[] bytes) throws DfcException {
     DfcNative.piccAppendReplayRandom(state.require(), Objects.requireNonNull(bytes, "bytes"));
   }
+  /** Discards and wipes every unread byte in this replay card's random queue. */
+  public synchronized void clearReplayRandom() throws DfcException {
+    DfcNative.piccClearReplayRandom(state.require());
+  }
   /** Returns the number of bytes currently available in this replay card's random queue. */
   public synchronized int replayRandomRemaining() throws DfcException {
     return DfcNative.piccReplayRandomRemaining(state.require());

@@ -37,7 +37,8 @@ operations usable. `snapshot()` remains available after failure so callers can
 verify that card state did not change. An empty script is valid and fails on its
 first random request. Use `appendReplayRandom` immediately before the event that
 needs those bytes; `replayRandomRemaining` exposes the current queue length for
-test assertions.
+test assertions. `clearReplayRandom` wipes and discards unread bytes so the next
+event starts with newly appended replay data.
 
 The runnable [Java example](../../examples/java/README.md) loads a credential,
 activates it, and executes the multi-frame `GetVersion` exchange. Android

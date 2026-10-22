@@ -48,6 +48,13 @@ static void secure_free(void* buffer, size_t length) {
     free(buffer);
 }
 
+static void clear_replay_random(JniPicc* wrapper) {
+    secure_free(wrapper->random, wrapper->random_len);
+    wrapper->random = NULL;
+    wrapper->random_len = 0;
+    wrapper->random_offset = 0;
+}
+
 static uint8_t* copy_array(JNIEnv* env, jbyteArray array, size_t* length, bool nullable) {
     if(array == NULL) {
         *length = 0;
@@ -329,10 +336,23 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_piccAppendReplayRando
             return;
         }
     }
-    secure_free(wrapper->random, wrapper->random_len);
+    clear_replay_random(wrapper);
     wrapper->random = combined;
     wrapper->random_len = total;
-    wrapper->random_offset = 0;
+}
+
+JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_piccClearReplayRandom(
+    JNIEnv* env,
+    jclass type,
+    jlong handle) {
+    (void)type;
+    JniPicc* wrapper = picc_handle(env, handle);
+    if(wrapper == NULL) return;
+    if(!wrapper->replay_random) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "PICC does not use replay randomness");
+        return;
+    }
+    clear_replay_random(wrapper);
 }
 
 JNIEXPORT jint JNICALL Java_com_cindersocket_dfc_DfcNative_piccReplayRandomRemaining(
@@ -361,7 +381,7 @@ JNIEXPORT void JNICALL
     JniPicc* wrapper = (JniPicc*)(uintptr_t)handle;
     if(wrapper == NULL) return;
     dfc_ffi_picc_free(wrapper->picc);
-    secure_free(wrapper->random, wrapper->random_len);
+    clear_replay_random(wrapper);
     secure_free(wrapper, sizeof(*wrapper));
 }
 
