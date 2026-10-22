@@ -1248,6 +1248,149 @@ static void
     }
 }
 
+typedef struct {
+#if DFC_ENABLE_SDM
+    uint32_t sdm_uid_offset;
+    uint32_t sdm_counter_offset;
+    uint32_t sdm_picc_data_offset;
+    uint32_t sdm_mac_input_offset;
+    uint32_t sdm_mac_offset;
+    uint32_t sdm_encrypted_file_offset;
+    uint32_t sdm_encrypted_file_length;
+    uint32_t sdm_counter_limit;
+    uint16_t sdm_access_rights;
+    uint16_t sdm_fields;
+#endif
+    uint16_t access_rights;
+#if DFC_ENABLE_SDM
+    uint8_t sdm_options;
+#endif
+    uint8_t comm_settings;
+} DfcFileSettingsUpdate;
+
+#if DFC_ENABLE_SDM
+enum {
+    DfcSdmFieldUidOffset = 1u << 0,
+    DfcSdmFieldCounterOffset = 1u << 1,
+    DfcSdmFieldPiccDataOffset = 1u << 2,
+    DfcSdmFieldMacInputOffset = 1u << 3,
+    DfcSdmFieldMacOffset = 1u << 4,
+    DfcSdmFieldEncryptedFile = 1u << 5,
+    DfcSdmFieldCounterLimit = 1u << 6,
+};
+
+_Static_assert(
+    sizeof(DfcFileSettingsUpdate) <= 40,
+    "ChangeFileSettings candidate exceeded its stack budget");
+
+static bool
+    take_sdm_uint24(const uint8_t* apdu, size_t apdu_len, size_t* cursor, uint32_t* value) {
+    if(*cursor > apdu_len || apdu_len - *cursor < DFC_SDM_OFFSET_LENGTH) return false;
+    *value = read_uint24_le(apdu + *cursor);
+    *cursor += DFC_SDM_OFFSET_LENGTH;
+    return true;
+}
+#endif
+
+static uint8_t parse_file_settings_update(
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcFileSettingsUpdate* update) {
+    memset(update, 0, sizeof(*update));
+    update->comm_settings = apdu[2];
+    update->access_rights = access_rights_from_wire(apdu[3], apdu[4]);
+#if DFC_ENABLE_SDM
+    if((update->comm_settings & DFC_SDM_ENABLED_MASK) == 0) {
+        return apdu_len == 5 ? DFC_STATUS_OK : DFC_STATUS_LENGTH_ERROR;
+    }
+    if(apdu_len < 5 + DFC_SDM_BASE_SETTINGS_LENGTH) return DFC_STATUS_LENGTH_ERROR;
+
+    const uint8_t* settings = apdu + 5;
+    update->sdm_options = settings[DFC_SDM_OPTIONS_OFFSET];
+    update->sdm_access_rights =
+        (uint16_t)(settings[DFC_SDM_ACCESS_RIGHTS_OFFSET] |
+                   ((uint16_t)settings[DFC_SDM_ACCESS_RIGHTS_OFFSET + 1] << 8));
+    uint8_t meta_read = (uint8_t)(update->sdm_access_rights >> DFC_SDM_META_READ_SHIFT);
+    uint8_t file_read =
+        (uint8_t)((update->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) & DFC_SDM_ACCESS_MASK);
+    size_t cursor = 5 + DFC_SDM_BASE_SETTINGS_LENGTH;
+
+    if((update->sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0 &&
+       meta_read == DFC_SDM_FREE_ACCESS) {
+        if(!take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_uid_offset))
+            return DFC_STATUS_LENGTH_ERROR;
+        update->sdm_fields |= DfcSdmFieldUidOffset;
+    }
+    if((update->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 &&
+       meta_read == DFC_SDM_FREE_ACCESS) {
+        if(!take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_counter_offset))
+            return DFC_STATUS_LENGTH_ERROR;
+        if(update->sdm_counter_offset != DFC_SDM_HIDDEN_COUNTER_OFFSET)
+            update->sdm_fields |= DfcSdmFieldCounterOffset;
+    }
+    if(meta_read < DFC_SDM_FREE_ACCESS) {
+        if(!take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_picc_data_offset))
+            return DFC_STATUS_LENGTH_ERROR;
+        update->sdm_fields |= DfcSdmFieldPiccDataOffset;
+    }
+    if(file_read != DFC_SDM_DENIED_ACCESS) {
+        if(!take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_mac_input_offset))
+            return DFC_STATUS_LENGTH_ERROR;
+        update->sdm_fields |= DfcSdmFieldMacInputOffset;
+        if((update->sdm_options & DFC_SDM_ENCRYPTED_FILE_MASK) != 0) {
+            if(!take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_encrypted_file_offset) ||
+               !take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_encrypted_file_length))
+                return DFC_STATUS_LENGTH_ERROR;
+            update->sdm_fields |= DfcSdmFieldEncryptedFile;
+        }
+        if(!take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_mac_offset))
+            return DFC_STATUS_LENGTH_ERROR;
+        update->sdm_fields |= DfcSdmFieldMacOffset;
+    }
+    if((update->sdm_options & DFC_SDM_COUNTER_LIMIT_MASK) != 0) {
+        if(!take_sdm_uint24(apdu, apdu_len, &cursor, &update->sdm_counter_limit))
+            return DFC_STATUS_LENGTH_ERROR;
+        update->sdm_fields |= DfcSdmFieldCounterLimit;
+    }
+    if(cursor != apdu_len || (update->sdm_options & DFC_SDM_ASCII_ENCODING_MASK) == 0)
+        return DFC_STATUS_PARAMETER_ERROR;
+#else
+    if(apdu_len != 5) return DFC_STATUS_LENGTH_ERROR;
+#endif
+    return DFC_STATUS_OK;
+}
+
+static void apply_file_settings_update(
+    DfcEmulator* emulator,
+    DfcFile* file,
+    const DfcFileSettingsUpdate* update) {
+    file->comm_settings = update->comm_settings;
+    file->access_rights = update->access_rights;
+#if DFC_ENABLE_SDM
+    file->sdm_enabled = (update->comm_settings & DFC_SDM_ENABLED_MASK) != 0;
+    file->sdm_options = update->sdm_options;
+    file->sdm_access_rights = update->sdm_access_rights;
+    file->sdm_has_uid_offset = (update->sdm_fields & DfcSdmFieldUidOffset) != 0;
+    file->sdm_uid_offset = update->sdm_uid_offset;
+    file->sdm_has_counter_offset = (update->sdm_fields & DfcSdmFieldCounterOffset) != 0;
+    file->sdm_counter_offset = update->sdm_counter_offset;
+    file->sdm_has_picc_data_offset = (update->sdm_fields & DfcSdmFieldPiccDataOffset) != 0;
+    file->sdm_picc_data_offset = update->sdm_picc_data_offset;
+    file->sdm_has_mac_input_offset = (update->sdm_fields & DfcSdmFieldMacInputOffset) != 0;
+    file->sdm_mac_input_offset = update->sdm_mac_input_offset;
+    file->sdm_has_mac_offset = (update->sdm_fields & DfcSdmFieldMacOffset) != 0;
+    file->sdm_mac_offset = update->sdm_mac_offset;
+    file->sdm_has_encrypted_file_offset = (update->sdm_fields & DfcSdmFieldEncryptedFile) != 0;
+    file->sdm_encrypted_file_offset = update->sdm_encrypted_file_offset;
+    file->sdm_encrypted_file_length = update->sdm_encrypted_file_length;
+    file->sdm_has_counter_limit = (update->sdm_fields & DfcSdmFieldCounterLimit) != 0;
+    file->sdm_counter_limit = update->sdm_counter_limit;
+    emulator->sdm_read_cache_valid = false;
+#else
+    DFC_UNUSED(emulator);
+#endif
+}
+
 static void handle_change_file_settings(
     DfcEmulator* emulator,
     const uint8_t* apdu,
@@ -1266,96 +1409,14 @@ static void handle_change_file_settings(
         return;
     }
 
-    file->comm_settings = apdu[2];
-    file->access_rights = access_rights_from_wire(apdu[3], apdu[4]);
-#if DFC_ENABLE_SDM
-    file->sdm_enabled = false;
-    if((file->comm_settings & DFC_SDM_ENABLED_MASK) != 0) {
-        if(apdu_len < 5 + DFC_SDM_BASE_SETTINGS_LENGTH) {
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-            return;
-        }
-        const uint8_t* settings = apdu + 5;
-        file->sdm_options = settings[DFC_SDM_OPTIONS_OFFSET];
-        file->sdm_access_rights =
-            (uint16_t)(settings[DFC_SDM_ACCESS_RIGHTS_OFFSET] |
-                       ((uint16_t)settings[DFC_SDM_ACCESS_RIGHTS_OFFSET + 1] << 8));
-        uint8_t meta_read = (uint8_t)(file->sdm_access_rights >> DFC_SDM_META_READ_SHIFT);
-        uint8_t file_read =
-            (uint8_t)((file->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) & DFC_SDM_ACCESS_MASK);
-        size_t cursor = 5 + DFC_SDM_BASE_SETTINGS_LENGTH;
-        if((file->sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0 &&
-           meta_read == DFC_SDM_FREE_ACCESS) {
-            if(cursor + DFC_SDM_OFFSET_LENGTH > apdu_len) {
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-                return;
-            }
-            file->sdm_uid_offset = read_uint24_le(apdu + cursor);
-            file->sdm_has_uid_offset = true;
-            cursor += DFC_SDM_OFFSET_LENGTH;
-        }
-        if((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 &&
-           meta_read == DFC_SDM_FREE_ACCESS) {
-            if(cursor + DFC_SDM_OFFSET_LENGTH > apdu_len) {
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-                return;
-            }
-            file->sdm_counter_offset = read_uint24_le(apdu + cursor);
-            file->sdm_has_counter_offset = file->sdm_counter_offset !=
-                                           DFC_SDM_HIDDEN_COUNTER_OFFSET;
-            cursor += DFC_SDM_OFFSET_LENGTH;
-        }
-        if(meta_read < DFC_SDM_FREE_ACCESS) {
-            if(cursor + DFC_SDM_OFFSET_LENGTH > apdu_len) {
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-                return;
-            }
-            file->sdm_picc_data_offset = read_uint24_le(apdu + cursor);
-            file->sdm_has_picc_data_offset = true;
-            cursor += DFC_SDM_OFFSET_LENGTH;
-        }
-        if(file_read != DFC_SDM_DENIED_ACCESS) {
-            if(cursor + (DFC_SDM_OFFSET_LENGTH * 2) > apdu_len) {
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-                return;
-            }
-            file->sdm_mac_input_offset = read_uint24_le(apdu + cursor);
-            file->sdm_has_mac_input_offset = true;
-            cursor += DFC_SDM_OFFSET_LENGTH;
-            if((file->sdm_options & DFC_SDM_ENCRYPTED_FILE_MASK) != 0) {
-                if(cursor + (DFC_SDM_OFFSET_LENGTH * 3) > apdu_len) {
-                    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-                    return;
-                }
-                file->sdm_encrypted_file_offset = read_uint24_le(apdu + cursor);
-                file->sdm_has_encrypted_file_offset = true;
-                cursor += DFC_SDM_OFFSET_LENGTH;
-                file->sdm_encrypted_file_length = read_uint24_le(apdu + cursor);
-                cursor += DFC_SDM_OFFSET_LENGTH;
-            }
-            file->sdm_mac_offset = read_uint24_le(apdu + cursor);
-            file->sdm_has_mac_offset = true;
-            cursor += DFC_SDM_OFFSET_LENGTH;
-        }
-        if((file->sdm_options & DFC_SDM_COUNTER_LIMIT_MASK) != 0) {
-            if(cursor + DFC_SDM_OFFSET_LENGTH > apdu_len) {
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-                return;
-            }
-            file->sdm_counter_limit = read_uint24_le(apdu + cursor);
-            file->sdm_has_counter_limit = true;
-            cursor += DFC_SDM_OFFSET_LENGTH;
-        }
-        if(cursor != apdu_len || (file->sdm_options & DFC_SDM_ASCII_ENCODING_MASK) == 0) {
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
-            return;
-        }
-        file->sdm_enabled = true;
-        emulator->sdm_read_cache_valid = false;
+    DfcFileSettingsUpdate update;
+    uint8_t status = parse_file_settings_update(apdu, apdu_len, &update);
+    if(status != DFC_STATUS_OK) {
+        dfc_bytebuf_append_byte(tx_buffer, status);
+        return;
     }
-#else
-    DFC_UNUSED(apdu_len);
-#endif
+
+    apply_file_settings_update(emulator, file, &update);
     dfc_credential_mark_dirty(emulator->credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }

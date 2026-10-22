@@ -1226,6 +1226,179 @@ static MunitResult test_change_file_settings_round_trips_logical_rights(
     return MUNIT_OK;
 }
 
+#if DFC_ENABLE_SDM
+static void set_sdm_settings_sentinels(DfcVirtualPiccSession* session, DfcFile* file) {
+    file->comm_settings = DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN;
+    file->access_rights = 0xEEEE;
+    file->sdm_enabled = true;
+    file->sdm_options = DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
+                        DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
+                        DFC_SDM_ASCII_ENCODING_MASK;
+    file->sdm_access_rights = 0xE0FE;
+    file->sdm_has_uid_offset = true;
+    file->sdm_uid_offset = 3;
+    file->sdm_has_counter_offset = true;
+    file->sdm_counter_offset = 17;
+    file->sdm_has_picc_data_offset = true;
+    file->sdm_picc_data_offset = 29;
+    file->sdm_has_mac_input_offset = true;
+    file->sdm_mac_input_offset = 41;
+    file->sdm_has_mac_offset = true;
+    file->sdm_mac_offset = 97;
+    file->sdm_has_encrypted_file_offset = true;
+    file->sdm_encrypted_file_offset = 53;
+    file->sdm_encrypted_file_length = 32;
+    file->sdm_has_counter_limit = true;
+    file->sdm_counter_limit = 0x654321;
+    file->sdm_read_counter = 0x123456;
+
+    session->emulator->sdm_read_cache_valid = true;
+    session->emulator->sdm_read_cache_file_number = file->number;
+    session->emulator->sdm_read_cache_len = 23;
+    memset(session->emulator->sdm_read_cache, 0xA5, sizeof(session->emulator->sdm_read_cache));
+    dfc_credential_clear_dirty(session->credential);
+}
+
+static void assert_rejected_change_is_atomic(
+    DfcVirtualPiccSession* session,
+    DfcFile* file,
+    const uint8_t* native,
+    size_t native_len,
+    uint8_t expected_status) {
+    uint8_t before[sizeof(*file)];
+    uint8_t cache_before[DFC_SDM_READ_CACHE_SIZE];
+    memcpy(before, file, sizeof(before));
+    memcpy(cache_before, session->emulator->sdm_read_cache, sizeof(cache_before));
+    bool cache_valid_before = session->emulator->sdm_read_cache_valid;
+    uint8_t cache_file_before = session->emulator->sdm_read_cache_file_number;
+    size_t cache_len_before = session->emulator->sdm_read_cache_len;
+
+    uint8_t apdu[64] = {0x90, DFC_CMD_CHANGE_FILE_SETTINGS, 0x00, 0x00};
+    munit_assert_size(native_len, >=, 1);
+    munit_assert_size(native_len - 1, <=, UINT8_MAX);
+    munit_assert_size(native_len + 5, <=, sizeof(apdu));
+    apdu[4] = (uint8_t)(native_len - 1);
+    memcpy(apdu + 5, native + 1, native_len - 1);
+    size_t apdu_len = native_len + 5;
+
+    assert_status(session, apdu, apdu_len, expected_status);
+    munit_assert_memory_equal(sizeof(before), before, file);
+    munit_assert_false(session->credential->dirty);
+    munit_assert_int(session->emulator->sdm_read_cache_valid, ==, cache_valid_before);
+    munit_assert_uint8(session->emulator->sdm_read_cache_file_number, ==, cache_file_before);
+    munit_assert_size(session->emulator->sdm_read_cache_len, ==, cache_len_before);
+    munit_assert_memory_equal(
+        sizeof(cache_before), cache_before, session->emulator->sdm_read_cache);
+}
+
+static MunitResult
+    test_change_file_settings_rejections_are_atomic(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    uint8_t contents[128] = {0};
+    DfcVirtualPiccSession* session =
+        open_file_policy(&credential, 0x0F, 0xEEEE, DFC_COMM_PLAIN, contents, sizeof(contents));
+    credential.card.generation = DfcGenerationEv3;
+    const uint8_t select[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03, 0x00};
+    assert_status(session, select, sizeof(select), DFC_STATUS_OK);
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+
+    const struct {
+        const uint8_t* command;
+        size_t length;
+        uint8_t status;
+    } cases[] = {
+        {(const uint8_t[]){0x5F, 0x01, 0x00, 0xCD, 0xAB, 0x00}, 6, DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB}, 5, DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x81, 0xFF, 0xEF},
+         8,
+         DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x41, 0xFF, 0xEF},
+         8,
+         DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x01, 0xFF, 0x0F},
+         8,
+         DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x01, 0xFF, 0xF0},
+         8,
+         DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x11, 0xFF, 0xF0, 0x02, 0x00, 0x00},
+         11,
+         DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x21, 0xFF, 0xFF},
+         8,
+         DFC_STATUS_LENGTH_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x00, 0xFF, 0xFF},
+         8,
+         DFC_STATUS_PARAMETER_ERROR},
+        {(const uint8_t[]){0x5F, 0x01, 0x40, 0xCD, 0xAB, 0x01, 0xFF, 0xFF, 0x00},
+         9,
+         DFC_STATUS_PARAMETER_ERROR},
+    };
+
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        set_sdm_settings_sentinels(session, file);
+        assert_rejected_change_is_atomic(
+            session, file, cases[i].command, cases[i].length, cases[i].status);
+    }
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult test_change_file_settings_success_replaces_sdm_settings(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    uint8_t contents[128] = {0};
+    DfcVirtualPiccSession* session =
+        open_file_policy(&credential, 0x0F, 0xEEEE, DFC_COMM_PLAIN, contents, sizeof(contents));
+    credential.card.generation = DfcGenerationEv3;
+    const uint8_t select[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03, 0x00};
+    assert_status(session, select, sizeof(select), DFC_STATUS_OK);
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+    set_sdm_settings_sentinels(session, file);
+
+    const uint8_t change[] = {
+        0x90, 0x5F, 0x00, 0x00, 0x07, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xFF, 0xFF, 0x00};
+    assert_status(session, change, sizeof(change), DFC_STATUS_OK);
+
+    munit_assert_uint8(file->comm_settings, ==, DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN);
+    munit_assert_uint16(file->access_rights, ==, 0xEEEE);
+    munit_assert_true(file->sdm_enabled);
+    munit_assert_uint8(file->sdm_options, ==, DFC_SDM_ASCII_ENCODING_MASK);
+    munit_assert_uint16(file->sdm_access_rights, ==, 0xFFFF);
+    munit_assert_false(file->sdm_has_uid_offset);
+    munit_assert_uint32(file->sdm_uid_offset, ==, 0);
+    munit_assert_false(file->sdm_has_counter_offset);
+    munit_assert_uint32(file->sdm_counter_offset, ==, 0);
+    munit_assert_false(file->sdm_has_picc_data_offset);
+    munit_assert_uint32(file->sdm_picc_data_offset, ==, 0);
+    munit_assert_false(file->sdm_has_mac_input_offset);
+    munit_assert_uint32(file->sdm_mac_input_offset, ==, 0);
+    munit_assert_false(file->sdm_has_mac_offset);
+    munit_assert_uint32(file->sdm_mac_offset, ==, 0);
+    munit_assert_false(file->sdm_has_encrypted_file_offset);
+    munit_assert_uint32(file->sdm_encrypted_file_offset, ==, 0);
+    munit_assert_uint32(file->sdm_encrypted_file_length, ==, 0);
+    munit_assert_false(file->sdm_has_counter_limit);
+    munit_assert_uint32(file->sdm_counter_limit, ==, 0);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
+    munit_assert_true(credential.dirty);
+    munit_assert_false(session->emulator->sdm_read_cache_valid);
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+#endif
+
 static DfcVirtualPiccSession* open_record_file(
     DfcCredential* credential,
     bool cyclic,
@@ -1421,6 +1594,20 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
+#if DFC_ENABLE_SDM
+    {"/change-file-settings-rejections-are-atomic",
+     test_change_file_settings_rejections_are_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-success-replaces-sdm-settings",
+     test_change_file_settings_success_replaces_sdm_settings,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {"/unsupported-command", test_unsupported_command, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/truncated-payload", test_truncated_payload, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/authenticate-missing-key",
