@@ -670,7 +670,7 @@ public sealed class DfcReader : IDisposable
         select[2] = 0x04;
         select[4] = (byte)installationId.Length;
         installationId.Span.CopyTo(select.AsSpan(5));
-        var answer = await transport.TransmitAsync(select, cancellationToken).ConfigureAwait(false);
+        var answer = await TransmitAsync(handles, select, cancellationToken).ConfigureAwait(false);
         if (answer.IsFailure)
         {
             return answer.Error;
@@ -682,9 +682,7 @@ public sealed class DfcReader : IDisposable
             return Failure<DfcVirtualCardSelection>(handles, st).Error;
         }
 
-        var confirmed = await transport
-            .TransmitAsync(authenticate, cancellationToken)
-            .ConfigureAwait(false);
+        var confirmed = await TransmitAsync(handles, authenticate, cancellationToken).ConfigureAwait(false);
         if (confirmed.IsFailure)
         {
             return confirmed.Error;
@@ -804,7 +802,7 @@ public sealed class DfcReader : IDisposable
                 return status == 0 ? Collect(handles) : Failure<DfcResponse>(handles, status);
             }
 
-            var sent = await transport.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
+            var sent = await TransmitAsync(handles, frame, cancellationToken).ConfigureAwait(false);
             if (sent.IsFailure)
             {
                 ClearSession(handles);
@@ -812,6 +810,23 @@ public sealed class DfcReader : IDisposable
             }
 
             answer = sent.Value;
+        }
+    }
+
+    private async ValueTask<Result<byte[], DfcProtocolError>> TransmitAsync(
+        ReaderHandles handles,
+        ReadOnlyMemory<byte> frame,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await transport.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ClearSession(handles);
+            throw;
         }
     }
 
