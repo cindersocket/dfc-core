@@ -25,13 +25,15 @@ uint8_t dfc_key_type_for_set_type(uint8_t type) {
 
 bool dfc_ct_equal(const uint8_t* left, const uint8_t* right, size_t length) {
     uint8_t difference = 0;
-    for(size_t i = 0; i < length; i++) difference |= left[i] ^ right[i];
+    for(size_t i = 0; i < length; i++)
+        difference |= left[i] ^ right[i];
     return difference == 0;
 }
 
 void dfc_secure_wipe(void* buffer, size_t length) {
     volatile uint8_t* bytes = buffer;
-    while(length--) *bytes++ = 0;
+    while(length--)
+        *bytes++ = 0;
 }
 
 #include <stdio.h>
@@ -160,12 +162,12 @@ bool dfc_wrap_native_response_as_iso7816(
 
     size_t offset = 0;
     if(prefix_len > 0) {
-        memcpy(output, native_response, prefix_len);
+        memmove(output, native_response, prefix_len);
         offset += prefix_len;
     }
 
     if(native_data_len > 0) {
-        memcpy(output + offset, native_response + prefix_len + 1, native_data_len);
+        memmove(output + offset, native_response + prefix_len + 1, native_data_len);
         offset += native_data_len;
     }
 
@@ -198,7 +200,7 @@ void dfc_rotate_left(uint8_t* buffer, size_t len) {
     buffer[len - 1] = first;
 }
 
-void dfc_worker_des_cbc_decrypt(
+bool dfc_worker_des_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[8],
@@ -206,11 +208,10 @@ void dfc_worker_des_cbc_decrypt(
     const uint8_t* encrypted,
     uint8_t* clear) {
     bool ok = dfc_crypto_des_cbc(false, key, key_len, iv, encrypted, clear, length);
-    DFC_ASSERT(ok);
-    DFC_UNUSED(ok);
+    return ok;
 }
 
-void dfc_worker_des_cbc_encrypt(
+bool dfc_worker_des_cbc_encrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[8],
@@ -218,11 +219,10 @@ void dfc_worker_des_cbc_encrypt(
     const uint8_t* clear,
     uint8_t* encrypted) {
     bool ok = dfc_crypto_des_cbc(true, key, key_len, iv, clear, encrypted, length);
-    DFC_ASSERT(ok);
-    DFC_UNUSED(ok);
+    return ok;
 }
 
-void dfc_worker_aes_cbc_decrypt(
+bool dfc_worker_aes_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[16],
@@ -230,11 +230,10 @@ void dfc_worker_aes_cbc_decrypt(
     const uint8_t* encrypted,
     uint8_t* clear) {
     bool ok = dfc_crypto_aes_cbc(false, key, key_len, iv, encrypted, clear, length);
-    DFC_ASSERT(ok);
-    DFC_UNUSED(ok);
+    return ok;
 }
 
-void dfc_worker_aes_cbc_encrypt(
+bool dfc_worker_aes_cbc_encrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[16],
@@ -242,8 +241,7 @@ void dfc_worker_aes_cbc_encrypt(
     const uint8_t* clear,
     uint8_t* encrypted) {
     bool ok = dfc_crypto_aes_cbc(true, key, key_len, iv, clear, encrypted, length);
-    DFC_ASSERT(ok);
-    DFC_UNUSED(ok);
+    return ok;
 }
 
 // True when a 16-octet key is the same 8-octet key twice, which makes it single

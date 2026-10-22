@@ -2,6 +2,7 @@
 #include "../tests/munit/munit.h"
 #include "aes_cmac.h"
 #include "des_cmac.h"
+#include "dfc_common.h"
 #include <string.h>
 
 static void hex_to_bytes(const char* hex, uint8_t* out) {
@@ -44,8 +45,8 @@ static MunitResult test_aes_cmac_16bytes(const MunitParameter params[], void* da
     return MUNIT_OK;
 }
 
-static MunitResult test_aes_cmac_multiblock_and_segments(
-    const MunitParameter params[], void* data) {
+static MunitResult
+    test_aes_cmac_multiblock_and_segments(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     uint8_t key[16];
@@ -68,7 +69,7 @@ static MunitResult test_aes_cmac_multiblock_and_segments(
     munit_assert_true(aes_cmac(key, sizeof(key), message, sizeof(message), mac));
     munit_assert_memory_equal(sizeof(mac), mac, expected64);
 
-    AesCmacSegment segments[] = {
+    DfcCryptoSegment segments[] = {
         {.data = message, .length = 3},
         {.data = message + 3, .length = 29},
         {.data = message + 32, .length = 1},
@@ -81,8 +82,7 @@ static MunitResult test_aes_cmac_multiblock_and_segments(
     return MUNIT_OK;
 }
 
-static MunitResult test_cmac_rejects_overflow_lengths(
-    const MunitParameter params[], void* data) {
+static MunitResult test_cmac_rejects_overflow_lengths(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     uint8_t key[24] = {0};
@@ -95,6 +95,68 @@ static MunitResult test_cmac_rejects_overflow_lengths(
     memset(output, 0xA5, sizeof(output));
     munit_assert_false(des_cmac(key, 24, &byte, SIZE_MAX, output));
     munit_assert_memory_equal(8, output, zero);
+    return MUNIT_OK;
+}
+
+static MunitResult test_segmented_cmac_boundaries(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static uint8_t message[DFC_MAX_FILE_DATA];
+    for(size_t i = 0; i < sizeof(message); i++)
+        message[i] = (uint8_t)(i * 37u + 11u);
+    const size_t lengths[] = {
+        0, 1, 7, 8, 9, 15, 16, 17, 191, 192, 193, 300, 2048, DFC_MAX_FILE_DATA};
+    uint8_t aes_key[16];
+    uint8_t des_key[24];
+    uint8_t aes_iv[16];
+    uint8_t des_iv[8];
+    for(size_t i = 0; i < sizeof(aes_key); i++)
+        aes_key[i] = (uint8_t)(0x10 + i);
+    for(size_t i = 0; i < sizeof(des_key); i++)
+        des_key[i] = (uint8_t)(0x20 + i);
+    for(size_t i = 0; i < sizeof(aes_iv); i++)
+        aes_iv[i] = (uint8_t)(0x80 + i);
+    for(size_t i = 0; i < sizeof(des_iv); i++)
+        des_iv[i] = (uint8_t)(0x40 + i);
+
+    for(size_t length_index = 0; length_index < sizeof(lengths) / sizeof(lengths[0]);
+        length_index++) {
+        size_t length = lengths[length_index];
+        size_t first = length ? 1 : 0;
+        size_t last = length > first ? 1 : 0;
+        DfcCryptoSegment segments[] = {
+            {.data = NULL, .length = 0},
+            {.data = message, .length = first},
+            {.data = message + first, .length = length - first - last},
+            {.data = message + length - last, .length = last},
+            {.data = NULL, .length = 0},
+        };
+        uint8_t contiguous[16];
+        uint8_t segmented[16];
+        munit_assert_true(
+            aes_cmac_with_iv(aes_key, sizeof(aes_key), message, length, aes_iv, contiguous));
+        munit_assert_true(aes_cmac_segments_with_iv(
+            aes_key,
+            sizeof(aes_key),
+            segments,
+            sizeof(segments) / sizeof(segments[0]),
+            aes_iv,
+            segmented));
+        munit_assert_memory_equal(16, contiguous, segmented);
+
+        for(size_t key_len = 8; key_len <= sizeof(des_key); key_len += 8) {
+            munit_assert_true(
+                des_cmac_with_iv(des_key, key_len, message, length, des_iv, contiguous));
+            munit_assert_true(des_cmac_segments_with_iv(
+                des_key,
+                key_len,
+                segments,
+                sizeof(segments) / sizeof(segments[0]),
+                des_iv,
+                segmented));
+            munit_assert_memory_equal(8, contiguous, segmented);
+        }
+    }
     return MUNIT_OK;
 }
 
@@ -194,6 +256,12 @@ static MunitTest tests[] = {
      NULL},
     {"/cmac/overflow-lengths",
      test_cmac_rejects_overflow_lengths,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/cmac/segmented-boundaries",
+     test_segmented_cmac_boundaries,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

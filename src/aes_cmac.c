@@ -12,7 +12,8 @@ static const uint8_t Rb[] =
 
 static void aes_cmac_wipe(void* value, size_t length) {
     volatile uint8_t* p = value;
-    while(length--) *p++ = 0;
+    while(length--)
+        *p++ = 0;
 }
 
 static void aes_cmac_padBlock(uint8_t* block, size_t len) {
@@ -37,8 +38,8 @@ static void aes_cmac_xor(const uint8_t* a, const uint8_t* b, uint8_t* x, size_t 
     }
 }
 
-static bool aes_cmac_generateSubkeys(
-    DfcCryptoAesBlock* cipher, uint8_t* subkey1, uint8_t* subkey2) {
+static bool
+    aes_cmac_generateSubkeys(DfcCryptoAesBlock* cipher, uint8_t* subkey1, uint8_t* subkey2) {
     uint8_t l[BLOCK_SIZE] = {0};
     if(!dfc_crypto_aes_block_encrypt(cipher, zeroes, l)) {
         aes_cmac_wipe(l, sizeof(l));
@@ -66,14 +67,14 @@ bool aes_cmac_with_iv(
     size_t message_len,
     uint8_t* iv,
     uint8_t* cmac) {
-    AesCmacSegment segment = {.data = message, .length = message_len};
+    DfcCryptoSegment segment = {.data = message, .length = message_len};
     return aes_cmac_segments_with_iv(key, key_len, &segment, 1, iv, cmac);
 }
 
 bool aes_cmac_segments_with_iv(
     uint8_t* key,
     size_t key_len,
-    const AesCmacSegment* segments,
+    const DfcCryptoSegment* segments,
     size_t segment_count,
     uint8_t* iv,
     uint8_t* cmac) {

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "../tests/munit/munit.h"
 #include "dfc_secure_messaging.h"
+#include <stdlib.h>
 #include <string.h>
 
 static void hex_to_bytes(const char* hex, uint8_t* out) {
@@ -142,6 +143,59 @@ static MunitResult test_enciphered_legacy(const MunitParameter p[], void* d) {
     (void)d;
     round_trip_wrap_verify_command(DFC_CMD_AUTHENTICATE_LEGACY, DFC_COMM_ENCIPHERED, 8);
     round_trip_generate_response_unwrap(DFC_CMD_AUTHENTICATE_LEGACY, DFC_COMM_ENCIPHERED, 8);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_legacy_enciphered_rejects_partial_blocks(const MunitParameter p[], void* d) {
+    (void)p;
+    (void)d;
+    uint8_t wrapped[32];
+    uint8_t clear[32];
+    uint8_t header[] = {DFC_CMD_WRITE_DATA, 1, 0, 0, 0, 1, 0, 0};
+    memset(wrapped, 0x3C, sizeof(wrapped));
+
+    for(size_t length = 1; length < sizeof(wrapped); length++) {
+        if(length % DFC_SM_LEGACY_BLOCK_SIZE == 0) continue;
+        DfcSecureMessaging* reader = alloc_session(DFC_CMD_AUTHENTICATE_LEGACY, 8);
+        DfcSecureMessaging* card = alloc_session(DFC_CMD_AUTHENTICATE_LEGACY, 8);
+        reader->pcd = true;
+        DfcSecureMessaging reader_before = *reader;
+        DfcSecureMessaging card_before = *card;
+
+        memset(clear, 0xA5, sizeof(clear));
+        munit_assert_size(
+            dfc_secure_messaging_unwrap(
+                reader, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, wrapped, length, clear),
+            ==,
+            0);
+        for(size_t i = 0; i < length; i++)
+            munit_assert_uint8(clear[i], ==, 0);
+        munit_assert_memory_equal(sizeof(reader_before), &reader_before, reader);
+
+        memset(clear, 0xA5, sizeof(clear));
+        munit_assert_size(
+            dfc_secure_messaging_verify_command(
+                card, DFC_COMM_ENCIPHERED, header, sizeof(header), wrapped, length, clear),
+            ==,
+            0);
+        for(size_t i = 0; i < length; i++)
+            munit_assert_uint8(clear[i], ==, 0);
+        munit_assert_memory_equal(sizeof(card_before), &card_before, card);
+        dfc_secure_messaging_free(reader);
+        dfc_secure_messaging_free(card);
+    }
+
+    DfcSecureMessaging* reader = alloc_session(DFC_CMD_AUTHENTICATE_LEGACY, 8);
+    reader->pcd = true;
+    for(size_t length = 1; length < 16; length++) {
+        memset(clear, 0x5A, length);
+        size_t wrapped_len = dfc_secure_messaging_wrap(
+            reader, DFC_COMM_ENCIPHERED, header, sizeof(header), clear, length, wrapped);
+        munit_assert_size(wrapped_len, >, 0);
+        munit_assert_size(wrapped_len % DFC_SM_LEGACY_BLOCK_SIZE, ==, 0);
+    }
+    dfc_secure_messaging_free(reader);
     return MUNIT_OK;
 }
 
@@ -452,7 +506,86 @@ static MunitResult test_header_tamper_rejected_enciphered(const MunitParameter p
     return header_tamper_rejected(DFC_COMM_ENCIPHERED);
 }
 
+static MunitResult test_configured_max_boundaries(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const size_t lengths[] = {0, 1, 7, 8, 9, 15, 16, 17, 191, 192, 193, 300, DFC_MAX_FILE_DATA};
+    const struct {
+        uint8_t cipher;
+        size_t key_len;
+    } ciphers[] = {
+        {DFC_CMD_AUTHENTICATE_LEGACY, 8},
+        {DFC_CMD_AUTHENTICATE_ISO, 8},
+        {DFC_CMD_AUTHENTICATE_ISO, 16},
+        {DFC_CMD_AUTHENTICATE_ISO, 24},
+        {DFC_CMD_AUTHENTICATE_AES, 16},
+    };
+    const uint8_t modes[] = {DFC_COMM_PLAIN, DFC_COMM_MAC, DFC_COMM_ENCIPHERED};
+    uint8_t* plain = malloc(DFC_MAX_FILE_DATA);
+    uint8_t* wrapped = malloc(DFC_SM_MAX_CRYPTO_SIZE + DFC_WIRE_MAC_LENGTH);
+    uint8_t* recovered = malloc(DFC_SM_MAX_CRYPTO_SIZE + DFC_WIRE_MAC_LENGTH);
+    munit_assert_not_null(plain);
+    munit_assert_not_null(wrapped);
+    munit_assert_not_null(recovered);
+    for(size_t i = 0; i < DFC_MAX_FILE_DATA; i++)
+        plain[i] = (uint8_t)(i * 29u + 7u);
+    const uint8_t header[] = {DFC_CMD_WRITE_DATA, 1, 0, 0, 0, 0, 0, 0};
+
+    for(size_t cipher_index = 0; cipher_index < sizeof(ciphers) / sizeof(ciphers[0]);
+        cipher_index++) {
+        for(size_t mode_index = 0; mode_index < sizeof(modes) / sizeof(modes[0]); mode_index++) {
+            for(size_t length_index = 0; length_index < sizeof(lengths) / sizeof(lengths[0]);
+                length_index++) {
+                size_t length = lengths[length_index];
+                DfcSecureMessaging* reader =
+                    alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
+                DfcSecureMessaging* card =
+                    alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
+                munit_assert_not_null(reader);
+                munit_assert_not_null(card);
+                reader->pcd = true;
+
+                size_t wrapped_len = dfc_secure_messaging_wrap(
+                    reader, modes[mode_index], header, sizeof(header), plain, length, wrapped);
+                munit_assert_size(wrapped_len, >=, length);
+                size_t recovered_len = dfc_secure_messaging_verify_command(
+                    card,
+                    modes[mode_index],
+                    header,
+                    sizeof(header),
+                    wrapped,
+                    wrapped_len,
+                    recovered);
+                munit_assert_size(recovered_len, ==, length);
+                munit_assert_memory_equal(length, recovered, plain);
+
+                wrapped_len = dfc_secure_messaging_generate_response(
+                    card, modes[mode_index], DFC_STATUS_OK, plain, length, wrapped);
+                munit_assert_size(wrapped_len, >=, length);
+                recovered_len = dfc_secure_messaging_unwrap(
+                    reader, modes[mode_index], DFC_STATUS_OK, wrapped, wrapped_len, recovered);
+                munit_assert_size(recovered_len, ==, length);
+                munit_assert_memory_equal(length, recovered, plain);
+                munit_assert_memory_equal(sizeof(reader->iv), reader->iv, card->iv);
+
+                dfc_secure_messaging_free(reader);
+                dfc_secure_messaging_free(card);
+            }
+        }
+    }
+    free(recovered);
+    free(wrapped);
+    free(plain);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+    {"/enciphered/legacy-partial-block-rejection",
+     test_legacy_enciphered_rejects_partial_blocks,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/tamper/header_mac",
      test_header_tamper_rejected_mac,
      NULL,
@@ -508,6 +641,12 @@ static MunitTest tests[] = {
      NULL},
     {"/ev1/transmitted_command_mac_round_trip",
      test_ev1_transmitted_command_mac_round_trip,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/boundaries/configured-max",
+     test_configured_max_boundaries,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

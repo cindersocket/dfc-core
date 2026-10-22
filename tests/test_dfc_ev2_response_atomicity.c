@@ -7,7 +7,12 @@
 
 #if DFC_ENABLE_EMULATOR && DFC_ENABLE_EV2_SECURE_MESSAGING
 
+void dfc_secure_wipe(void* ptr, size_t len) {
+    if(ptr) memset(ptr, 0, len);
+}
+
 static bool fail_encrypt;
+static bool fail_decrypt;
 static bool fail_mac;
 static bool unexpected_encrypt_len;
 static DfcFile encrypted_file;
@@ -62,12 +67,14 @@ bool dfc_ev2_decrypt_data(
     (void)direction;
     (void)counter;
     (void)transaction_identifier;
-    (void)encrypted;
-    (void)encrypted_len;
-    (void)clear;
-    (void)clear_len;
+    if(clear_len) *clear_len = 0;
     (void)allow_unpadded;
-    return false;
+    if(!clear || !clear_len || encrypted_len == 0) return false;
+    memset(clear, 0xCC, encrypted_len);
+    if(fail_decrypt) return false;
+    memcpy(clear, encrypted, encrypted_len);
+    *clear_len = encrypted_len;
+    return true;
 }
 
 bool dfc_ev2_mac(
@@ -122,8 +129,15 @@ static void assert_failure_is_atomic(
         secured_capacity,
         &secured_len));
     munit_assert_uint16(emulator->ev2_command_counter, ==, counter);
-    munit_assert_size(secured_len, ==, 0xCAFE);
-    munit_assert_memory_equal(sizeof(secured), secured, before);
+    munit_assert_size(secured_len, ==, 0);
+    if(emulator->ev2_session_active) {
+        munit_assert_memory_equal(sizeof(secured), secured, before);
+    } else {
+        munit_assert_uint8(secured[0], ==, 0xA5);
+        for(size_t i = 1; i < sizeof(secured); i++) {
+            if(secured[i] != 0) munit_assert_uint8(secured[i], ==, 0xA5);
+        }
+    }
 }
 
 static void init_emulator(DfcEmulator* emulator, DfcCredential* credential) {
@@ -132,11 +146,84 @@ static void init_emulator(DfcEmulator* emulator, DfcCredential* credential) {
     emulator->credential = credential;
     emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
     emulator->ev2_command_counter = 7;
+    emulator->ev2_session_active = true;
+    memset(
+        emulator->ev2_session_encryption_key, 0xA5, sizeof(emulator->ev2_session_encryption_key));
+    memset(emulator->ev2_session_mac_key, 0x5A, sizeof(emulator->ev2_session_mac_key));
     fail_encrypt = false;
+    fail_decrypt = false;
     fail_mac = false;
     unexpected_encrypt_len = false;
     observed_encrypt_counter = 0;
     observed_mac_counter = 0;
+}
+
+static void make_secured_write(uint8_t command[32], size_t* command_len) {
+    memset(command, 0, 32);
+    command[0] = DFC_CMD_WRITE_DATA;
+    command[1] = encrypted_file.number;
+    command[5] = 1;
+    for(size_t i = 0; i < 16; i++)
+        command[8 + i] = (uint8_t)(0x30 + i);
+    memset(command + 24, 0x5A, DFC_WIRE_MAC_LENGTH);
+    *command_len = 32;
+}
+
+static MunitResult
+    test_prepare_command_failures_are_atomic(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcEmulator emulator;
+    DfcCredential credential;
+    init_emulator(&emulator, &credential);
+    emulator.selected_application = DfcEmulatorSelectedApplicationApp;
+    encrypted_file.number = 1;
+    encrypted_file.comm_settings = DFC_COMM_ENCIPHERED;
+    uint8_t command[32];
+    size_t command_len = 0;
+    make_secured_write(command, &command_len);
+    uint8_t output[40];
+    size_t output_len;
+
+    memset(output, 0xA5, sizeof(output));
+    output_len = 99;
+    fail_mac = true;
+    munit_assert_int(
+        dfc_ev2_prepare_command(
+            &emulator, command, command_len, output, sizeof(output), &output_len),
+        ==,
+        DfcEv2CommandInvalid);
+    munit_assert_size(output_len, ==, 0);
+    for(size_t i = 0; i < sizeof(output); i++)
+        munit_assert_uint8(output[i], ==, 0xA5);
+
+    fail_mac = false;
+    memset(output, 0xA5, sizeof(output));
+    output_len = 99;
+    munit_assert_int(
+        dfc_ev2_prepare_command(&emulator, command, command_len, output, 23, &output_len),
+        ==,
+        DfcEv2CommandInvalid);
+    munit_assert_size(output_len, ==, 0);
+    for(size_t i = 0; i < sizeof(output); i++)
+        munit_assert_uint8(output[i], ==, 0xA5);
+
+    fail_decrypt = true;
+    memset(output, 0xA5, sizeof(output));
+    output_len = 99;
+    munit_assert_int(
+        dfc_ev2_prepare_command(
+            &emulator, command, command_len, output, sizeof(output), &output_len),
+        ==,
+        DfcEv2CommandInvalid);
+    munit_assert_size(output_len, ==, 0);
+    for(size_t i = 0; i < 24; i++)
+        munit_assert_uint8(output[i], ==, 0);
+    for(size_t i = 24; i < sizeof(output); i++)
+        munit_assert_uint8(output[i], ==, 0xA5);
+    munit_assert_uint16(emulator.ev2_command_counter, ==, 7);
+    munit_assert_true(emulator.ev2_session_active);
+    return MUNIT_OK;
 }
 
 static MunitResult test_capacity_failure_is_atomic(const MunitParameter params[], void* data) {
@@ -154,6 +241,7 @@ static MunitResult test_capacity_failure_is_atomic(const MunitParameter params[]
         response,
         sizeof(response),
         sizeof(response) + DFC_WIRE_MAC_LENGTH - 1);
+    munit_assert_true(emulator.ev2_session_active);
     return MUNIT_OK;
 }
 
@@ -187,7 +275,12 @@ static MunitResult test_mac_failure_is_atomic(const MunitParameter params[], voi
         sizeof(command),
         response,
         sizeof(response),
-        sizeof(response) + DFC_WIRE_MAC_LENGTH);
+        DFC_AES_KEY_LENGTH + 1 + DFC_WIRE_MAC_LENGTH);
+    munit_assert_false(emulator.ev2_session_active);
+    for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++) {
+        munit_assert_uint8(emulator.ev2_session_encryption_key[i], ==, 0);
+        munit_assert_uint8(emulator.ev2_session_mac_key[i], ==, 0);
+    }
     return MUNIT_OK;
 }
 
@@ -209,7 +302,8 @@ static MunitResult test_encryption_failure_is_atomic(const MunitParameter params
         sizeof(command),
         response,
         sizeof(response),
-        sizeof(response) + DFC_WIRE_MAC_LENGTH);
+        DFC_AES_KEY_LENGTH + 1 + DFC_WIRE_MAC_LENGTH);
+    munit_assert_false(emulator.ev2_session_active);
     return MUNIT_OK;
 }
 
@@ -327,6 +421,39 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult test_response_aliases_are_supported(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcEmulator emulator;
+    DfcCredential credential;
+    const uint8_t command[] = {DFC_CMD_GET_VERSION};
+
+    init_emulator(&emulator, &credential);
+    uint8_t in_place[32] = {DFC_STATUS_OK, 0x11, 0x22, 0x33};
+    size_t secured_len = 0;
+    munit_assert_true(dfc_ev2_protect_response(
+        &emulator, command, sizeof(command), in_place, 4, in_place, sizeof(in_place), &secured_len));
+    munit_assert_size(secured_len, ==, 4 + DFC_WIRE_MAC_LENGTH);
+    munit_assert_memory_equal(4, in_place, ((uint8_t[]){DFC_STATUS_OK, 0x11, 0x22, 0x33}));
+
+    init_emulator(&emulator, &credential);
+    uint8_t overlap[40] = {0};
+    memcpy(overlap + 4, ((uint8_t[]){DFC_STATUS_OK, 0x44, 0x55, 0x66}), 4);
+    secured_len = 0;
+    munit_assert_true(dfc_ev2_protect_response(
+        &emulator,
+        command,
+        sizeof(command),
+        overlap + 4,
+        4,
+        overlap,
+        sizeof(overlap),
+        &secured_len));
+    munit_assert_size(secured_len, ==, 4 + DFC_WIRE_MAC_LENGTH);
+    munit_assert_memory_equal(4, overlap, ((uint8_t[]){DFC_STATUS_OK, 0x44, 0x55, 0x66}));
+    return MUNIT_OK;
+}
+
 static MunitResult test_last_counter_value_succeeds(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -355,6 +482,12 @@ static MunitResult test_last_counter_value_succeeds(const MunitParameter params[
 }
 
 static MunitTest tests[] = {
+    {"/prepare-command-failures",
+     test_prepare_command_failures_are_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/capacity", test_capacity_failure_is_atomic, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/counter-limit",
      test_counter_limit_failure_is_atomic,
@@ -394,6 +527,7 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/success", test_success_commits_counter_and_output, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/aliases", test_response_aliases_are_supported, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/last-counter-value",
      test_last_counter_value_succeeds,
      NULL,

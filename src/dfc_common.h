@@ -476,14 +476,14 @@ bool dfc_wrap_native_response_as_iso7816(
 // Rotate an N-byte buffer left by one byte (used in the RndA/RndB challenge rotation).
 void dfc_rotate_left(uint8_t* buffer, size_t len);
 
-void dfc_worker_aes_cbc_decrypt(
+bool dfc_worker_aes_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[16],
     size_t length,
     const uint8_t* encrypted,
     uint8_t* clear);
-void dfc_worker_aes_cbc_encrypt(
+bool dfc_worker_aes_cbc_encrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[16],
@@ -491,14 +491,14 @@ void dfc_worker_aes_cbc_encrypt(
     const uint8_t* clear,
     uint8_t* encrypted);
 
-void dfc_worker_des_cbc_decrypt(
+bool dfc_worker_des_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[8],
     size_t length,
     const uint8_t* encrypted,
     uint8_t* clear);
-void dfc_worker_des_cbc_encrypt(
+bool dfc_worker_des_cbc_encrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[8],
