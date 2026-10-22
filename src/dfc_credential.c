@@ -658,6 +658,7 @@ bool dfc_credential_roll_key_set(
         memcpy(keys + (app->num_key_sets - 1) * set_length, first_set, set_length);
         dfc_credential_rotate_key_set_metadata(app);
     }
+    dfc_secure_wipe(first_set, sizeof(first_set));
     app->key_len = dfc_key_set_type_length(app->key_set_types[0]);
     app->key_settings_2 = (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) |
                                     dfc_key_type_for_set_type(app->key_set_types[0]));

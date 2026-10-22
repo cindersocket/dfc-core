@@ -86,6 +86,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 FAULT_TEST := test_cmac_failures
 SECURE_MESSAGING_FAULT_TEST := test_secure_messaging_failures
 EV2_RESPONSE_FAULT_TEST := test_dfc_ev2_response_atomicity
+KEY_SET_WIPE_TEST := test_dfc_roll_key_set_wipe
 REDUCED_PROFILE_TEST := test_dfc_ffi_reduced_profile
 REDUCED_READER_TEST := test_dfc_reader_reduced_command
 
@@ -131,6 +132,12 @@ test_secure_messaging_failures: test_secure_messaging_failures.c \
 test_dfc_ev2_response_atomicity: test_dfc_ev2_response_atomicity.c $(CORE)/dfc_ev2.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+test_dfc_roll_key_set_wipe: test_dfc_roll_key_set_wipe.c $(CORE)/dfc_credential.c \
+		$(CORE)/dfc_common.c $(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c \
+		$(CRYPTO_SRC) munit/munit.c
+	$(CC) $(CFLAGS) -o $@ test_dfc_roll_key_set_wipe.c $(CORE)/dfc_common.c \
+		$(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c $(CRYPTO_SRC) munit/munit.c $(LDFLAGS)
+
 test_dfc_ffi_reduced_profile: test_dfc_ffi_reduced_profile.c $(CORE_SRC) \
 		../ffi/dfc_ffi.c ../port/ffi/dfc_port_ffi.c ../port/host/dfc_bytebuf_host.c $(CRYPTO_SRC)
 	$(CC) $(CFLAGS) -I../ffi -I../port/ffi \
@@ -143,11 +150,12 @@ test_dfc_reader_reduced_command: test_dfc_reader_reduced_command.c $(COMMON)
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
 	./$(EV2_RESPONSE_FAULT_TEST)
+	./$(KEY_SET_WIPE_TEST)
 	./$(REDUCED_PROFILE_TEST)
 	./$(REDUCED_READER_TEST)
 
@@ -233,4 +241,4 @@ codecs-disabled-link:
 	echo "  target, no codecs ok"
 
 clean:
-	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
