@@ -11,7 +11,9 @@ git ls-files -z 'bindings/java/**/*.java' 'bindings/android/**/*.java' \
     | xargs -0 uvx --from clang-format==21.1.7 clang-format --dry-run --Werror
 dotnet format bindings/dotnet/Dfc.sln --verify-no-changes
 dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --verify-no-changes
-(cd bindings/python && uv run --frozen --extra test ruff format --check src tests ../../examples/python)
-(cd bindings/python && uv run --frozen --extra test ruff check src tests ../../examples/python)
+(cd bindings/python && uv run --frozen --extra test ruff format --check \
+    src tests ../../examples/python ../../scripts/check-docs.py ../../tests/test_check_docs.py)
+(cd bindings/python && uv run --frozen --extra test ruff check \
+    src tests ../../examples/python ../../scripts/check-docs.py ../../tests/test_check_docs.py)
 cargo fmt --all -- --check
 cargo fmt --manifest-path examples/rust-virtual-picc/Cargo.toml -- --check
