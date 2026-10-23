@@ -15,11 +15,11 @@ dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --verify-no-changes
     src tests ../../examples/python ../../scripts/check-docs.py \
     ../../scripts/check-cmake-pic.py ../../scripts/check-stack-usage.py \
     ../../tests/test_check_docs.py ../../tests/test_check_stack_usage.py \
-    ../../tests/test_ci_unit_workflow.py)
+    ../../tests/test_cargo_package.py ../../tests/test_ci_unit_workflow.py)
 (cd bindings/python && uv run --frozen --extra test ruff check \
     src tests ../../examples/python ../../scripts/check-docs.py \
     ../../scripts/check-cmake-pic.py ../../scripts/check-stack-usage.py \
     ../../tests/test_check_docs.py ../../tests/test_check_stack_usage.py \
-    ../../tests/test_ci_unit_workflow.py)
+    ../../tests/test_cargo_package.py ../../tests/test_ci_unit_workflow.py)
 cargo fmt --all -- --check
 cargo fmt --manifest-path examples/rust-virtual-picc/Cargo.toml -- --check

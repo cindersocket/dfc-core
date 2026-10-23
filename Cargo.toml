@@ -9,13 +9,13 @@ repository.workspace = true
 links = "dfc"
 build = "bindings/rust/dfc-core-sys/build.rs"
 include = [
-    "Cargo.toml",
-    "CMakeLists.txt",
-    "LICENSE",
-    "src/**",
-    "port/**",
-    "ffi/**",
-    "bindings/rust/dfc-core-sys/**",
+    "/Cargo.toml",
+    "/CMakeLists.txt",
+    "/LICENSE",
+    "/src/**",
+    "/port/**",
+    "/ffi/**",
+    "/bindings/rust/dfc-core-sys/**",
 ]
 
 [lib]
