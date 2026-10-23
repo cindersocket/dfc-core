@@ -1,6 +1,7 @@
 #include "dfc_virtual_picc.h"
 #include "dfc_ev2.h"
 #include "dfc_emulator_i.h"
+#include "dfc_iso_dep.h"
 
 #if DFC_ENABLE_EMULATOR
 
@@ -20,16 +21,6 @@ static const uint8_t DfcVirtualPiccRandomIdAtqa[] = {0x04, 0x03};
 static const uint8_t DfcVirtualPiccRfDetail[] = {0x01, 0x51, 0x57};
 #define DFC_VIRTUAL_PICC_SAK 0x20
 
-#define DFC_ISO_DEP_RATS            0xE0
-#define DFC_ISO_DEP_I_BLOCK         0x02
-#define DFC_ISO_DEP_R_BLOCK         0xA2
-#define DFC_ISO_DEP_S_BLOCK         0xC2
-#define DFC_ISO_DEP_R_NAK           0x10
-#define DFC_ISO_DEP_BLOCK_MASK      0xC0
-#define DFC_ISO_DEP_CID             0x08
-#define DFC_ISO_DEP_NAD             0x04
-#define DFC_ISO_DEP_MORE            0x10
-#define DFC_ISO_DEP_MAX_INF         48
 #define DFC_DIRECT_RESPONSE_PENDING SIZE_MAX
 
 // The ATS this credential answers RATS with: its own if it carries one, the
@@ -81,17 +72,21 @@ static bool iso_response_is_staged(const DfcVirtualPiccSession* session) {
 }
 
 static uint8_t* response_storage(DfcVirtualPiccSession* session) {
-    return iso_response_is_staged(session) ? session->emulator->pending_chain :
-                                             session->pending_response;
+    return session->pending_response_staged ? session->emulator->pending_chain :
+                                              session->pending_response;
 }
 
 static void release_iso_response(DfcVirtualPiccSession* session) {
-    if(!iso_response_is_staged(session)) return;
-    DfcEmulator* emulator = session->emulator;
-    dfc_secure_wipe(emulator->pending_chain, emulator->pending_chain_len);
-    emulator->pending_chain_len = 0;
-    emulator->pending_chain_offset = 0;
-    emulator->pending_chain_frame = 0;
+    if(iso_response_is_staged(session)) {
+        DfcEmulator* emulator = session->emulator;
+        size_t length = emulator->pending_chain_len;
+        if(length > sizeof(emulator->pending_chain)) length = sizeof(emulator->pending_chain);
+        dfc_secure_wipe(emulator->pending_chain, length);
+        emulator->pending_chain_len = 0;
+        emulator->pending_chain_offset = 0;
+        emulator->pending_chain_frame = 0;
+    }
+    session->pending_response_staged = false;
 }
 
 static void truncate_pending_command(DfcVirtualPiccSession* session, size_t retained_len) {
@@ -114,8 +109,11 @@ static void truncate_pending_command(DfcVirtualPiccSession* session, size_t reta
 
 static void clear_direct_response(DfcVirtualPiccSession* session) {
     truncate_pending_command(session, 0);
-    if(!iso_response_is_staged(session))
-        dfc_secure_wipe(session->pending_response, session->pending_response_len);
+    if(!session->pending_response_staged) {
+        size_t length = session->pending_response_len;
+        if(length > sizeof(session->pending_response)) length = sizeof(session->pending_response);
+        dfc_secure_wipe(session->pending_response, length);
+    }
     release_iso_response(session);
     session->pending_response_len = 0;
     session->pending_response_offset = 0;
@@ -134,6 +132,28 @@ static void clear_transport_storage(DfcVirtualPiccSession* session) {
     session->pending_response_offset = 0;
     session->pending_response_prefix_len = 0;
     session->last_picc_block_len = 0;
+}
+
+static bool pending_response_is_valid(const DfcVirtualPiccSession* session) {
+    if(session->pending_response_prefix_len > sizeof(session->pending_response_prefix) ||
+       session->last_picc_block_len > sizeof(session->last_picc_block))
+        return false;
+    if(!direct_response_is_pending(session) &&
+       session->pending_response_offset > session->pending_response_len)
+        return false;
+    if(session->pending_response_staged) {
+        // A reset invalidates the loan; it cannot become an inline response.
+        return iso_response_is_staged(session) && session->pending_response_len > 0 &&
+               session->pending_response_len == session->emulator->pending_chain_len &&
+               session->pending_response_len <= sizeof(session->emulator->pending_chain);
+    }
+    return session->pending_response_len <= sizeof(session->pending_response);
+}
+
+static bool validate_pending_response(DfcVirtualPiccSession* session) {
+    if(pending_response_is_valid(session)) return true;
+    clear_transport_storage(session);
+    return false;
 }
 
 static DfcVirtualPiccStatus replay_direct_response(
@@ -180,6 +200,7 @@ static bool stage_direct_response(
     session->pending_response_len = required;
     session->pending_response_offset = DFC_DIRECT_RESPONSE_PENDING;
     session->pending_response_prefix_len = 0;
+    session->pending_response_staged = false;
     return true;
 }
 
@@ -864,6 +885,7 @@ static DfcVirtualPiccStatus write_next_iso_dep_response_block(
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len) {
+    if(!validate_pending_response(session)) return DfcVirtualPiccStatusProtocolError;
     if(session->pending_response_prefix_len > 0) {
         if(session->pending_response_offset >= session->pending_response_len) {
             if(response_capacity < session->pending_response_prefix_len)
@@ -1231,6 +1253,10 @@ static DfcVirtualPiccStatus handle_native_exchange(
     const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
     const uint8_t* tx_data = integrity_error;
     size_t tx_len = sizeof(integrity_error);
+    release_iso_response(session);
+    session->pending_response_len = 0;
+    session->pending_response_offset = 0;
+    session->pending_response_prefix_len = 0;
     if(command_len > clear_capacity && command[0] == DFC_CMD_WRITE_RECORD_ISO &&
        !session->emulator->command_chain_active && command_len <= DFC_EMULATOR_CHAIN_BUFFER_SIZE) {
         if(!session->emulator->command_chain)
@@ -1302,7 +1328,8 @@ static DfcVirtualPiccStatus handle_native_exchange(
             staged[tx_len++] = native_status;
         }
         session->emulator->pending_chain_len = tx_len;
-        if(response_capacity >= tx_len) {
+        session->pending_response_staged = true;
+        if(retry_command && response_capacity >= tx_len) {
             memcpy(response, staged, tx_len);
             *response_len = tx_len;
             release_iso_response(session);
@@ -1363,6 +1390,8 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
         return DfcVirtualPiccStatusProtocolError;
     if(!session->activated) return DfcVirtualPiccStatusNoCard;
     *response_len = 0;
+
+    if(!validate_pending_response(session)) return DfcVirtualPiccStatusProtocolError;
 
     if(direct_response_is_pending(session)) {
         if(!allow_direct_retry) return DfcVirtualPiccStatusProtocolError;
@@ -1532,6 +1561,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
     }
 
     if(!session->iso_dep_selected || frame_len == 0) return DfcVirtualPiccStatusProtocolError;
+    if(!validate_pending_response(session)) return DfcVirtualPiccStatusProtocolError;
 
     uint8_t pcb = frame[0];
     if(iso_dep_initial_response_is_staged(session)) {

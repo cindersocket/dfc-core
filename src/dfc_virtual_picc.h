@@ -53,6 +53,8 @@ typedef struct {
     size_t pending_response_len;
     size_t pending_response_offset;
     uint8_t pending_response_prefix[3];
+    // The pending payload is lent by the emulator rather than owned inline.
+    bool pending_response_staged;
     size_t pending_response_prefix_len;
     uint8_t last_picc_block[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
     size_t last_picc_block_len;
