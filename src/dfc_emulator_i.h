@@ -34,6 +34,7 @@ void dfc_emulator_retire_authentication(DfcEmulator* emulator);
 void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator);
 bool dfc_emulator_abort_pending_native_work(DfcEmulator* emulator);
 bool dfc_emulator_abort_transaction(DfcEmulator* emulator);
+void dfc_emulator_publish_transaction(DfcEmulator* emulator);
 
 typedef enum {
     DfcEmulatorAuthFamilyNative,

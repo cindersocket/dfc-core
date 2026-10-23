@@ -348,6 +348,37 @@ bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
     return changed;
 }
 
+void dfc_emulator_publish_transaction(DfcEmulator* emulator) {
+    for(size_t i = 0; i < emulator->credential->num_files; i++) {
+        DfcFile* file = &emulator->credential->files[i];
+        if(file->app_index != emulator->selected_app_index) continue;
+        if(file->type == DFC_FILE_TYPE_VALUE && file->value_pending) {
+            file->value += file->value_pending_delta;
+            file->value_pending = false;
+            file->value_pending_delta = 0;
+        }
+        file->transaction_pending = false;
+    }
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    if(emulator->transaction_snapshot_active &&
+       emulator->transaction_snapshot_app_index == emulator->selected_app_index) {
+        emulator->transaction_snapshot_active = false;
+        dfc_emulator_discard_transaction_snapshot(emulator);
+        memset(
+            emulator->transaction_record_operations,
+            0,
+            sizeof(emulator->transaction_record_operations));
+        memset(
+            emulator->transaction_record_numbers, 0, sizeof(emulator->transaction_record_numbers));
+    }
+#endif
+#if DFC_ENABLE_TRANSACTION_MAC
+    dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+    emulator->transaction_input_len = 0;
+#endif
+    dfc_credential_mark_dirty(emulator->credential);
+}
+
 void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
 #if DFC_ENABLE_ISO7816_AUTH
     emulator->iso_auth_phase = 0;
@@ -419,8 +450,7 @@ void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
     dfc_secure_wipe(emulator->ev2_card_capabilities, sizeof(emulator->ev2_card_capabilities));
     dfc_secure_wipe(emulator->ev2_reader_capabilities, sizeof(emulator->ev2_reader_capabilities));
     dfc_secure_wipe(
-        emulator->ev2_pending_card_capabilities,
-        sizeof(emulator->ev2_pending_card_capabilities));
+        emulator->ev2_pending_card_capabilities, sizeof(emulator->ev2_pending_card_capabilities));
     dfc_secure_wipe(
         emulator->ev2_pending_reader_capabilities,
         sizeof(emulator->ev2_pending_reader_capabilities));

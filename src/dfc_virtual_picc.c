@@ -1199,8 +1199,16 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         }
         if(response_capacity < DFC_ISO7816_STATUS_WORD_LENGTH)
             return DfcVirtualPiccStatusBufferTooSmall;
-        memcpy(data + offset, command + 5, write_len);
-        dfc_credential_mark_dirty(session->credential);
+        if(write_len > 0 && !data) {
+            return write_status_word(
+                DFC_ISO7816_SW_WRONG_PARAMETERS_HI,
+                DFC_ISO7816_SW_WRONG_PARAMETERS_LO,
+                response,
+                response_capacity,
+                response_len);
+        }
+        if(write_len > 0) memcpy(data + offset, command + 5, write_len);
+        dfc_emulator_publish_transaction(session->emulator);
         return write_status_word(
             DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO, response, response_capacity, response_len);
     }

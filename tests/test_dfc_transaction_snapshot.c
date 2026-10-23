@@ -758,7 +758,7 @@ static MunitResult test_authenticated_mac_immediate_write_survives_abort(
     return MUNIT_OK;
 }
 
-static MunitResult test_iso_update_binary_keeps_existing_abort_semantics(
+static MunitResult test_iso_update_binary_publishes_existing_transaction(
     const MunitParameter params[],
     void* data) {
     (void)params;
@@ -779,11 +779,17 @@ static MunitResult test_iso_update_binary_keeps_existing_abort_semantics(
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x90, 0x00}));
-    finish_transaction(&fixture, false);
+    const uint8_t abort[] = {0x90, DFC_CMD_ABORT_TRANSACTION, 0, 0, 0};
+    exchange_status(fixture.session, abort, sizeof(abort), DFC_STATUS_NO_CHANGES);
     munit_assert_memory_equal(
         4,
         dfc_file_data_const(&fixture.credential, standard),
-        ((uint8_t[]){0x10, 0x10, 0x10, 0x10}));
+        ((uint8_t[]){0xD1, 0xD2, 0xD3, 0xD4}));
+    DfcFile* backup = dfc_credential_find_file_in_app(&fixture.credential, 0, 2);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data_const(&fixture.credential, backup),
+        ((uint8_t[]){0xB1, 0xB2, 0xB3, 0xB4}));
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -865,8 +871,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/iso-update-binary-exclusion",
-     test_iso_update_binary_keeps_existing_abort_semantics,
+    {"/iso-update-binary-publishes",
+     test_iso_update_binary_publishes_existing_transaction,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

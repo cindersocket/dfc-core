@@ -1408,8 +1408,7 @@ static void handle_change_file_settings(
         }
         if(((sdm_options & (DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK)) == 0 &&
             meta_read != DFC_SDM_DENIED_ACCESS) ||
-           ((sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0 &&
-            meta_read == DFC_SDM_DENIED_ACCESS)) {
+           ((sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0 && meta_read == DFC_SDM_DENIED_ACCESS)) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;
         }
@@ -3327,18 +3326,6 @@ static bool transaction_snapshot_begin(DfcEmulator* emulator) {
     return true;
 }
 
-static void transaction_snapshot_commit(DfcEmulator* emulator) {
-    if(emulator->transaction_snapshot_active &&
-       emulator->transaction_snapshot_app_index == emulator->selected_app_index) {
-        emulator->transaction_snapshot_active = false;
-        dfc_emulator_discard_transaction_snapshot(emulator);
-        memset(
-            emulator->transaction_record_operations,
-            RecordTransactionNone,
-            sizeof(emulator->transaction_record_operations));
-    }
-}
-
 static size_t transaction_file_index(const DfcEmulator* emulator, const DfcFile* file) {
     return (size_t)(file - emulator->credential->files);
 }
@@ -3399,20 +3386,7 @@ static void handle_commit_transaction(
     DFC_UNUSED(return_transaction_mac);
 #endif
 
-    for(size_t i = 0; i < emulator->credential->num_files; i++) {
-        DfcFile* file = &emulator->credential->files[i];
-        if(file->app_index != emulator->selected_app_index) continue;
-        if(file->type == DFC_FILE_TYPE_VALUE && file->value_pending) {
-            file->value += file->value_pending_delta;
-            file->value_pending = false;
-            file->value_pending_delta = 0;
-        }
-        file->transaction_pending = false;
-    }
-#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
-    transaction_snapshot_commit(emulator);
-#endif
-    dfc_credential_mark_dirty(emulator->credential);
+    dfc_emulator_publish_transaction(emulator);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 #if DFC_ENABLE_TRANSACTION_MAC
     if(transaction_file) {
@@ -3423,8 +3397,6 @@ static void handle_commit_transaction(
                 sizeof(transaction_file->previous_reader_id));
         }
         transaction_file->transaction_counter = next_counter;
-        dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
-        emulator->transaction_input_len = 0;
         if(return_transaction_mac) {
             const uint8_t counter[] = {
                 (uint8_t)next_counter,
