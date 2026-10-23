@@ -1,4 +1,5 @@
 #include "dfc_virtual_picc_test_helpers.h"
+#include "dfc_emulator_i.h"
 #include "dfc_iso_dep.h"
 
 #include <string.h>
@@ -15,7 +16,10 @@ enum {
 
 enum {
     InvalidOffset,
-    InvalidLength,
+    InvalidOversizedLength,
+    InvalidShortChainLength,
+    InvalidResponseLengthMismatch,
+    InvalidOwnership,
     InvalidPrefix,
     InvalidCachedBlock,
     InvalidCaseCount,
@@ -92,6 +96,11 @@ static void assert_retired(const DfcVirtualPiccSession* session) {
     munit_assert_size(session->pending_response_offset, ==, 0);
     munit_assert_size(session->pending_response_prefix_len, ==, 0);
     munit_assert_size(session->last_picc_block_len, ==, 0);
+}
+
+static void assert_zeroed(const uint8_t* data, size_t length) {
+    for(size_t i = 0; i < length; i++)
+        munit_assert_uint8(data[i], ==, 0);
 }
 
 static void reject_frame(Fixture* fixture, uint8_t pcb, uint8_t cid) {
@@ -179,13 +188,26 @@ static MunitResult test_invalid_response_bounds(const MunitParameter params[], v
         Fixture fixture;
         open_record(&fixture, HalfFileCapacity);
         begin_response(&fixture, 0);
+        memset(
+            fixture.session->emulator->pending_chain,
+            RecordByte,
+            sizeof(fixture.session->emulator->pending_chain));
         switch(invalid) {
         case InvalidOffset:
             fixture.session->pending_response_offset = fixture.session->pending_response_len + 1;
             break;
-        case InvalidLength:
+        case InvalidOversizedLength:
             fixture.session->pending_response_len = SIZE_MAX;
             fixture.session->emulator->pending_chain_len = SIZE_MAX;
+            break;
+        case InvalidShortChainLength:
+            fixture.session->emulator->pending_chain_len = 1;
+            break;
+        case InvalidResponseLengthMismatch:
+            fixture.session->pending_response_len--;
+            break;
+        case InvalidOwnership:
+            fixture.session->emulator->pending_chain_frame = 0;
             break;
         case InvalidPrefix:
             fixture.session->pending_response_prefix_len =
@@ -196,8 +218,94 @@ static MunitResult test_invalid_response_bounds(const MunitParameter params[], v
             break;
         }
         reject_frame(&fixture, DFC_ISO_DEP_R_BLOCK | DFC_ISO_DEP_SEQUENCE_BIT, 0);
+        if(invalid == InvalidOversizedLength || invalid == InvalidShortChainLength ||
+           invalid == InvalidResponseLengthMismatch || invalid == InvalidOwnership)
+            assert_zeroed(
+                fixture.session->emulator->pending_chain,
+                sizeof(fixture.session->emulator->pending_chain));
         dfc_virtual_picc_session_free(fixture.session);
     }
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_normal_completion_wipes_exact_length(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    open_record(&fixture, HalfFileCapacity);
+    begin_response(&fixture, 0);
+    size_t staged_len = fixture.session->emulator->pending_chain_len;
+    munit_assert_size(staged_len, <, sizeof(fixture.session->emulator->pending_chain));
+    fixture.session->emulator->pending_chain[staged_len] = UntouchedOutputByte;
+    uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    size_t response_len = 0;
+    while(fixture.session->pending_response_len > 0) {
+        uint8_t ack = (uint8_t)(DFC_ISO_DEP_R_BLOCK | fixture.session->expected_pcd_sequence);
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_frame_exchange(
+                fixture.session, &ack, sizeof(ack), response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+    }
+    assert_zeroed(fixture.session->emulator->pending_chain, staged_len);
+    munit_assert_uint8(
+        fixture.session->emulator->pending_chain[staged_len], ==, UntouchedOutputByte);
+    dfc_virtual_picc_session_free(fixture.session);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_timer_invalidation_retransmission_and_recovery(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    open_record(&fixture, HalfFileCapacity);
+    DfcApplication* app = dfc_credential_get_application(&fixture.credential, 0);
+    munit_assert_not_null(app);
+    app->has_capability_data = true;
+    app->capability_data[DFC_TRANSACTION_TIMER_CAPABILITY_OFFSET] = DFC_TRANSACTION_TIMER_SHORT;
+    dfc_emulator_select_application(
+        fixture.session->emulator, DfcEmulatorSelectedApplicationApp, 0);
+    begin_response(&fixture, 0);
+    munit_assert_true(fixture.session->emulator->transaction_timer_enabled);
+
+    munit_assert_int(
+        dfc_virtual_picc_advance_time(fixture.session, DFC_TRANSACTION_TIMER_EXPIRY_MILLISECONDS),
+        ==,
+        DfcVirtualPiccStatusOk);
+    assert_retired(fixture.session);
+    assert_zeroed(
+        fixture.session->emulator->pending_chain,
+        sizeof(fixture.session->emulator->pending_chain));
+
+    const uint8_t retransmit = DFC_ISO_DEP_R_BLOCK | DFC_ISO_DEP_SEQUENCE_BIT;
+    uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    memset(response, UntouchedOutputByte, sizeof(response));
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.session,
+            &retransmit,
+            sizeof(retransmit),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusNoCard);
+    munit_assert_size(response_len, ==, 0);
+
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(fixture.session, &activation), ==, DfcVirtualPiccStatusOk);
+    const uint8_t version[] = {DFC_CMD_GET_VERSION};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session, version, sizeof(version), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, >, 1);
+    dfc_virtual_picc_session_free(fixture.session);
     return MUNIT_OK;
 }
 
@@ -236,6 +344,18 @@ static MunitTest tests[] = {
      NULL},
     {"/invalid-response-bounds",
      test_invalid_response_bounds,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/normal-completion-exact-wipe",
+     test_normal_completion_wipes_exact_length,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/timer-invalidation-retransmission-recovery",
+     test_timer_invalidation_retransmission_and_recovery,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

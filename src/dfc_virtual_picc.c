@@ -77,10 +77,15 @@ static uint8_t* response_storage(DfcVirtualPiccSession* session) {
 }
 
 static void release_iso_response(DfcVirtualPiccSession* session) {
-    if(iso_response_is_staged(session)) {
-        DfcEmulator* emulator = session->emulator;
-        size_t length = emulator->pending_chain_len;
-        if(length > sizeof(emulator->pending_chain)) length = sizeof(emulator->pending_chain);
+    DfcEmulator* emulator = session->emulator;
+    bool emulator_lends_response = iso_response_is_staged(session);
+    if(session->pending_response_staged || emulator_lends_response) {
+        size_t length = sizeof(emulator->pending_chain);
+        if(session->pending_response_staged && emulator_lends_response &&
+           session->pending_response_len > 0 &&
+           session->pending_response_len == emulator->pending_chain_len &&
+           session->pending_response_len <= length)
+            length = session->pending_response_len;
         dfc_secure_wipe(emulator->pending_chain, length);
         emulator->pending_chain_len = 0;
         emulator->pending_chain_offset = 0;
@@ -1350,7 +1355,9 @@ static DfcVirtualPiccStatus handle_native_exchange(
         if(retry_command && response_capacity >= tx_len) {
             memcpy(response, staged, tx_len);
             *response_len = tx_len;
+            session->pending_response_len = tx_len;
             release_iso_response(session);
+            session->pending_response_len = 0;
         } else if(retry_command) {
             if(retry_command_len > sizeof(session->pending_command)) goto cleanup;
             memcpy(session->pending_command, retry_command, retry_command_len);
