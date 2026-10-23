@@ -15,123 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const uint8_t AID_AES[3] = {0x00, 0x00, 0x01};
-static const uint8_t AID_ISO[3] = {0x00, 0x00, 0x02};
-static const uint8_t AID_3K[3] = {0x00, 0x00, 0x03};
-static const uint8_t AID_D40[3] = {0x00, 0x00, 0x04};
-
-static const uint8_t AES_KEY_0[16] =
-    {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
-static const uint8_t AES_KEY_1[16] =
-    {0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87, 0x98, 0xA9, 0xBA, 0xCB, 0xDC, 0xED, 0xFE, 0x0F};
-static const uint8_t TDES_KEY_0[16] =
-    {0xC6, 0xEF, 0x84, 0x7C, 0xAE, 0x0A, 0x2A, 0x56, 0xC0, 0x19, 0x2A, 0xA1, 0xC4, 0xE8, 0xD9, 0xFB};
-static const uint8_t TDES3_KEY_0[24] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                                        0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-                                        0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28};
-static const uint8_t DES_KEY_0[16] =
-    {0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
-
-enum {
-    FilePlain = 0x01,
-    FileMac = 0x02,
-    FileFull = 0x03,
-    FileValueMac = 0x04,
-    FileValueFull = 0x05,
-    FileLong = 0x06,
-    FileRecordFull = 0x07,
-};
-
-#define LONG_FILE_SIZE     100
-#define D40_LONG_READ_SIZE 300
-
-typedef struct {
-    DfcCredential credential;
-    DfcVirtualPiccSession* picc;
-    DfcReaderSession session;
-    DfcReaderFraming framing;
-} Link;
-
-static DfcReaderStatus
-    send(Link* link, const DfcCommand* command, uint8_t comm, DfcReaderExchange* exchange);
-static void select_app(Link* link, const uint8_t aid[3]);
-static DfcReaderStatus
-    authenticate(Link* link, uint8_t cipher, uint8_t key_no, const uint8_t* key, size_t key_len);
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-static DfcReaderStatus
-    authenticate_ev2(Link* link, bool first, uint8_t key_no, const uint8_t key[16]);
-#endif
-
-static void
-    add_data_file(DfcCredential* c, size_t app, uint8_t number, uint8_t comm, size_t size) {
-    DfcFile* file = dfc_credential_create_file(c, app, number);
-    munit_assert_not_null(file);
-    file->type = DFC_FILE_TYPE_STANDARD_DATA;
-    file->comm_settings = comm;
-    file->access_rights = 0x0000;
-    munit_assert_true(dfc_file_resize(c, file, size));
-    uint8_t* bytes = dfc_file_data(c, file);
-    for(size_t i = 0; i < size; i++)
-        bytes[i] = (uint8_t)(number * 0x10 + i);
-}
-
-static void add_value_file(DfcCredential* c, size_t app, uint8_t number, uint8_t comm) {
-    DfcFile* file = dfc_credential_create_file(c, app, number);
-    munit_assert_not_null(file);
-    file->type = DFC_FILE_TYPE_VALUE;
-    file->comm_settings = comm;
-    file->access_rights = 0x0000;
-    file->value_lower_limit = 0;
-    file->value_upper_limit = 1000;
-    file->value = 100;
-}
-
-static DfcApplication*
-    add_app(DfcCredential* c, const uint8_t aid[3], uint8_t ks2, uint8_t auth, const uint8_t* key0) {
-    const uint8_t wire_aid[3] = {aid[2], aid[1], aid[0]};
-    DfcApplication* app = dfc_credential_create_application_desfire_order(c, wire_aid, 0x0F, ks2);
-    munit_assert_not_null(app);
-    app->auth_command = auth;
-    app->has_auth_commands = true;
-    app->auth_commands = dfc_credential_default_auth_commands(ks2, c->card.generation) |
-                         DFC_AUTH_COMMAND_ISO7816;
-    memcpy(dfc_credential_key(c, app, 0), key0, app->key_len);
-    size_t index = dfc_credential_application_index(c, app);
-    add_data_file(c, index, FilePlain, DFC_COMM_PLAIN, 32);
-    add_data_file(c, index, FileMac, DFC_COMM_MAC, 32);
-    add_data_file(c, index, FileFull, DFC_COMM_ENCIPHERED, 32);
-    add_value_file(c, index, FileValueMac, DFC_COMM_MAC);
-    add_value_file(c, index, FileValueFull, DFC_COMM_ENCIPHERED);
-    add_data_file(c, index, FileLong, DFC_COMM_MAC, LONG_FILE_SIZE);
-    return app;
-}
-
-static void link_open(Link* link, DfcGeneration generation, DfcReaderFraming framing) {
-    DfcCredential* c = &link->credential;
-    dfc_credential_clear(c);
-    const uint8_t uid[] = {0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
-    memcpy(c->uid, uid, sizeof(uid));
-    c->uid_len = sizeof(uid);
-    c->card.generation = generation;
-    DfcApplication* aes =
-        add_app(c, AID_AES, DFC_KEY_TYPE_AES | 2, DFC_CMD_AUTHENTICATE_AES, AES_KEY_0);
-    memcpy(dfc_credential_key(c, aes, 1), AES_KEY_1, sizeof(AES_KEY_1));
-    add_app(c, AID_ISO, DFC_KEY_TYPE_DES_2K3DES | 2, DFC_CMD_AUTHENTICATE_ISO, TDES_KEY_0);
-    add_app(c, AID_3K, DFC_KEY_TYPE_3K3DES | 2, DFC_CMD_AUTHENTICATE_ISO, TDES3_KEY_0);
-    add_app(c, AID_D40, DFC_KEY_TYPE_DES_2K3DES | 2, DFC_CMD_AUTHENTICATE_LEGACY, DES_KEY_0);
-
-    link->picc = dfc_virtual_picc_session_alloc(c);
-    munit_assert_not_null(link->picc);
-    DfcVirtualPiccActivation activation;
-    munit_assert_int(
-        dfc_virtual_picc_scan_iso14443a(link->picc, &activation), ==, DfcVirtualPiccStatusOk);
-    dfc_reader_session_init(&link->session);
-    link->framing = framing;
-}
-
-static void link_close(Link* link) {
-    dfc_virtual_picc_session_free(link->picc);
-}
+#include "dfc_reader_test_link.h"
 
 static void assert_emulator_unchanged(const DfcEmulator* before, const Link* link) {
     munit_assert_memory_equal(sizeof(*before), before, link->picc->emulator);
@@ -267,7 +151,7 @@ static MunitResult test_aborted_native_reauthentication_clears_authorization(
         DfcReaderExchange exchange;
         munit_assert_int(dfc_command_read_data(&privileged, FilePlain, 0, 1), ==, DfcCommandOk);
         munit_assert_int(
-            send(&link, &privileged, DFC_COMM_PLAIN, &exchange), ==, DfcReaderCardError);
+            link_send(&link, &privileged, DFC_COMM_PLAIN, &exchange), ==, DfcReaderCardError);
         munit_assert_uint8(dfc_reader_result_status(&exchange), ==, DFC_STATUS_AUTHENTICATION_ERR);
         link_close(&link);
     }
@@ -524,7 +408,7 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
         DfcCommand command;
         DfcReaderExchange exchange;
         munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 8), ==, DfcCommandOk);
-        munit_assert_int(send(&link, &command, DFC_COMM_MAC, &exchange), ==, DfcReaderOk);
+        munit_assert_int(link_send(&link, &command, DFC_COMM_MAC, &exchange), ==, DfcReaderOk);
         link_close(&link);
     }
 #endif
@@ -812,35 +696,6 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
     return MUNIT_OK;
 }
 
-// Set DFC_READER_TRACE to print every frame the loopback carries.
-static void trace(const char* direction, const uint8_t* bytes, size_t len) {
-    if(!getenv("DFC_READER_TRACE")) return;
-    fprintf(stderr, "%s ", direction);
-    for(size_t i = 0; i < len; i++)
-        fprintf(stderr, "%02X", bytes[i]);
-    fprintf(stderr, "\n");
-}
-
-static DfcReaderStatus run(Link* link, DfcReaderExchange* ex) {
-    uint8_t tx[DFC_COMMAND_MAX_APDU];
-    size_t tx_len = 0;
-    uint8_t rx[512];
-    size_t rx_len = 0;
-    const uint8_t* answer = NULL;
-    DfcReaderStatus st;
-    while((st = dfc_reader_step(ex, answer, rx_len, tx, sizeof(tx), &tx_len)) ==
-          DfcReaderPending) {
-        trace(">>", tx, tx_len);
-        munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(link->picc, tx, tx_len, rx, sizeof(rx), &rx_len),
-            ==,
-            DfcVirtualPiccStatusOk);
-        trace("<<", rx, rx_len);
-        answer = rx;
-    }
-    return st;
-}
-
 static DfcReaderStatus
     run_with_output_capacity_retries(Link* link, DfcReaderExchange* ex, size_t* retry_count) {
     uint8_t tx[DFC_COMMAND_MAX_APDU];
@@ -883,17 +738,6 @@ static DfcReaderStatus
     }
 }
 
-static DfcReaderStatus
-    send(Link* link, const DfcCommand* command, uint8_t comm, DfcReaderExchange* ex) {
-    DfcReaderOptions options = {0};
-    options.comm_mode = comm;
-    munit_assert_int(
-        dfc_reader_exchange_begin(ex, &link->session, link->framing, command, &options),
-        ==,
-        DfcReaderOk);
-    return run(link, ex);
-}
-
 static void assert_internal_response_overflow_is_terminal(
     Link* link,
     const DfcCommand* command,
@@ -921,41 +765,6 @@ static void assert_internal_response_overflow_is_terminal(
     munit_assert_int(status, ==, DfcReaderProtocolError);
     munit_assert_int(status, !=, DfcReaderBufferTooSmall);
 }
-
-static void select_app(Link* link, const uint8_t aid[3]) {
-    DfcCommand command;
-    DfcReaderExchange ex;
-    munit_assert_int(dfc_command_select_application(&command, aid, NULL), ==, DfcCommandOk);
-    munit_assert_int(send(link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
-    munit_assert_false(dfc_reader_session_is_authenticated(&link->session));
-}
-
-static DfcReaderStatus
-    authenticate(Link* link, uint8_t cipher, uint8_t key_no, const uint8_t* key, size_t key_len) {
-    uint8_t random_a[16];
-    for(size_t i = 0; i < sizeof(random_a); i++)
-        random_a[i] = (uint8_t)(0xA0 + i);
-    DfcReaderExchange ex;
-    munit_assert_int(
-        dfc_reader_authenticate_begin(
-            &ex,
-            &link->session,
-            link->framing,
-            cipher,
-            key_no,
-            key,
-            key_len,
-            random_a,
-            dfc_reader_challenge_length(cipher, key_len)),
-        ==,
-        DfcReaderOk);
-    return run(link, &ex);
-}
-
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-static DfcReaderStatus
-    authenticate_ev2(Link* link, bool first, uint8_t key_no, const uint8_t key[16]);
-#endif
 
 static void assert_reader_pending_retry_is_atomic(
     DfcReaderExchange* exchange,
@@ -1239,7 +1048,7 @@ static MunitResult test_native_command_chaining(const MunitParameter params[], v
     DfcReaderExchange ex;
     munit_assert_int(
         dfc_command_write_data(&command, FileLong, 0, bytes, sizeof(bytes)), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_MAC, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_MAC, &ex), ==, DfcReaderOk);
 
     DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, FileLong);
     munit_assert_not_null(file);
@@ -1332,13 +1141,13 @@ static MunitResult
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_get_application_ids(&command), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     size_t length = 0;
     dfc_reader_result_data(&ex, &length);
     munit_assert_size(length, ==, DFC_MAX_APPS * 3);
 
     munit_assert_int(dfc_command_get_df_names(&command), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     const uint8_t* names = dfc_reader_result_data(&ex, &length);
     munit_assert_size(length, ==, DFC_MAX_APPS * 21);
     for(size_t i = 0; i < DFC_MAX_APPS; i++) {
@@ -1364,7 +1173,7 @@ static MunitResult test_long_plain_read(const MunitParameter params[], void* dat
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_read_data(&command, 7, 0, 300), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     size_t length = 0;
     const uint8_t* clear = dfc_reader_result_data(&ex, &length);
     munit_assert_size(length, ==, 300);
@@ -1394,7 +1203,7 @@ static MunitResult test_streamed_secure_write(const MunitParameter params[], voi
             &ex, &link.session, link.framing, 7, 0, written, sizeof(written), DFC_COMM_ENCIPHERED),
         ==,
         DfcReaderOk);
-    munit_assert_int(run(&link, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_run(&link, &ex), ==, DfcReaderOk);
     DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, 7);
     munit_assert_not_null(file);
     munit_assert_memory_equal(sizeof(written), dfc_file_data(&link.credential, file), written);
@@ -1462,13 +1271,13 @@ static MunitResult test_streamed_secure_record(const MunitParameter params[], vo
             &ex, &link.session, link.framing, 7, 0, written, sizeof(written), DFC_COMM_ENCIPHERED),
         ==,
         DfcReaderOk);
-    munit_assert_int(run(&link, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_run(&link, &ex), ==, DfcReaderOk);
     munit_assert_uint32(file->record_count, ==, 1);
     munit_assert_memory_equal(sizeof(written), dfc_file_data(&link.credential, file), written);
 
     DfcCommand command;
     munit_assert_int(dfc_command_commit_transaction(&command), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
 
     uint8_t updated[300];
     for(size_t i = 0; i < sizeof(updated); i++)
@@ -1486,12 +1295,12 @@ static MunitResult test_streamed_secure_record(const MunitParameter params[], vo
             DFC_COMM_ENCIPHERED),
         ==,
         DfcReaderOk);
-    munit_assert_int(run(&link, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_run(&link, &ex), ==, DfcReaderOk);
     munit_assert_int(dfc_command_commit_transaction(&command), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
 
     munit_assert_int(dfc_command_read_records(&command, 7, 0, 1, false), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_ENCIPHERED, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_ENCIPHERED, &ex), ==, DfcReaderOk);
     size_t read_len = 0;
     const uint8_t* read_data = dfc_reader_result_data(&ex, &read_len);
     munit_assert_size(read_len, ==, sizeof(updated));
@@ -1504,7 +1313,7 @@ static void read_file(Link* link, uint8_t number, uint8_t comm, uint32_t offset,
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_read_data(&command, number, offset, length), ==, DfcCommandOk);
-    DfcReaderStatus st = send(link, &command, comm, &ex);
+    DfcReaderStatus st = link_send(link, &command, comm, &ex);
     if(st != DfcReaderOk) {
         munit_logf(
             MUNIT_LOG_WARNING,
@@ -1526,7 +1335,7 @@ static void write_then_read(Link* link, uint8_t number, uint8_t comm) {
     DfcReaderExchange ex;
     munit_assert_int(
         dfc_command_write_data(&command, number, 4, payload, sizeof(payload)), ==, DfcCommandOk);
-    DfcReaderStatus st = send(link, &command, comm, &ex);
+    DfcReaderStatus st = link_send(link, &command, comm, &ex);
     if(st != DfcReaderOk) {
         munit_logf(
             MUNIT_LOG_WARNING,
@@ -1540,7 +1349,7 @@ static void write_then_read(Link* link, uint8_t number, uint8_t comm) {
 
     munit_assert_int(
         dfc_command_read_data(&command, number, 4, sizeof(payload)), ==, DfcCommandOk);
-    munit_assert_int(send(link, &command, comm, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(link, &command, comm, &ex), ==, DfcReaderOk);
     size_t len = 0;
     const uint8_t* data = dfc_reader_result_data(&ex, &len);
     munit_assert_size(len, ==, sizeof(payload));
@@ -1551,7 +1360,7 @@ static int32_t get_value(Link* link, uint8_t number, uint8_t comm) {
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_get_value(&command, number), ==, DfcCommandOk);
-    DfcReaderStatus st = send(link, &command, comm, &ex);
+    DfcReaderStatus st = link_send(link, &command, comm, &ex);
     if(st != DfcReaderOk) {
         munit_logf(
             MUNIT_LOG_WARNING,
@@ -1573,7 +1382,7 @@ static void credit_and_commit(Link* link, uint8_t number, uint8_t comm) {
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_credit(&command, number, 25), ==, DfcCommandOk);
-    DfcReaderStatus st = send(link, &command, comm, &ex);
+    DfcReaderStatus st = link_send(link, &command, comm, &ex);
     if(st != DfcReaderOk) {
         munit_logf(
             MUNIT_LOG_WARNING,
@@ -1584,7 +1393,7 @@ static void credit_and_commit(Link* link, uint8_t number, uint8_t comm) {
     }
     munit_assert_int(st, ==, DfcReaderOk);
     munit_assert_int(dfc_command_commit_transaction(&command), ==, DfcCommandOk);
-    munit_assert_int(send(link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     munit_assert_int(get_value(link, number, comm), ==, before + 25);
 }
 
@@ -1724,11 +1533,11 @@ static MunitResult test_iso7816_mutual_authentication(const MunitParameter param
                 cases[i].challenge_len),
             ==,
             DfcReaderOk);
-        munit_assert_int(run(&link, &ex), ==, DfcReaderOk);
+        munit_assert_int(link_run(&link, &ex), ==, DfcReaderOk);
         munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
         DfcCommand command;
         munit_assert_int(dfc_command_get_key_settings(&command), ==, DfcCommandOk);
-        munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+        munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
         link_close(&link);
     }
     return MUNIT_OK;
@@ -1809,7 +1618,7 @@ static void assert_iso7816_authentication_restarts(Link* link) {
             sizeof(random_a)),
         ==,
         DfcReaderOk);
-    munit_assert_int(run(link, &fresh), ==, DfcReaderOk);
+    munit_assert_int(link_run(link, &fresh), ==, DfcReaderOk);
 }
 
 static MunitResult
@@ -2299,7 +2108,7 @@ static MunitResult test_get_version_under_session(const MunitParameter params[],
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_get_version(&command), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     size_t plain_len = 0;
     const uint8_t* plain = dfc_reader_result_data(&ex, &plain_len);
     uint8_t expected[64];
@@ -2309,7 +2118,7 @@ static MunitResult test_get_version_under_session(const MunitParameter params[],
     select_app(&link, AID_AES);
     munit_assert_int(
         authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, 16), ==, DfcReaderOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     size_t secured_len = 0;
     const uint8_t* secured = dfc_reader_result_data(&ex, &secured_len);
     munit_assert_size(secured_len, ==, plain_len);
@@ -2388,7 +2197,7 @@ static MunitResult test_change_key(const MunitParameter params[], void* data) {
     DfcReaderExchange ex;
     munit_assert_int(
         dfc_command_change_key(&command, 1, cryptogram, cryptogram_len), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
     read_file(&link, FileMac, DFC_COMM_MAC, 0, 8);
 
@@ -2426,7 +2235,7 @@ static MunitResult test_change_key(const MunitParameter params[], void* data) {
         DfcReaderOk);
     munit_assert_int(
         dfc_command_change_key(&command, 0, cryptogram, cryptogram_len), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
 
     munit_assert_int(
@@ -2482,7 +2291,7 @@ static MunitResult test_d40_change_key(const MunitParameter params[], void* data
     DfcReaderExchange ex;
     munit_assert_int(
         dfc_command_change_key(&command, 1, cryptogram, cryptogram_len), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     munit_assert_int(
         authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 1, new_key, 16), ==, DfcReaderOk);
     link_close(&link);
@@ -2490,29 +2299,6 @@ static MunitResult test_d40_change_key(const MunitParameter params[], void* data
 }
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
-static DfcReaderStatus
-    authenticate_ev2(Link* link, bool first, uint8_t key_no, const uint8_t key[16]) {
-    uint8_t random_a[16];
-    for(size_t i = 0; i < sizeof(random_a); i++)
-        random_a[i] = (uint8_t)(0x30 + i);
-    const uint8_t capabilities[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    DfcReaderExchange ex;
-    munit_assert_int(
-        dfc_reader_authenticate_ev2_begin(
-            &ex,
-            &link->session,
-            link->framing,
-            first,
-            key_no,
-            key,
-            random_a,
-            first ? capabilities : NULL,
-            first ? sizeof(capabilities) : 0),
-        ==,
-        DfcReaderOk);
-    return run(link, &ex);
-}
-
 static void assert_zero_bytes(const uint8_t* bytes, size_t len) {
     for(size_t i = 0; i < len; i++)
         munit_assert_uint8(bytes[i], ==, 0);
@@ -2582,9 +2368,9 @@ static void begin_open_transaction(Link* link, uint8_t backup_before[32]) {
         dfc_command_write_data(&command, FileFull, 0, replacement, sizeof(replacement)),
         ==,
         DfcCommandOk);
-    munit_assert_int(send(link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
+    munit_assert_int(link_send(link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
     munit_assert_int(dfc_command_credit(&command, FileValueFull, 25), ==, DfcCommandOk);
-    munit_assert_int(send(link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
+    munit_assert_int(link_send(link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
 
     DfcEmulator* emulator = link->picc->emulator;
     memset(emulator->transaction_input, 0xD4, 17);
@@ -2768,7 +2554,8 @@ static MunitResult
     DfcCommand command;
     DfcReaderExchange exchange;
     munit_assert_int(dfc_command_read_data(&command, 0x1E, 0, 1), ==, DfcCommandOk);
-    munit_assert_int(send(&legacy, &command, DFC_COMM_PLAIN, &exchange), ==, DfcReaderCardError);
+    munit_assert_int(
+        link_send(&legacy, &command, DFC_COMM_PLAIN, &exchange), ==, DfcReaderCardError);
     munit_assert_true(dfc_reader_session_is_authenticated(&legacy.session));
     munit_assert_true(dfc_emulator_native_authentication_active(legacy.picc->emulator));
     munit_assert_uint8(
@@ -3418,7 +3205,7 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 16), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_MAC, &ex), ==, DfcReaderCardError);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_MAC, &ex), ==, DfcReaderCardError);
     munit_assert_uint8(dfc_reader_result_status(&ex), ==, DFC_STATUS_AUTHENTICATION_ERR);
     munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
     munit_assert_uint16(link.session.ev2_command_counter, ==, 0);
@@ -3448,7 +3235,7 @@ static MunitResult
         dfc_command_change_file_settings(&command, FileFull, DFC_COMM_ENCIPHERED, 0x000E, NULL, 0),
         ==,
         DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
     munit_assert_uint16(link.session.ev2_command_counter, ==, 1);
     munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 1);
     munit_assert_uint16(file->access_rights, ==, 0x000E);
@@ -3457,7 +3244,7 @@ static MunitResult
         dfc_command_change_file_settings(&command, FileFull, DFC_COMM_MAC, 0x000E, NULL, 0),
         ==,
         DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &exchange), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &exchange), ==, DfcReaderOk);
     munit_assert_uint16(link.session.ev2_command_counter, ==, 2);
     munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 2);
     munit_assert_uint8(file->comm_settings, ==, DFC_COMM_MAC);
@@ -3507,7 +3294,7 @@ static MunitResult test_ev2_change_key(const MunitParameter params[], void* data
         dfc_credential_key_const(&link.credential, app, 1),
         sizeof(stored_key_before));
     command.data[2 + DFC_AES_KEY_LENGTH + DFC_CHANGE_KEY_EV2_VERSION_LENGTH] ^= 0x01;
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderCardError);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderCardError);
     munit_assert_uint8(dfc_reader_result_status(&ex), ==, DFC_STATUS_INTEGRITY_ERROR);
     munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
     assert_ev2_emulator_session_wiped(link.picc->emulator);
@@ -3521,7 +3308,7 @@ static MunitResult test_ev2_change_key(const MunitParameter params[], void* data
             &link.session, 0, 1, new_key_1, AES_KEY_1, 0x09, &command),
         ==,
         DfcReaderOk);
-    DfcReaderStatus st = send(&link, &command, DFC_COMM_PLAIN, &ex);
+    DfcReaderStatus st = link_send(&link, &command, DFC_COMM_PLAIN, &ex);
     if(st != DfcReaderOk)
         munit_logf(MUNIT_LOG_WARNING, "status %02X", dfc_reader_result_status(&ex));
     munit_assert_int(st, ==, DfcReaderOk);
@@ -3534,7 +3321,7 @@ static MunitResult test_ev2_change_key(const MunitParameter params[], void* data
         dfc_reader_change_key_ev2_command(&link.session, 0, 1, AES_KEY_1, NULL, 0x0A, &command),
         ==,
         DfcReaderOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderCardError);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderCardError);
     munit_assert_uint8(dfc_reader_result_status(&ex), ==, DFC_STATUS_AUTHENTICATION_ERR);
     munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
     assert_ev2_emulator_session_wiped(link.picc->emulator);
@@ -3545,7 +3332,7 @@ static MunitResult test_ev2_change_key(const MunitParameter params[], void* data
         dfc_reader_change_key_ev2_command(&link.session, 0, 0, AES_KEY_1, NULL, 0x0A, &command),
         ==,
         DfcReaderOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
     munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_1), ==, DfcReaderOk);
     link_close(&link);
@@ -3584,7 +3371,7 @@ static MunitResult test_proximity_check(const MunitParameter params[], void* dat
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_prepare_proximity_check(&command), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     munit_assert_uint8(dfc_reader_result_status(&ex), ==, DFC_STATUS_SPECIAL_SUCCESS);
     size_t published_len = 0;
     const uint8_t* published_data = dfc_reader_result_data(&ex, &published_len);
@@ -3601,7 +3388,7 @@ static MunitResult test_proximity_check(const MunitParameter params[], void* dat
             challenge[1 + i] = (uint8_t)(0xC0 + round * 4 + i);
         munit_assert_int(
             dfc_command_proximity_check(&command, challenge, sizeof(challenge)), ==, DfcCommandOk);
-        munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+        munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
         size_t answer_len = 0;
         const uint8_t* answer = dfc_reader_result_data(&ex, &answer_len);
         munit_assert_size(answer_len, ==, 4);
@@ -3615,7 +3402,7 @@ static MunitResult test_proximity_check(const MunitParameter params[], void* dat
         key, false, published, published_len, transcript, transcript_len, mac));
     munit_assert_int(
         dfc_command_verify_proximity_check(&command, mac, sizeof(mac)), ==, DfcCommandOk);
-    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
     size_t card_mac_len = 0;
     const uint8_t* card_mac = dfc_reader_result_data(&ex, &card_mac_len);
     munit_assert_true(dfc_reader_proximity_check_mac(
@@ -3847,7 +3634,7 @@ static MunitResult test_delegated_application(const MunitParameter params[], voi
             0x03),
         ==,
         DfcReaderOk);
-    DfcReaderStatus st = run(&link, &ex);
+    DfcReaderStatus st = link_run(&link, &ex);
     if(st != DfcReaderOk)
         munit_logf(MUNIT_LOG_WARNING, "status %02X", dfc_reader_result_status(&ex));
     munit_assert_int(st, ==, DfcReaderOk);

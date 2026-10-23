@@ -46,6 +46,11 @@ class Device:
         return send_to_device(command)
 ```
 
+`Reader.exchange(command, comm_mode, header_len)` takes a `header_len` of -1 to
+derive the clear head of an encrypted field. Explicit values may not exceed
+`DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH`. Invalid values raise
+`InvalidArgumentError` without changing the reader session.
+
 `transceive` must return the complete response bytes or raise an exception. A
 transport exception clears the reader's authentication state before it is
 re-raised.

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Self
 
 from . import _native as N
+from .errors import InvalidArgumentError
 from .models import ReaderState, Response, Transport
 
 PENDING = 1
@@ -166,6 +167,13 @@ class Reader:
                 return Response(N.library().dfc_ffi_reader_result_status(self._exchange), data)
 
     def exchange(self, command: Command, comm_mode: int = 0, header_len: int = -1) -> Response:
+        """Exchange one command.
+
+        ``header_len`` is -1 to derive the clear header, or a non-negative
+        length accepted by the native reader.
+        """
+        if not -(2**31) <= header_len < 2**31:
+            raise InvalidArgumentError(-1, "header_len does not fit a 32-bit integer")
         with self._lock:
             self._open()
             _raw, pointer = N.byte_pointer(command.data)

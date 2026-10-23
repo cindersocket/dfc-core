@@ -115,12 +115,24 @@ impl<T: Transport> Reader<T> {
         &mut self.transport
     }
 
+    /// Exchange one command.
+    ///
+    /// `clear_header` of `None` derives the clear head of an encrypted field from
+    /// the instruction. `Some(n)` is a head length no larger than the core's
+    /// `DFC_READER_MAX_CLEAR_HEADER_LENGTH`; the native core refuses a larger
+    /// value, and a value that does not fit the native `int32_t` is refused
+    /// before the call, both as [`Error::InvalidArgument`]. The session stays
+    /// usable after a refusal.
     pub fn exchange(
         &mut self,
         command: &Command,
         mode: CommunicationMode,
         clear_header: Option<u32>,
     ) -> Result<Response, ReaderError<T::Error>> {
+        let header_len = match clear_header {
+            None => -1,
+            Some(n) => i32::try_from(n).map_err(|_| ReaderError::Dfc(Error::InvalidArgument))?,
+        };
         status(unsafe {
             sys::dfc_ffi_reader_exchange_begin(
                 self.exchange.as_ptr(),
@@ -130,7 +142,7 @@ impl<T: Transport> Reader<T> {
                 command.data.as_ptr(),
                 command.data.len(),
                 mode as u8,
-                clear_header.map_or(-1, |n| n as i32),
+                header_len,
             )
         })
         .map_err(ReaderError::Dfc)?;

@@ -92,12 +92,20 @@ typedef struct {
     uint8_t ev2_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH];
 } DfcReaderSession;
 
+// Most octets after the instruction that may stay clear when a file write's
+// data field is encrypted: the head of UpdateRecord, the longest the reader
+// knows. Every bound on DfcReaderOptions.header_len, here and in each binding,
+// derives from the shared command layout, not from a number of its own.
+#define DFC_READER_MAX_CLEAR_HEADER_LENGTH (DFC_UPDATE_RECORD_HEADER_SIZE - 1)
+
 typedef struct {
     // DFC_COMM_PLAIN, DFC_COMM_MAC or DFC_COMM_ENCIPHERED: the communication
     // mode of the file the command addresses. A zeroed options value is plain.
     uint8_t comm_mode;
     // Octets after the instruction that stay clear when the data field is
-    // encrypted. Unset, it is derived from the instruction.
+    // encrypted, at most DFC_READER_MAX_CLEAR_HEADER_LENGTH; a longer value is
+    // refused with DfcReaderInvalid before the session is touched. Unset, it is
+    // derived from the instruction.
     bool has_header_len;
     uint8_t header_len;
 } DfcReaderOptions;

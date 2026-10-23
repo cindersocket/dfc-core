@@ -4,7 +4,9 @@
 #include "dfc_ffi.h"
 #include "dfc_credential.h"
 #include "dfc_der.h"
+#include "dfc_reader.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -607,9 +609,54 @@ static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
     return st;
 }
 
+// The clear head of an encrypted write is an int32 here and one octet in the
+// reader, so this is where an out-of-range value would otherwise wrap into a
+// legal one (256 into 0, 257 into 1). The core owns the bound; the interface
+// refuses what lies beyond it, and what it refuses leaves the session alone.
+// DFC_READER_MAX_CLEAR_HEADER_LENGTH is the only number the test relies on.
+static void check_reader_header_length_bound(void) {
+    DfcFfiReaderSession* session = NULL;
+    DfcFfiReaderExchange* exchange = NULL;
+    CHECK(dfc_ffi_reader_session_new(&session) == 0);
+    CHECK(dfc_ffi_reader_exchange_new(&exchange) == 0);
+    const uint8_t data[] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA5};
+
+    const int32_t accepted[] = {-1, 0, DFC_READER_MAX_CLEAR_HEADER_LENGTH};
+    for(size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
+        CHECK(
+            dfc_ffi_reader_exchange_begin(
+                exchange, session, 0, 0x3D, data, sizeof(data), DFC_COMM_ENCIPHERED, accepted[i]) ==
+            0);
+    }
+
+    DfcFfiReaderState before;
+    DfcFfiReaderState after;
+    CHECK(dfc_ffi_reader_session_state(session, &before) == 0);
+    const int32_t refused[] = {
+        -2,
+        DFC_READER_MAX_CLEAR_HEADER_LENGTH + 1,
+        255,
+        256, // would narrow to 0
+        257, // would narrow to 1
+        INT32_MAX,
+        INT32_MIN,
+    };
+    for(size_t i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+        CHECK(
+            dfc_ffi_reader_exchange_begin(
+                exchange, session, 0, 0x3D, data, sizeof(data), DFC_COMM_ENCIPHERED, refused[i]) ==
+            DFC_FFI_INVALID_ARGUMENT);
+        CHECK(dfc_ffi_reader_session_state(session, &after) == 0);
+        CHECK(memcmp(&before, &after, sizeof(before)) == 0);
+    }
+    dfc_ffi_reader_exchange_free(exchange);
+    dfc_ffi_reader_session_free(session);
+}
+
 int main(void) {
     check_rejected_card_and_picc_updates();
     check_application_creation_rollback();
+    check_reader_header_length_bound();
     check_rejected_file_creation_is_atomic();
     check_pool_resize_boundaries();
 

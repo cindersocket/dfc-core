@@ -25,6 +25,13 @@ try (DfcVirtualPicc picc = DfcVirtualPicc.create(credential);
 ```
 
 Both classes own native resources and should be used in try-with-resources.
+`DfcReader.exchange(..., int encryptedHeaderLength)` passes the clear-header length
+to the native core unchanged (-1 derives it from the instruction). The core owns the
+valid range; a refused value throws `DfcException` with status `-1`
+(`DFC_FFI_INVALID_ARGUMENT`) and leaves the reader usable. The JNI layer likewise refuses
+instruction, communication, cipher, key and algorithm values outside 0..255 with the same
+exception instead of wrapping them.
+
 `DfcReader` is blocking and serializes its methods. Hardware transports should
 throw `IOException` when their link fails; the reader then clears its session.
 `DfcCommand.selectApplication` accepts the same human-readable AID byte order

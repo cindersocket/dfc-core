@@ -474,5 +474,67 @@ mod tests {
         picc.reset_protocol().expect("reset after random failure");
         assert!(picc.exchange(&[0x90, 0x60, 0, 0, 0]).is_ok());
     }
+
+    struct PiccTransport(VirtualPicc);
+
+    impl Transport for PiccTransport {
+        type Error = Error;
+        fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Error> {
+            self.0.exchange(command)
+        }
+    }
+
+    #[test]
+    fn reader_clear_header_is_never_narrowed_before_native_check() {
+        const NATIVE_MAX_CLEAR_HEADER: u32 = 10;
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
+        picc.activate().expect("activation");
+        let mut reader = Reader::new(PiccTransport(picc), Framing::Iso7816).expect("reader");
+        let version = Command {
+            instruction: 0x60,
+            data: Vec::new(),
+        };
+
+        assert_eq!(
+            reader
+                .exchange(&version, CommunicationMode::Plain, None)
+                .expect("derived")
+                .status,
+            0
+        );
+        assert_eq!(
+            reader
+                .exchange(
+                    &version,
+                    CommunicationMode::Plain,
+                    Some(NATIVE_MAX_CLEAR_HEADER),
+                )
+                .expect("maximum")
+                .status,
+            0
+        );
+        for bad in [
+            NATIVE_MAX_CLEAR_HEADER + 1,
+            i32::MAX as u32,
+            i32::MAX as u32 + 1,
+            u32::MAX,
+        ] {
+            assert!(matches!(
+                reader.exchange(&version, CommunicationMode::Plain, Some(bad)),
+                Err(ReaderError::Dfc(Error::InvalidArgument))
+            ));
+        }
+        assert_eq!(
+            reader
+                .exchange(&version, CommunicationMode::Plain, None)
+                .expect("session usable")
+                .status,
+            0
+        );
+    }
 }
 pub use dfc_core_sys as raw;

@@ -86,7 +86,9 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
 	test_dfc_iso_chained_records_secure test_dfc_iso_response_lifetime \
-	test_dfc_effective_comm test_dfc_decode_failure_atomicity
+	test_dfc_effective_comm test_dfc_reader_header_bounds test_dfc_decode_failure_atomicity
+
+READER_LINK_TESTS := test_dfc_reader test_dfc_reader_header_bounds
 
 FAULT_TEST := test_cmac_failures
 SECURE_MESSAGING_FAULT_TEST := test_secure_messaging_failures
@@ -125,6 +127,9 @@ FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 # cannot pass by omitting the translation unit it should have exercised.
 $(TESTS): %: %.c dfc_virtual_picc_test_helpers.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Suites that drive the reader against the virtual card share one fixture.
+$(READER_LINK_TESTS): dfc_reader_test_link.c
 
 # The decoder failure contract covers the target bridge's entry point too.
 test_dfc_decode_failure_atomicity: ../ffi/dfc_target_ffi.c

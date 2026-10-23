@@ -42,6 +42,9 @@ extern "C" {
 #define DFC_FFI_UNSUPPORTED      (-4)
 #define DFC_FFI_RANDOM_FAILED    (-5)
 
+// Largest explicit clear-header length accepted by reader exchange calls.
+#define DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH 10
+
 // Virtual-PICC family status returned when an exchange response does not fit.
 #define DFC_FFI_PICC_BUFFER_TOO_SMALL 3
 
@@ -514,7 +517,10 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_authenticate_ev2_begin(
     const uint8_t* capabilities,
     size_t capabilities_len);
 // `comm_mode` is DFC_COMM_PLAIN, _MAC or _ENCIPHERED; `header_len` of -1
-// derives the clear head of an encrypted field from the instruction.
+// derives the clear head of an encrypted field from the instruction. Any other
+// value is a head length and must lie in
+// 0..DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH; anything else, negative values below -1 included, returns
+// DFC_FFI_INVALID_ARGUMENT before the exchange or the session is touched.
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_exchange_begin(
     DfcFfiReaderExchange* exchange,
     DfcFfiReaderSession* session,

@@ -25,6 +25,12 @@ _Static_assert(
     "FFI virtual-PICC status value drifted");
 #endif
 
+#if DFC_ENABLE_READER
+_Static_assert(
+    DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH == DFC_READER_MAX_CLEAR_HEADER_LENGTH,
+    "FFI reader header bound drifted");
+#endif
+
 struct DfcFfiCredential {
     DfcCredential model;
 };
@@ -1414,7 +1420,10 @@ int32_t dfc_ffi_reader_exchange_begin(
     size_t data_len,
     uint8_t comm_mode,
     int32_t header_len) {
-    if(!exchange || !session || framing > DfcReaderFramingNative || header_len > 0xFF) {
+    // -1 asks the reader to derive the head; any other value is a head length and
+    // must fit the reader's bound before it is narrowed to the option's octet.
+    if(!exchange || !session || framing > DfcReaderFramingNative || header_len < -1 ||
+       header_len > DFC_READER_MAX_CLEAR_HEADER_LENGTH) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
     DfcCommand command;

@@ -102,3 +102,11 @@ fingerprint before creating hosted handles. Random callbacks are contained at
 the FFI boundary: they must return exactly the requested byte count, and panic
 or length mismatch is reported after native control returns.
 
+## Reader clear-header length
+
+`Reader::exchange(command, mode, clear_header)` derives the clear head of an
+encrypted field from the instruction when `clear_header` is `None`. `Some(n)` is
+a head length no larger than `DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH`.
+The native core refuses a larger value, and a value that does not fit the native
+`int32_t` is refused before the call, both as `Error::InvalidArgument`; the
+session stays usable.

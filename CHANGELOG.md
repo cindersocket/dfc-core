@@ -12,6 +12,8 @@
   validate key-set storage widths at the FFI boundary, and enforce Rust 1.85
   compatibility in CI.
 - Check formatting and documentation links across C and every binding.
+- Bound encrypted clear-header lengths before reader state changes and cover the
+  full byte-sized input domain across authenticated session families (#116).
 - Make every credential decoder leave an empty, securely wiped credential after
   any failure, and enforce decoder coverage with a registry check and fuzz
   invariant (#115).

@@ -11,6 +11,7 @@ import pytest
 from dfc_core import (
     Command,
     Credential,
+    InvalidArgumentError,
     RandomSourceError,
     Reader,
     VirtualPicc,
@@ -488,6 +489,23 @@ def test_codec_picc_and_reader_lifecycle() -> None:
             response = reader.exchange(Command(0x60))
             assert response.status == 0
             assert len(response.data) == 28
+
+
+NATIVE_MAX_CLEAR_HEADER = 10
+
+
+def test_reader_header_len_reaches_native_unnarrowed() -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+    with VirtualPicc(credential) as picc:
+        picc.activate()
+        with Reader(picc) as reader:
+            command = Command.get_version()
+            assert reader.exchange(command, header_len=-1).status == 0
+            assert reader.exchange(command, header_len=NATIVE_MAX_CLEAR_HEADER).status == 0
+            for bad in (NATIVE_MAX_CLEAR_HEADER + 1, -2, 2**31, 2**32 + 3, -(2**31) - 1):
+                with pytest.raises(InvalidArgumentError):
+                    reader.exchange(command, header_len=bad)
+            assert reader.exchange(command).status == 0
 
 
 def test_callback_exception_is_deferred_safely() -> None:

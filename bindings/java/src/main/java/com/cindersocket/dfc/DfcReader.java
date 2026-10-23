@@ -92,11 +92,16 @@ public final class DfcReader implements AutoCloseable {
       Communication communication) throws DfcException, IOException {
     return exchange(command, framing, communication, -1);
   }
+  /**
+   * Runs one command. {@code encryptedHeaderLength} is the clear-header length of an encrypted
+   * file write, or -1 to derive it from the instruction. The native core owns the valid range;
+   * this method passes the integer through unchanged. A refused value (below -1 or above the
+   * native maximum) throws {@link DfcException} with status {@code DFC_FFI_INVALID_ARGUMENT}
+   * (-1), before any session state changes, so the reader stays usable.
+   */
   public synchronized DfcResponse exchange(DfcCommand command, Framing framing,
       Communication communication, int encryptedHeaderLength) throws DfcException, IOException {
     Objects.requireNonNull(command, "command");
-    if (encryptedHeaderLength < -1 || encryptedHeaderLength > 255)
-      throw new IllegalArgumentException("encryptedHeaderLength");
     long handle = state.require();
     DfcNative.readerBegin(handle, framing.ordinal(), command.instruction(), command.data(),
         communication.nativeValue, encryptedHeaderLength);

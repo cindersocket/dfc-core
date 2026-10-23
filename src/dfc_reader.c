@@ -1069,38 +1069,57 @@ static DfcReaderStatus fail_prepared_command(DfcReaderExchange* exchange, DfcRea
     return status;
 }
 
+// The clear head of a file write that is wrapped with its instruction is copied
+// into storage sized for the longest head the reader knows. The head length
+// is a caller option, so this function is the one place that turns it into a
+// copy, and it bounds the length itself instead of trusting that every entry
+// point validated it.
+_Static_assert(
+    FILE_HEADER_LENGTH <= DFC_READER_MAX_CLEAR_HEADER_LENGTH,
+    "the clear-head bound must cover a data or record write");
+_Static_assert(
+    UPDATE_RECORD_HEADER_LENGTH == DFC_READER_MAX_CLEAR_HEADER_LENGTH,
+    "the clear-head bound is the UpdateRecord head");
+_Static_assert(
+    VALUE_HEADER_LENGTH <= DFC_READER_MAX_CLEAR_HEADER_LENGTH,
+    "the clear-head bound must cover a value command");
+
+static DfcReaderStatus prepare_wrapped_file_write(
+    DfcReaderExchange* ex,
+    const DfcCommand* command,
+    uint8_t comm_mode,
+    size_t header_len) {
+    DfcReaderSession* session = ex->session;
+    if(header_len > DFC_READER_MAX_CLEAR_HEADER_LENGTH || header_len > command->data_len) {
+        return DfcReaderInvalid;
+    }
+    const uint8_t* body = command->data + header_len;
+    size_t body_len = command->data_len - header_len;
+    size_t wire_len =
+        dfc_secure_messaging_command_payload_length(&session->sm, false, comm_mode, body_len);
+    if(wire_len == SIZE_MAX || header_len > sizeof(ex->frame) ||
+       wire_len > sizeof(ex->frame) - header_len) {
+        return DfcReaderInvalid;
+    }
+    uint8_t head[1 + DFC_READER_MAX_CLEAR_HEADER_LENGTH];
+    head[0] = command->ins;
+    memcpy(head + 1, command->data, header_len);
+    memcpy(ex->frame, command->data, header_len);
+    size_t wrapped_len = dfc_secure_messaging_wrap(
+        &session->sm, comm_mode, head, header_len + 1, body, body_len, ex->frame + header_len);
+    if(wrapped_len == 0 || wrapped_len != wire_len) {
+        return fail_prepared_command(ex, DfcReaderIntegrityError);
+    }
+    ex->frame_len = header_len + wrapped_len;
+    return DfcReaderOk;
+}
+
 static DfcReaderStatus
     prepare_legacy(DfcReaderExchange* ex, const DfcCommand* command, size_t header_len) {
-    DfcReaderSession* session = ex->session;
     uint8_t ins = command->ins;
     bool file_write = is_file_command(ins) && !is_file_read(ins);
     if(file_write && ex->comm_mode != DFC_COMM_PLAIN) {
-        if(header_len == SIZE_MAX || header_len > command->data_len) return DfcReaderInvalid;
-        const uint8_t* body = command->data + header_len;
-        size_t body_len = command->data_len - header_len;
-        size_t wire_len;
-        wire_len = dfc_secure_messaging_command_payload_length(
-            &session->sm, false, ex->comm_mode, body_len);
-        if(wire_len == SIZE_MAX || header_len > sizeof(ex->frame) ||
-           wire_len > sizeof(ex->frame) - header_len) {
-            return DfcReaderInvalid;
-        }
-        uint8_t head[1 + UPDATE_RECORD_HEADER_LENGTH];
-        head[0] = ins;
-        memcpy(head + 1, command->data, header_len);
-        memcpy(ex->frame, command->data, header_len);
-        size_t wrapped_len = dfc_secure_messaging_wrap(
-            &session->sm,
-            ex->comm_mode,
-            head,
-            header_len + 1,
-            body,
-            body_len,
-            ex->frame + header_len);
-        if(wrapped_len == 0 || wrapped_len != wire_len)
-            return fail_prepared_command(ex, DfcReaderIntegrityError);
-        ex->frame_len = header_len + wrapped_len;
-        return DfcReaderOk;
+        return prepare_wrapped_file_write(ex, command, ex->comm_mode, header_len);
     }
     if(is_file_read(ins) && ex->comm_mode == DFC_COMM_MAC) ex->response_plan = PlanD40Mac;
     if(is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED) {
@@ -1138,32 +1157,7 @@ static DfcReaderStatus
 
     bool file_write = is_file_command(ins) && !is_file_read(ins);
     if(file_write && ex->comm_mode == DFC_COMM_ENCIPHERED) {
-        if(header_len == SIZE_MAX || header_len > command->data_len) return DfcReaderInvalid;
-        const uint8_t* body = command->data + header_len;
-        size_t body_len = command->data_len - header_len;
-        size_t wire_len;
-        wire_len = dfc_secure_messaging_command_payload_length(
-            &session->sm, false, DFC_COMM_ENCIPHERED, body_len);
-        if(wire_len == SIZE_MAX || header_len > sizeof(ex->frame) ||
-           wire_len > sizeof(ex->frame) - header_len) {
-            return DfcReaderInvalid;
-        }
-        uint8_t head[1 + UPDATE_RECORD_HEADER_LENGTH];
-        head[0] = ins;
-        memcpy(head + 1, command->data, header_len);
-        memcpy(ex->frame, command->data, header_len);
-        size_t wrapped_len = dfc_secure_messaging_wrap(
-            &session->sm,
-            DFC_COMM_ENCIPHERED,
-            head,
-            header_len + 1,
-            body,
-            body_len,
-            ex->frame + header_len);
-        if(wrapped_len == 0 || wrapped_len != wire_len)
-            return fail_prepared_command(ex, DfcReaderIntegrityError);
-        ex->frame_len = header_len + wrapped_len;
-        return DfcReaderOk;
+        return prepare_wrapped_file_write(ex, command, DFC_COMM_ENCIPHERED, header_len);
     }
 
     bool transmits_mac = ex->comm_mode == DFC_COMM_MAC &&
@@ -1324,6 +1318,11 @@ DfcReaderStatus dfc_reader_exchange_begin(
     if(!options) options = &plain;
     if(options->comm_mode != DFC_COMM_PLAIN && options->comm_mode != DFC_COMM_MAC &&
        options->comm_mode != DFC_COMM_ENCIPHERED) {
+        return DfcReaderInvalid;
+    }
+    // Rejected before the exchange or the session is touched, so a refused
+    // option leaves both exactly as the caller passed them.
+    if(options->has_header_len && options->header_len > DFC_READER_MAX_CLEAR_HEADER_LENGTH) {
         return DfcReaderInvalid;
     }
     if(command->ins == DFC_CMD_AUTHENTICATE_LEGACY || command->ins == DFC_CMD_AUTHENTICATE_ISO ||

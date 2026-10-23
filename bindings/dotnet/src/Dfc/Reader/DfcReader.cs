@@ -157,6 +157,9 @@ public sealed class DfcReader : IDisposable
     /// Exchanges one command under the session, following every additional frame. <paramref name="mode" /> is the
     /// communication mode of the file the command addresses. <paramref name="encryptedHeaderLength" /> overrides
     /// how many data octets stay clear when the field is encrypted.
+    /// <c>null</c> (or -1) derives the head from the instruction. The value goes to the native library unchanged, which
+    /// alone owns the bound (DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH); a refusal returns a failure of kind
+    /// <see cref="DfcProtocolErrorKind.Invalid" />, leaving the session and this reader untouched.
     /// </summary>
     public async Task<Result<DfcResponse, DfcProtocolError>> ExchangeAsync(
         DfcCommand command,
