@@ -157,7 +157,7 @@ class VirtualPicc:
         self._simple("reset_protocol")
 
     def advance_time(self, milliseconds: int) -> None:
-        self._simple("advance_time", milliseconds)
+        self._simple("advance_time", N.unsigned(milliseconds, 32, "milliseconds"))
 
     def mark_persisted(self) -> None:
         self._simple("mark_persisted")

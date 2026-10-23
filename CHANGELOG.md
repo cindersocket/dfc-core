@@ -14,6 +14,7 @@
 - Check formatting and documentation links across C and every binding.
 - Bound encrypted clear-header lengths before reader state changes and cover the
   full byte-sized input domain across authenticated session families (#116).
+- Validate binding integers before narrowing them to native field widths (#117).
 - Make every credential decoder leave an empty, securely wiped credential after
   any failure, and enforce decoder coverage with a registry check and fuzz
   invariant (#115).

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes as C
+import operator
 import os
 import sys
 from importlib.resources import files
@@ -450,6 +451,7 @@ def _declare(lib: C.CDLL) -> None:
             C.POINTER(C.c_size_t),
         ]
     lib.dfc_ffi_picc_export.argtypes = [Handle, C.POINTER(Handle)]
+    lib.dfc_ffi_picc_advance_time.argtypes = [Handle, C.c_uint32]
     lib.dfc_ffi_reader_session_new.argtypes = [C.POINTER(Handle)]
     lib.dfc_ffi_reader_session_new.restype = C.c_int32
     lib.dfc_ffi_reader_session_free.argtypes = [Handle]
@@ -637,6 +639,20 @@ def variable_output(call: object, *args: object) -> bytes:
     status = call(*args, out, size.value, C.byref(size))  # type: ignore[operator]
     raise_status(status)
     return bytes(out[: size.value])
+
+
+def unsigned(value: int, bits: int, name: str) -> int:
+    """Return ``value`` unchanged if it fits an unsigned ``bits``-wide native parameter.
+
+    ctypes truncates silently, so ``comm_mode=256`` would reach the core as 0 (plain).
+    A value that does not fit is refused as ``InvalidArgumentError`` instead.
+    """
+    from .errors import InvalidArgumentError
+
+    number = operator.index(value)
+    if not 0 <= number < 1 << bits:
+        raise InvalidArgumentError(-1, f"{name} does not fit an unsigned {bits}-bit integer")
+    return number
 
 
 def raise_status(status: int) -> None:

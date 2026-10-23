@@ -536,5 +536,26 @@ mod tests {
             0
         );
     }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn credential_index_above_u32_is_refused_not_wrapped() {
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-maximal.dfcb"
+        ))
+        .expect("fixture");
+        let wrapped = u32::MAX as usize + 1;
+        assert!(credential.application(0).is_ok());
+        assert!(credential.file(0).is_ok());
+        assert_eq!(
+            credential.application(wrapped).map(|_| ()),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(
+            credential.file(wrapped).map(|_| ()),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(credential.file_data(wrapped), Err(Error::InvalidArgument));
+    }
 }
 pub use dfc_core_sys as raw;

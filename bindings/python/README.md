@@ -51,6 +51,9 @@ derive the clear head of an encrypted field. Explicit values may not exceed
 `DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH`. Invalid values raise
 `InvalidArgumentError` without changing the reader session.
 
+Integers passed to fixed-width native parameters are range-checked before the
+call. Values that do not fit raise `InvalidArgumentError` instead of wrapping.
+
 `transceive` must return the complete response bytes or raise an exception. A
 transport exception clears the reader's authentication state before it is
 re-raised.

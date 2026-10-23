@@ -179,6 +179,25 @@ static JniReader* reader_handle(JNIEnv* env, jlong handle) {
     return wrapper;
 }
 
+// Narrow a caller jint to a byte without wrapping; throws DfcException(INVALID_ARGUMENT).
+static bool jint_to_u8(JNIEnv* env, jint value, const char* name, uint8_t* out) {
+    if(value < 0 || value > 0xff) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, name);
+        return false;
+    }
+    *out = (uint8_t)value;
+    return true;
+}
+
+static bool jlong_to_u32(JNIEnv* env, jlong value, const char* name, uint32_t* out) {
+    if(value < 0 || (uint64_t)value > UINT32_MAX) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, name);
+        return false;
+    }
+    *out = (uint32_t)value;
+    return true;
+}
+
 static void reader_clear_pending(JniReader* wrapper) {
     secure_free(wrapper->pending_data, wrapper->pending_data_len);
     wrapper->pending_data = NULL;
@@ -537,7 +556,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_piccAdvanceTime(
     (void)type;
     JniPicc* wrapper = picc_handle(env, handle);
     if(wrapper == NULL) return;
-    int32_t status = dfc_ffi_picc_advance_time(wrapper->picc, (uint32_t)milliseconds);
+    uint32_t elapsed = 0;
+    if(!jlong_to_u32(env, milliseconds, "milliseconds out of range", &elapsed)) return;
+    int32_t status = dfc_ffi_picc_advance_time(wrapper->picc, elapsed);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "virtual PICC time advance failed");
 }
 
@@ -619,6 +640,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerBegin(
     (void)type;
     JniReader* wrapper = reader_handle(env, handle);
     if(wrapper == NULL) return;
+    uint8_t ins = 0, comm_mode = 0;
+    if(!jint_to_u8(env, instruction, "instruction out of range", &ins)) return;
+    if(!jint_to_u8(env, communication, "communication mode out of range", &comm_mode)) return;
     size_t length = 0;
     uint8_t* bytes = copy_array(env, data, &length, false);
     if((*env)->ExceptionCheck(env)) return;
@@ -629,10 +653,10 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerBegin(
         wrapper->exchange,
         wrapper->session,
         (uint32_t)framing,
-        (uint8_t)instruction,
+        ins,
         wrapper->pending_data,
         length,
-        (uint8_t)communication,
+        comm_mode,
         (int32_t)header_length);
     if(status != DFC_FFI_OK) {
         reader_clear_pending(wrapper);
@@ -652,6 +676,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticate(
     (void)type;
     JniReader* wrapper = reader_handle(env, handle);
     if(wrapper == NULL) return;
+    uint8_t cipher_id = 0, key_no = 0;
+    if(!jint_to_u8(env, cipher, "cipher out of range", &cipher_id)) return;
+    if(!jint_to_u8(env, key_number, "key number out of range", &key_no)) return;
     size_t key_len = 0, random_len = 0;
     uint8_t* key_bytes = copy_array(env, key, &key_len, false);
     uint8_t* random_bytes =
@@ -664,8 +691,8 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticate(
         wrapper->exchange,
         wrapper->session,
         (uint32_t)framing,
-        (uint8_t)cipher,
-        (uint8_t)key_number,
+        cipher_id,
+        key_no,
         key_bytes,
         key_len,
         random_bytes,
@@ -687,6 +714,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateIso
     (void)type;
     JniReader* wrapper = reader_handle(env, handle);
     if(wrapper == NULL) return;
+    uint8_t key_ref = 0, algorithm_id = 0;
+    if(!jint_to_u8(env, key_reference, "key reference out of range", &key_ref)) return;
+    if(!jint_to_u8(env, algorithm, "algorithm out of range", &algorithm_id)) return;
     size_t key_len = 0, first_len = 0, second_len = 0;
     uint8_t* key_bytes = copy_array(env, key, &key_len, false);
     uint8_t* first_bytes =
@@ -701,10 +731,10 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateIso
     int32_t status = dfc_ffi_reader_authenticate_iso7816_begin(
         wrapper->exchange,
         wrapper->session,
-        (uint8_t)key_reference,
+        key_ref,
         key_bytes,
         key_len,
-        (uint8_t)algorithm,
+        algorithm_id,
         first_bytes,
         second_bytes,
         first_len);
@@ -729,6 +759,8 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2
     (void)type;
     JniReader* wrapper = reader_handle(env, handle);
     if(wrapper == NULL) return;
+    uint8_t key_no = 0;
+    if(!jint_to_u8(env, key_number, "key number out of range", &key_no)) return;
     size_t key_len = 0, random_len = 0, capabilities_len = 0;
     uint8_t* key_bytes = copy_array(env, key, &key_len, false);
     uint8_t* random_bytes =
@@ -746,7 +778,7 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2
         wrapper->session,
         (uint32_t)framing,
         first ? 1 : 0,
-        (uint8_t)key_number,
+        key_no,
         key_bytes,
         random_bytes,
         capability_bytes,

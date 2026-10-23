@@ -20,8 +20,17 @@ public sealed record DfcCommand(byte Instruction, ReadOnlyMemory<byte> Data)
     public const byte AdditionalFrame = 0xAF;
 
     /// <summary>This command as an ISO 7816 envelope: 90 INS 00 00 [Lc data] 00.</summary>
+    /// <exception cref="InvalidOperationException">
+    /// The record was built directly with more than <see cref="MaximumData" /> data octets, which Lc cannot carry;
+    /// <see cref="Raw" /> refuses such data up front.
+    /// </exception>
     public byte[] ToApdu()
     {
+        if (Data.Length > MaximumData)
+        {
+            throw new InvalidOperationException($"A native frame carries at most {MaximumData} octets of data.");
+        }
+
         if (Data.Length == 0)
         {
             return [0x90, Instruction, 0x00, 0x00, 0x00];

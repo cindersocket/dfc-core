@@ -174,17 +174,19 @@ class Reader:
         """
         if not -(2**31) <= header_len < 2**31:
             raise InvalidArgumentError(-1, "header_len does not fit a 32-bit integer")
+        comm = N.unsigned(comm_mode, 8, "comm_mode")
+        framing = N.unsigned(self.framing, 32, "framing")
         with self._lock:
             self._open()
             _raw, pointer = N.byte_pointer(command.data)
             status = N.library().dfc_ffi_reader_exchange_begin(
                 self._exchange,
                 self._session,
-                self.framing,
-                command.instruction,
+                framing,
+                N.unsigned(command.instruction, 8, "instruction"),
                 pointer,
                 len(command.data),
-                comm_mode,
+                comm,
                 header_len,
             )
             N.raise_status(status)
@@ -193,6 +195,9 @@ class Reader:
     def authenticate(
         self, cipher: int, key_no: int, key: bytes, random_a: bytes | None = None
     ) -> Response:
+        cipher_id = N.unsigned(cipher, 8, "cipher")
+        key_number = N.unsigned(key_no, 8, "key_no")
+        framing = N.unsigned(self.framing, 32, "framing")
         challenge = bytearray(
             random_a or secrets.token_bytes(16 if cipher == 0xAA or len(key) == 24 else 8)
         )
@@ -204,9 +209,9 @@ class Reader:
                 status = N.library().dfc_ffi_reader_authenticate_begin(
                     self._exchange,
                     self._session,
-                    self.framing,
-                    cipher,
-                    key_no,
+                    framing,
+                    cipher_id,
+                    key_number,
                     keyptr,
                     len(key),
                     randptr,
@@ -227,6 +232,8 @@ class Reader:
         random_a: bytes | None = None,
         capabilities: bytes = b"",
     ) -> Response:
+        key_number = N.unsigned(key_no, 8, "key_no")
+        framing = N.unsigned(self.framing, 32, "framing")
         challenge = bytearray(random_a or secrets.token_bytes(16))
         kb, kp = N.byte_pointer(key)
         rb, rp = N.byte_pointer(challenge)
@@ -237,9 +244,9 @@ class Reader:
                 status = N.library().dfc_ffi_reader_authenticate_ev2_begin(
                     self._exchange,
                     self._session,
-                    self.framing,
+                    framing,
                     int(first),
-                    key_no,
+                    key_number,
                     kp,
                     rp,
                     cp if capabilities else None,
@@ -259,6 +266,8 @@ class Reader:
         random_first: bytes | None = None,
         random_second: bytes | None = None,
     ) -> Response:
+        key_ref = N.unsigned(key_reference, 8, "key_reference")
+        algorithm_id = N.unsigned(algorithm, 8, "algorithm")
         length = 8 if algorithm == 0x02 else 16
         first = bytearray(random_first or secrets.token_bytes(length))
         second = bytearray(random_second or secrets.token_bytes(length))
@@ -273,10 +282,10 @@ class Reader:
                 status = N.library().dfc_ffi_reader_authenticate_iso7816_begin(
                     self._exchange,
                     self._session,
-                    key_reference,
+                    key_ref,
                     kp,
                     len(key),
-                    algorithm,
+                    algorithm_id,
                     fp,
                     sp,
                     length,
@@ -297,6 +306,8 @@ class Reader:
         initial_key: bytes,
         initial_version: int,
     ) -> Response:
+        version = N.unsigned(initial_version, 8, "initial_version")
+        framing = N.unsigned(self.framing, 32, "framing")
         values = [
             N.byte_pointer(v)
             for v in (header, dam_encryption_key, dam_mac_key, random_prefix, initial_key)
@@ -307,7 +318,7 @@ class Reader:
                 status = N.library().dfc_ffi_reader_create_delegated_application_begin(
                     self._exchange,
                     self._session,
-                    self.framing,
+                    framing,
                     values[0][1],
                     len(header),
                     values[1][1],
@@ -315,7 +326,7 @@ class Reader:
                     values[3][1],
                     values[4][1],
                     len(initial_key),
-                    initial_version,
+                    version,
                 )
                 N.raise_status(status)
                 return self._run()
@@ -328,6 +339,8 @@ class Reader:
     def change_key_cryptogram(
         self, key_no: int, new_key: bytes, current_key: bytes, *, aes_key: bool, new_version: int
     ) -> bytes:
+        key_number = N.unsigned(key_no, 8, "key_no")
+        version = N.unsigned(new_version, 8, "new_version")
         new, newp = N.byte_pointer(new_key)
         old, oldp = N.byte_pointer(current_key)
         try:
@@ -336,12 +349,12 @@ class Reader:
                 return N.variable_output(
                     N.library().dfc_ffi_reader_change_key_cryptogram,
                     self._session,
-                    key_no,
+                    key_number,
                     newp,
                     len(new_key),
                     oldp,
                     int(aes_key),
-                    new_version,
+                    version,
                 )
         finally:
             C.memset(new, 0, len(new_key))
@@ -352,6 +365,9 @@ class Reader:
     ) -> bytes:
         if len(new_key) != 16 or len(current_key) != 16:
             raise ValueError("EV2 keys must be 16 bytes")
+        key_set = N.unsigned(key_set_no, 8, "key_set_no")
+        key_number = N.unsigned(key_no, 8, "key_no")
+        version = N.unsigned(new_version, 8, "new_version")
         new, newp = N.byte_pointer(new_key)
         old, oldp = N.byte_pointer(current_key)
         try:
@@ -360,11 +376,11 @@ class Reader:
                 return N.variable_output(
                     N.library().dfc_ffi_reader_change_key_ev2_data,
                     self._session,
-                    key_set_no,
-                    key_no,
+                    key_set,
+                    key_number,
                     newp,
                     oldp,
-                    new_version,
+                    version,
                 )
         finally:
             C.memset(new, 0, 16)
@@ -379,17 +395,22 @@ class Reader:
         comm_mode: int,
         record_number: int | None = None,
     ) -> Response:
+        file_no = N.unsigned(file_number, 8, "file_number")
+        position = N.unsigned(offset, 32, "offset")
+        record = None if record_number is None else N.unsigned(record_number, 32, "record_number")
+        comm = N.unsigned(comm_mode, 8, "comm_mode")
+        framing = N.unsigned(self.framing, 32, "framing")
         _raw, pointer = N.byte_pointer(data)
         with self._lock:
             self._open()
             function = getattr(N.library(), f"dfc_ffi_reader_{kind}_begin")
-            prefix = (self._exchange, self._session, self.framing, file_number)
+            prefix = (self._exchange, self._session, framing, file_no)
             status = function(
                 *prefix,
-                *((record_number, offset) if record_number is not None else (offset,)),
+                *((record, position) if record is not None else (position,)),
                 pointer,
                 len(data),
-                comm_mode,
+                comm,
             )
             N.raise_status(status)
             return self._run()

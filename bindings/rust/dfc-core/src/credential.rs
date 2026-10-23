@@ -2,6 +2,12 @@ use crate::{Error, ensure_abi, output, status};
 use core::{ffi::c_char, mem::MaybeUninit, ptr::NonNull};
 use dfc_core_sys as sys;
 
+/// Native indices are `uint32_t`; a larger caller index is refused, never wrapped
+/// onto a different (valid) entry.
+fn native_index(index: usize) -> Result<u32, Error> {
+    u32::try_from(index).map_err(|_| Error::InvalidArgument)
+}
+
 pub struct Credential {
     raw: NonNull<sys::DfcFfiCredential>,
 }
@@ -79,13 +85,10 @@ impl Credential {
     }
 
     pub fn application(&self, index: usize) -> Result<sys::DfcFfiApplication, Error> {
+        let index = native_index(index)?;
         let mut value = MaybeUninit::uninit();
         status(unsafe {
-            sys::dfc_ffi_credential_get_application(
-                self.raw.as_ptr(),
-                index as u32,
-                value.as_mut_ptr(),
-            )
+            sys::dfc_ffi_credential_get_application(self.raw.as_ptr(), index, value.as_mut_ptr())
         })?;
         Ok(unsafe { value.assume_init() })
     }
@@ -95,16 +98,18 @@ impl Credential {
     }
 
     pub fn file(&self, index: usize) -> Result<sys::DfcFfiFile, Error> {
+        let index = native_index(index)?;
         let mut value = MaybeUninit::uninit();
         status(unsafe {
-            sys::dfc_ffi_credential_get_file(self.raw.as_ptr(), index as u32, value.as_mut_ptr())
+            sys::dfc_ffi_credential_get_file(self.raw.as_ptr(), index, value.as_mut_ptr())
         })?;
         Ok(unsafe { value.assume_init() })
     }
 
     pub fn file_data(&self, index: usize) -> Result<Vec<u8>, Error> {
+        let index = native_index(index)?;
         output(|out, cap, len| unsafe {
-            sys::dfc_ffi_credential_get_file_data(self.raw.as_ptr(), index as u32, out, cap, len)
+            sys::dfc_ffi_credential_get_file_data(self.raw.as_ptr(), index, out, cap, len)
         })
     }
 

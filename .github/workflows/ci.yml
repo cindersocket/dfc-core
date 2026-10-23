@@ -295,7 +295,7 @@ jobs:
           javac --release 17 -d build-jni/java \
             bindings/java/src/main/java/com/cindersocket/dfc/*.java \
             tests/java/DfcJniSmokeTest.java tests/java/DfcJniReplayRandomTest.java \
-            tests/java/DfcReaderHeaderBoundsTest.java \
+            tests/java/DfcReaderHeaderBoundsTest.java tests/java/DfcJniNarrowingTest.java \
             examples/java/DfcTransceiveExample.java
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
             examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
@@ -303,6 +303,8 @@ jobs:
             examples/credentials/v6-minimal.dfc
           java -Djava.library.path=build-jni -cp build-jni/java \
             com.cindersocket.dfc.DfcReaderHeaderBoundsTest examples/credentials/v6-minimal.dfc
+          java -Djava.library.path=build-jni -cp build-jni/java \
+            com.cindersocket.dfc.DfcJniNarrowingTest examples/credentials/v6-minimal.dfc
           java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
             examples/credentials/v6-minimal.dfc
 

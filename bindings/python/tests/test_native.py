@@ -508,6 +508,32 @@ def test_reader_header_len_reaches_native_unnarrowed() -> None:
             assert reader.exchange(command).status == 0
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda reader, _picc: reader.exchange(Command.get_version(), comm_mode=256),
+        lambda reader, _picc: reader.write_data(1, 0, b"x", comm_mode=256),
+        lambda reader, _picc: reader.authenticate(0x1A, 256, bytes(16), random_a=bytes(8)),
+        lambda reader, _picc: reader.write_data(1, 2**32, b"x"),
+        lambda reader, _picc: reader.update_record(1, -1, 0, b"x"),
+        lambda reader, _picc: reader.change_key_cryptogram(
+            0, bytes(16), bytes(16), aes_key=True, new_version=256
+        ),
+        lambda _reader, picc: picc.advance_time(-1),
+    ],
+)
+def test_caller_integers_are_refused_not_narrowed(
+    call: Callable[[Reader, VirtualPicc], object],
+) -> None:
+    credential = Credential.decode(FIXTURE.read_bytes())
+    with VirtualPicc(credential) as picc:
+        picc.activate()
+        with Reader(picc) as reader:
+            with pytest.raises(InvalidArgumentError):
+                call(reader, picc)
+            assert reader.exchange(Command.get_version()).status == 0
+
+
 def test_callback_exception_is_deferred_safely() -> None:
     credential = Credential.decode(FIXTURE.read_bytes())
 
