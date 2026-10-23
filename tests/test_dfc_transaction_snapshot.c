@@ -716,6 +716,7 @@ static MunitResult test_authenticated_mac_immediate_write_survives_abort(
     open_transaction_family(&fixture, "backup");
     DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
     standard->comm_settings = DFC_COMM_MAC;
+    standard->access_rights = 0xE0EE;
     uint8_t session_key[DFC_AES_KEY_LENGTH];
     for(size_t index = 0; index < sizeof(session_key); index++) {
         session_key[index] = (uint8_t)(0x40 + index);
