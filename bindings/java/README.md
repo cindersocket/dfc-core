@@ -31,6 +31,9 @@ valid range; a refused value throws `DfcException` with status `-1`
 (`DFC_FFI_INVALID_ARGUMENT`) and leaves the reader usable. The JNI layer likewise refuses
 instruction, communication, cipher, key and algorithm values outside 0..255 with the same
 exception instead of wrapping them.
+Elapsed milliseconds outside the native unsigned 32-bit range are refused before
+the JNI call. Public `DfcVirtualPicc.advanceTime` reports that range as an
+`IllegalArgumentException`; raw JNI callers receive `DfcException` status `-1`.
 
 `DfcReader` is blocking and serializes its methods. Hardware transports should
 throw `IOException` when their link fails; the reader then clears its session.

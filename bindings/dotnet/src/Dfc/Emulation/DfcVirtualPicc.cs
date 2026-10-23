@@ -271,12 +271,16 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     public void AdvanceTime(TimeSpan elapsed)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
+        if (elapsed.TotalMilliseconds > uint.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(elapsed));
+        }
         lock (gate)
         {
             using var lease = new PiccHandleLease(handle);
             _ = Native.dfc_ffi_picc_advance_time(
                 lease.Raw,
-                (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue)
+                (uint)elapsed.TotalMilliseconds
             );
         }
     }

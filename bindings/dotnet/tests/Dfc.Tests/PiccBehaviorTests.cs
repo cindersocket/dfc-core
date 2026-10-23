@@ -240,6 +240,19 @@ public sealed class PiccBehaviorTests
     }
 
     [Test]
+    public void AdvanceTime_RefusesValuesThatDoNotFitTheNativeDelta()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        picc.Activate();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            picc.AdvanceTime(TimeSpan.FromMilliseconds((double)uint.MaxValue + 1)));
+
+        picc.AdvanceTime(TimeSpan.Zero);
+        Assert.That(picc.Snapshot().Selection, Is.Not.EqualTo(DfcSelection.None));
+    }
+
+    [Test]
     public async Task Dispose_WaitsForInFlightNativeCallback()
     {
         var random = new BlockingRandomSource();
