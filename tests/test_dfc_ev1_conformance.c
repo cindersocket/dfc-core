@@ -1515,6 +1515,41 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult test_change_file_settings_validates_sdm_reserved_access(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = open_rights_file_over_the_air(&credential, 0xEE, 0xEE);
+    credential.card.generation = DfcGenerationEv3;
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+
+    for(uint8_t reserved = 0; reserved < 0x0F; reserved++) {
+        uint8_t native[] = {
+            0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x81, (uint8_t)((reserved << 4) | 0x0F), 0xEF, 0, 0, 0};
+        set_sdm_settings_sentinels(session, file);
+        assert_rejected_change_is_atomic(
+            session, file, native, sizeof(native) - 1, DFC_STATUS_LENGTH_ERROR);
+        assert_rejected_change_is_atomic(
+            session, file, native, sizeof(native), DFC_STATUS_PARAMETER_ERROR);
+    }
+
+    const uint8_t valid[] = {
+        0x90, 0x5F, 0, 0, 0x0A, 0x01, 0x40, 0xEE, 0xEE, 0x81, 0xFF, 0xEF, 0, 0, 0, 0};
+    set_sdm_settings_sentinels(session, file);
+    assert_status(session, valid, sizeof(valid), DFC_STATUS_OK);
+    munit_assert_uint16(file->sdm_access_rights, ==, 0xEFFF);
+    munit_assert_true(file->sdm_has_uid_offset);
+    munit_assert_true(credential.dirty);
+    munit_assert_false(session->emulator->sdm_read_cache_valid);
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
 static MunitResult test_change_file_settings_validates_sdm_counter_access(
     const MunitParameter params[],
     void* data) {
@@ -1635,7 +1670,7 @@ static MunitResult test_change_file_settings_success_replaces_sdm_settings(
 
     set_sdm_settings_sentinels(session, file);
     const uint8_t all_sdm_fields[] = {
-        0x90, 0x5F, 0x00, 0x00, 0x1C, 0x01, 0x40, 0xEE, 0xEE, 0xF1, 0xEE, 0xE0,
+        0x90, 0x5F, 0x00, 0x00, 0x1C, 0x01, 0x40, 0xEE, 0xEE, 0xF1, 0xFE, 0xE0,
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
         0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x00,
     };
@@ -1944,6 +1979,12 @@ static MunitTest tests[] = {
 #if DFC_ENABLE_SDM
     {"/change-file-settings-rejections-are-atomic",
      test_change_file_settings_rejections_are_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-validates-sdm-reserved-access",
+     test_change_file_settings_validates_sdm_reserved_access,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

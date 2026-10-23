@@ -1384,6 +1384,10 @@ static void handle_change_file_settings(
                 apdu_len < expected_len ? DFC_STATUS_LENGTH_ERROR : DFC_STATUS_PARAMETER_ERROR);
             return;
         }
+        if((sdm_access_rights & 0x00F0u) != 0x00F0u) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
         if((sdm_options & DFC_SDM_ASCII_ENCODING_MASK) == 0) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;
