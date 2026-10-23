@@ -42,6 +42,16 @@ extern "C" {
 #define DFC_FFI_UNSUPPORTED      (-4)
 #define DFC_FFI_RANDOM_FAILED    (-5)
 
+// Stable reader-step statuses returned by dfc_ffi_reader_step.
+#define DFC_FFI_READER_OK               0
+#define DFC_FFI_READER_PENDING          1
+#define DFC_FFI_READER_INVALID          2
+#define DFC_FFI_READER_BUFFER_TOO_SMALL 3
+#define DFC_FFI_READER_PROTOCOL_ERROR   4
+#define DFC_FFI_READER_INTEGRITY_ERROR  5
+#define DFC_FFI_READER_CARD_ERROR       6
+#define DFC_FFI_READER_UNSUPPORTED      7
+
 // Largest explicit clear-header length accepted by reader exchange calls.
 #define DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH 10
 

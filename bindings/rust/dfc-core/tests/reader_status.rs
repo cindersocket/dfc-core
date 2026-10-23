@@ -1,0 +1,110 @@
+use dfc_core::{
+    Command, CommunicationMode, Credential, Error, Framing, Reader, ReaderError, Transport,
+    VirtualPicc, raw,
+};
+
+struct MalformedTransport {
+    calls: usize,
+}
+
+impl Transport for MalformedTransport {
+    type Error = &'static str;
+
+    fn transceive(&mut self, _command: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.calls += 1;
+        if self.calls == 1 {
+            Ok(vec![0])
+        } else {
+            Err("terminal reader status was retransmitted")
+        }
+    }
+}
+
+#[test]
+fn terminal_status_does_not_retransmit() {
+    let mut reader =
+        Reader::new(MalformedTransport { calls: 0 }, Framing::Iso7816).expect("reader");
+    let version = Command {
+        instruction: 0x60,
+        data: Vec::new(),
+    };
+
+    assert!(matches!(
+        reader.exchange(&version, CommunicationMode::Plain, None),
+        Err(ReaderError::Dfc(Error::Native(status)))
+            if status == raw::DFC_FFI_READER_PROTOCOL_ERROR as i32
+    ));
+    assert_eq!(reader.transport_mut().calls, 1);
+}
+
+struct CorruptD40MacTransport {
+    picc: VirtualPicc,
+    calls: usize,
+}
+
+impl Transport for CorruptD40MacTransport {
+    type Error = Error;
+
+    fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.calls += 1;
+        let mut response = self.picc.exchange(command)?;
+        if command.get(1) == Some(&0xbd) && response.len() >= 6 {
+            response[0] ^= 1;
+        }
+        Ok(response)
+    }
+}
+
+#[test]
+fn d40_integrity_failure_is_terminal_and_retires_session() {
+    let credential = Credential::decode(include_bytes!(
+        "../../../../examples/credentials/v6-auth-commands.dfcb"
+    ))
+    .expect("fixture");
+    let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
+    picc.activate().expect("activation");
+    let mut reader =
+        Reader::new(CorruptD40MacTransport { picc, calls: 0 }, Framing::Iso7816).expect("reader");
+
+    reader
+        .exchange(
+            &Command::select_application([0xf1, 0x49, 0x47]),
+            CommunicationMode::Plain,
+            None,
+        )
+        .expect("select D40 application");
+    reader
+        .authenticate(0x0a, 0, &[0; 8], &[0; 8])
+        .expect("D40 authentication");
+    assert_ne!(reader.state().expect("authenticated state").0.auth_mode, 0);
+    reader
+        .exchange(
+            &Command {
+                instruction: 0xcd,
+                data: vec![1, 1, 0xee, 0xee, 4, 0, 0],
+            },
+            CommunicationMode::Plain,
+            None,
+        )
+        .expect("create MAC-mode data file");
+
+    let calls = reader.transport_mut().calls;
+    let result = reader.exchange(
+        &Command {
+            instruction: 0xbd,
+            data: vec![1, 4, 0, 0, 0, 0, 0],
+        },
+        CommunicationMode::Mac,
+        None,
+    );
+    assert!(
+        matches!(
+            result,
+            Err(ReaderError::Dfc(Error::Native(status)))
+                if status == raw::DFC_FFI_READER_INTEGRITY_ERROR as i32
+        ),
+        "{result:?}"
+    );
+    assert_eq!(reader.transport_mut().calls, calls + 1);
+    assert_eq!(reader.state().expect("retired state").0.auth_mode, 0);
+}

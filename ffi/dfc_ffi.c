@@ -29,6 +29,17 @@ _Static_assert(
 _Static_assert(
     DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH == DFC_READER_MAX_CLEAR_HEADER_LENGTH,
     "FFI reader header bound drifted");
+#define ASSERT_READER_STATUS(ffi_status, core_status) \
+    _Static_assert((ffi_status) == (core_status), "FFI reader status value drifted")
+ASSERT_READER_STATUS(DFC_FFI_READER_OK, DfcReaderOk);
+ASSERT_READER_STATUS(DFC_FFI_READER_PENDING, DfcReaderPending);
+ASSERT_READER_STATUS(DFC_FFI_READER_INVALID, DfcReaderInvalid);
+ASSERT_READER_STATUS(DFC_FFI_READER_BUFFER_TOO_SMALL, DfcReaderBufferTooSmall);
+ASSERT_READER_STATUS(DFC_FFI_READER_PROTOCOL_ERROR, DfcReaderProtocolError);
+ASSERT_READER_STATUS(DFC_FFI_READER_INTEGRITY_ERROR, DfcReaderIntegrityError);
+ASSERT_READER_STATUS(DFC_FFI_READER_CARD_ERROR, DfcReaderCardError);
+ASSERT_READER_STATUS(DFC_FFI_READER_UNSUPPORTED, DfcReaderUnsupported);
+#undef ASSERT_READER_STATUS
 #endif
 
 struct DfcFfiCredential {

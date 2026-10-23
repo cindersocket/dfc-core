@@ -71,6 +71,20 @@ pub struct Reader<T> {
     _not_sync: PhantomData<core::cell::Cell<()>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReaderStepStatus {
+    Complete,
+    Pending,
+}
+
+pub(crate) fn reader_step_status(value: i32) -> Result<ReaderStepStatus, Error> {
+    if value == sys::DFC_FFI_READER_PENDING as i32 {
+        return Ok(ReaderStepStatus::Pending);
+    }
+    status(value)?;
+    Ok(ReaderStepStatus::Complete)
+}
+
 unsafe impl<T: Send> Send for Reader<T> {}
 
 impl<T: Transport> Reader<T> {
@@ -388,11 +402,8 @@ impl<T: Transport> Reader<T> {
                     &mut len,
                 )
             };
-            if result < 0 {
-                return Err(ReaderError::Dfc(crate::status(result).unwrap_err()));
-            }
             outgoing.truncate(len);
-            if result == 0 {
+            if reader_step_status(result).map_err(ReaderError::Dfc)? == ReaderStepStatus::Complete {
                 let data = output(|out, cap, len| unsafe {
                     sys::dfc_ffi_reader_result_data(self.exchange.as_ptr(), out, cap, len)
                 })
@@ -416,6 +427,36 @@ impl<T> Drop for Reader<T> {
         unsafe {
             sys::dfc_ffi_reader_exchange_free(self.exchange.as_ptr());
             sys::dfc_ffi_reader_session_free(self.session.as_ptr());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn step_status_maps_the_complete_abi_family() {
+        assert_eq!(
+            reader_step_status(sys::DFC_FFI_READER_OK as i32),
+            Ok(ReaderStepStatus::Complete)
+        );
+        assert_eq!(
+            reader_step_status(sys::DFC_FFI_READER_PENDING as i32),
+            Ok(ReaderStepStatus::Pending)
+        );
+        for terminal in [
+            sys::DFC_FFI_READER_INVALID,
+            sys::DFC_FFI_READER_BUFFER_TOO_SMALL,
+            sys::DFC_FFI_READER_PROTOCOL_ERROR,
+            sys::DFC_FFI_READER_INTEGRITY_ERROR,
+            sys::DFC_FFI_READER_CARD_ERROR,
+            sys::DFC_FFI_READER_UNSUPPORTED,
+        ] {
+            assert_eq!(
+                reader_step_status(terminal as i32),
+                Err(Error::Native(terminal as i32))
+            );
         }
     }
 }
