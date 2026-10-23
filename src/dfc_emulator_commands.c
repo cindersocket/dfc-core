@@ -4549,6 +4549,15 @@ static void handle_write_data(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
             return;
         }
+    }
+    if(file->type == DFC_FILE_TYPE_STANDARD_DATA &&
+       !dfc_emulator_transaction_snapshot_mirror_write(
+           emulator, (size_t)(file - emulator->credential->files), offset, clear, out_len)) {
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+    if(out_len > 0) {
         memcpy(file_bytes + offset, clear, out_len);
     }
     if(file->type == DFC_FILE_TYPE_BACKUP_DATA) file->transaction_pending = true;

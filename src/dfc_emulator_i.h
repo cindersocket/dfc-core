@@ -46,6 +46,12 @@ void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator);
 bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator);
 bool dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t file_index);
 void dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t file_index);
+bool dfc_emulator_transaction_snapshot_mirror_write(
+    DfcEmulator* emulator,
+    size_t file_index,
+    size_t offset,
+    const uint8_t* data,
+    size_t length);
 #else
 static inline bool
     dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t file_index) {
@@ -57,6 +63,19 @@ static inline void
     dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t file_index) {
     DFC_UNUSED(emulator);
     DFC_UNUSED(file_index);
+}
+static inline bool dfc_emulator_transaction_snapshot_mirror_write(
+    DfcEmulator* emulator,
+    size_t file_index,
+    size_t offset,
+    const uint8_t* data,
+    size_t length) {
+    DFC_UNUSED(emulator);
+    DFC_UNUSED(file_index);
+    DFC_UNUSED(offset);
+    DFC_UNUSED(data);
+    DFC_UNUSED(length);
+    return true;
 }
 #endif
 void dfc_emulator_select_application(

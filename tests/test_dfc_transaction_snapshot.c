@@ -29,6 +29,23 @@ static void exchange_status(
     munit_assert_uint8(response[1], ==, status);
 }
 
+static void exchange_tail_status(
+    DfcVirtualPiccSession* session,
+    const uint8_t* command,
+    size_t command_len,
+    uint8_t status) {
+    uint8_t response[64];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, command, command_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, >=, 2);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    munit_assert_uint8(response[response_len - 1], ==, status);
+}
+
 static DfcFile* add_file(
     DfcCredential* credential,
     size_t app_index,
@@ -115,6 +132,93 @@ static void finish_transaction(SnapshotFixture* fixture, bool commit) {
     const uint8_t command[] = {
         0x90, commit ? DFC_CMD_COMMIT_TRANSACTION : DFC_CMD_ABORT_TRANSACTION, 0, 0, 0};
     exchange_status(fixture->session, command, sizeof(command), DFC_STATUS_OK);
+}
+
+static void
+    create_family(DfcVirtualPiccSession* session, const char* family, uint8_t file_number);
+
+static void create_standard_file(DfcVirtualPiccSession* session, uint8_t file_number) {
+    const uint8_t command[] = {
+        0x90,
+        DFC_CMD_CREATE_STD_DATA_FILE,
+        0,
+        0,
+        7,
+        file_number,
+        DFC_COMM_PLAIN,
+        0xEE,
+        0xEE,
+        8,
+        0,
+        0,
+        0,
+    };
+    exchange_status(session, command, sizeof(command), DFC_STATUS_OK);
+}
+
+static void write_data_status(
+    DfcVirtualPiccSession* session,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* bytes,
+    size_t length,
+    uint8_t status) {
+    uint8_t command[13 + 8] = {
+        0x90,
+        DFC_CMD_WRITE_DATA,
+        0,
+        0,
+        (uint8_t)(7 + length),
+        file_number,
+        (uint8_t)offset,
+        (uint8_t)(offset >> 8),
+        (uint8_t)(offset >> 16),
+        (uint8_t)length,
+        (uint8_t)(length >> 8),
+        (uint8_t)(length >> 16),
+    };
+    munit_assert_size(length, <=, 8);
+    if(length) memcpy(command + 12, bytes, length);
+    exchange_status(session, command, 13 + length, status);
+}
+
+static void open_transaction_family(SnapshotFixture* fixture, const char* family) {
+    if(strcmp(family, "backup") == 0) {
+        const uint8_t bytes[] = {0xB1, 0xB2, 0xB3, 0xB4};
+        write_data_status(fixture->session, 2, 0, bytes, sizeof(bytes), DFC_STATUS_OK);
+        return;
+    }
+    if(strcmp(family, "linear") == 0 || strcmp(family, "cyclic") == 0) {
+        uint8_t file_number = 3;
+        if(strcmp(family, "cyclic") == 0) {
+            if(!dfc_credential_find_file_in_app(&fixture->credential, 0, 5)) {
+                create_family(fixture->session, "cyclic", 5);
+            }
+            file_number = 5;
+        }
+        const uint8_t command[] = {
+            0x90,
+            DFC_CMD_WRITE_RECORD,
+            0,
+            0,
+            11,
+            file_number,
+            0,
+            0,
+            0,
+            4,
+            0,
+            0,
+            0xA1,
+            0xA2,
+            0xA3,
+            0xA4,
+            0,
+        };
+        exchange_status(fixture->session, command, sizeof(command), DFC_STATUS_OK);
+        return;
+    }
+    munit_error("unknown transaction family");
 }
 
 static void
@@ -439,6 +543,251 @@ static MunitResult test_replacement_and_shrink_wipe(const MunitParameter params[
     return MUNIT_OK;
 }
 
+static MunitResult test_immediate_write_survives_abort(
+    const MunitParameter params[],
+    void* data) {
+    (void)data;
+    const char* family = munit_parameters_get(params, "family");
+    bool after = strcmp(munit_parameters_get(params, "position"), "after") == 0;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    uint8_t file_number = 1;
+    if(after) {
+        if(strcmp(family, "cyclic") == 0) create_family(fixture.session, "cyclic", 5);
+        create_standard_file(fixture.session, 6);
+        file_number = 6;
+    }
+    dfc_credential_clear_dirty(&fixture.credential);
+    open_transaction_family(&fixture, family);
+    const uint8_t replacement[] = {0x61, 0x62, 0x63, 0x64};
+    write_data_status(
+        fixture.session, file_number, 2, replacement, sizeof(replacement), DFC_STATUS_OK);
+    finish_transaction(&fixture, false);
+
+    DfcFile* standard =
+        dfc_credential_find_file_in_app(&fixture.credential, 0, file_number);
+    munit_assert_memory_equal(
+        sizeof(replacement),
+        dfc_file_data_const(&fixture.credential, standard) + 2,
+        replacement);
+    munit_assert_true(fixture.credential.dirty);
+    DfcFile* backup = dfc_credential_find_file_in_app(&fixture.credential, 0, 2);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data_const(&fixture.credential, backup),
+        ((uint8_t[]){0x22, 0x22, 0x22, 0x22}));
+    DfcFile* linear = dfc_credential_find_file_in_app(&fixture.credential, 0, 3);
+    munit_assert_uint32(linear->record_count, ==, 1);
+    if(strcmp(family, "cyclic") == 0) {
+        DfcFile* cyclic = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
+        munit_assert_uint32(cyclic->record_count, ==, 0);
+    }
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_multiple_immediate_writes_survive_abort(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    create_standard_file(fixture.session, 5);
+    open_transaction_family(&fixture, "backup");
+    const uint8_t first[] = {0x31, 0x32};
+    const uint8_t second[] = {0x41, 0x42};
+    const uint8_t third[] = {0x51, 0x52, 0x53, 0x54};
+    write_data_status(fixture.session, 1, 0, first, sizeof(first), DFC_STATUS_OK);
+    write_data_status(fixture.session, 1, 4, second, sizeof(second), DFC_STATUS_OK);
+    write_data_status(fixture.session, 5, 2, third, sizeof(third), DFC_STATUS_OK);
+    finish_transaction(&fixture, false);
+    DfcFile* before = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
+    DfcFile* after = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
+    munit_assert_memory_equal(2, dfc_file_data_const(&fixture.credential, before), first);
+    munit_assert_memory_equal(
+        2, dfc_file_data_const(&fixture.credential, before) + 4, second);
+    munit_assert_memory_equal(
+        4, dfc_file_data_const(&fixture.credential, after) + 2, third);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_failed_immediate_write_does_not_rebase_snapshot(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    open_transaction_family(&fixture, "backup");
+    const uint8_t rejected[] = {0x81, 0x82, 0x83, 0x84};
+    write_data_status(fixture.session, 1, 6, rejected, sizeof(rejected), DFC_STATUS_BOUNDARY_ERROR);
+    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
+    munit_assert_memory_equal(
+        8,
+        dfc_file_data_const(&fixture.credential, standard),
+        ((uint8_t[]){0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10}));
+    munit_assert_false(fixture.session->emulator->transaction_snapshot_active);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_immediate_write_retry_executes_once(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    open_transaction_family(&fixture, "backup");
+    const uint8_t command[] = {
+        0x90, DFC_CMD_WRITE_DATA, 0, 0, 11, 1, 0, 0, 0, 4, 0, 0, 0x91, 0x92, 0x93, 0x94, 0};
+    uint8_t response[2];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session, command, sizeof(command), response, 1, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session, command, sizeof(command), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_OK}));
+    finish_transaction(&fixture, false);
+    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data_const(&fixture.credential, standard),
+        ((uint8_t[]){0x91, 0x92, 0x93, 0x94}));
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_immediate_write_preserves_co_pending_value(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    begin_transaction(&fixture);
+    const uint8_t replacement[] = {0xA1, 0xA2, 0xA3, 0xA4};
+    write_data_status(fixture.session, 1, 0, replacement, sizeof(replacement), DFC_STATUS_OK);
+    finish_transaction(&fixture, false);
+    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
+    DfcFile* value = dfc_credential_find_file_in_app(&fixture.credential, 0, 4);
+    munit_assert_memory_equal(
+        sizeof(replacement), dfc_file_data_const(&fixture.credential, standard), replacement);
+    munit_assert_int32(value->value, ==, 10);
+    munit_assert_false(value->value_pending);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_chained_immediate_write_survives_abort(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
+    munit_assert_true(dfc_file_resize(&fixture.credential, standard, 100));
+    memset(dfc_file_data(&fixture.credential, standard), 0x10, 100);
+    open_transaction_family(&fixture, "backup");
+
+    uint8_t expected[100];
+    for(size_t index = 0; index < sizeof(expected); index++) {
+        expected[index] = (uint8_t)(index + 1);
+    }
+    uint8_t first[6 + DFC_EV1_MAX_FRAME_PAYLOAD] = {
+        0x90, DFC_CMD_WRITE_DATA, 0, 0, DFC_EV1_MAX_FRAME_PAYLOAD, 1, 0, 0, 0, 100, 0, 0};
+    memcpy(first + 12, expected, 52);
+    exchange_status(fixture.session, first, sizeof(first), DFC_CMD_ADDITIONAL_FRAME);
+    uint8_t last[6 + 48] = {0x90, DFC_CMD_ADDITIONAL_FRAME, 0, 0, 48};
+    memcpy(last + 5, expected + 52, 48);
+    exchange_status(fixture.session, last, sizeof(last), DFC_STATUS_OK);
+    finish_transaction(&fixture, false);
+    munit_assert_memory_equal(
+        sizeof(expected), dfc_file_data_const(&fixture.credential, standard), expected);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_authenticated_mac_immediate_write_survives_abort(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    open_transaction_family(&fixture, "backup");
+    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
+    standard->comm_settings = DFC_COMM_MAC;
+    uint8_t session_key[DFC_AES_KEY_LENGTH];
+    for(size_t index = 0; index < sizeof(session_key); index++) {
+        session_key[index] = (uint8_t)(0x40 + index);
+    }
+    fixture.session->emulator->secure_messaging = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
+    munit_assert_not_null(fixture.session->emulator->secure_messaging);
+    fixture.session->emulator->auth_key_no = 0;
+
+    uint8_t body[] = {1, 0, 0, 0, 4, 0, 0, 0xC1, 0xC2, 0xC3, 0xC4};
+    DfcSecureMessaging* twin = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
+    munit_assert_not_null(twin);
+    munit_assert_true(
+        dfc_secure_messaging_update_ev1_command(twin, DFC_CMD_WRITE_DATA, body, sizeof(body)));
+    uint8_t command[5 + sizeof(body) + DFC_WIRE_MAC_LENGTH + 1] = {
+        0x90, DFC_CMD_WRITE_DATA, 0, 0, sizeof(body) + DFC_WIRE_MAC_LENGTH};
+    memcpy(command + 5, body, sizeof(body));
+    memcpy(command + 5 + sizeof(body), twin->iv, DFC_WIRE_MAC_LENGTH);
+    exchange_tail_status(fixture.session, command, sizeof(command), DFC_STATUS_OK);
+    const uint8_t abort[] = {0x90, DFC_CMD_ABORT_TRANSACTION, 0, 0, 0};
+    exchange_tail_status(fixture.session, abort, sizeof(abort), DFC_STATUS_OK);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data_const(&fixture.credential, standard),
+        ((uint8_t[]){0xC1, 0xC2, 0xC3, 0xC4}));
+    dfc_secure_messaging_free(twin);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_iso_update_binary_keeps_existing_abort_semantics(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    open_transaction_family(&fixture, "backup");
+    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
+    fixture.session->iso_file_selected = true;
+    fixture.session->iso_file_index = (size_t)(standard - fixture.credential.files);
+    const uint8_t update[] = {
+        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_UPDATE_BINARY, 0, 0, 4, 0xD1, 0xD2, 0xD3, 0xD4};
+    uint8_t response[2];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.session, update, sizeof(update), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x90, 0x00}));
+    finish_transaction(&fixture, false);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data_const(&fixture.credential, standard),
+        ((uint8_t[]){0x10, 0x10, 0x10, 0x10}));
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
 static char* family_values[] = {
     "backup",
     "value",
@@ -458,6 +807,12 @@ static MunitParameterEnum delete_params[] = {
     {"delete", delete_values},
     {"finish", finish_values},
     {NULL, NULL}};
+static char* transaction_family_values[] = {"backup", "linear", "cyclic", NULL};
+static char* position_values[] = {"before", "after", NULL};
+static MunitParameterEnum immediate_write_params[] = {
+    {"family", transaction_family_values},
+    {"position", position_values},
+    {NULL, NULL}};
 
 static MunitTest tests[] = {
     {"/create-family", test_creation_family, NULL, NULL, MUNIT_TEST_OPTION_NONE, family_params},
@@ -471,6 +826,54 @@ static MunitTest tests[] = {
     {"/retry-once", test_retry_executes_once, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/growth-failure", test_growth_failure_is_atomic, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/wipe", test_replacement_and_shrink_wipe, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/immediate-write-survives-abort",
+     test_immediate_write_survives_abort,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     immediate_write_params},
+    {"/multiple-immediate-writes",
+     test_multiple_immediate_writes_survive_abort,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/failed-immediate-write",
+     test_failed_immediate_write_does_not_rebase_snapshot,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/immediate-write-retry",
+     test_immediate_write_retry_executes_once,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/immediate-write-with-value",
+     test_immediate_write_preserves_co_pending_value,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/chained-immediate-write",
+     test_chained_immediate_write_survives_abort,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/authenticated-mac-immediate-write",
+     test_authenticated_mac_immediate_write_survives_abort,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-update-binary-exclusion",
+     test_iso_update_binary_keeps_existing_abort_semantics,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

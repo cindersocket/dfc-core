@@ -152,6 +152,30 @@ void dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t
     emulator->transaction_record_numbers[DFC_MAX_FILES - 1] = 0;
 }
 
+bool dfc_emulator_transaction_snapshot_mirror_write(
+    DfcEmulator* emulator,
+    size_t file_index,
+    size_t offset,
+    const uint8_t* data,
+    size_t length) {
+    if(!emulator->transaction_snapshot_active) return true;
+    DfcCredential* credential = emulator->credential;
+    if(file_index >= credential->num_files || (length && !data)) return false;
+    DfcFile* file = &credential->files[file_index];
+    if(file->app_index != emulator->transaction_snapshot_app_index ||
+       offset > file->data_len || length > file->data_len - offset ||
+       file->data_offset > emulator->transaction_snapshot_pool_length ||
+       offset > emulator->transaction_snapshot_pool_length - file->data_offset ||
+       length > emulator->transaction_snapshot_pool_length - file->data_offset - offset) {
+        return false;
+    }
+    if(length) {
+        memcpy(emulator->transaction_snapshot_pool + file->data_offset + offset, data, length);
+    }
+    emulator->transaction_snapshot_dirty = true;
+    return true;
+}
+
 bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
     if(!emulator->transaction_snapshot_active) return false;
 
