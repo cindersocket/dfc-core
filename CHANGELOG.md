@@ -11,8 +11,8 @@
 - Correct Java communication-mode values and Python reader FFI declarations,
   validate key-set storage widths at the FFI boundary, and enforce Rust 1.85
   compatibility in CI.
-- Add one-command formatting and documentation-link verification for every
-  supported binding language.
+- Check formatting and documentation links across C and every binding.
+- Document and verify the 2.0 source-release process and artifacts.
 - Generate target and Rust static libraries with the toolchain's native code
   model, and reserve position-independent objects for shared and JNI libraries.
 - Add a reproducible Cortex-M4 footprint gate for code, static data, stack
@@ -27,12 +27,15 @@
   bytes, replay buffers, and secret scratch storage.
 - Make reader, native, ISO, ISO-DEP, EV1, and EV2 retries state-atomic across
   authentication, response-capacity, chaining, and transport failures.
-- Retire invalidated ISO-DEP responses, reset activation after transaction-timer
-  expiry, and support ISO-DEP record command variants.
+- Report required JNI response lengths, wipe invalidated ISO-DEP responses,
+  reset expired activations, and support ISO-DEP record commands.
 - Roll back failed SDM, delegated-application, transaction-MAC, CommitReaderID,
   value, file-creation, and key-update operations.
 - Preserve transactions across current-key changes while aborting them on
   application changes and terminal command failures.
+- Correct transaction snapshots, rollback, Transaction-MAC lifecycle, and ISO
+  update publication.
+- Apply the effective communication mode after access-right evaluation.
 - Validate SDM counter keys, metadata-mirroring applicability, reset layouts,
   and reserved access-rights values, and reset the SDM read counter when its
   configuration changes.
