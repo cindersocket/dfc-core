@@ -1724,8 +1724,11 @@ static DfcDerStatus decode_files(DfcCredential* c, size_t owner, Slice body) {
     return DfcDerOk;
 }
 
-DfcDerStatus dfc_der_decode(DfcCredential* credential, const uint8_t* in, size_t len) {
-    if(!credential || !in) return DfcDerMalformed;
+// Fills `credential` in place, field by field. A failure can arrive at any
+// point, so this is only reached through dfc_der_decode, which owns the
+// failure contract and discards whatever was written.
+static DfcDerStatus decode_credential(DfcCredential* credential, const uint8_t* in, size_t len) {
+    if(!in) return DfcDerMalformed;
     // Section 2.2.1 bounds a .dfcb value at 65535 octets, so exceeding it is a
     // format violation rather than this build running out of room.
     if(len > DFC_DER_MAX_SIZE) return DfcDerMalformed;
@@ -2062,6 +2065,15 @@ DfcDerStatus dfc_der_decode(DfcCredential* credential, const uint8_t* in, size_t
 
     credential->dirty = false;
     return DfcDerOk;
+}
+
+DfcDerStatus dfc_der_decode(DfcCredential* credential, const uint8_t* in, size_t len) {
+    if(!credential) return DfcDerMalformed;
+    DfcDerStatus status = decode_credential(credential, in, len);
+    // One exit for every failure: the credential is the empty credential, with
+    // any key material decoded before the fault wiped, never a partial one.
+    if(status != DfcDerOk) dfc_credential_clear(credential);
+    return status;
 }
 
 #endif // DFC_ENABLE_DER_DECODER

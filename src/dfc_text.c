@@ -1190,8 +1190,13 @@ static bool parse_picc(P* p) {
     return true;
 }
 
-DfcTextStatus
-    dfc_text_parse(DfcCredential* credential, const char* text, size_t len, DfcTextError* detail) {
+// Fills `credential` in place. Like the binary decoder, it is only reached
+// through its public entry point, which owns the failure contract.
+static DfcTextStatus parse_credential(
+    DfcCredential* credential,
+    const char* text,
+    size_t len,
+    DfcTextError* detail) {
     if(detail) {
         detail->line = 0;
         detail->message[0] = '\0';
@@ -1315,11 +1320,18 @@ DfcTextStatus
 
     if(p.failed) {
         if(detail) *detail = p.err;
-        dfc_credential_clear(credential);
         return p.status;
     }
     credential->dirty = false;
     return DfcTextOk;
+}
+
+DfcTextStatus
+    dfc_text_parse(DfcCredential* credential, const char* text, size_t len, DfcTextError* detail) {
+    DfcTextStatus status = parse_credential(credential, text, len, detail);
+    // One exit for every failure, argument and capacity errors included.
+    if(status != DfcTextOk && credential) dfc_credential_clear(credential);
+    return status;
 }
 
 // ------------------------------------------------------------------ writer ---
@@ -1816,7 +1828,11 @@ DfcTextStatus dfc_credential_load(
         detail->line = 0;
         detail->message[0] = '\0';
     }
-    if(!credential || (!content && len > 0)) return DfcTextMalformed;
+    if(!credential) return DfcTextMalformed;
+    if(!content && len > 0) {
+        dfc_credential_clear(credential);
+        return DfcTextMalformed;
+    }
     if(dfc_credential_content_is_binary(content, len)) {
         DfcDerStatus st = dfc_der_decode(credential, content, len);
         if(st != DfcDerOk && detail) {

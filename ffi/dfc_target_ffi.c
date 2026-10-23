@@ -29,7 +29,7 @@ void dfc_target_credential_destroy(void* storage) {
 }
 
 int32_t dfc_target_credential_decode(void* storage, const uint8_t* content, size_t len) {
-    if(!storage || (!content && len)) return DfcDerMalformed;
+    if(!storage) return DfcDerMalformed;
     return dfc_der_decode(storage, content, len);
 }
 

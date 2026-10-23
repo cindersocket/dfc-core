@@ -12,6 +12,9 @@
   validate key-set storage widths at the FFI boundary, and enforce Rust 1.85
   compatibility in CI.
 - Check formatting and documentation links across C and every binding.
+- Make every credential decoder leave an empty, securely wiped credential after
+  any failure, and enforce decoder coverage with a registry check and fuzz
+  invariant (#115).
 - Document and verify the 2.0 source-release process and artifacts.
 - Generate target and Rust static libraries with the toolchain's native code
   model, and reserve position-independent objects for shared and JNI libraries.

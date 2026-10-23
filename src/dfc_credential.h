@@ -303,6 +303,12 @@ typedef struct {
 DfcCredential* dfc_credential_alloc(void);
 void dfc_credential_free(DfcCredential* dfc_credential);
 
+// Reset `credential` to the empty credential: factory PICC settings, no
+// applications, files or keys. Every octet of the previous content, key material
+// included, is wiped first. This is the one state a function that fills a
+// credential from outside input (dfc_der_decode, dfc_text_parse,
+// dfc_credential_load, dfc_target_credential_decode) leaves behind on every
+// failure; none of them ever leaves a credential partly populated.
 bool dfc_credential_clear(DfcCredential* dfc_credential);
 // Factory defaults and a generated UID, without applications or files. Returns
 // false, leaving the credential unchanged, if randomness is unavailable.

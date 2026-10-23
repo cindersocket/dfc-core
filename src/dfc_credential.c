@@ -795,12 +795,14 @@ bool dfc_credential_picc_ats_is_consistent(const DfcCredential* credential) {
 
 DfcCredential* dfc_credential_alloc(void) {
     DfcCredential* credential = malloc(sizeof(DfcCredential));
-    memset(credential, 0, sizeof(DfcCredential));
+    if(credential) memset(credential, 0, sizeof(DfcCredential));
     return credential;
 }
 
 bool dfc_credential_clear(DfcCredential* credential) {
-    memset(credential, 0, sizeof(DfcCredential));
+    // Whatever the credential held, key material included, is wiped first: this
+    // is also how a decoder discards a credential it only partly filled.
+    dfc_secure_wipe(credential, sizeof(DfcCredential));
     credential->picc_key_settings_1 = 0x0F;
     credential->picc_key_settings_2 = DFC_KEY_TYPE_DES_2K3DES | 1;
     credential->picc_auth_command = DFC_CMD_AUTHENTICATE_LEGACY;
