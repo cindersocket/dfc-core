@@ -1934,6 +1934,8 @@ static MunitResult
     select_app(&link, AID_AES);
     DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, FilePlain);
     munit_assert_not_null(file);
+    // This capacity-retry check exercises the mutation path without authentication.
+    file->access_rights = 0xEEEE;
     link.picc->iso_file_selected = true;
     link.picc->iso_file_index = (size_t)(file - link.credential.files);
     uint8_t original[2];
@@ -1978,6 +1980,7 @@ static MunitResult
     select_app(&link, AID_AES);
     file = dfc_credential_find_file_in_app(&link.credential, 0, FileLong);
     munit_assert_not_null(file);
+    file->access_rights = 0xEEEE;
     file->sdm_enabled = true;
     file->sdm_has_picc_data_offset = true;
     file->sdm_picc_data_offset = 0;
@@ -1997,7 +2000,7 @@ static MunitResult
     const uint8_t read_binary_long[] = {
         DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00, 0x10, 0x00};
     const uint8_t read_binary_bad_range[] = {
-        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, LONG_FILE_SIZE, 0x01};
+        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, LONG_FILE_SIZE + 1, 0x01};
 
     const struct {
         const uint8_t* command;
