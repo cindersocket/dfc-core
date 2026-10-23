@@ -1513,11 +1513,10 @@ static void assert_cbc_failure_is_atomic(uint8_t cipher, size_t key_len) {
         uint8_t ciphertext[32] = {0};
         fail_at = cipher == DFC_CMD_AUTHENTICATE_LEGACY ? position : 0;
         fail_cbc = cipher != DFC_CMD_AUTHENTICATE_LEGACY;
-        munit_assert_size(
-            dfc_secure_messaging_unwrap(
-                &sm, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, ciphertext, wrapped_len, output),
-            ==,
-            0);
+        size_t output_len = SIZE_MAX;
+        munit_assert_false(dfc_secure_messaging_unwrap(
+            &sm, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, ciphertext, wrapped_len, output, &output_len));
+        munit_assert_size(output_len, ==, 0);
         munit_assert_memory_equal(sizeof(before_iv), sm.iv, before_iv);
         assert_zeroed(output, wrapped_len);
     }
@@ -1559,20 +1558,17 @@ static void
         uint8_t output[sizeof(plain)];
         memset(output, 0xA5, sizeof(output));
 
-        munit_assert_size(
-            dfc_secure_messaging_unwrap(
-                &reader, DFC_COMM_MAC, DFC_STATUS_OK, wrapped, wrapped_len, output),
-            ==,
-            0);
+        size_t output_len = SIZE_MAX;
+        munit_assert_false(dfc_secure_messaging_unwrap(
+            &reader, DFC_COMM_MAC, DFC_STATUS_OK, wrapped, wrapped_len, output, &output_len));
+        munit_assert_size(output_len, ==, 0);
         munit_assert_memory_equal(sizeof(before_iv), reader.iv, before_iv);
         assert_filled(output, sizeof(output), 0xA5);
 
         fail_at = 0;
-        munit_assert_size(
-            dfc_secure_messaging_unwrap(
-                &reader, DFC_COMM_MAC, DFC_STATUS_OK, wrapped, wrapped_len, output),
-            ==,
-            sizeof(plain));
+        munit_assert_true(dfc_secure_messaging_unwrap(
+            &reader, DFC_COMM_MAC, DFC_STATUS_OK, wrapped, wrapped_len, output, &output_len));
+        munit_assert_size(output_len, ==, sizeof(plain));
         munit_assert_memory_equal(sizeof(plain), output, plain);
     }
 }

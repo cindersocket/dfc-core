@@ -1555,9 +1555,9 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
             dfc_reader_session_clear(session);
             return finish_command(ex, DfcReaderProtocolError);
         }
-        clear_len = dfc_secure_messaging_unwrap(
-            &session->sm, comm, status, ex->data, ex->data_len, ex->data);
-        if(clear_len == 0 && ex->data_len > 0 && !(comm == DFC_COMM_MAC && ex->data_len == 4)) {
+        bool authenticated = dfc_secure_messaging_unwrap(
+            &session->sm, comm, status, ex->data, ex->data_len, ex->data, &clear_len);
+        if(!authenticated) {
             dfc_reader_session_clear(session);
             return finish_command(ex, DfcReaderIntegrityError);
         }

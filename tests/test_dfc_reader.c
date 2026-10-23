@@ -2085,6 +2085,142 @@ static MunitResult test_d40_session(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static DfcReaderStatus finish_d40_mac_response(
+    Link* link,
+    const uint8_t* response_data,
+    size_t response_data_len,
+    size_t* clear_len) {
+    DfcCommand command;
+    DfcReaderExchange exchange;
+    DfcReaderOptions options = {.comm_mode = DFC_COMM_MAC};
+    munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 1), ==, DfcCommandOk);
+    munit_assert_int(
+        dfc_reader_exchange_begin(&exchange, &link->session, link->framing, &command, &options),
+        ==,
+        DfcReaderOk);
+    uint8_t request[DFC_COMMAND_MAX_APDU];
+    size_t request_len = 0;
+    munit_assert_int(
+        dfc_reader_step(&exchange, NULL, 0, request, sizeof(request), &request_len),
+        ==,
+        DfcReaderPending);
+
+    uint8_t response[16] = {0};
+    munit_assert_size(response_data_len, <=, sizeof(response) - 2);
+    memcpy(response, response_data, response_data_len);
+    response[response_data_len] = 0x91;
+    response[response_data_len + 1] = DFC_STATUS_OK;
+    size_t ignored = 0;
+    DfcReaderStatus status = dfc_reader_step(
+        &exchange, response, response_data_len + 2, request, sizeof(request), &ignored);
+    (void)dfc_reader_result_data(&exchange, clear_len);
+    return status;
+}
+
+static size_t generate_d40_mac_response(
+    const Link* link,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t* response) {
+    DfcSecureMessaging card = link->session.sm;
+    card.pcd = false;
+    return dfc_secure_messaging_generate_response(
+        &card, DFC_COMM_MAC, DFC_STATUS_OK, plain, plain_len, response);
+}
+
+static MunitResult
+    test_d40_empty_response_requires_valid_mac(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+
+    const uint8_t valid_empty_mac[DFC_SM_LEGACY_MAC_LENGTH] = {0};
+    {
+        Link link;
+        link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+        select_app(&link, AID_D40);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+        size_t clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_response(&link, valid_empty_mac, sizeof(valid_empty_mac), &clear_len),
+            ==,
+            DfcReaderOk);
+        munit_assert_size(clear_len, ==, 0);
+        munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
+        link_close(&link);
+    }
+
+    const uint8_t nonempty[] = {0x5A};
+    {
+        Link link;
+        link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+        select_app(&link, AID_D40);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+        uint8_t response[sizeof(nonempty) + DFC_SM_LEGACY_MAC_LENGTH];
+        size_t response_len =
+            generate_d40_mac_response(&link, nonempty, sizeof(nonempty), response);
+        size_t clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_response(&link, response, response_len, &clear_len), ==, DfcReaderOk);
+        munit_assert_size(clear_len, ==, sizeof(nonempty));
+        munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
+        link_close(&link);
+    }
+
+    for(size_t mac_index = 0; mac_index < DFC_SM_LEGACY_MAC_LENGTH; mac_index++) {
+        Link link;
+        link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+        select_app(&link, AID_D40);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+        uint8_t response[sizeof(nonempty) + DFC_SM_LEGACY_MAC_LENGTH];
+        size_t response_len =
+            generate_d40_mac_response(&link, nonempty, sizeof(nonempty), response);
+        response[sizeof(nonempty) + mac_index] ^= 0x01;
+        size_t clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_response(&link, response, response_len, &clear_len),
+            ==,
+            DfcReaderIntegrityError);
+        munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
+        link_close(&link);
+    }
+
+    for(size_t mac_index = 0; mac_index < sizeof(valid_empty_mac); mac_index++) {
+        Link link;
+        link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+        select_app(&link, AID_D40);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+        uint8_t invalid_mac[sizeof(valid_empty_mac)] = {0};
+        invalid_mac[mac_index] = 1;
+        size_t clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_response(&link, invalid_mac, sizeof(invalid_mac), &clear_len),
+            ==,
+            DfcReaderIntegrityError);
+        munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
+        link_close(&link);
+    }
+
+    for(size_t truncated_len = 0; truncated_len < sizeof(valid_empty_mac); truncated_len++) {
+        Link link;
+        link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+        select_app(&link, AID_D40);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+        size_t clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_response(&link, valid_empty_mac, truncated_len, &clear_len),
+            ==,
+            DfcReaderIntegrityError);
+        munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
+        link_close(&link);
+    }
+    return MUNIT_OK;
+}
+
 static MunitResult test_native_framing(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -3734,6 +3870,12 @@ static MunitTest tests[] = {
 #endif
     {"/3k3des-session", test_3k3des_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/d40-session", test_d40_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/d40-empty-response-requires-valid-mac",
+     test_d40_empty_response_requires_valid_mac,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/native-framing", test_native_framing, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/native-command-chaining",
      test_native_command_chaining,

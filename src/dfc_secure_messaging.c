@@ -583,7 +583,7 @@ static size_t enciphered_encode(
     return padded_len;
 }
 
-static size_t enciphered_decode(
+static bool enciphered_decode(
     DfcSecureMessaging* sm,
     const uint8_t* crc_prefix,
     size_t crc_prefix_len,
@@ -591,13 +591,15 @@ static size_t enciphered_decode(
     size_t crc_suffix_len,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out) {
-    if(!sm || !out || !wrapped || wrapped_len > DFC_SM_MAX_CRYPTO_SIZE) return 0;
+    uint8_t* out,
+    size_t* out_len) {
+    if(out_len) *out_len = 0;
+    if(!sm || !out || !wrapped || !out_len || wrapped_len > DFC_SM_MAX_CRYPTO_SIZE) return false;
     size_t block_size = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_AES_KEY_LENGTH :
                                                                  DFC_SM_LEGACY_BLOCK_SIZE;
     if(wrapped_len % block_size != 0) {
         dfc_secure_wipe(out, wrapped_len);
-        return 0;
+        return false;
     }
     uint8_t next_iv[16] = {0};
     if(sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY) {
@@ -617,7 +619,7 @@ static size_t enciphered_decode(
     if(!ok) {
         dfc_secure_wipe(out, wrapped_len);
         dfc_secure_wipe(next_iv, sizeof(next_iv));
-        return 0;
+        return false;
     }
 
     size_t crc_len = sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 2 : 4;
@@ -681,11 +683,12 @@ static size_t enciphered_decode(
     if(sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY) memcpy(sm->iv, next_iv, sizeof(sm->iv));
     if(data_len < wrapped_len) dfc_secure_wipe(out + data_len, wrapped_len - data_len);
     dfc_secure_wipe(next_iv, sizeof(next_iv));
-    return data_len;
+    *out_len = data_len;
+    return true;
 failure:
     dfc_secure_wipe(out, wrapped_len);
     dfc_secure_wipe(next_iv, sizeof(next_iv));
-    return 0;
+    return false;
 }
 
 // PCD -> PICC direction (reader sending a command). `header` is the command's
@@ -731,21 +734,25 @@ size_t dfc_secure_messaging_wrap(
 }
 
 // PICC -> PCD direction (reader receiving a response): MAC covers [...data, status].
-size_t dfc_secure_messaging_unwrap(
+bool dfc_secure_messaging_unwrap(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,
     uint8_t status,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out) {
+    uint8_t* out,
+    size_t* out_len) {
+    if(out_len) *out_len = 0;
+    if(!sm || !out_len || (wrapped_len && (!wrapped || !out))) return false;
     if(comm_mode == DFC_COMM_PLAIN) {
-        memcpy(out, wrapped, wrapped_len);
-        return wrapped_len;
+        if(wrapped_len) memcpy(out, wrapped, wrapped_len);
+        *out_len = wrapped_len;
+        return true;
     }
 
     if(comm_mode == DFC_COMM_MAC) {
         size_t mac_len = mac_len_for_cipher(sm->cipher);
-        if(wrapped_len < mac_len) return 0;
+        if(wrapped_len < mac_len) return false;
         size_t data_len = wrapped_len - mac_len;
 
         // An EV1 session covers the status byte; a legacy session covers the
@@ -759,21 +766,22 @@ size_t dfc_secure_messaging_unwrap(
         bool ok = compute_mac_segments(sm, segments, 2, mac);
         if(!ok) {
             dfc_secure_wipe(mac, sizeof(mac));
-            return 0;
+            return false;
         }
 
         if(!dfc_ct_equal(mac, wrapped + data_len, mac_len)) {
             DFC_LOG_W(TAG, "MAC mismatch");
             dfc_secure_wipe(mac, sizeof(mac));
-            return 0;
+            return false;
         }
 
-        memcpy(out, wrapped, data_len);
+        if(data_len) memcpy(out, wrapped, data_len);
         dfc_secure_wipe(mac, sizeof(mac));
-        return data_len;
+        *out_len = data_len;
+        return true;
     }
 
-    return enciphered_decode(sm, NULL, 0, &status, 1, wrapped, wrapped_len, out);
+    return enciphered_decode(sm, NULL, 0, &status, 1, wrapped, wrapped_len, out, out_len);
 }
 
 // PICC -> PCD direction (emulator generating a response): mirrors dfc_secure_messaging_unwrap's
@@ -872,5 +880,9 @@ size_t dfc_secure_messaging_verify_command(
         return data_len;
     }
 
-    return enciphered_decode(sm, header, header_len, NULL, 0, wrapped, wrapped_len, out);
+    size_t clear_len = 0;
+    return enciphered_decode(
+               sm, header, header_len, NULL, 0, wrapped, wrapped_len, out, &clear_len) ?
+               clear_len :
+               0;
 }

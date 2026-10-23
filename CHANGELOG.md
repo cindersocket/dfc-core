@@ -35,6 +35,8 @@
   authentication, response-capacity, chaining, and transport failures.
 - Preserve the transaction identifier and command counter when EV2 NonFirst
   authentication changes the active key (#118).
+- Distinguish authenticated empty D40 responses from authentication failure,
+  and reject missing, truncated, or incorrect response MACs (#119).
 - Report required JNI response lengths, wipe invalidated ISO-DEP responses,
   reset expired activations, and support ISO-DEP record commands.
 - Roll back failed SDM, delegated-application, transaction-MAC, CommitReaderID,

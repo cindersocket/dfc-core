@@ -156,16 +156,19 @@ size_t dfc_secure_messaging_wrap(
     uint8_t* out);
 
 // Unwraps a response payload (status byte NOT included) received under the given
-// communication mode. Returns the cleartext length, or 0 on MAC, cipher, or
-// format failure. Success advances the IV to the accepted message's chaining
-// value. Failure leaves the IV unchanged and wipes unauthenticated output.
-size_t dfc_secure_messaging_unwrap(
+// communication mode. Returns true on authentication and format success and
+// writes the cleartext length to `out_len`, including zero for an authenticated
+// empty payload. Success advances the IV to the accepted message's chaining
+// value. Failure returns false, sets `out_len` to zero, and leaves the IV
+// unchanged. Callers must ignore `out` after failure.
+bool dfc_secure_messaging_unwrap(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,
     uint8_t status,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out);
+    uint8_t* out,
+    size_t* out_len);
 
 // Emulator (PICC) side: generates a response payload under the given comm mode, matching
 // what dfc_secure_messaging_unwrap() on the reader side will accept.

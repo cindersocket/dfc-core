@@ -79,8 +79,9 @@ static MunitResult
     munit_assert_size(wrapped_len, >=, sizeof(plain));
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
-    size_t recovered_len =
-        dfc_secure_messaging_unwrap(sm_reader, comm_mode, status, wrapped, wrapped_len, recovered);
+    size_t recovered_len = 0;
+    munit_assert_true(dfc_secure_messaging_unwrap(
+        sm_reader, comm_mode, status, wrapped, wrapped_len, recovered, &recovered_len));
 
     munit_assert_size(recovered_len, ==, sizeof(plain));
     munit_assert_memory_equal(sizeof(plain), recovered, plain);
@@ -111,6 +112,70 @@ static MunitResult test_mac_legacy_2k3des(const MunitParameter p[], void* d) {
     (void)d;
     round_trip_wrap_verify_command(DFC_CMD_AUTHENTICATE_LEGACY, DFC_COMM_MAC, 16);
     round_trip_generate_response_unwrap(DFC_CMD_AUTHENTICATE_LEGACY, DFC_COMM_MAC, 16);
+    return MUNIT_OK;
+}
+
+static void assert_d40_response_authentication(const uint8_t* plain, size_t plain_len) {
+    DfcSecureMessaging* card = alloc_session(DFC_CMD_AUTHENTICATE_LEGACY, 16);
+    DfcSecureMessaging* reader = alloc_session(DFC_CMD_AUTHENTICATE_LEGACY, 16);
+    reader->pcd = true;
+
+    uint8_t wrapped[32];
+    size_t wrapped_len = dfc_secure_messaging_generate_response(
+        card, DFC_COMM_MAC, DFC_STATUS_OK, plain, plain_len, wrapped);
+    munit_assert_size(wrapped_len, ==, plain_len + DFC_SM_LEGACY_MAC_LENGTH);
+
+    DfcSecureMessaging reader_before = *reader;
+    uint8_t recovered[32];
+    memset(recovered, 0xA5, sizeof(recovered));
+    size_t recovered_len = SIZE_MAX;
+    munit_assert_true(dfc_secure_messaging_unwrap(
+        reader, DFC_COMM_MAC, DFC_STATUS_OK, wrapped, wrapped_len, recovered, &recovered_len));
+    munit_assert_size(recovered_len, ==, plain_len);
+    if(plain_len > 0) munit_assert_memory_equal(plain_len, recovered, plain);
+
+    for(size_t mac_index = plain_len; mac_index < wrapped_len; mac_index++) {
+        *reader = reader_before;
+        uint8_t corrupted[sizeof(wrapped)];
+        memcpy(corrupted, wrapped, wrapped_len);
+        corrupted[mac_index] ^= 0x01;
+        recovered_len = SIZE_MAX;
+        munit_assert_false(dfc_secure_messaging_unwrap(
+            reader, DFC_COMM_MAC, DFC_STATUS_OK, corrupted, wrapped_len, recovered, &recovered_len));
+        munit_assert_size(recovered_len, ==, 0);
+        munit_assert_memory_equal(sizeof(reader_before.iv), reader->iv, reader_before.iv);
+    }
+
+    if(plain_len == 0) {
+        for(size_t truncated_len = 0; truncated_len < DFC_SM_LEGACY_MAC_LENGTH; truncated_len++) {
+            *reader = reader_before;
+            recovered_len = SIZE_MAX;
+            munit_assert_false(dfc_secure_messaging_unwrap(
+                reader,
+                DFC_COMM_MAC,
+                DFC_STATUS_OK,
+                wrapped,
+                truncated_len,
+                recovered,
+                &recovered_len));
+            munit_assert_size(recovered_len, ==, 0);
+            munit_assert_memory_equal(sizeof(reader_before.iv), reader->iv, reader_before.iv);
+        }
+    }
+
+    dfc_secure_messaging_free(reader);
+    dfc_secure_messaging_free(card);
+}
+
+static MunitResult test_d40_empty_response_is_distinct_from_authentication_failure(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t empty = 0;
+    const uint8_t nonempty[] = {0x5A, 0xC3, 0x7E};
+    assert_d40_response_authentication(&empty, 0);
+    assert_d40_response_authentication(nonempty, sizeof(nonempty));
     return MUNIT_OK;
 }
 
@@ -164,11 +229,10 @@ static MunitResult
         DfcSecureMessaging card_before = *card;
 
         memset(clear, 0xA5, sizeof(clear));
-        munit_assert_size(
-            dfc_secure_messaging_unwrap(
-                reader, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, wrapped, length, clear),
-            ==,
-            0);
+        size_t clear_len = SIZE_MAX;
+        munit_assert_false(dfc_secure_messaging_unwrap(
+            reader, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, wrapped, length, clear, &clear_len));
+        munit_assert_size(clear_len, ==, 0);
         for(size_t i = 0; i < length; i++)
             munit_assert_uint8(clear[i], ==, 0);
         munit_assert_memory_equal(sizeof(reader_before), &reader_before, reader);
@@ -699,8 +763,15 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
                 wrapped_len = dfc_secure_messaging_generate_response(
                     card, modes[mode_index], DFC_STATUS_OK, plain, length, wrapped);
                 munit_assert_size(wrapped_len, >=, length);
-                recovered_len = dfc_secure_messaging_unwrap(
-                    reader, modes[mode_index], DFC_STATUS_OK, wrapped, wrapped_len, recovered);
+                recovered_len = 0;
+                munit_assert_true(dfc_secure_messaging_unwrap(
+                    reader,
+                    modes[mode_index],
+                    DFC_STATUS_OK,
+                    wrapped,
+                    wrapped_len,
+                    recovered,
+                    &recovered_len));
                 munit_assert_size(recovered_len, ==, length);
                 munit_assert_memory_equal(length, recovered, plain);
                 munit_assert_memory_equal(sizeof(reader->iv), reader->iv, card->iv);
@@ -738,6 +809,12 @@ static MunitTest tests[] = {
     {"/plain/legacy", test_plain_legacy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/mac/legacy_single_des", test_mac_legacy_single_des, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/mac/legacy_2k3des", test_mac_legacy_2k3des, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/mac/d40-empty-response-authentication",
+     test_d40_empty_response_is_distinct_from_authentication_failure,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/mac/iso_2k3des", test_mac_iso_2k3des, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/mac/iso_3k3des", test_mac_iso_3k3des, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/mac/aes", test_mac_aes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
