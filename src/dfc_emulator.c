@@ -250,8 +250,7 @@ void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
 #endif
 }
 
-void dfc_emulator_reset_session(DfcEmulator* emulator) {
-    dfc_emulator_abort_transaction(emulator);
+void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
     emulator->awaiting_step2 = false;
     dfc_emulator_clear_iso_authentication(emulator);
     clear_native_authentication(emulator);
@@ -322,6 +321,11 @@ void dfc_emulator_reset_session(DfcEmulator* emulator) {
 #endif
     dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
     dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
+}
+
+void dfc_emulator_reset_session(DfcEmulator* emulator) {
+    dfc_emulator_abort_transaction(emulator);
+    dfc_emulator_retire_authentication(emulator);
 }
 
 void dfc_emulator_select_application(

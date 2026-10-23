@@ -944,6 +944,14 @@ static bool
     return true;
 }
 
+static void mark_key_change_dirty(DfcEmulator* emulator) {
+    dfc_credential_mark_dirty(emulator->credential);
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+    // A later file rollback must still leave this immediate key update dirty.
+    if(emulator->transaction_snapshot_active) emulator->transaction_snapshot_dirty = true;
+#endif
+}
+
 static void handle_change_key_d40(
     DfcEmulator* emulator,
     uint8_t key_no,
@@ -1015,7 +1023,7 @@ static void handle_change_key_d40(
 
         memcpy(old_key, new_key, key_len);
         *emulator_key_version(emulator, key_no) = des_key_version(new_key);
-        dfc_credential_mark_dirty(emulator->credential);
+        mark_key_change_dirty(emulator);
         dfc_secure_wipe(new_key, sizeof(new_key));
         dfc_secure_wipe(clear, sizeof(clear));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
@@ -1034,10 +1042,10 @@ static void handle_change_key_d40(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
-    dfc_emulator_reset_session(emulator);
+    dfc_emulator_retire_authentication(emulator);
     memcpy(target, clear, key_len);
     *emulator_key_version(emulator, key_no) = des_key_version(clear);
-    dfc_credential_mark_dirty(emulator->credential);
+    mark_key_change_dirty(emulator);
     dfc_secure_wipe(clear, sizeof(clear));
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -1156,7 +1164,7 @@ static void handle_change_key_ev1(
     if(different) {
         memcpy(sm->iv, candidate_iv, sizeof(sm->iv));
     } else {
-        dfc_emulator_reset_session(emulator);
+        dfc_emulator_retire_authentication(emulator);
     }
     dfc_secure_wipe(candidate_iv, sizeof(candidate_iv));
     memcpy(old_key, new_key, key_len);
@@ -1165,7 +1173,7 @@ static void handle_change_key_ev1(
     } else {
         *emulator_key_version(emulator, key_no) = des_key_version(new_key);
     }
-    dfc_credential_mark_dirty(emulator->credential);
+    mark_key_change_dirty(emulator);
     dfc_secure_wipe(new_key, sizeof(new_key));
     dfc_secure_wipe(crc_input, sizeof(crc_input));
     dfc_secure_wipe(clear, sizeof(clear));
@@ -3657,10 +3665,10 @@ static void handle_change_key_ev2(
         }
     }
 
-    if(changes_authenticated_key) dfc_emulator_reset_session(emulator);
+    if(changes_authenticated_key) dfc_emulator_retire_authentication(emulator);
     memcpy(stored_key, new_key, sizeof(new_key));
     *stored_version = clear_key[DFC_AES_KEY_LENGTH];
-    dfc_credential_mark_dirty(emulator->credential);
+    mark_key_change_dirty(emulator);
     dfc_secure_wipe(new_key, sizeof(new_key));
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
     if(changes_authenticated_key) emulator->ev2_response_plain = true;

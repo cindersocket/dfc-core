@@ -17,6 +17,8 @@ size_t dfc_emulator_num_keys(DfcEmulator* emulator);
 uint8_t* dfc_emulator_key(DfcEmulator* emulator, uint8_t key_no);
 uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no);
 void dfc_emulator_discard_command_chain(DfcEmulator* emulator);
+// End authentication and command state while preserving the open file transaction.
+void dfc_emulator_retire_authentication(DfcEmulator* emulator);
 void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator);
 bool dfc_emulator_abort_pending_native_work(DfcEmulator* emulator);
 bool dfc_emulator_abort_transaction(DfcEmulator* emulator);

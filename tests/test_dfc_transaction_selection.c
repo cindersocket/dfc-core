@@ -303,8 +303,44 @@ static MunitResult
     return MUNIT_OK;
 }
 
-static MunitResult
-    test_current_key_change_aborts_complete_transaction(const MunitParameter params[], void* data) {
+static void finish_preserved_transaction(SelectionFixture* fixture, const char* finish) {
+    bool commit = strcmp(finish, "commit") == 0;
+    DfcApplication* app = &fixture->credential.apps[0];
+    uint8_t installed_key[DFC_MAX_KEY_LEN];
+    size_t key_len = dfc_emulator_key_len(fixture->session->emulator);
+    memcpy(installed_key, dfc_credential_key_const(&fixture->credential, app, 0), key_len);
+    uint8_t installed_version = app->key_versions[0];
+    const uint8_t command[] = {
+        0x90, commit ? DFC_CMD_COMMIT_TRANSACTION : DFC_CMD_ABORT_TRANSACTION, 0, 0, 0};
+    expect_native_trailing_status(fixture->session, command, sizeof(command), DFC_STATUS_OK);
+    munit_assert_memory_equal(
+        key_len, dfc_credential_key_const(&fixture->credential, app, 0), installed_key);
+    munit_assert_uint8(app->key_versions[0], ==, installed_version);
+    munit_assert_true(fixture->credential.dirty);
+    if(!commit) {
+        assert_transaction_rolled_back_with_dirty(fixture, true);
+        return;
+    }
+    munit_assert_false(fixture->session->emulator->transaction_snapshot_active);
+    munit_assert_null(fixture->session->emulator->transaction_snapshot_pool);
+    munit_assert_false(fixture->app0_backup->transaction_pending);
+    munit_assert_false(fixture->app0_records->transaction_pending);
+    munit_assert_false(fixture->app0_value->value_pending);
+    munit_assert_int32(fixture->app0_value->value, ==, 15);
+    munit_assert_uint32(fixture->app0_records->record_count, ==, 2);
+    munit_assert_memory_equal(
+        4,
+        dfc_file_data(&fixture->credential, fixture->app0_backup),
+        ((uint8_t[]){0xB1, 0xB1, 0xB1, 0xB1}));
+    munit_assert_memory_equal(
+        8,
+        dfc_file_data(&fixture->credential, fixture->app0_records),
+        ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0xA1, 0xA2, 0xA3, 0xA4}));
+}
+
+static MunitResult test_current_key_change_preserves_complete_transaction(
+    const MunitParameter params[],
+    void* data) {
     (void)params;
     (void)data;
     static const uint8_t old_key[16] = {0};
@@ -368,20 +404,48 @@ static MunitResult
     change_key[4] = (uint8_t)payload_len;
     memcpy(change_key + 5, payload, payload_len);
     change_key[5 + payload_len] = 0;
+    if(strcmp(munit_parameters_get(params, "finish"), "invalid") == 0) {
+        // Truncate the cryptogram so no new key material can be installed.
+        change_key[4]--;
+        expect_native_status(
+            fixture.session, change_key, 5 + payload_len, DFC_STATUS_LENGTH_ERROR);
+        assert_transaction_rolled_back(&fixture);
+        munit_assert_memory_equal(
+            sizeof(old_key),
+            dfc_credential_key_const(&fixture.credential, &fixture.credential.apps[0], 0),
+            old_key);
+        munit_assert_uint8(fixture.credential.apps[0].key_versions[0], ==, 0);
+        fixture_close(&fixture);
+        return MUNIT_OK;
+    }
     expect_native_status(fixture.session, change_key, 6 + payload_len, DFC_STATUS_OK);
 
-    assert_transaction_rolled_back_with_dirty(&fixture, true);
+    assert_transaction_still_pending(&fixture);
+    munit_assert_false(dfc_emulator_native_authentication_active(fixture.session->emulator));
     munit_assert_memory_equal(
         sizeof(new_key),
         dfc_credential_key_const(&fixture.credential, &fixture.credential.apps[0], 0),
         new_key);
     munit_assert_uint8(fixture.credential.apps[0].key_versions[0], ==, 0x42);
-    assert_app0_has_nothing_to_commit(&fixture);
+    authenticate_aes_key(
+        fixture.session,
+        0,
+        new_key,
+        sizeof(new_key),
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        session_iv,
+        DFC_STATUS_OK);
+    assert_transaction_still_pending(&fixture);
+    finish_preserved_transaction(&fixture, munit_parameters_get(params, "finish"));
     fixture_close(&fixture);
     return MUNIT_OK;
 }
 
-static MunitResult test_d40_current_key_change_aborts_complete_transaction(
+static MunitResult test_d40_current_key_change_preserves_complete_transaction(
     const MunitParameter params[],
     void* data) {
     (void)params;
@@ -430,22 +494,47 @@ static MunitResult test_d40_current_key_change_aborts_complete_transaction(
     change_key[4] = (uint8_t)payload_len;
     memcpy(change_key + 5, payload, payload_len);
     change_key[5 + payload_len] = 0;
+    if(strcmp(munit_parameters_get(params, "finish"), "invalid") == 0) {
+        // Truncate the cryptogram so no new key material can be installed.
+        change_key[4]--;
+        expect_native_status(
+            fixture.session, change_key, 5 + payload_len, DFC_STATUS_LENGTH_ERROR);
+        assert_transaction_rolled_back(&fixture);
+        munit_assert_memory_equal(
+            sizeof(old_key),
+            dfc_credential_key_const(&fixture.credential, &fixture.credential.apps[0], 0),
+            old_key);
+        munit_assert_uint8(fixture.credential.apps[0].key_versions[0], ==, 0);
+        fixture_close(&fixture);
+        return MUNIT_OK;
+    }
     expect_native_status(fixture.session, change_key, 6 + payload_len, DFC_STATUS_OK);
 
-    assert_transaction_rolled_back_with_dirty(&fixture, true);
+    assert_transaction_still_pending(&fixture);
     munit_assert_false(dfc_emulator_native_authentication_active(fixture.session->emulator));
     const uint8_t* stored_key =
         dfc_credential_key_const(&fixture.credential, &fixture.credential.apps[0], 0);
     for(size_t i = 0; i < sizeof(new_key); i++)
         munit_assert_uint8(stored_key[i] & 0xFE, ==, new_key[i] & 0xFE);
     munit_assert_uint8(fixture.credential.apps[0].key_versions[0], ==, 0x5A);
-    assert_app0_has_nothing_to_commit(&fixture);
+    authenticate_legacy_key0(
+        fixture.session,
+        stored_key,
+        sizeof(new_key),
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        DFC_STATUS_OK);
+    assert_transaction_still_pending(&fixture);
+    finish_preserved_transaction(&fixture, munit_parameters_get(params, "finish"));
     fixture_close(&fixture);
     return MUNIT_OK;
 }
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING && DFC_ENABLE_KEY_SETS
-static MunitResult test_ev2_current_key_change_aborts_complete_transaction(
+static MunitResult test_ev2_current_key_change_preserves_complete_transaction(
     const MunitParameter params[],
     void* data) {
     (void)params;
@@ -481,18 +570,52 @@ static MunitResult test_ev2_current_key_change_aborts_complete_transaction(
     uint8_t change_key[DFC_CHANGE_KEY_EV2_SAME_KEY_CLEAR_LENGTH] = {DFC_CMD_CHANGE_KEY_EV2, 0, 0};
     memcpy(change_key + DFC_CHANGE_KEY_EV2_HEADER_LENGTH, new_key, sizeof(new_key));
     change_key[DFC_CHANGE_KEY_EV2_HEADER_LENGTH + sizeof(new_key)] = 0x42;
+    if(strcmp(munit_parameters_get(params, "finish"), "invalid") == 0) {
+        dfc_bytebuf_reset(emulator->tx_buffer);
+        munit_assert_true(dfc_emulator_handle_command(
+            emulator, change_key, sizeof(change_key) - 1, emulator->tx_buffer, NULL));
+        munit_assert_uint8(
+            dfc_bytebuf_get_data(emulator->tx_buffer)[0], ==, DFC_STATUS_LENGTH_ERROR);
+        assert_transaction_rolled_back(&fixture);
+        munit_assert_memory_equal(
+            sizeof(new_key),
+            dfc_credential_key_const(&fixture.credential, app, 0),
+            ((uint8_t[DFC_AES_KEY_LENGTH]){0}));
+        munit_assert_uint8(app->key_versions[0], ==, 0);
+        fixture_close(&fixture);
+        return MUNIT_OK;
+    }
     dfc_bytebuf_reset(emulator->tx_buffer);
     munit_assert_true(dfc_emulator_handle_command(
         emulator, change_key, sizeof(change_key), emulator->tx_buffer, NULL));
     munit_assert_size(dfc_bytebuf_get_size_bytes(emulator->tx_buffer), ==, 1);
     munit_assert_uint8(dfc_bytebuf_get_data(emulator->tx_buffer)[0], ==, DFC_STATUS_OK);
 
-    assert_transaction_rolled_back_with_dirty(&fixture, true);
+    assert_transaction_still_pending(&fixture);
+    munit_assert_false(dfc_emulator_native_authentication_active(fixture.session->emulator));
     munit_assert_false(emulator->ev2_session_active);
     munit_assert_memory_equal(
         sizeof(new_key), dfc_credential_key_const(&fixture.credential, app, 0), new_key);
     munit_assert_uint8(app->key_versions[0], ==, 0x42);
-    assert_app0_has_nothing_to_commit(&fixture);
+    uint8_t response[64];
+    size_t response_len = 0;
+    uint8_t session_key[DFC_MAX_KEY_LEN];
+    size_t session_key_len = 0;
+    uint8_t session_iv[16];
+    authenticate_aes_key(
+        fixture.session,
+        0,
+        new_key,
+        sizeof(new_key),
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        session_iv,
+        DFC_STATUS_OK);
+    assert_transaction_still_pending(&fixture);
+    finish_preserved_transaction(&fixture, munit_parameters_get(params, "finish"));
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -1137,6 +1260,8 @@ static MunitResult
     fixture_close(&fixture);
     return MUNIT_OK;
 }
+static char* finish_values[] = {"commit", "abort", "invalid", NULL};
+static MunitParameterEnum finish_params[] = {{"finish", finish_values}, {NULL, NULL}};
 
 static MunitTest tests[] = {
     {"/timer-expiry-reactivation",
@@ -1157,25 +1282,25 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/current-key-change-complete-rollback",
-     test_current_key_change_aborts_complete_transaction,
+    {"/current-key-change-preserves-transaction",
+     test_current_key_change_preserves_complete_transaction,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
-     NULL},
-    {"/d40-current-key-change-complete-rollback",
-     test_d40_current_key_change_aborts_complete_transaction,
+     finish_params},
+    {"/d40-current-key-change-preserves-transaction",
+     test_d40_current_key_change_preserves_complete_transaction,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
-     NULL},
+     finish_params},
 #if DFC_ENABLE_EV2_SECURE_MESSAGING && DFC_ENABLE_KEY_SETS
-    {"/ev2-current-key-change-complete-rollback",
-     test_ev2_current_key_change_aborts_complete_transaction,
+    {"/ev2-current-key-change-preserves-transaction",
+     test_ev2_current_key_change_preserves_complete_transaction,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
-     NULL},
+     finish_params},
 #endif
     {"/terminal-native-errors",
      test_terminal_native_errors_abort_transaction,
