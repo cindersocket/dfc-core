@@ -63,6 +63,9 @@ static int rejected_application_does_not_consume_keys(
 }
 
 int main(void) {
+    CHECK(dfc_ffi_picc_response_capacity() == DFC_EMULATOR_CHAIN_BUFFER_SIZE);
+    CHECK(dfc_ffi_picc_response_capacity() > DFC_MAX_FILE_DATA);
+
     DfcFfiCapabilities capabilities;
     memset(&capabilities, 0, sizeof(capabilities));
     dfc_ffi_capabilities(&capabilities);

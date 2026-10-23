@@ -19,6 +19,12 @@
 #error "Compile ffi/ with DFC_ENABLE_FFI=1"
 #endif
 
+#if DFC_ENABLE_EMULATOR
+_Static_assert(
+    DFC_FFI_PICC_BUFFER_TOO_SMALL == DfcVirtualPiccStatusBufferTooSmall,
+    "FFI virtual-PICC status value drifted");
+#endif
+
 struct DfcFfiCredential {
     DfcCredential model;
 };
@@ -1149,6 +1155,10 @@ int32_t dfc_ffi_picc_exchange(
         return DFC_FFI_RANDOM_FAILED;
     }
     return st;
+}
+
+size_t dfc_ffi_picc_response_capacity(void) {
+    return DFC_EMULATOR_CHAIN_BUFFER_SIZE;
 }
 
 int32_t dfc_ffi_picc_frame_exchange(

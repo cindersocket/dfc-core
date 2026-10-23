@@ -42,6 +42,9 @@ extern "C" {
 #define DFC_FFI_UNSUPPORTED      (-4)
 #define DFC_FFI_RANDOM_FAILED    (-5)
 
+// Virtual-PICC family status returned when an exchange response does not fit.
+#define DFC_FFI_PICC_BUFFER_TOO_SMALL 3
+
 #define DFC_FFI_MESSAGE_MAX 96
 
 typedef struct DfcFfiCredential DfcFfiCredential;
@@ -428,6 +431,8 @@ DFC_FFI_EXPORT int32_t dfc_ffi_picc_create_take(
     DfcFfiPicc** out);
 DFC_FFI_EXPORT void dfc_ffi_picc_free(DfcFfiPicc* picc);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_activate(DfcFfiPicc* picc, DfcFfiActivation* out);
+// Largest response buffer the virtual PICC can require for one exchange.
+DFC_FFI_EXPORT size_t dfc_ffi_picc_response_capacity(void);
 // One APDU (ISO 7816 or native framing) or one ISO-DEP block. After the
 // virtual-PICC buffer-too-small status from a native operation, retry the exact
 // command with a larger response buffer; the completed response is retained

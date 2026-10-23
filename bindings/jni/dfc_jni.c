@@ -10,8 +10,8 @@
 #include "dfc_ffi.h"
 #include "dfc_jni_queue.h"
 
-#define JNI_PICC_RESPONSE_MAX 256u
-#define JNI_READER_FRAME_MAX  600u
+#define JNI_PICC_RESPONSE_INITIAL 256u
+#define JNI_READER_FRAME_MAX      600u
 
 typedef struct {
     DfcFfiPicc* picc;
@@ -156,6 +156,21 @@ static JniPicc* picc_handle(JNIEnv* env, jlong handle) {
     if(wrapper == NULL)
         throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "invalid virtual PICC handle");
     return wrapper;
+}
+
+static int32_t picc_exchange(
+    JniPicc* wrapper,
+    const uint8_t* input,
+    size_t input_len,
+    bool frame,
+    uint8_t* response,
+    size_t response_capacity,
+    size_t* response_len) {
+    return frame ?
+               dfc_ffi_picc_frame_exchange(
+                   wrapper->picc, input, input_len, response, response_capacity, response_len) :
+               dfc_ffi_picc_exchange(
+                   wrapper->picc, input, input_len, response, response_capacity, response_len);
 }
 
 static JniReader* reader_handle(JNIEnv* env, jlong handle) {
@@ -458,21 +473,42 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccExchange(
     size_t input_len = 0;
     uint8_t* input_bytes = copy_array(env, input, &input_len, false);
     if((*env)->ExceptionCheck(env)) return NULL;
-    uint8_t response[JNI_PICC_RESPONSE_MAX];
+    uint8_t initial_response[JNI_PICC_RESPONSE_INITIAL];
+    uint8_t* response = initial_response;
+    size_t response_capacity = sizeof(initial_response);
     size_t response_len = 0;
-    int32_t status =
-        frame ?
-            dfc_ffi_picc_frame_exchange(
-                wrapper->picc, input_bytes, input_len, response, sizeof(response), &response_len) :
-            dfc_ffi_picc_exchange(
-                wrapper->picc, input_bytes, input_len, response, sizeof(response), &response_len);
+    int32_t status = picc_exchange(
+        wrapper, input_bytes, input_len, frame, response, response_capacity, &response_len);
+    if(status == DFC_FFI_PICC_BUFFER_TOO_SMALL) {
+        response_capacity = dfc_ffi_picc_response_capacity();
+        response = malloc(response_capacity);
+        if(response == NULL) {
+            secure_free(input_bytes, input_len);
+            dfc_ffi_secure_zero(initial_response, sizeof(initial_response));
+            throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
+            return NULL;
+        }
+        response_len = 0;
+        status = picc_exchange(
+            wrapper, input_bytes, input_len, frame, response, response_capacity, &response_len);
+    }
     secure_free(input_bytes, input_len);
     if(status != DFC_FFI_OK) {
-        dfc_ffi_secure_zero(response, sizeof(response));
+        if(response == initial_response) {
+            dfc_ffi_secure_zero(initial_response, sizeof(initial_response));
+        } else {
+            secure_free(response, response_capacity);
+        }
         throw_dfc(env, status, 0, 0, "virtual PICC exchange failed");
         return NULL;
     }
-    return make_array_and_wipe(env, response, response_len, sizeof(response));
+    jbyteArray result = make_array(env, response, response_len);
+    if(response == initial_response) {
+        dfc_ffi_secure_zero(initial_response, sizeof(initial_response));
+    } else {
+        secure_free(response, response_capacity);
+    }
+    return result;
 }
 
 JNIEXPORT void JNICALL
