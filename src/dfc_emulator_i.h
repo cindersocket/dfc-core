@@ -15,6 +15,18 @@ static inline bool dfc_emulator_native_authentication_active(const DfcEmulator* 
 size_t dfc_emulator_key_len(DfcEmulator* emulator);
 size_t dfc_emulator_num_keys(DfcEmulator* emulator);
 uint8_t* dfc_emulator_key(DfcEmulator* emulator, uint8_t key_no);
+typedef enum {
+    DfcFileAccessRead,
+    DfcFileAccessWrite,
+    DfcFileAccessReadWrite,
+    DfcFileAccessChange,
+} DfcFileAccess;
+
+uint8_t dfc_emulator_file_effective_comm_settings(
+    const DfcEmulator* emulator,
+    const DfcFile* file,
+    DfcFileAccess access,
+    uint8_t configured_comm);
 uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no);
 void dfc_emulator_discard_command_chain(DfcEmulator* emulator);
 // End authentication and command state while preserving the open file transaction.

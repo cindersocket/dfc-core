@@ -40,6 +40,8 @@ enum {
     // Legacy read under MAC or Full: the file's own wrapping.
     PlanD40Mac,
     PlanD40Decrypt,
+    // EV2 file command sent in Plain because free access is the only grant.
+    PlanEv2Plain,
     PlanEv2Mac,
     PlanEv2MacDecrypt,
 };
@@ -1200,12 +1202,14 @@ static size_t ev2_always_encrypted_header(uint8_t ins) {
         return COMMIT_READER_ID_HEADER;
     case DFC_CMD_CHANGE_KEY_EV2:
         return CHANGE_KEY_EV2_HEADER;
+    case DFC_CMD_CHANGE_FILE_SETTINGS:
+        return 1;
     default:
         return SIZE_MAX;
     }
 }
 
-static bool ev2_bypasses(uint8_t ins, uint8_t comm_mode) {
+static bool ev2_bypasses(uint8_t ins) {
     switch(ins) {
     case DFC_CMD_ADDITIONAL_FRAME:
     case DFC_CMD_AUTHENTICATE_EV2_FIRST:
@@ -1215,14 +1219,25 @@ static bool ev2_bypasses(uint8_t ins, uint8_t comm_mode) {
     default:
         break;
     }
-    return is_file_command(ins) && comm_mode == DFC_COMM_PLAIN;
+    return false;
+}
+
+static bool ev2_supports_effective_plain(uint8_t ins) {
+    return is_file_command(ins) || ins == DFC_CMD_CHANGE_FILE_SETTINGS;
 }
 
 static DfcReaderStatus
     prepare_ev2(DfcReaderExchange* ex, const DfcCommand* command, size_t header_len) {
     DfcReaderSession* session = ex->session;
     uint8_t ins = command->ins;
-    if(ev2_bypasses(ins, ex->comm_mode)) {
+    if(ev2_bypasses(ins)) {
+        return set_frame(ex, command->data, command->data_len, NULL, 0) ? DfcReaderOk :
+                                                                          DfcReaderInvalid;
+    }
+    if(ev2_supports_effective_plain(ins) && ex->comm_mode == DFC_COMM_PLAIN) {
+        if(session->ev2_command_counter == UINT16_MAX)
+            return fail_prepared_command(ex, DfcReaderProtocolError);
+        ex->response_plan = PlanEv2Plain;
         return set_frame(ex, command->data, command->data_len, NULL, 0) ? DfcReaderOk :
                                                                           DfcReaderInvalid;
     }
@@ -1510,7 +1525,8 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
 
     // A special success carries no EV1 MAC, but an EV2 card still MACs it and
     // counts the command.
-    bool ev2_plan = ex->response_plan == PlanEv2Mac || ex->response_plan == PlanEv2MacDecrypt;
+    bool ev2_plan = ex->response_plan == PlanEv2Plain || ex->response_plan == PlanEv2Mac ||
+                    ex->response_plan == PlanEv2MacDecrypt;
     if(ex->special_success && !ev2_plan) return finish_command(ex, DfcReaderOk);
     if(status != DFC_STATUS_OK && !ex->special_success) return card_error(ex);
     if(ex->invalidates_session) {
@@ -1522,6 +1538,11 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
     switch(ex->response_plan) {
     case PlanPlain:
         return finish_command(ex, DfcReaderOk);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    case PlanEv2Plain:
+        session->ev2_command_counter++;
+        return finish_command(ex, DfcReaderOk);
+#endif
     case PlanEv1Cmac:
     case PlanEv1CmacPerFrame:
         return finish_command(ex, verify_ev1_frame(ex, 0, status));

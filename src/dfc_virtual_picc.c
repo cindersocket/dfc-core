@@ -1283,6 +1283,16 @@ static DfcVirtualPiccStatus handle_native_exchange(
         tx_data = dfc_bytebuf_get_data(tx);
         tx_len = dfc_bytebuf_get_size_bytes(tx);
         if(tx_len == 0) goto cleanup;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+        if(security == DfcEv2CommandPlainCounted &&
+           !session->emulator->command_chain_active && session->emulator->ev2_session_active) {
+            if(tx_data[0] == DFC_STATUS_OK) {
+                session->emulator->ev2_command_counter++;
+            } else {
+                dfc_emulator_reset_session(session->emulator);
+            }
+        }
+#endif
     }
     // The emulator lends its existing chain buffer until delivery or abort.
     // Prefix status in place so EV2 can protect the complete answer once.

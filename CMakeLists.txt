@@ -60,6 +60,7 @@ set(DFC_CORE_SOURCES
     src/dfc_crypto.c
     src/dfc_der.c
     src/dfc_emulator.c
+    src/dfc_emulator_access.c
     src/dfc_emulator_commands.c
     src/dfc_emulator_crypto.c
     src/dfc_emulator_iso7816.c

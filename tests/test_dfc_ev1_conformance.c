@@ -835,7 +835,7 @@ static MunitResult test_ev1_write_data_mac_requires_transmitted_cmac(
     DfcCredential credential;
     uint8_t zeros[8] = {0};
     DfcVirtualPiccSession* session =
-        open_file_policy(&credential, 0x0F, 0xEEEE, DFC_COMM_MAC, zeros, sizeof(zeros));
+        open_file_policy(&credential, 0x0F, 0xE00F, DFC_COMM_MAC, zeros, sizeof(zeros));
 
     uint8_t session_key[16];
     for(size_t i = 0; i < sizeof(session_key); i++) {

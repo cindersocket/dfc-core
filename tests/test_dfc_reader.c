@@ -3415,9 +3415,9 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
     munit_assert_uint16(link.session.ev2_command_counter, ==, 0);
 
     read_file(&link, FilePlain, DFC_COMM_PLAIN, 0, 32);
-    munit_assert_uint16(link.session.ev2_command_counter, ==, 0);
-    read_file(&link, FileMac, DFC_COMM_MAC, 0, 32);
     munit_assert_uint16(link.session.ev2_command_counter, ==, 1);
+    read_file(&link, FileMac, DFC_COMM_MAC, 0, 32);
+    munit_assert_uint16(link.session.ev2_command_counter, ==, 2);
     read_file(&link, FileFull, DFC_COMM_ENCIPHERED, 0, 32);
     write_then_read(&link, FileMac, DFC_COMM_MAC);
     write_then_read(&link, FileFull, DFC_COMM_ENCIPHERED);
@@ -3443,6 +3443,43 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
 
     munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
     read_file(&link, FileMac, DFC_COMM_MAC, 12, 16);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_ev2_change_file_settings_effective_comm(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+    DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, FileFull);
+    munit_assert_not_null(file);
+    DfcCommand command;
+    DfcReaderExchange exchange;
+
+    munit_assert_int(
+        dfc_command_change_file_settings(&command, FileFull, DFC_COMM_ENCIPHERED, 0x000E, NULL, 0),
+        ==,
+        DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
+    munit_assert_uint16(link.session.ev2_command_counter, ==, 1);
+    munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 1);
+    munit_assert_uint16(file->access_rights, ==, 0x000E);
+
+    munit_assert_int(
+        dfc_command_change_file_settings(&command, FileFull, DFC_COMM_MAC, 0x000E, NULL, 0),
+        ==,
+        DfcCommandOk);
+    munit_assert_int(send(&link, &command, DFC_COMM_PLAIN, &exchange), ==, DfcReaderOk);
+    munit_assert_uint16(link.session.ev2_command_counter, ==, 2);
+    munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 2);
+    munit_assert_uint8(file->comm_settings, ==, DFC_COMM_MAC);
+    munit_assert_uint16(file->access_rights, ==, 0x000E);
+
     link_close(&link);
     return MUNIT_OK;
 }
@@ -3984,6 +4021,12 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/ev2-session", test_ev2_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/ev2-change-file-settings-effective-comm",
+     test_ev2_change_file_settings_effective_comm,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/ev2-change-key", test_ev2_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #endif
 #if DFC_ENABLE_PROXIMITY_CHECK

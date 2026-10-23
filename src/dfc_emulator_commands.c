@@ -368,23 +368,6 @@ static uint8_t file_access_refusal_status(const DfcFile* file, bool write) {
 
 // True when every nibble that can authorize `write` is free (0xE) — no key-gated path.
 // EV1/EV3: if only free access applies but file is Full, treat as Plain-with-auth.
-static bool file_operation_free_access_only(const DfcFile* file, bool write) {
-    uint8_t primary = access_primary_nibble(file->access_rights, write);
-    uint8_t read_write = access_read_write_nibble(file->access_rights);
-    bool primary_key = primary < DFC_ACCESS_FREE;
-    bool rw_key = read_write < DFC_ACCESS_FREE;
-    if(primary_key || rw_key) return false;
-    return primary == DFC_ACCESS_FREE || read_write == DFC_ACCESS_FREE;
-}
-
-static uint8_t file_effective_comm_settings(const DfcFile* file, bool write) {
-    if(file->comm_settings == DFC_COMM_ENCIPHERED &&
-       file_operation_free_access_only(file, write)) {
-        return DFC_COMM_PLAIN;
-    }
-    return file->comm_settings;
-}
-
 static size_t allocated_file_bytes(const DfcCredential* credential) {
     size_t used = 0;
     for(size_t i = 0; i < credential->num_files; i++) {
@@ -2873,7 +2856,9 @@ static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
     value_bytes[2] = (uint8_t)((raw >> 16) & 0xFF);
     value_bytes[3] = (uint8_t)((raw >> 24) & 0xFF);
 
-    uint8_t comm = file_effective_comm_settings(file, false);
+    uint8_t comm =
+        dfc_emulator_file_effective_comm_settings(
+            emulator, file, DfcFileAccessRead, file->comm_settings);
     bool ev1_sm = dfc_emulator_native_authentication_active(emulator) &&
                   dfc_secure_messaging_applies_ev1(emulator->secure_messaging, DFC_CMD_GET_VALUE);
 
@@ -2969,7 +2954,9 @@ static void handle_value_delta(
 
     if(dfc_emulator_native_authentication_active(emulator) &&
        dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
-        uint8_t comm = file_effective_comm_settings(file, true);
+        uint8_t comm =
+            dfc_emulator_file_effective_comm_settings(
+                emulator, file, DfcFileAccessWrite, file->comm_settings);
         if(comm == DFC_COMM_MAC && dfc_secure_messaging_ev1_transmits_command_mac(cmd)) {
             size_t clear_len = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
                 emulator->secure_messaging, cmd, body, body_len);
@@ -3022,7 +3009,9 @@ static void handle_value_delta(
         dfc_emulator_native_authentication_active(emulator) &&
         !dfc_secure_messaging_applies_ev1(emulator->secure_messaging, cmd)) {
         // D40: Amount may be MAC/ENC under file comm mode.
-        uint8_t comm = file_effective_comm_settings(file, true);
+        uint8_t comm =
+            dfc_emulator_file_effective_comm_settings(
+                emulator, file, DfcFileAccessWrite, file->comm_settings);
         if(body_len < 1) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return;
@@ -4370,7 +4359,9 @@ static bool handle_read_data(
         return true;
     }
 
-    uint8_t comm = file_effective_comm_settings(file, false);
+    uint8_t comm =
+        dfc_emulator_file_effective_comm_settings(
+            emulator, file, DfcFileAccessRead, file->comm_settings);
     emit_payload_with_chaining_comm(
         emulator,
         tx_buffer,
@@ -4443,7 +4434,9 @@ static void handle_write_data(
         dfc_bytebuf_append_byte(tx_buffer, file_access_refusal_status(file, true));
         return;
     }
-    uint8_t comm = file_effective_comm_settings(file, true);
+    uint8_t comm =
+        dfc_emulator_file_effective_comm_settings(
+            emulator, file, DfcFileAccessWrite, file->comm_settings);
     if(apdu_len > DFC_EMULATOR_CHAIN_BUFFER_SIZE ||
        (comm == DFC_COMM_ENCIPHERED && apdu_len - 8 > DFC_SM_MAX_CRYPTO_SIZE)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
@@ -4583,7 +4576,9 @@ static void handle_write_record(
 
     uint32_t offset = read_uint24_le(apdu + 2);
     uint32_t write_len = read_uint24_le(apdu + 5);
-    uint8_t comm = file_effective_comm_settings(file, true);
+    uint8_t comm =
+        dfc_emulator_file_effective_comm_settings(
+            emulator, file, DfcFileAccessWrite, file->comm_settings);
     uint8_t* record_data = emulator->pending_chain;
     size_t clear_len = unwrap_write_payload(
         emulator, apdu, apdu_len, 7, comm, record_data, sizeof(emulator->pending_chain));
@@ -4778,7 +4773,9 @@ static void
     // The requested records occupy one contiguous range in stored oldest-first
     // order, even though record number zero names the newest one.
     size_t payload_len = count * file->record_size;
-    uint8_t comm = file_effective_comm_settings(file, false);
+    uint8_t comm =
+        dfc_emulator_file_effective_comm_settings(
+            emulator, file, DfcFileAccessRead, file->comm_settings);
     size_t stored_index = record_count - first_record - count;
     emit_payload_with_chaining_comm(
         emulator,
@@ -4819,7 +4816,9 @@ static void handle_update_record(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
-    uint8_t comm = file_effective_comm_settings(file, true);
+    uint8_t comm =
+        dfc_emulator_file_effective_comm_settings(
+            emulator, file, DfcFileAccessReadWrite, file->comm_settings);
     uint8_t* update_data = emulator->pending_chain;
     size_t clear_len = unwrap_write_payload(
         emulator,
@@ -5149,7 +5148,10 @@ static size_t chained_write_expected_len(
     // The command handler can reject this from the first frame without asking
     // the reader to send data for a file that does not exist.
     if(!file) return buffer_len;
-    uint8_t comm = file_effective_comm_settings(file, true);
+    DfcFileAccess access =
+        cmd == DFC_CMD_UPDATE_RECORD ? DfcFileAccessReadWrite : DfcFileAccessWrite;
+    uint8_t comm =
+        dfc_emulator_file_effective_comm_settings(emulator, file, access, file->comm_settings);
     size_t wire_len;
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING

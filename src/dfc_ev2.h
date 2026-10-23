@@ -4,6 +4,7 @@
 
 typedef enum {
     DfcEv2CommandPlain,
+    DfcEv2CommandPlainCounted,
     DfcEv2CommandSecured,
     DfcEv2CommandFull,
     DfcEv2CommandInvalid,

@@ -133,14 +133,14 @@ capacity_file_pool=$(symbol_size dfc_footprint_file_pool)
 capacity_key_pool=$(symbol_size dfc_footprint_key_pool)
 capacity_file_data=$(symbol_size dfc_footprint_max_file_data)
 
-# Measured record transport and timer lifecycle with Arm GNU 13.3.Rel1.
-readonly max_core_text=58680
+# Measured record transport, timer lifecycle, and effective file access with Arm GNU 13.3.Rel1.
+readonly max_core_text=59134
 readonly max_core_data=0
 readonly max_core_bss=0
 readonly max_tiny_text=5496
 readonly max_tiny_data=0
 readonly max_tiny_bss=0
-readonly max_linked_text=64176
+readonly max_linked_text=64630
 readonly max_linked_data=0
 readonly max_linked_bss=0
 readonly max_static_stack=1472
