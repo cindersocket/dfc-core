@@ -16,6 +16,19 @@ static size_t queue_offset;
 static bool queue_set;
 static DfcHostFreeObserver free_observer;
 static void* free_observer_context;
+static bool fail_next_allocation;
+static DfcAllocTag fail_next_allocation_tag;
+static size_t allocations_before_failure;
+
+void dfc_host_fail_next_allocation(DfcAllocTag tag) {
+    dfc_host_fail_allocation_after(tag, 0);
+}
+
+void dfc_host_fail_allocation_after(DfcAllocTag tag, size_t successful_allocations) {
+    fail_next_allocation = true;
+    fail_next_allocation_tag = tag;
+    allocations_before_failure = successful_allocations;
+}
 
 void dfc_host_set_free_observer(DfcHostFreeObserver observer, void* context) {
     free_observer = observer;
@@ -66,7 +79,14 @@ bool dfc_random_fill(uint8_t* buf, size_t len) {
 }
 
 void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {
-    DFC_UNUSED(tag);
+    if(fail_next_allocation && tag == fail_next_allocation_tag) {
+        if(allocations_before_failure > 0) {
+            allocations_before_failure--;
+        } else {
+            fail_next_allocation = false;
+            return NULL;
+        }
+    }
     void* block = malloc(size);
     if(block) memset(block, 0, size);
     return block;

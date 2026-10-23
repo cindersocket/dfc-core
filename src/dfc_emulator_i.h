@@ -44,6 +44,20 @@ void dfc_emulator_commit_auth_family(DfcEmulator* emulator, DfcEmulatorAuthFamil
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
 void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator);
 bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator);
+bool dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t file_index);
+void dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t file_index);
+#else
+static inline bool
+    dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t file_index) {
+    DFC_UNUSED(emulator);
+    DFC_UNUSED(file_index);
+    return true;
+}
+static inline void
+    dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t file_index) {
+    DFC_UNUSED(emulator);
+    DFC_UNUSED(file_index);
+}
 #endif
 void dfc_emulator_select_application(
     DfcEmulator* emulator,

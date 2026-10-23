@@ -2662,6 +2662,12 @@ static void handle_create_std_data_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
+    if(!dfc_emulator_transaction_snapshot_insert_file(
+           emulator, (size_t)(file - credential->files))) {
+        (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
     dfc_credential_mark_dirty(credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -2743,6 +2749,12 @@ static void handle_create_record_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
+    if(!dfc_emulator_transaction_snapshot_insert_file(
+           emulator, (size_t)(file - credential->files))) {
+        (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
     dfc_credential_mark_dirty(credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -2791,6 +2803,12 @@ static void
     file->limited_credit = apdu[17];
     file->value_pending = false;
     file->value_pending_delta = 0;
+    if(!dfc_emulator_transaction_snapshot_insert_file(
+           emulator, (size_t)(file - credential->files))) {
+        (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
     dfc_credential_mark_dirty(credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -2801,29 +2819,11 @@ static void handle_delete_file(DfcEmulator* emulator, const uint8_t* apdu, DfcBy
     uint8_t file_no = apdu[1];
     DfcFile* file = dfc_credential_find_file_in_app(
         emulator->credential, emulator->selected_app_index, file_no);
-    bool aborts_transaction =
-        file &&
-        ((file->type == DFC_FILE_TYPE_VALUE && file->value_pending) || file->transaction_pending);
+    if(file) {
+        dfc_emulator_transaction_snapshot_delete_file(
+            emulator, (size_t)(file - emulator->credential->files));
+    }
     if(dfc_credential_delete_file(emulator->credential, emulator->selected_app_index, file_no)) {
-        if(aborts_transaction) {
-            for(size_t i = 0; i < emulator->credential->num_files; i++) {
-                DfcFile* remaining = &emulator->credential->files[i];
-                if(remaining->app_index != emulator->selected_app_index) continue;
-                if(remaining->type == DFC_FILE_TYPE_VALUE) {
-                    remaining->value_pending = false;
-                    remaining->value_pending_delta = 0;
-                }
-                remaining->transaction_pending = false;
-            }
-        }
-#if DFC_ENABLE_TRANSACTION_MAC
-        if(aborts_transaction) {
-            dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
-            emulator->transaction_input_len = 0;
-        }
-#else
-        DFC_UNUSED(aborts_transaction);
-#endif
         dfc_credential_mark_dirty(emulator->credential);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         return;
@@ -3112,6 +3112,13 @@ static void handle_create_transaction_mac_file(
             (void)dfc_credential_delete_file(
                 emulator->credential, emulator->selected_app_index, buffer[1]);
         }
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
+    if(!dfc_emulator_transaction_snapshot_insert_file(
+           emulator, (size_t)(file - emulator->credential->files))) {
+        (void)dfc_credential_delete_file(
+            emulator->credential, emulator->selected_app_index, buffer[1]);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }

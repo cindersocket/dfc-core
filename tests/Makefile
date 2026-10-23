@@ -74,6 +74,7 @@ COMMON   := $(CORE_SRC) $(HOST_SRC) $(CRYPTO_SRC) munit/munit.c
 TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging test_dfc_desfire_protocol \
 	test_dfc_virtual_picc_core test_dfc_virtual_picc_secure \
 	test_dfc_transaction_selection \
+	test_dfc_transaction_snapshot \
 	test_dfc_virtual_picc_probe_vectors test_dfc_virtual_picc_lifecycle_vectors \
 	test_dfc_virtual_picc_mutation_vectors test_dfc_virtual_picc_multi_app_vectors \
 	test_dfc_virtual_picc_value_vectors test_dfc_ev1_conformance \
