@@ -12,8 +12,12 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 MATRIX_KEYS = ("label", "backend", "sanitize", "cc", "release", "packages")
 
 
+def workflow_text() -> str:
+    return WORKFLOW.read_text(encoding="utf-8")
+
+
 def unit_job() -> str:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = workflow_text()
     match = re.search(r"(?ms)^  unit:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow)
     if match is None:
         raise AssertionError("unit job not found")
@@ -32,6 +36,17 @@ def matrix_rows(job: str) -> list[tuple[str, ...]]:
 
 
 class UnitWorkflowTests(unittest.TestCase):
+    def test_pull_requests_run_once_and_superseded_runs_are_cancelled(self) -> None:
+        workflow = workflow_text()
+
+        self.assertIn("on:\n  push:\n    branches: [master]\n  pull_request:\n", workflow)
+        self.assertIn(
+            "concurrency:\n"
+            "  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}\n"
+            "  cancel-in-progress: true\n",
+            workflow,
+        )
+
     def test_matrix_variants_are_complete_and_uniquely_named(self) -> None:
         job = unit_job()
 
