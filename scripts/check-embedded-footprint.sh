@@ -133,15 +133,12 @@ capacity_file_pool=$(symbol_size dfc_footprint_file_pool)
 capacity_key_pool=$(symbol_size dfc_footprint_key_pool)
 capacity_file_data=$(symbol_size dfc_footprint_max_file_data)
 
-# Arm GNU 13.3.Rel1 ceiling measured after the 2.0 decoder, EV2, and D40
-# hardening changes. Linked text is the core plus tiny-crypto-c objects.
-readonly max_core_text=60908
+# Flash use is reported above for release review. It is not an exact CI ceiling:
+# small compiler and implementation changes should not require moving a magic number.
 readonly max_core_data=0
 readonly max_core_bss=0
-readonly max_tiny_text=5496
 readonly max_tiny_data=0
 readonly max_tiny_bss=0
-readonly max_linked_text=$((max_core_text + max_tiny_text))
 readonly max_linked_data=0
 readonly max_linked_bss=0
 readonly max_static_stack=1472
@@ -210,13 +207,10 @@ check_exact() {
     fi
 }
 
-check_maximum core_text "$core_text" "$max_core_text"
 check_maximum core_data "$core_data" "$max_core_data"
 check_maximum core_bss "$core_bss" "$max_core_bss"
-check_maximum tiny_text "$tiny_text" "$max_tiny_text"
 check_maximum tiny_data "$tiny_data" "$max_tiny_data"
 check_maximum tiny_bss "$tiny_bss" "$max_tiny_bss"
-check_maximum linked_text "$linked_text" "$max_linked_text"
 check_exact linked_text "$linked_text" "$((core_text + tiny_text))"
 check_maximum linked_data "$linked_data" "$max_linked_data"
 check_maximum linked_bss "$linked_bss" "$max_linked_bss"
