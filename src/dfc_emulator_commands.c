@@ -1388,6 +1388,13 @@ static void handle_change_file_settings(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;
         }
+        if(((sdm_options & (DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK)) == 0 &&
+            meta_read != DFC_SDM_DENIED_ACCESS) ||
+           ((sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0 &&
+            meta_read == DFC_SDM_DENIED_ACCESS)) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
         if((sdm_options & DFC_SDM_ASCII_ENCODING_MASK) == 0) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;

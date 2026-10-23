@@ -1550,6 +1550,63 @@ static MunitResult test_change_file_settings_validates_sdm_reserved_access(
     return MUNIT_OK;
 }
 
+static MunitResult test_change_file_settings_validates_sdm_meta_mirroring(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = open_rights_file_over_the_air(&credential, 0xEE, 0xEE);
+    credential.card.generation = DfcGenerationEv3;
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+
+    const uint8_t mirrors[] = {0, 0x40, 0x80, 0xC0};
+    for(size_t i = 0; i < sizeof(mirrors); i++) {
+        for(uint8_t meta = 0; meta <= 0x0F; meta++) {
+            uint8_t native[15] = {
+                0x5F,
+                1,
+                0x40,
+                0xEE,
+                0xEE,
+                (uint8_t)(mirrors[i] | 1),
+                0xFF,
+                (uint8_t)((meta << 4) | 0x0F)};
+            size_t length = 8;
+            if(meta < DFC_SDM_FREE_ACCESS) length += 3;
+            if(meta == DFC_SDM_FREE_ACCESS) {
+                if(mirrors[i] & DFC_SDM_UID_MIRROR_MASK) length += 3;
+                if(mirrors[i] & DFC_SDM_COUNTER_MIRROR_MASK) length += 3;
+            }
+            set_sdm_settings_sentinels(session, file);
+            assert_rejected_change_is_atomic(
+                session, file, native, length - 1, DFC_STATUS_LENGTH_ERROR);
+            bool valid =
+                (meta < 4 || meta >= DFC_SDM_FREE_ACCESS) &&
+                (mirrors[i] != 0 || meta == DFC_SDM_DENIED_ACCESS) &&
+                (meta != DFC_SDM_DENIED_ACCESS || (mirrors[i] & DFC_SDM_UID_MIRROR_MASK) == 0);
+            if(!valid) {
+                assert_rejected_change_is_atomic(
+                    session, file, native, length, DFC_STATUS_PARAMETER_ERROR);
+                continue;
+            }
+            uint8_t apdu[20] = {0x90, 0x5F, 0, 0};
+            apdu[4] = (uint8_t)(length - 1);
+            memcpy(apdu + 5, native + 1, length - 1);
+            assert_status(session, apdu, length + 5, DFC_STATUS_OK);
+            munit_assert_uint16(file->sdm_access_rights, ==, (uint16_t)((meta << 12) | 0x0FFF));
+            munit_assert_true(credential.dirty);
+            munit_assert_uint32(file->sdm_read_counter, ==, 0);
+            munit_assert_false(session->emulator->sdm_read_cache_valid);
+        }
+    }
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
 static MunitResult test_change_file_settings_validates_sdm_counter_access(
     const MunitParameter params[],
     void* data) {
@@ -1716,7 +1773,7 @@ static MunitResult test_change_file_settings_success_replaces_sdm_settings(
         0x40,
         0xEE,
         0xEE,
-        0x01,
+        0x81,
         0xFF,
         0x0F,
         0x21,
@@ -1985,6 +2042,12 @@ static MunitTest tests[] = {
      NULL},
     {"/change-file-settings-validates-sdm-reserved-access",
      test_change_file_settings_validates_sdm_reserved_access,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-validates-sdm-meta-mirroring",
+     test_change_file_settings_validates_sdm_meta_mirroring,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
