@@ -190,8 +190,9 @@ and application capacity unchanged.
 The Cortex-M4 CI job configures the full EV3 target through CMake at `-Os` with
 Arm GNU Toolchain 13.3.Rel1 and the pinned tiny-crypto-c revision. It records
 linked and per-object text, data, and BSS sizes, the largest static stack
-frames, public model sizes, and configured storage capacities. A missing
-stack-usage record or a dynamically sized stack frame fails the gate.
+frames, public model sizes, and configured storage capacities. Linked text must
+equal the core and tiny-crypto-c text totals. A missing stack-usage record or a
+dynamically sized stack frame fails the gate.
 
 Run the same gate with a clean checkout of the pinned tiny-crypto-c revision:
 
