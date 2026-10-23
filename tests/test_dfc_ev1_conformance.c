@@ -1421,6 +1421,7 @@ static void assert_rejected_change_is_atomic(
     uint8_t before[sizeof(*file)];
     uint8_t cache_before[DFC_SDM_READ_CACHE_SIZE];
     memcpy(before, file, sizeof(before));
+    uint32_t counter_before = file->sdm_read_counter;
     memcpy(cache_before, session->emulator->sdm_read_cache, sizeof(cache_before));
     bool cache_valid_before = session->emulator->sdm_read_cache_valid;
     uint8_t cache_file_before = session->emulator->sdm_read_cache_file_number;
@@ -1436,6 +1437,7 @@ static void assert_rejected_change_is_atomic(
 
     assert_status(session, apdu, apdu_len, expected_status);
     munit_assert_memory_equal(sizeof(before), before, file);
+    munit_assert_uint32(file->sdm_read_counter, ==, counter_before);
     munit_assert_false(session->credential->dirty);
     munit_assert_int(session->emulator->sdm_read_cache_valid, ==, cache_valid_before);
     munit_assert_uint8(session->emulator->sdm_read_cache_file_number, ==, cache_file_before);
@@ -1577,6 +1579,7 @@ static MunitResult test_change_file_settings_validates_sdm_counter_access(
         munit_assert_uint16(file->sdm_access_rights, ==, accepted[i].stored_rights);
         munit_assert_true(file->sdm_has_counter_offset);
         munit_assert_uint32(file->sdm_counter_offset, ==, 0);
+        munit_assert_uint32(file->sdm_read_counter, ==, 0);
         munit_assert_true(credential.dirty);
         munit_assert_false(session->emulator->sdm_read_cache_valid);
     }
@@ -1626,7 +1629,7 @@ static MunitResult test_change_file_settings_success_replaces_sdm_settings(
     munit_assert_uint32(file->sdm_encrypted_file_length, ==, 0);
     munit_assert_false(file->sdm_has_counter_limit);
     munit_assert_uint32(file->sdm_counter_limit, ==, 0);
-    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0);
     munit_assert_true(credential.dirty);
     munit_assert_false(session->emulator->sdm_read_cache_valid);
 
@@ -1651,7 +1654,7 @@ static MunitResult test_change_file_settings_success_replaces_sdm_settings(
     munit_assert_uint32(file->sdm_mac_offset, ==, 0x121110);
     munit_assert_true(file->sdm_has_counter_limit);
     munit_assert_uint32(file->sdm_counter_limit, ==, 0x151413);
-    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0);
 
     set_sdm_settings_sentinels(session, file);
     const uint8_t hidden_counter[] = {
@@ -1665,7 +1668,7 @@ static MunitResult test_change_file_settings_success_replaces_sdm_settings(
     munit_assert_uint32(file->sdm_counter_offset, ==, DFC_SDM_HIDDEN_COUNTER_OFFSET);
     munit_assert_true(file->sdm_has_counter_limit);
     munit_assert_uint32(file->sdm_counter_limit, ==, 0x090807);
-    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0);
 
     set_sdm_settings_sentinels(session, file);
     const uint8_t keyed_picc_data[] = {
@@ -1695,7 +1698,37 @@ static MunitResult test_change_file_settings_success_replaces_sdm_settings(
     munit_assert_false(file->sdm_has_encrypted_file_offset);
     munit_assert_false(file->sdm_has_mac_offset);
     munit_assert_false(file->sdm_has_counter_limit);
-    munit_assert_uint32(file->sdm_read_counter, ==, 0x123456);
+    munit_assert_uint32(file->sdm_read_counter, ==, 0);
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_change_file_settings_resets_sdm_read_counter(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    uint8_t contents[128] = {0};
+    DfcVirtualPiccSession* session =
+        open_file_policy(&credential, 0x0F, 0xEEEE, DFC_COMM_PLAIN, contents, sizeof(contents));
+    credential.card.generation = DfcGenerationEv3;
+    const uint8_t select[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03, 0x00};
+    assert_status(session, select, sizeof(select), DFC_STATUS_OK);
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+    munit_assert_false(file->sdm_enabled);
+
+    const uint8_t change[] = {
+        0x90, 0x5F, 0x00, 0x00, 0x07, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xFF, 0xFF, 0x00};
+    const uint32_t counters[] = {1, 0x123456, 0xFFFFFF};
+    for(size_t i = 0; i < sizeof(counters) / sizeof(counters[0]); i++) {
+        file->sdm_read_counter = counters[i];
+        assert_status(session, change, sizeof(change), DFC_STATUS_OK);
+        munit_assert_true(file->sdm_enabled);
+        munit_assert_uint32(file->sdm_read_counter, ==, 0);
+    }
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
@@ -1923,6 +1956,12 @@ static MunitTest tests[] = {
      NULL},
     {"/change-file-settings-success-replaces-sdm-settings",
      test_change_file_settings_success_replaces_sdm_settings,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-resets-sdm-read-counter",
+     test_change_file_settings_resets_sdm_read_counter,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

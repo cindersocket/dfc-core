@@ -1434,6 +1434,7 @@ static void handle_change_file_settings(
             }
         }
         file->sdm_enabled = true;
+        file->sdm_read_counter = 0;
     }
     emulator->sdm_read_cache_valid = false;
 #endif
