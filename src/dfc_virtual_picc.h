@@ -17,25 +17,31 @@ typedef enum {
 } DfcVirtualPiccStatus;
 
 typedef struct {
-    uint8_t protocol[2];
     size_t protocol_len;
+    size_t uid_len;
+    size_t ats_len;
+    size_t atqa_len;
+    size_t rf_detail_len;
+    uint8_t protocol[2];
     // The UID anticollision actually presented. With random ID enabled this is
     // the 4-octet generated one, not the credential's stored UID.
     uint8_t uid[DFC_DESFIRE_UID_MAX_LENGTH];
-    size_t uid_len;
     // Sized for a user ATS, which may be longer than the built-in default.
     uint8_t ats[DFC_PICC_ATS_MAX];
-    size_t ats_len;
     uint8_t sak;
     uint8_t atqa[2];
-    size_t atqa_len;
     uint8_t rf_detail[3];
-    size_t rf_detail_len;
 } DfcVirtualPiccActivation;
 
 typedef struct {
     DfcCredential* credential;
     DfcEmulator* emulator;
+    size_t pending_command_len;
+    size_t pending_response_len;
+    size_t pending_response_offset;
+    size_t pending_response_prefix_len;
+    size_t last_picc_block_len;
+    size_t iso_file_index;
     bool activated;
     // Random ID: the UID presented for this activation. Regenerated on every
     // activation and dropped when the field goes away, so a reader that sees the
@@ -48,18 +54,12 @@ typedef struct {
     uint8_t picc_sequence;
     // Native command capacity plus wrapped APDU header and Le.
     uint8_t pending_command[DFC_WORKER_MAX_BUFFER_SIZE + 6];
-    size_t pending_command_len;
     uint8_t pending_response[DFC_WORKER_MAX_BUFFER_SIZE];
-    size_t pending_response_len;
-    size_t pending_response_offset;
     uint8_t pending_response_prefix[3];
     // The pending payload is lent by the emulator rather than owned inline.
     bool pending_response_staged;
-    size_t pending_response_prefix_len;
     uint8_t last_picc_block[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
-    size_t last_picc_block_len;
     bool iso_file_selected;
-    size_t iso_file_index;
 } DfcVirtualPiccSession;
 
 #if DFC_ENABLE_EMULATOR

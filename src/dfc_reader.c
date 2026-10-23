@@ -1176,8 +1176,6 @@ static DfcReaderStatus
     }
     if(is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED) {
         ex->response_plan = PlanEv1Decrypt;
-        ex->command_head[0] = ins;
-        ex->command_head_len = 1;
     }
     dfc_secure_wipe(full, sizeof(full));
     return set_frame(ex, command->data, command->data_len, NULL, 0) ? DfcReaderOk :

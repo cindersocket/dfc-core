@@ -108,7 +108,10 @@ bool dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t
             &emulator->transaction_record_numbers[file_index],
             count * sizeof(emulator->transaction_record_numbers[0]));
     }
-    emulator->transaction_snapshot_record_counts[file_index] = file->record_count;
+    emulator->transaction_snapshot_record_counts[file_index] =
+        (file->type == DFC_FILE_TYPE_LINEAR_RECORD || file->type == DFC_FILE_TYPE_CYCLIC_RECORD) ?
+            file->record_count :
+            0;
     emulator->transaction_record_operations[file_index] = 0;
     emulator->transaction_record_numbers[file_index] = 0;
     return true;
@@ -187,7 +190,9 @@ bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
     for(size_t index = 0; index < emulator->credential->num_files; index++) {
         DfcFile* file = &emulator->credential->files[index];
         if(file->app_index != app_index) continue;
-        file->record_count = emulator->transaction_snapshot_record_counts[index];
+        if(file->type == DFC_FILE_TYPE_LINEAR_RECORD || file->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
+            file->record_count = emulator->transaction_snapshot_record_counts[index];
+        }
         file->transaction_pending = false;
     }
     emulator->credential->dirty = emulator->transaction_snapshot_dirty;

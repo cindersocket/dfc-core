@@ -510,15 +510,19 @@ int32_t dfc_ffi_credential_get_file(
     out->data_len = (uint32_t)f->data_len;
     out->contents_complete = f->contents_complete;
     out->transaction_pending = f->transaction_pending;
-    out->value_lower_limit = f->value_lower_limit;
-    out->value_upper_limit = f->value_upper_limit;
-    out->value = f->value;
-    out->limited_credit = f->limited_credit;
-    out->value_pending = f->value_pending;
-    out->value_pending_delta = f->value_pending_delta;
-    out->record_size = f->record_size;
-    out->max_records = f->max_records;
-    out->record_count = f->record_count;
+    if(f->type == DFC_FILE_TYPE_VALUE) {
+        out->value_lower_limit = f->value_lower_limit;
+        out->value_upper_limit = f->value_upper_limit;
+        out->value = f->value;
+        out->limited_credit = f->limited_credit;
+        out->value_pending = f->value_pending;
+        out->value_pending_delta = f->value_pending_delta;
+    } else if(
+        f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
+        out->record_size = f->record_size;
+        out->max_records = f->max_records;
+        out->record_count = f->record_count;
+    }
 #if DFC_ENABLE_SDM
     out->sdm_enabled = f->sdm_enabled;
     out->sdm_options = f->sdm_options;
@@ -541,12 +545,14 @@ int32_t dfc_ffi_credential_get_file(
     out->sdm_read_counter = f->sdm_read_counter;
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
-    memcpy(out->transaction_mac_key, f->transaction_mac_key, sizeof(out->transaction_mac_key));
-    out->transaction_mac_key_type = f->transaction_mac_key_type;
-    out->transaction_mac_key_version = f->transaction_mac_key_version;
-    out->transaction_counter = f->transaction_counter;
-    memcpy(out->transaction_mac, f->transaction_mac, sizeof(out->transaction_mac));
-    memcpy(out->previous_reader_id, f->previous_reader_id, sizeof(out->previous_reader_id));
+    if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) {
+        memcpy(out->transaction_mac_key, f->transaction_mac_key, sizeof(out->transaction_mac_key));
+        out->transaction_mac_key_type = f->transaction_mac_key_type;
+        out->transaction_mac_key_version = f->transaction_mac_key_version;
+        out->transaction_counter = f->transaction_counter;
+        memcpy(out->transaction_mac, f->transaction_mac, sizeof(out->transaction_mac));
+        memcpy(out->previous_reader_id, f->previous_reader_id, sizeof(out->previous_reader_id));
+    }
 #endif
     return DfcDerOk;
 }
@@ -930,15 +936,19 @@ int32_t dfc_ffi_credential_add_file(
     file->declared_size = f->declared_size;
     file->contents_complete = f->contents_complete != 0;
     file->transaction_pending = f->transaction_pending != 0;
-    file->value_lower_limit = f->value_lower_limit;
-    file->value_upper_limit = f->value_upper_limit;
-    file->value = f->value;
-    file->limited_credit = f->limited_credit;
-    file->value_pending = f->value_pending != 0;
-    file->value_pending_delta = f->value_pending_delta;
-    file->record_size = f->record_size;
-    file->max_records = f->max_records;
-    file->record_count = f->record_count;
+    if(f->type == DFC_FILE_TYPE_VALUE) {
+        file->value_lower_limit = f->value_lower_limit;
+        file->value_upper_limit = f->value_upper_limit;
+        file->value = f->value;
+        file->limited_credit = f->limited_credit;
+        file->value_pending = f->value_pending != 0;
+        file->value_pending_delta = f->value_pending_delta;
+    } else if(
+        f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
+        file->record_size = f->record_size;
+        file->max_records = f->max_records;
+        file->record_count = f->record_count;
+    }
     if(f->sdm_enabled) {
 #if DFC_ENABLE_SDM
         file->sdm_enabled = true;

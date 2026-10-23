@@ -257,45 +257,58 @@ enum {
     DfcSdmFieldCount,
 };
 
-static const uint8_t sdm_field_offsets[DfcSdmFieldCount] = {
-    offsetof(DfcFile, sdm_uid_offset),
-    offsetof(DfcFile, sdm_counter_offset),
-    offsetof(DfcFile, sdm_picc_data_offset),
-    offsetof(DfcFile, sdm_mac_input_offset),
-    offsetof(DfcFile, sdm_encrypted_file_offset),
-    offsetof(DfcFile, sdm_encrypted_file_length),
-    offsetof(DfcFile, sdm_mac_offset),
-    offsetof(DfcFile, sdm_counter_limit),
-};
-
-_Static_assert(sizeof(DfcFile) <= UINT8_MAX, "SDM field offsets require wider storage");
 _Static_assert(
-    offsetof(DfcFile, sdm_uid_offset) - offsetof(DfcFile, sdm_has_uid_offset) == sizeof(uint32_t),
-    "SDM fields must keep their presence flag immediately before their value");
+    offsetof(DfcFile, sdm_counter_offset) - offsetof(DfcFile, sdm_uid_offset) ==
+        DfcSdmFieldCounterOffset * sizeof(uint32_t),
+    "SDM counter offset layout changed");
 _Static_assert(
-    offsetof(DfcFile, sdm_counter_offset) - offsetof(DfcFile, sdm_has_counter_offset) ==
-        sizeof(uint32_t),
-    "SDM counter layout changed");
+    offsetof(DfcFile, sdm_picc_data_offset) - offsetof(DfcFile, sdm_uid_offset) ==
+        DfcSdmFieldPiccDataOffset * sizeof(uint32_t),
+    "SDM PICC data offset layout changed");
 _Static_assert(
-    offsetof(DfcFile, sdm_picc_data_offset) - offsetof(DfcFile, sdm_has_picc_data_offset) ==
-        sizeof(uint32_t),
-    "SDM PICC data layout changed");
+    offsetof(DfcFile, sdm_mac_input_offset) - offsetof(DfcFile, sdm_uid_offset) ==
+        DfcSdmFieldMacInputOffset * sizeof(uint32_t),
+    "SDM MAC input offset layout changed");
 _Static_assert(
-    offsetof(DfcFile, sdm_mac_input_offset) - offsetof(DfcFile, sdm_has_mac_input_offset) ==
-        sizeof(uint32_t),
-    "SDM MAC input layout changed");
+    offsetof(DfcFile, sdm_encrypted_file_offset) - offsetof(DfcFile, sdm_uid_offset) ==
+        DfcSdmFieldEncryptedFileOffset * sizeof(uint32_t),
+    "SDM encrypted file offset layout changed");
 _Static_assert(
-    offsetof(DfcFile, sdm_encrypted_file_offset) -
-            offsetof(DfcFile, sdm_has_encrypted_file_offset) ==
-        sizeof(uint32_t),
-    "SDM encrypted file layout changed");
+    offsetof(DfcFile, sdm_encrypted_file_length) - offsetof(DfcFile, sdm_uid_offset) ==
+        DfcSdmFieldEncryptedFileLength * sizeof(uint32_t),
+    "SDM encrypted file length layout changed");
 _Static_assert(
-    offsetof(DfcFile, sdm_mac_offset) - offsetof(DfcFile, sdm_has_mac_offset) == sizeof(uint32_t),
-    "SDM MAC layout changed");
+    offsetof(DfcFile, sdm_mac_offset) - offsetof(DfcFile, sdm_uid_offset) ==
+        DfcSdmFieldMacOffset * sizeof(uint32_t),
+    "SDM MAC offset layout changed");
 _Static_assert(
-    offsetof(DfcFile, sdm_counter_limit) - offsetof(DfcFile, sdm_has_counter_limit) ==
-        sizeof(uint32_t),
+    offsetof(DfcFile, sdm_counter_limit) - offsetof(DfcFile, sdm_uid_offset) ==
+        DfcSdmFieldCounterLimit * sizeof(uint32_t),
     "SDM counter limit layout changed");
+_Static_assert(
+    offsetof(DfcFile, sdm_has_counter_offset) - offsetof(DfcFile, sdm_has_uid_offset) ==
+        DfcSdmFieldCounterOffset * sizeof(bool),
+    "SDM counter presence layout changed");
+_Static_assert(
+    offsetof(DfcFile, sdm_has_picc_data_offset) - offsetof(DfcFile, sdm_has_uid_offset) ==
+        DfcSdmFieldPiccDataOffset * sizeof(bool),
+    "SDM PICC data presence layout changed");
+_Static_assert(
+    offsetof(DfcFile, sdm_has_mac_input_offset) - offsetof(DfcFile, sdm_has_uid_offset) ==
+        DfcSdmFieldMacInputOffset * sizeof(bool),
+    "SDM MAC input presence layout changed");
+_Static_assert(
+    offsetof(DfcFile, sdm_has_encrypted_file_offset) - offsetof(DfcFile, sdm_has_uid_offset) ==
+        DfcSdmFieldEncryptedFileOffset * sizeof(bool),
+    "SDM encrypted file presence layout changed");
+_Static_assert(
+    offsetof(DfcFile, sdm_has_mac_offset) - offsetof(DfcFile, sdm_has_uid_offset) ==
+        (DfcSdmFieldMacOffset - 1) * sizeof(bool),
+    "SDM MAC presence layout changed");
+_Static_assert(
+    offsetof(DfcFile, sdm_has_counter_limit) - offsetof(DfcFile, sdm_has_uid_offset) ==
+        (DfcSdmFieldCounterLimit - 1) * sizeof(bool),
+    "SDM counter limit presence layout changed");
 #endif
 
 // APDU boundary conversions. `first` is the first access-rights octet on the
@@ -721,7 +734,7 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     // An application is listed when it carries an ISO file ID; the DF name is
     // whatever it has, and an application without one is listed all the same.
     uint8_t* records = emulator->pending_chain;
-    size_t record_lengths[DFC_MAX_APPS];
+    uint8_t record_lengths[DFC_MAX_APPS];
     size_t record_count = 0;
     size_t records_len = 0;
     for(size_t i = 0; i < emulator->credential->num_apps; i++) {
@@ -737,7 +750,7 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
         records[records_len++] = (uint8_t)(app->iso_file_id >> 8);
         memcpy(records + records_len, app->iso_aid, app->iso_aid_len);
         records_len += app->iso_aid_len;
-        record_lengths[record_count++] = 5 + app->iso_aid_len;
+        record_lengths[record_count++] = (uint8_t)(5 + app->iso_aid_len);
     }
 
     // Secure the complete logical response, then retain each application's
@@ -763,12 +776,12 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     size_t first_len = record_lengths[0];
     emulator->pending_chain_len = secured_len;
     emulator->pending_chain_offset = first_len;
-    emulator->pending_chain_chunk_count = record_count - 1;
+    emulator->pending_chain_chunk_count = (uint8_t)(record_count - 1);
     emulator->pending_chain_chunk_index = 0;
     for(size_t index = 1; index < record_count; index++) {
         size_t chunk = record_lengths[index];
         if(index + 1 == record_count) chunk += secured_len - records_len;
-        emulator->pending_chain_chunks[index - 1] = chunk;
+        emulator->pending_chain_chunks[index - 1] = (uint8_t)chunk;
     }
     append_status_payload(tx_buffer, DFC_CMD_ADDITIONAL_FRAME, records, first_len);
 }
@@ -1447,16 +1460,16 @@ static void handle_change_file_settings(
         file->sdm_options = sdm_options;
         file->sdm_access_rights = sdm_access_rights;
         const uint8_t* cursor = settings + DFC_SDM_BASE_SETTINGS_LENGTH;
-        for(size_t i = 0; i < sizeof(sdm_field_offsets); i++, sdm_fields >>= 1) {
+        for(size_t i = 0; i < DfcSdmFieldCount; i++, sdm_fields >>= 1) {
             if((sdm_fields & 1u) == 0) continue;
             uint32_t value = read_uint24_le(cursor);
             cursor += DFC_SDM_OFFSET_LENGTH;
-            uint8_t value_offset = sdm_field_offsets[i];
-            memcpy((uint8_t*)file + value_offset, &value, sizeof(value));
+            (&file->sdm_uid_offset)[i] = value;
             if(i != DfcSdmFieldEncryptedFileLength) {
                 bool present = i != DfcSdmFieldCounterOffset ||
                                value != DFC_SDM_HIDDEN_COUNTER_OFFSET;
-                *((bool*)((uint8_t*)file + value_offset - sizeof(uint32_t))) = present;
+                size_t has_index = i < DfcSdmFieldEncryptedFileLength ? i : i - 1;
+                (&file->sdm_has_uid_offset)[has_index] = present;
             }
         }
         file->sdm_enabled = true;
@@ -2882,6 +2895,7 @@ static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
         }
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         dfc_bytebuf_append_bytes(tx_buffer, wrapped, wrapped_len);
+        emulator->response_secured = true;
         dfc_secure_wipe(wrapped, sizeof(wrapped));
         return !ev1_sm;
     }
@@ -3310,8 +3324,12 @@ static bool transaction_snapshot_begin(DfcEmulator* emulator) {
         emulator->credential->file_pool,
         emulator->transaction_snapshot_pool_length);
     for(size_t index = 0; index < emulator->credential->num_files; index++) {
+        const DfcFile* file = &emulator->credential->files[index];
         emulator->transaction_snapshot_record_counts[index] =
-            emulator->credential->files[index].record_count;
+            (file->type == DFC_FILE_TYPE_LINEAR_RECORD ||
+             file->type == DFC_FILE_TYPE_CYCLIC_RECORD) ?
+                file->record_count :
+                0;
     }
     memset(
         emulator->transaction_record_operations,

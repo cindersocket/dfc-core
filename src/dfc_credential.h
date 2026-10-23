@@ -31,19 +31,19 @@ typedef enum {
     X(uint8_t, sdm_options)                \
     X(uint16_t, sdm_access_rights)         \
     X(bool, sdm_has_uid_offset)            \
-    X(uint32_t, sdm_uid_offset)            \
     X(bool, sdm_has_counter_offset)        \
-    X(uint32_t, sdm_counter_offset)        \
     X(bool, sdm_has_picc_data_offset)      \
-    X(uint32_t, sdm_picc_data_offset)      \
     X(bool, sdm_has_mac_input_offset)      \
-    X(uint32_t, sdm_mac_input_offset)      \
-    X(bool, sdm_has_mac_offset)            \
-    X(uint32_t, sdm_mac_offset)            \
     X(bool, sdm_has_encrypted_file_offset) \
+    X(bool, sdm_has_mac_offset)            \
+    X(bool, sdm_has_counter_limit)         \
+    X(uint32_t, sdm_uid_offset)            \
+    X(uint32_t, sdm_counter_offset)        \
+    X(uint32_t, sdm_picc_data_offset)      \
+    X(uint32_t, sdm_mac_input_offset)      \
     X(uint32_t, sdm_encrypted_file_offset) \
     X(uint32_t, sdm_encrypted_file_length) \
-    X(bool, sdm_has_counter_limit)         \
+    X(uint32_t, sdm_mac_offset)            \
     X(uint32_t, sdm_counter_limit)
 
 typedef struct {
@@ -55,35 +55,49 @@ typedef struct {
 
 typedef struct {
     size_t app_index;
-    uint8_t number;
-    uint8_t type;
-    uint8_t comm_settings;
-    uint16_t access_rights;
-    bool has_iso_file_id;
-    uint16_t iso_file_id;
-
-    // Declared allocation, which is what a read returns. Distinct from the
-    // contents actually known, which may be shorter.
-    uint32_t declared_size;
     // Slice into DfcCredential.file_pool holding the known contents.
     size_t data_offset;
     size_t data_len;
+    // Declared allocation, which is what a read returns. Distinct from the
+    // contents actually known, which may be shorter.
+    uint32_t declared_size;
+    uint16_t access_rights;
+    uint16_t iso_file_id;
+    uint8_t number;
+    uint8_t type;
+    uint8_t comm_settings;
+    bool has_iso_file_id;
     // True when data_len covers the whole declared size, or every record.
     bool contents_complete;
     bool transaction_pending;
 
-    int32_t value_lower_limit;
-    int32_t value_upper_limit;
-    int32_t value;
-    uint8_t limited_credit;
-    bool value_pending;
-    int32_t value_pending_delta;
-
-    // Record files. The pool slice holds the leading known records in card
-    // order, so data_len is a whole multiple of record_size.
-    uint32_t record_size;
-    uint32_t max_records;
-    uint32_t record_count;
+    union {
+        struct {
+            int32_t value_lower_limit;
+            int32_t value_upper_limit;
+            int32_t value;
+            int32_t value_pending_delta;
+            uint8_t limited_credit;
+            bool value_pending;
+        };
+        // Record files. The pool slice holds the leading known records in card
+        // order, so data_len is a whole multiple of record_size.
+        struct {
+            uint32_t record_size;
+            uint32_t max_records;
+            uint32_t record_count;
+        };
+#if DFC_ENABLE_TRANSACTION_MAC
+        struct {
+            uint32_t transaction_counter;
+            uint8_t transaction_mac_key[DFC_AES_KEY_LENGTH];
+            uint8_t transaction_mac[DFC_WIRE_MAC_LENGTH];
+            uint8_t previous_reader_id[DFC_TRANSACTION_READER_ID_LENGTH];
+            uint8_t transaction_mac_key_type;
+            uint8_t transaction_mac_key_version;
+        };
+#endif
+    };
 #if DFC_ENABLE_SDM
     union {
         DfcSdmResettable sdm_resettable;
@@ -94,14 +108,6 @@ typedef struct {
         };
     };
     uint32_t sdm_read_counter;
-#endif
-#if DFC_ENABLE_TRANSACTION_MAC
-    uint8_t transaction_mac_key[DFC_AES_KEY_LENGTH];
-    uint8_t transaction_mac_key_type;
-    uint8_t transaction_mac_key_version;
-    uint32_t transaction_counter;
-    uint8_t transaction_mac[DFC_WIRE_MAC_LENGTH];
-    uint8_t previous_reader_id[DFC_TRANSACTION_READER_ID_LENGTH];
 #endif
 } DfcFile;
 
@@ -129,12 +135,30 @@ _Static_assert(
 #endif
 
 typedef struct {
+    size_t iso_aid_len;
+    // Slice into DfcCredential.key_pool holding num_keys keys, each one stored
+    // key length wide. DFC_KEY_POOL_NONE when nothing is reserved. The slice
+    // length is held rather than recomputed, so a caller that edits key_len in
+    // place cannot make the bookkeeping disagree with the pool. Versions stay
+    // inline: one octet per slot is not worth pooling.
+    size_t key_offset;
+    size_t key_pool_len;
+    size_t num_keys;
+    size_t key_len;
+#if DFC_ENABLE_KEY_SETS
+    size_t key_storage_len;
+#endif
+    uint16_t iso_file_id;
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+    uint16_t delegated_slot_number;
+    uint16_t delegated_quota_limit;
+    uint16_t delegated_free_blocks;
+    uint8_t delegated_slot_version;
+    bool delegated;
+#endif
     uint8_t aid[3];
     uint8_t iso_aid[16];
-    size_t iso_aid_len;
     bool has_iso_file_id;
-    uint16_t iso_file_id;
-
     uint8_t key_settings_1;
     uint8_t key_settings_2;
     uint8_t auth_command;
@@ -145,18 +169,8 @@ typedef struct {
     uint8_t preferred_auth_command;
     bool has_sm_disable;
     uint8_t sm_disable;
-    // Slice into DfcCredential.key_pool holding num_keys keys, each one stored
-    // key length wide. DFC_KEY_POOL_NONE when nothing is reserved. The slice
-    // length is held rather than recomputed, so a caller that edits key_len in
-    // place cannot make the bookkeeping disagree with the pool. Versions stay
-    // inline: one octet per slot is not worth pooling.
-    size_t key_offset;
-    size_t key_pool_len;
     uint8_t key_versions[DFC_MAX_KEYS];
-    size_t num_keys;
-    size_t key_len;
 #if DFC_ENABLE_KEY_SETS
-    size_t key_storage_len;
     uint8_t num_key_sets;
     uint8_t max_key_size;
     uint8_t key_set_settings;
@@ -168,13 +182,6 @@ typedef struct {
 #if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
     bool has_capability_data;
     uint8_t capability_data[DFC_APPLICATION_CAPABILITY_DATA_LENGTH];
-#endif
-#if DFC_ENABLE_DELEGATED_APPLICATIONS
-    bool delegated;
-    uint16_t delegated_slot_number;
-    uint8_t delegated_slot_version;
-    uint16_t delegated_quota_limit;
-    uint16_t delegated_free_blocks;
 #endif
 } DfcApplication;
 
@@ -200,17 +207,44 @@ typedef struct {
     DfcUidProvenance uid_provenance;
     // Optional seven-octet GetVersion response overrides.
     bool has_hardware_version;
-    uint8_t hardware_version[7];
     bool has_software_version;
+    uint8_t hardware_version[7];
     uint8_t software_version[7];
 } DfcCard;
 
 typedef struct {
+    size_t uid_len;
+    // PICC keys, slot 0 first. Slot 0 is the master key; later generations
+    // define further slots, so this is a list rather than one key. The material
+    // lives in key_pool, addressed the same way an application's does.
+    size_t picc_key_offset;
+    size_t picc_key_pool_len;
+    size_t picc_num_keys;
+    size_t picc_key_len;
+    size_t picc_ats_len;
+#if DFC_ENABLE_VIRTUAL_CARD
+    size_t virtual_card_installation_id_len;
+    size_t virtual_card_uid_len;
+#endif
+    size_t num_apps;
+    size_t num_files;
+    size_t file_pool_used;
+    size_t key_pool_used;
+
+    DfcApplication apps[DFC_MAX_APPS];
+    DfcFile files[DFC_MAX_FILES];
     DfcCard card;
 
-    uint8_t uid[DFC_DESFIRE_UID_MAX_LENGTH];
-    size_t uid_len;
+#if DFC_ENABLE_PROXIMITY_CHECK
+    uint16_t picc_proximity_published_response_time;
+    bool picc_has_proximity_key;
+    uint8_t picc_proximity_key[DFC_AES_KEY_LENGTH];
+    uint8_t picc_proximity_option;
+    bool picc_has_proximity_bitrate;
+    uint8_t picc_proximity_bitrate;
+#endif
 
+    uint8_t uid[DFC_DESFIRE_UID_MAX_LENGTH];
     uint8_t picc_key_settings_1;
     uint8_t picc_key_settings_2;
     uint8_t picc_auth_command;
@@ -218,20 +252,12 @@ typedef struct {
     uint8_t picc_auth_commands;
     bool picc_has_preferred_auth_command;
     uint8_t picc_preferred_auth_command;
-    // PICC keys, slot 0 first. Slot 0 is the master key; later generations
-    // define further slots, so this is a list rather than one key. The material
-    // lives in key_pool, addressed the same way an application's does.
-    size_t picc_key_offset;
-    size_t picc_key_pool_len;
     uint8_t picc_key_versions[DFC_MAX_KEYS];
-    size_t picc_num_keys;
-    size_t picc_key_len;
 
     // PICC configuration reachable through SetConfiguration.
     bool picc_random_id;
     bool picc_format_disabled;
     uint8_t picc_ats[DFC_PICC_ATS_MAX];
-    size_t picc_ats_len;
     bool picc_has_sak;
     uint8_t picc_sak;
     bool picc_has_atqa;
@@ -244,15 +270,6 @@ typedef struct {
     uint8_t picc_ev2_capabilities[DFC_EV2_CAPABILITY_LENGTH];
 #endif
 
-#if DFC_ENABLE_PROXIMITY_CHECK
-    bool picc_has_proximity_key;
-    uint8_t picc_proximity_key[DFC_AES_KEY_LENGTH];
-    uint8_t picc_proximity_option;
-    uint16_t picc_proximity_published_response_time;
-    bool picc_has_proximity_bitrate;
-    uint8_t picc_proximity_bitrate;
-#endif
-
 #if DFC_ENABLE_STATIC_SIGNATURE
     bool picc_has_static_signature;
     uint8_t picc_static_signature[DFC_STATIC_SIGNATURE_LENGTH];
@@ -261,11 +278,9 @@ typedef struct {
 #if DFC_ENABLE_VIRTUAL_CARD
     bool virtual_card_configured;
     uint8_t virtual_card_installation_id[DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH];
-    size_t virtual_card_installation_id_len;
     uint8_t virtual_card_information;
     uint8_t virtual_card_capabilities[DFC_VIRTUAL_CARD_CAPABILITY_LENGTH];
     uint8_t virtual_card_uid[DFC_VIRTUAL_CARD_UID_MAX_LENGTH];
-    size_t virtual_card_uid_len;
     uint8_t virtual_card_select_mac_key[DFC_AES_KEY_LENGTH];
     uint8_t virtual_card_select_encryption_key[DFC_AES_KEY_LENGTH];
     bool virtual_card_authentication_mandatory;
@@ -279,18 +294,11 @@ typedef struct {
     uint8_t picc_dam_encryption_key[DFC_AES_KEY_LENGTH];
 #endif
 
-    DfcApplication apps[DFC_MAX_APPS];
-    size_t num_apps;
-    DfcFile files[DFC_MAX_FILES];
-    size_t num_files;
-
     // Variable file payload storage. Standard-data files allocate slices here.
     uint8_t file_pool[DFC_FILE_POOL_SIZE];
-    size_t file_pool_used;
 
     // Variable key storage, shared by every application and the PICC record.
     uint8_t key_pool[DFC_KEY_POOL_SIZE];
-    size_t key_pool_used;
 
     bool dirty;
 

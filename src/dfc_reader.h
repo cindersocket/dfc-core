@@ -124,47 +124,49 @@ typedef struct {
 // One operation in flight. Treat the fields as private.
 typedef struct {
     DfcReaderSession* session;
+    size_t data_len;
     DfcReaderFraming framing;
     uint8_t kind;
     uint8_t phase;
     uint8_t ins;
     uint8_t comm_mode;
     uint8_t response_plan;
+    uint8_t status;
     bool invalidates_session;
     bool special_success;
 
-    uint8_t frame[DFC_READER_MAX_COMMAND];
-    size_t frame_len;
-    size_t frame_offset;
-    // When set, the first frame carries only this many octets.
-    size_t first_frame_len;
-    // When set, every continuation carries at most this many octets.
-    size_t command_frame_len;
-    DfcReaderStream stream;
-    // Clear command head for an EV1 encrypted read's CRC, kept per exchange.
-    uint8_t command_head[16];
-    size_t command_head_len;
+    union {
+        struct {
+            size_t frame_len;
+            size_t frame_offset;
+            // When set, the first frame carries only this many octets.
+            size_t first_frame_len;
+            // When set, every continuation carries at most this many octets.
+            size_t command_frame_len;
+            DfcReaderStream stream;
+            uint8_t frame[DFC_READER_MAX_COMMAND];
+        };
+        struct {
+            // Authentication in progress.
+            size_t auth_key_len;
+            size_t auth_challenge_len;
+            uint8_t auth_key[DFC_MAX_KEY_LEN];
+            uint8_t auth_random_a[DFC_EV2_RANDOM_LENGTH];
+            uint8_t auth_random_b[DFC_EV2_RANDOM_LENGTH];
+#if DFC_ENABLE_ISO7816_AUTH
+            uint8_t auth_random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+            uint8_t auth_reference;
+            uint8_t auth_algorithm;
+#endif
+            uint8_t auth_iv[16];
+            uint8_t auth_capabilities[DFC_EV2_CAPABILITY_LENGTH];
+            uint8_t auth_cipher;
+            uint8_t auth_key_no;
+            bool auth_first;
+        };
+    };
 
     uint8_t data[DFC_READER_MAX_RESPONSE];
-    size_t data_len;
-    uint8_t status;
-
-    // Authentication in progress.
-    uint8_t auth_cipher;
-    uint8_t auth_key_no;
-    uint8_t auth_key[DFC_MAX_KEY_LEN];
-    size_t auth_key_len;
-    size_t auth_challenge_len;
-    uint8_t auth_random_a[DFC_EV2_RANDOM_LENGTH];
-    uint8_t auth_random_b[DFC_EV2_RANDOM_LENGTH];
-#if DFC_ENABLE_ISO7816_AUTH
-    uint8_t auth_random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG];
-    uint8_t auth_reference;
-    uint8_t auth_algorithm;
-#endif
-    uint8_t auth_iv[16];
-    bool auth_first;
-    uint8_t auth_capabilities[DFC_EV2_CAPABILITY_LENGTH];
 } DfcReaderExchange;
 
 const char* dfc_reader_status_name(DfcReaderStatus status);
