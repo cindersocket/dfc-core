@@ -133,8 +133,8 @@ capacity_file_pool=$(symbol_size dfc_footprint_file_pool)
 capacity_key_pool=$(symbol_size dfc_footprint_key_pool)
 capacity_file_data=$(symbol_size dfc_footprint_max_file_data)
 
-# Measured with Arm GNU 13.3.Rel1 after the 2.0 transaction, access-control,
-# and staged-response hardening changes.
+# Measured with Arm GNU 13.3.Rel1. The previous integrated ceiling understated
+# this same 2.0 image by 944 bytes.
 readonly max_core_text=60116
 readonly max_core_data=0
 readonly max_core_bss=0
@@ -217,6 +217,7 @@ check_maximum tiny_text "$tiny_text" "$max_tiny_text"
 check_maximum tiny_data "$tiny_data" "$max_tiny_data"
 check_maximum tiny_bss "$tiny_bss" "$max_tiny_bss"
 check_maximum linked_text "$linked_text" "$max_linked_text"
+check_exact linked_text_sum "$linked_text" "$((core_text + tiny_text))"
 check_maximum linked_data "$linked_data" "$max_linked_data"
 check_maximum linked_bss "$linked_bss" "$max_linked_bss"
 check_maximum maximum_static_frame "$max_stack" "$max_static_stack"
