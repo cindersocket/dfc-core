@@ -101,7 +101,7 @@ jobs:
           - { label: "mbedTLS GCC ASan+UBSan", backend: mbedtls, sanitize: "address,undefined", cc: gcc, release: "", packages: "libmbedtls-dev" }
           - { label: "tiny GCC", backend: tiny, sanitize: "", cc: gcc, release: "", packages: "" }
           - { label: "tiny GCC ASan+UBSan", backend: tiny, sanitize: "address,undefined", cc: gcc, release: "", packages: "" }
-          - { label: "tiny Clang MSan", backend: tiny, sanitize: "memory", cc: clang, release: "", packages: "clang libclang-rt-18-dev" }
+          - { label: "tiny, memory", backend: tiny, sanitize: "memory", cc: clang, release: "", packages: "clang libclang-rt-18-dev" }
           - { label: "tiny GCC Release", backend: tiny, sanitize: "", cc: gcc, release: "1", packages: "" }
     steps:
       - uses: actions/checkout@v4

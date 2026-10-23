@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -22,10 +23,12 @@ def unit_job() -> str:
 def matrix_rows(job: str) -> list[tuple[str, ...]]:
     rows = []
     for encoded in re.findall(r"(?m)^          - \{ (?P<row>[^}]+) \}$", job):
-        row: dict[str, str] = {}
-        for item in encoded.split(", "):
-            key, value = item.split(": ", 1)
-            row[key] = value.strip('"')
+        row = {
+            key: json.loads(value) if value.startswith('"') else value
+            for key, value in re.findall(
+                r"([a-z]+): (\"(?:[^\"\\]|\\.)*\"|[^,]+)(?:, |$)", encoded
+            )
+        }
         rows.append(tuple(row[key] for key in MATRIX_KEYS))
     return rows
 
@@ -50,7 +53,7 @@ class UnitWorkflowTests(unittest.TestCase):
                 ("tiny GCC", "tiny", "", "gcc", "", ""),
                 ("tiny GCC ASan+UBSan", "tiny", "address,undefined", "gcc", "", ""),
                 (
-                    "tiny Clang MSan",
+                    "tiny, memory",
                     "tiny",
                     "memory",
                     "clang",
