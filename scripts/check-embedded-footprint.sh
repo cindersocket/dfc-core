@@ -133,15 +133,15 @@ capacity_file_pool=$(symbol_size dfc_footprint_file_pool)
 capacity_key_pool=$(symbol_size dfc_footprint_key_pool)
 capacity_file_data=$(symbol_size dfc_footprint_max_file_data)
 
-# Measured with Arm GNU 13.3.Rel1 after issue #112 made invalid staged-response
-# metadata retire the complete borrowed buffer.
-readonly max_core_text=59172
+# Measured with Arm GNU 13.3.Rel1 after the 2.0 transaction, access-control,
+# and staged-response hardening changes.
+readonly max_core_text=60116
 readonly max_core_data=0
 readonly max_core_bss=0
 readonly max_tiny_text=5496
 readonly max_tiny_data=0
 readonly max_tiny_bss=0
-readonly max_linked_text=64668
+readonly max_linked_text=65612
 readonly max_linked_data=0
 readonly max_linked_bss=0
 readonly max_static_stack=1472
