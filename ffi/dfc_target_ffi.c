@@ -137,8 +137,7 @@ int32_t dfc_target_picc_reset_protocol(DfcTargetPicc* picc) {
 
 int32_t dfc_target_picc_advance_time(DfcTargetPicc* picc, uint32_t elapsed_milliseconds) {
     if(!picc) return DfcVirtualPiccStatusProtocolError;
-    dfc_emulator_advance_time(picc->session->emulator, elapsed_milliseconds);
-    return DfcVirtualPiccStatusOk;
+    return dfc_virtual_picc_advance_time(picc->session, elapsed_milliseconds);
 }
 
 int32_t dfc_target_picc_snapshot(const DfcTargetPicc* picc, DfcTargetSnapshot* out) {

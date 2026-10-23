@@ -1191,10 +1191,10 @@ int32_t dfc_ffi_picc_reset_protocol(DfcFfiPicc* picc) {
 int32_t dfc_ffi_picc_advance_time(DfcFfiPicc* picc, uint32_t elapsed_milliseconds) {
     if(!picc) return DFC_FFI_INVALID_ARGUMENT;
     enter(picc);
-    dfc_emulator_advance_time(picc->session->emulator, elapsed_milliseconds);
+    DfcVirtualPiccStatus st = dfc_virtual_picc_advance_time(picc->session, elapsed_milliseconds);
     bool random_failed = leave();
     if(random_failed) return DFC_FFI_RANDOM_FAILED;
-    return DfcVirtualPiccStatusOk;
+    return st;
 }
 
 int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out) {

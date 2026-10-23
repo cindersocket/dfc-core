@@ -76,6 +76,9 @@ bool dfc_virtual_picc_anticollision(
     DfcVirtualPiccActivation* activation);
 
 DfcVirtualPiccStatus dfc_virtual_picc_field_off(DfcVirtualPiccSession* session);
+// Expiry rolls back pending writes and returns the card to its inactive state.
+DfcVirtualPiccStatus
+    dfc_virtual_picc_advance_time(DfcVirtualPiccSession* session, uint32_t elapsed_milliseconds);
 // Clear authentication and ISO-DEP protocol state without changing the
 // activation identifier or reallocating any session objects.
 DfcVirtualPiccStatus dfc_virtual_picc_reset_protocol(DfcVirtualPiccSession* session);

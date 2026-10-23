@@ -346,6 +346,7 @@ void dfc_emulator_select_application(
 void dfc_emulator_reset_activation(DfcEmulator* emulator) {
     DFC_ASSERT(emulator);
 
+    dfc_emulator_abort_transaction(emulator);
     DfcCredential* credential = emulator->credential;
     DfcByteBuf* tx_buffer = emulator->tx_buffer;
     DfcSecureMessaging* secure_messaging = emulator->secure_messaging;
@@ -375,10 +376,7 @@ void dfc_emulator_advance_time(DfcEmulator* emulator, uint32_t elapsed_milliseco
         emulator->transaction_timer_elapsed_milliseconds += elapsed_milliseconds;
     if(emulator->transaction_timer_elapsed_milliseconds >=
        DFC_TRANSACTION_TIMER_EXPIRY_MILLISECONDS) {
-        dfc_emulator_reset_session(emulator);
-        emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
-        emulator->selected_app_index = 0;
-        emulator->transaction_timer_enabled = false;
+        dfc_emulator_reset_activation(emulator);
     }
 #else
     DFC_UNUSED(emulator);

@@ -684,10 +684,7 @@ void dfc_virtual_picc_session_free(DfcVirtualPiccSession* session) {
     dfc_platform_free(session);
 }
 
-DfcVirtualPiccStatus dfc_virtual_picc_reset_protocol(DfcVirtualPiccSession* session) {
-    if(!session || !session->emulator) return DfcVirtualPiccStatusProtocolError;
-
-    dfc_emulator_reset_activation(session->emulator);
+static void clear_protocol(DfcVirtualPiccSession* session) {
     session->iso_dep_selected = false;
     session->iso_dep_cid = 0;
     session->expected_pcd_sequence = 0;
@@ -695,17 +692,41 @@ DfcVirtualPiccStatus dfc_virtual_picc_reset_protocol(DfcVirtualPiccSession* sess
     clear_transport_storage(session);
     session->iso_file_selected = false;
     session->iso_file_index = 0;
+}
+
+DfcVirtualPiccStatus dfc_virtual_picc_reset_protocol(DfcVirtualPiccSession* session) {
+    if(!session || !session->emulator) return DfcVirtualPiccStatusProtocolError;
+
+    dfc_emulator_reset_activation(session->emulator);
+    clear_protocol(session);
+    return DfcVirtualPiccStatusOk;
+}
+
+static void clear_activation(DfcVirtualPiccSession* session) {
+    clear_protocol(session);
+    session->activated = false;
+    session->random_uid_valid = false;
+    memset(session->random_uid, 0, sizeof(session->random_uid));
+}
+
+DfcVirtualPiccStatus
+    dfc_virtual_picc_advance_time(DfcVirtualPiccSession* session, uint32_t elapsed_milliseconds) {
+    if(!session || !session->emulator) return DfcVirtualPiccStatusProtocolError;
+#if DFC_ENABLE_TRANSACTION_TIMER
+    bool timer_enabled = session->emulator->transaction_timer_enabled;
+#endif
+    dfc_emulator_advance_time(session->emulator, elapsed_milliseconds);
+#if DFC_ENABLE_TRANSACTION_TIMER
+    if(timer_enabled && !session->emulator->transaction_timer_enabled) clear_activation(session);
+#endif
     return DfcVirtualPiccStatusOk;
 }
 
 DfcVirtualPiccStatus dfc_virtual_picc_field_off(DfcVirtualPiccSession* session) {
-    DfcVirtualPiccStatus status = dfc_virtual_picc_reset_protocol(session);
-    if(status != DfcVirtualPiccStatusOk) return status;
-
-    session->activated = false;
+    if(!session || !session->emulator) return DfcVirtualPiccStatusProtocolError;
+    dfc_emulator_reset_activation(session->emulator);
     // The next physical activation generates a new random ID.
-    session->random_uid_valid = false;
-    memset(session->random_uid, 0, sizeof(session->random_uid));
+    clear_activation(session);
     return DfcVirtualPiccStatusOk;
 }
 

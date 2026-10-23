@@ -448,6 +448,7 @@ DFC_FFI_EXPORT int32_t dfc_ffi_picc_frame_exchange(
     size_t* response_len);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_field_off(DfcFfiPicc* picc);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_reset_protocol(DfcFfiPicc* picc);
+// A timer expiry rolls back pending writes and requires a fresh scan.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_advance_time(DfcFfiPicc* picc, uint32_t elapsed_milliseconds);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out);
 // A new credential holding the card's current state.

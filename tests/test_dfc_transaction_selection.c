@@ -1021,7 +1021,136 @@ static MunitResult test_host_failed_iso_selection_capacity_retry_is_atomic(
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_timer_expiry_rolls_back_transaction(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    DfcEmulator* emulator = fixture.session->emulator;
+    begin_transaction(&fixture);
+    dfc_emulator_advance_time(emulator, UINT32_MAX);
+    assert_transaction_still_pending(&fixture);
+    munit_assert_int(emulator->selected_application, ==, DfcEmulatorSelectedApplicationApp);
+    emulator->transaction_timer_enabled = true;
+    dfc_emulator_advance_time(emulator, DFC_TRANSACTION_TIMER_EXPIRY_MILLISECONDS - 1);
+    assert_transaction_still_pending(&fixture);
+    munit_assert_int(emulator->selected_application, ==, DfcEmulatorSelectedApplicationApp);
+    dfc_emulator_advance_time(emulator, 1);
+    assert_transaction_rolled_back(&fixture);
+    munit_assert_int(emulator->selected_application, ==, DfcEmulatorSelectedApplicationPicc);
+    munit_assert_false(emulator->transaction_timer_enabled);
+    munit_assert_uint32(emulator->transaction_timer_elapsed_milliseconds, ==, 0);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_timer_expiry_requires_reactivation(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    SelectionFixture fixture;
+    fixture_open(&fixture);
+    DfcVirtualPiccSession* session = fixture.session;
+    DfcEmulator* emulator = session->emulator;
+    DfcApplication* app = dfc_credential_get_application(&fixture.credential, 0);
+    app->has_capability_data = true;
+    app->capability_data[DFC_TRANSACTION_TIMER_CAPABILITY_OFFSET] = DFC_TRANSACTION_TIMER_SHORT;
+    dfc_emulator_select_application(emulator, DfcEmulatorSelectedApplicationApp, 0);
+    begin_transaction(&fixture);
+    const uint8_t bad_command[] = {0x90, 0xFF, 0, 0, 0};
+    expect_native_status(
+        session, bad_command, sizeof(bad_command), DFC_STATUS_ILLEGAL_COMMAND_CODE);
+    munit_assert_true(emulator->transaction_timer_enabled);
+    munit_assert_uint32(emulator->transaction_timer_elapsed_milliseconds, ==, 0);
+    begin_transaction(&fixture);
+    emulator->awaiting_step2 = true;
+    emulator->auth_key_no = 1;
+    memset(emulator->rnd_a, 0xA5, sizeof(emulator->rnd_a));
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    emulator->ev2_session_active = true;
+    memset(emulator->ev2_session_mac_key, 0xA5, sizeof(emulator->ev2_session_mac_key));
+#endif
+    emulator->pending_chain_len = 3;
+    memset(emulator->pending_chain, 0xA5, 3);
+    session->iso_dep_selected = true;
+    session->iso_dep_cid = 7;
+    session->expected_pcd_sequence = 1;
+    session->picc_sequence = 1;
+    session->iso_file_selected = true;
+    session->iso_file_index = 2;
+    session->pending_command_len = 3;
+    memset(session->pending_command, 0xA5, 3);
+    session->pending_response_len = 3;
+    memset(session->pending_response, 0xA5, 3);
+    session->random_uid_valid = true;
+    memset(session->random_uid, 0xA5, sizeof(session->random_uid));
+    munit_assert_int(dfc_virtual_picc_advance_time(session, 999), ==, DfcVirtualPiccStatusOk);
+    assert_transaction_still_pending(&fixture);
+    munit_assert_true(session->activated);
+    munit_assert_true(emulator->awaiting_step2);
+    munit_assert_int(
+        dfc_virtual_picc_advance_time(session, UINT32_MAX), ==, DfcVirtualPiccStatusOk);
+    assert_transaction_rolled_back(&fixture);
+    munit_assert_false(session->activated);
+    munit_assert_false(session->iso_dep_selected);
+    munit_assert_false(session->iso_file_selected);
+    munit_assert_false(session->random_uid_valid);
+    munit_assert_uint8(session->iso_dep_cid, ==, 0);
+    munit_assert_uint8(session->expected_pcd_sequence, ==, 0);
+    munit_assert_uint8(session->picc_sequence, ==, 0);
+    munit_assert_size(session->pending_command_len, ==, 0);
+    munit_assert_size(session->pending_response_len, ==, 0);
+    munit_assert_false(emulator->awaiting_step2);
+    munit_assert_size(emulator->pending_chain_len, ==, 0);
+    munit_assert_uint8(emulator->auth_key_no, ==, 0);
+    munit_assert_memory_equal(
+        sizeof(emulator->rnd_a), emulator->rnd_a, ((uint8_t[sizeof(emulator->rnd_a)]){0}));
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    munit_assert_false(emulator->ev2_session_active);
+    munit_assert_memory_equal(
+        sizeof(emulator->ev2_session_mac_key),
+        emulator->ev2_session_mac_key,
+        ((uint8_t[sizeof(emulator->ev2_session_mac_key)]){0}));
+#endif
+    const uint8_t select[] = {0x90, 0x5A, 0, 0, 3, 1, 2, 3, 0};
+    uint8_t response[64];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, select, sizeof(select), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusNoCard);
+    const uint8_t rats[] = {0xE0, 0x80};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            session, rats, sizeof(rats), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusNoCard);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    expect_native_status(session, select, sizeof(select), DFC_STATUS_OK);
+    munit_assert_true(emulator->transaction_timer_enabled);
+    munit_assert_uint32(emulator->transaction_timer_elapsed_milliseconds, ==, 0);
+    begin_transaction(&fixture);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+    {"/timer-expiry-reactivation",
+     test_timer_expiry_requires_reactivation,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/timer-expiry-rollback",
+     test_timer_expiry_rolls_back_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/session-reset-complete-rollback",
      test_session_reset_aborts_complete_transaction,
      NULL,
