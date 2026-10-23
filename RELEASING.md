@@ -1,9 +1,27 @@
 # Release procedure
 
 dfc-core releases are cut manually from a clean `master` checkout. Version 2.0
-ships reproducible source archives and their checksums. CI builds native
-libraries, an Android AAR, and a NuGet package as validation artifacts. Issue
-#111 tracks future binary and package-registry distribution.
+uses source-only distribution for 2.0, backed by reproducible archives,
+checksums, and source-consumption gates.
+
+## Version 2.0 artifact contract
+
+The published GitHub release contains exactly these three assets:
+
+- `dfc-core-$version.tar.gz`
+- `dfc-core-$version.zip`
+- `SHA256SUMS`
+
+The repository version governs every build. CI produces the following
+validation outputs from both source archives and exercises their consumer entry
+points. They remain source-build outputs for version 2.0:
+
+- native libraries through CMake on the platforms in the `native` CI matrix;
+- the four-ABI Android AAR and sample APK through the checked-in Gradle wrapper;
+- the NuGet package through `dotnet pack`;
+- the Python wheel through `uv build`;
+- Java/JNI classes and the native JNI library through CMake and JDK 17; and
+- both Rust crates, the hosted workspace, and the Rust example through Cargo.
 
 ## 1. Prepare the release commit
 
@@ -65,6 +83,7 @@ libraries, an Android AAR, and a NuGet package as validation artifacts. Issue
 Required CI jobs (exact IDs):
 
 - `format-docs`
+- `source-archives`
 - `fuzz`
 - `cmake-configuration`
 - `embedded-footprint`
@@ -108,11 +127,24 @@ python3 scripts/checksums.py create --output "dist/v$version/SHA256SUMS" \
   "dist/v$version/dfc-core-$version.tar.gz" \
   "dist/v$version/dfc-core-$version.zip"
 python3 scripts/checksums.py check "dist/v$version/SHA256SUMS"
+python3 scripts/check-release-artifacts.py inspect \
+  --version "$version" \
+  --tar "dist/v$version/dfc-core-$version.tar.gz" \
+  --zip "dist/v$version/dfc-core-$version.zip"
+for entry_point in native android dotnet python java rust; do
+  python3 scripts/check-release-artifacts.py smoke \
+    --version "$version" \
+    --tar "dist/v$version/dfc-core-$version.tar.gz" \
+    --zip "dist/v$version/dfc-core-$version.zip" \
+    --entry-point "$entry_point" \
+    --tiny-crypto-dir "$PWD/dependencies/tiny-crypto-c"
+done
 ```
 
-Inspect both archive listings and confirm they contain tracked source material.
-Version 2.0 ships these source archives and `SHA256SUMS` as its complete release
-asset set. Issue #111 defines future binary and package publishing.
+The gate requires matching archive contents under the versioned root, verifies
+every supported source entry point, extracts each format independently, and
+builds and uses each entry point from both extracted trees. Version 2.0 ships
+the two source archives and `SHA256SUMS` as its complete release asset set.
 
 ## 4. Publish the GitHub release
 

@@ -95,11 +95,40 @@ class ReleaseProcessTests(unittest.TestCase):
             "python3 scripts/checksums.py check",
             "gh release create",
             "ships source archives and checksums",
-            "#111",
         )
         for text in required:
             with self.subTest(text=text):
                 self.assertIn(text, self.guide)
+
+    def test_defines_the_exact_2_0_distribution_policy(self) -> None:
+        published = (
+            "dfc-core-$version.tar.gz",
+            "dfc-core-$version.zip",
+            "SHA256SUMS",
+        )
+        source_build_outputs = (
+            "native libraries",
+            "Android AAR",
+            "NuGet package",
+            "Python wheel",
+            "Java/JNI",
+            "Rust crates",
+        )
+        for artifact in published + source_build_outputs:
+            with self.subTest(artifact=artifact):
+                self.assertIn(artifact, self.guide)
+        self.assertIn("source-only distribution for 2.0", self.guide)
+
+    def test_requires_archive_inspection_and_source_entry_point_smokes(self) -> None:
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        required = (
+            "python3 scripts/check-release-artifacts.py inspect",
+            "python3 scripts/check-release-artifacts.py smoke",
+            "source-archives",
+        )
+        for text in required:
+            with self.subTest(text=text):
+                self.assertIn(text, self.guide + workflow)
 
 
 if __name__ == "__main__":
