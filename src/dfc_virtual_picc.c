@@ -855,13 +855,14 @@ static DfcVirtualPiccStatus build_iso_dep_i_block(
     size_t response_capacity,
     size_t* response_len) {
     if(response_capacity < inf_len + 1) return DfcVirtualPiccStatusBufferTooSmall;
-    response[0] = (uint8_t)(DFC_ISO_DEP_I_BLOCK | (session->picc_sequence & 0x01));
+    response[0] =
+        (uint8_t)(DFC_ISO_DEP_I_BLOCK | (session->picc_sequence & DFC_ISO_DEP_SEQUENCE_BIT));
     if(more) response[0] |= DFC_ISO_DEP_MORE;
     if(inf_len > 0) {
         memcpy(response + 1, inf, inf_len);
     }
     *response_len = inf_len + 1;
-    session->picc_sequence ^= 0x01;
+    session->picc_sequence ^= DFC_ISO_DEP_SEQUENCE_BIT;
     return DfcVirtualPiccStatusOk;
 }
 
@@ -875,7 +876,7 @@ static DfcVirtualPiccStatus build_iso_dep_r_block(
     size_t* response_len) {
     size_t block_len = use_cid ? 2 : 1;
     if(response_capacity < block_len) return DfcVirtualPiccStatusBufferTooSmall;
-    response[0] = (uint8_t)(DFC_ISO_DEP_R_BLOCK | (sequence & 0x01));
+    response[0] = (uint8_t)(DFC_ISO_DEP_R_BLOCK | (sequence & DFC_ISO_DEP_SEQUENCE_BIT));
     if(nak) response[0] |= DFC_ISO_DEP_R_NAK;
     if(use_cid) {
         response[0] |= DFC_ISO_DEP_CID;
@@ -897,11 +898,12 @@ static DfcVirtualPiccStatus write_next_iso_dep_response_block(
                 return DfcVirtualPiccStatusBufferTooSmall;
             memcpy(
                 response, session->pending_response_prefix, session->pending_response_prefix_len);
-            response[0] = (uint8_t)(DFC_ISO_DEP_I_BLOCK | (session->picc_sequence & 0x01) |
+            response[0] = (uint8_t)(DFC_ISO_DEP_I_BLOCK |
+                                    (session->picc_sequence & DFC_ISO_DEP_SEQUENCE_BIT) |
                                     (session->pending_response_prefix[0] & DFC_ISO_DEP_CID));
             *response_len = session->pending_response_prefix_len;
             session->pending_response_prefix_len = 0;
-            session->picc_sequence ^= 0x01;
+            session->picc_sequence ^= DFC_ISO_DEP_SEQUENCE_BIT;
             return DfcVirtualPiccStatusOk;
         }
 
@@ -912,8 +914,9 @@ static DfcVirtualPiccStatus write_next_iso_dep_response_block(
             return DfcVirtualPiccStatusBufferTooSmall;
 
         memcpy(response, session->pending_response_prefix, session->pending_response_prefix_len);
-        response[0] = (uint8_t)(DFC_ISO_DEP_I_BLOCK | (session->picc_sequence & 0x01) |
-                                (session->pending_response_prefix[0] & DFC_ISO_DEP_CID));
+        response[0] =
+            (uint8_t)(DFC_ISO_DEP_I_BLOCK | (session->picc_sequence & DFC_ISO_DEP_SEQUENCE_BIT) |
+                      (session->pending_response_prefix[0] & DFC_ISO_DEP_CID));
         if(more) response[0] |= DFC_ISO_DEP_MORE;
         memcpy(
             response + session->pending_response_prefix_len,
@@ -921,7 +924,7 @@ static DfcVirtualPiccStatus write_next_iso_dep_response_block(
             chunk_len);
         *response_len = session->pending_response_prefix_len + chunk_len;
         session->pending_response_offset += chunk_len;
-        session->picc_sequence ^= 0x01;
+        session->picc_sequence ^= DFC_ISO_DEP_SEQUENCE_BIT;
         if(!more) {
             release_iso_response(session);
             session->pending_response_len = 0;
@@ -991,7 +994,7 @@ static DfcVirtualPiccStatus replay_staged_iso_dep_response(
         session, response, response_capacity, response_len);
     if(status == DfcVirtualPiccStatusOk) {
         truncate_pending_command(session, 0);
-        session->expected_pcd_sequence ^= 0x01;
+        session->expected_pcd_sequence ^= DFC_ISO_DEP_SEQUENCE_BIT;
     }
     return status;
 }
@@ -1599,7 +1602,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
         if(pcb & DFC_ISO_DEP_NAD) return DfcVirtualPiccStatusProtocolError;
         if(!iso_dep_cid_matches(session, frame, frame_len))
             return DfcVirtualPiccStatusProtocolError;
-        uint8_t sequence = (uint8_t)(pcb & 0x01);
+        uint8_t sequence = (uint8_t)(pcb & DFC_ISO_DEP_SEQUENCE_BIT);
         bool more = (pcb & DFC_ISO_DEP_MORE) != 0;
         size_t offset = 1;
         if(pcb & DFC_ISO_DEP_CID) offset++;
@@ -1665,7 +1668,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
         }
 
         if(more) {
-            session->expected_pcd_sequence ^= 0x01;
+            session->expected_pcd_sequence ^= DFC_ISO_DEP_SEQUENCE_BIT;
             session->picc_sequence = session->expected_pcd_sequence;
             return build_iso_dep_r_block(
                 sequence,
@@ -1710,7 +1713,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             memcpy(session->pending_command, frame, frame_len);
             session->pending_command_len = frame_len;
         } else if(status == DfcVirtualPiccStatusOk) {
-            session->expected_pcd_sequence ^= 0x01;
+            session->expected_pcd_sequence ^= DFC_ISO_DEP_SEQUENCE_BIT;
         }
         return status;
     }
@@ -1721,7 +1724,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
         if(session->pending_command_len) {
             if(!(pcb & DFC_ISO_DEP_R_NAK)) return DfcVirtualPiccStatusProtocolError;
             return build_iso_dep_r_block(
-                session->expected_pcd_sequence ^ 1,
+                session->expected_pcd_sequence ^ DFC_ISO_DEP_SEQUENCE_BIT,
                 false,
                 (pcb & DFC_ISO_DEP_CID) != 0,
                 session->iso_dep_cid,
@@ -1730,8 +1733,8 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
                 response_len);
         }
         if(session->last_picc_block_len == 0) return DfcVirtualPiccStatusProtocolError;
-        uint8_t current_sequence = (uint8_t)(session->picc_sequence ^ 0x01);
-        uint8_t received_sequence = (uint8_t)(pcb & 0x01);
+        uint8_t current_sequence = (uint8_t)(session->picc_sequence ^ DFC_ISO_DEP_SEQUENCE_BIT);
+        uint8_t received_sequence = (uint8_t)(pcb & DFC_ISO_DEP_SEQUENCE_BIT);
         if(received_sequence == current_sequence) {
             if(response_capacity < session->last_picc_block_len)
                 return DfcVirtualPiccStatusBufferTooSmall;
