@@ -4923,12 +4923,15 @@ static void
     if(tx_len <= offset) return;
 
     uint8_t status = tx_data[offset];
+    size_t payload_len = tx_len - offset - 1;
+    if(status == DFC_STATUS_SPECIAL_SUCCESS ||
+       (status == DFC_CMD_ADDITIONAL_FRAME && payload_len == 0))
+        return;
     if(status != DFC_STATUS_OK && status != DFC_CMD_ADDITIONAL_FRAME) {
         dfc_emulator_reset_session(emulator);
         return;
     }
 
-    size_t payload_len = tx_len - offset - 1;
     uint8_t scratch_buffer[DFC_WORKER_MAX_BUFFER_SIZE];
     size_t scratch_len = 0;
     if(offset > 0) {
@@ -4960,6 +4963,7 @@ static void
 
     dfc_bytebuf_reset(tx_buffer);
     dfc_bytebuf_append_bytes(tx_buffer, scratch_buffer, scratch_len);
+    emulator->response_secured = true;
     dfc_secure_wipe(scratch_buffer, sizeof(scratch_buffer));
 }
 
@@ -5764,6 +5768,7 @@ bool dfc_emulator_handle_command(
     }
 #endif
     if(!dispatch_native_command(emulator, buffer, buffer_len, tx_buffer, context)) return false;
+    apply_ev1_response_secure_messaging(emulator, buffer[0], tx_buffer);
     finalize_native_command(emulator, preserve_transaction_on_failure, tx_buffer);
     return true;
 }

@@ -49,6 +49,8 @@
   update publication.
 - Enforce file access rights and supported communication modes for ISO binary
   and record operations, including authenticated read CMACs (#120).
+- Protect EV1 responses centrally, retain command-specific plain success
+  responses, and keep failures that retire authentication plain (#121).
 - Apply the effective communication mode after access-right evaluation.
 - Validate SDM counter keys, metadata-mirroring applicability, reset layouts,
   and reserved access-rights values, and reset the SDM read counter when its
