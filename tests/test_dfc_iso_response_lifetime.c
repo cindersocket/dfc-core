@@ -63,6 +63,38 @@ static void open_record(Fixture* fixture, size_t length) {
 
 static const uint8_t ReadRecord[] = {DFC_CMD_READ_RECORDS_ISO, RecordFile, 0, 0, 0, 1, 0, 0};
 
+static void exchange_read_record_frame(
+    Fixture* fixture,
+    uint8_t cid,
+    uint8_t sequence,
+    uint8_t* response,
+    size_t* response_len) {
+    uint8_t frame[2 + sizeof(ReadRecord)];
+    size_t prefix = cid ? 2 : 1;
+    frame[0] = (uint8_t)(DFC_ISO_DEP_I_BLOCK | (sequence & DFC_ISO_DEP_SEQUENCE_BIT) |
+                         (cid ? DFC_ISO_DEP_CID : 0));
+    if(cid) frame[1] = cid;
+    memcpy(frame + prefix, ReadRecord, sizeof(ReadRecord));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture->session,
+            frame,
+            prefix + sizeof(ReadRecord),
+            response,
+            DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE,
+            response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+}
+
+static void assert_record_block(const uint8_t* block, size_t block_len, uint8_t cid) {
+    size_t prefix = cid ? 2 : 1;
+    munit_assert_size(block_len, >, prefix + 1);
+    munit_assert_uint8(block[prefix], ==, DFC_STATUS_OK);
+    for(size_t i = prefix + 1; i < block_len; i++)
+        munit_assert_uint8(block[i], ==, RecordByte);
+}
+
 static void begin_response_capture(
     Fixture* fixture,
     uint8_t cid,
@@ -76,21 +108,8 @@ static void begin_response_capture(
             fixture->session, rats, sizeof(rats), response, sizeof(response), &response_len),
         ==,
         DfcVirtualPiccStatusOk);
-    uint8_t frame[2 + sizeof(ReadRecord)];
-    size_t prefix = cid ? 2 : 1;
-    frame[0] = DFC_ISO_DEP_I_BLOCK | (cid ? DFC_ISO_DEP_CID : 0);
-    if(cid) frame[1] = cid;
-    memcpy(frame + prefix, ReadRecord, sizeof(ReadRecord));
-    munit_assert_int(
-        dfc_virtual_picc_iso_dep_frame_exchange(
-            fixture->session,
-            frame,
-            prefix + sizeof(ReadRecord),
-            response,
-            sizeof(response),
-            &response_len),
-        ==,
-        DfcVirtualPiccStatusOk);
+    exchange_read_record_frame(
+        fixture, cid, fixture->session->expected_pcd_sequence, response, &response_len);
     munit_assert_uint8(response[0] & DFC_ISO_DEP_MORE, ==, DFC_ISO_DEP_MORE);
     munit_assert_size(fixture->session->pending_response_len, >, 0);
     if(first_block) memcpy(first_block, response, response_len);
@@ -142,59 +161,58 @@ static MunitResult test_reset_during_response(const MunitParameter params[], voi
         DFC_ISO_DEP_R_BLOCK | DFC_ISO_DEP_R_NAK | DFC_ISO_DEP_SEQUENCE_BIT};
     for(size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
         for(uint8_t cid = 0; cid <= 1; cid++) {
+            Fixture baseline;
+            open_record(&baseline, lengths[i]);
+            uint8_t first_block[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+            size_t first_block_len = 0;
+            begin_response_capture(&baseline, cid, first_block, &first_block_len);
+            assert_record_block(first_block, first_block_len, cid);
+            munit_assert_true(baseline.session->pending_response_staged);
+
+            uint8_t retransmit[] = {
+                (uint8_t)(DFC_ISO_DEP_R_BLOCK | (first_block[0] & DFC_ISO_DEP_SEQUENCE_BIT) |
+                          (cid ? DFC_ISO_DEP_CID : 0)),
+                cid};
+            uint8_t retransmitted[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+            size_t retransmitted_len = 0;
+            munit_assert_int(
+                dfc_virtual_picc_iso_dep_frame_exchange(
+                    baseline.session,
+                    retransmit,
+                    cid ? 2 : 1,
+                    retransmitted,
+                    sizeof(retransmitted),
+                    &retransmitted_len),
+                ==,
+                DfcVirtualPiccStatusOk);
+            munit_assert_size(retransmitted_len, ==, first_block_len);
+            munit_assert_memory_equal(first_block_len, retransmitted, first_block);
+            dfc_virtual_picc_session_free(baseline.session);
+
             for(size_t ack = 0; ack < sizeof(acknowledgements); ack++) {
                 Fixture fixture;
                 open_record(&fixture, lengths[i]);
-                uint8_t first_block[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
-                size_t first_block_len = 0;
-                begin_response_capture(&fixture, cid, first_block, &first_block_len);
+                begin_response(&fixture, cid);
                 size_t prefix = cid ? 2 : 1;
-                munit_assert_size(first_block_len, >, prefix);
-                bool contains_record = false;
-                for(size_t j = prefix; j < first_block_len; j++)
-                    contains_record = contains_record || first_block[j] == RecordByte;
-                munit_assert_true(contains_record);
-
-                uint8_t retransmit[] = {
-                    (uint8_t)(DFC_ISO_DEP_R_BLOCK | (first_block[0] & DFC_ISO_DEP_SEQUENCE_BIT) |
-                              (cid ? DFC_ISO_DEP_CID : 0)),
-                    cid};
-                uint8_t retransmitted[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
-                size_t retransmitted_len = 0;
-                munit_assert_int(
-                    dfc_virtual_picc_iso_dep_frame_exchange(
-                        fixture.session,
-                        retransmit,
-                        cid ? 2 : 1,
-                        retransmitted,
-                        sizeof(retransmitted),
-                        &retransmitted_len),
-                    ==,
-                    DfcVirtualPiccStatusOk);
-                munit_assert_size(retransmitted_len, ==, first_block_len);
-                munit_assert_memory_equal(first_block_len, retransmitted, first_block);
+                munit_assert_true(fixture.session->pending_response_staged);
 
                 // The emulator reset invalidates a lent buffer, including small replies.
                 dfc_emulator_reset_session(fixture.session->emulator);
                 reject_frame(&fixture, acknowledgements[ack], cid);
 
-                uint8_t frame[2 + sizeof(ReadRecord)];
-                frame[0] = (uint8_t)(DFC_ISO_DEP_I_BLOCK | fixture.session->expected_pcd_sequence |
-                                     (cid ? DFC_ISO_DEP_CID : 0));
-                if(cid) frame[1] = cid;
-                memcpy(frame + prefix, ReadRecord, sizeof(ReadRecord));
+                uint8_t recovered[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
                 size_t response_len = 0;
-                munit_assert_int(
-                    dfc_virtual_picc_iso_dep_frame_exchange(
-                        fixture.session,
-                        frame,
-                        prefix + sizeof(ReadRecord),
-                        first_block,
-                        sizeof(first_block),
-                        &response_len),
-                    ==,
-                    DfcVirtualPiccStatusOk);
-                munit_assert_uint8(first_block[0] & DFC_ISO_DEP_MORE, ==, DFC_ISO_DEP_MORE);
+                exchange_read_record_frame(
+                    &fixture,
+                    cid,
+                    fixture.session->expected_pcd_sequence,
+                    recovered,
+                    &response_len);
+                munit_assert_uint8(recovered[0] & DFC_ISO_DEP_MORE, ==, DFC_ISO_DEP_MORE);
+                assert_record_block(recovered, response_len, cid);
+                munit_assert_size(response_len, ==, first_block_len);
+                munit_assert_memory_equal(
+                    first_block_len - prefix, recovered + prefix, first_block + prefix);
                 dfc_virtual_picc_session_free(fixture.session);
             }
         }
