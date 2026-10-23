@@ -31,6 +31,12 @@ jobs:
         run: python3 tests/test_ci_unit_workflow.py
       - name: Verify the Rust publication archive
         run: ./scripts/check-cargo-package.sh
+      - name: Test version checker
+        run: python3 tests/test_check_version.py
+      - name: Test checksum helper
+        run: python3 tests/test_checksums.py
+      - name: Test release procedure
+        run: python3 tests/test_release_process.py
       - name: Check documentation links
         run: python3 scripts/check-docs.py
       - name: Check version metadata

@@ -6,10 +6,31 @@ from __future__ import annotations
 import re
 import tomllib
 import xml.etree.ElementTree as ET
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def changelog_version(changelog: str, expected: str) -> str | None:
+    """Return the matching version for an unreleased or dated top entry."""
+    heading = re.search(r"^## (.+)$", changelog, re.MULTILINE)
+    if heading is None:
+        return None
+
+    match = re.fullmatch(
+        r"([0-9]+\.[0-9]+\.[0-9]+) \((Unreleased|[0-9]{4}-[0-9]{2}-[0-9]{2})\)",
+        heading.group(1),
+    )
+    if match is None or match.group(1) != expected:
+        return None
+    if match.group(2) != "Unreleased":
+        try:
+            date.fromisoformat(match.group(2))
+        except ValueError:
+            return None
+    return expected
 
 
 def read_toml(path: str) -> dict[str, Any]:
@@ -57,11 +78,10 @@ def main() -> None:
         )
 
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    heading = re.search(r"^## (.+)$", changelog, re.MULTILINE)
     versions.append(
         (
-            "CHANGELOG.md unreleased heading",
-            expected if heading and heading.group(1) == f"{expected} (Unreleased)" else None,
+            "CHANGELOG.md release heading",
+            changelog_version(changelog, expected),
         )
     )
 
