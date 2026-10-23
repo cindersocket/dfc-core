@@ -59,7 +59,8 @@ def main() -> None:
         virtual_picc.index("static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(")
     ]
     native_required = {
-        "native clear command": "dfc_secure_wipe(clear_command, sizeof(clear_command))",
+        "native clear command": "dfc_secure_wipe(short_clear_command, sizeof(short_clear_command))",
+        "borrowed native clear command": "dfc_emulator_discard_command_chain(session->emulator)",
         "native secured response": "dfc_secure_wipe(secured_response, sizeof(secured_response))",
         "native response bytebuf": "dfc_secure_wipe(tx, sizeof(*tx))",
     }
@@ -70,6 +71,11 @@ def main() -> None:
         raise SystemExit("missing native-exchange wipe coverage: " + ", ".join(native_missing))
     if native_exchange.count("dfc_bytebuf_free(tx)") != 1:
         raise SystemExit("native exchange must release its response through one cleanup path")
+    native_cleanup = native_exchange[native_exchange.index("cleanup:") :]
+    if any(expression not in native_cleanup for expression in native_required.values()):
+        raise SystemExit("native exchange must wipe all owned buffers through cleanup")
+    if "session->emulator->command_chain_len = command_len" not in native_exchange:
+        raise SystemExit("borrowed native clear command must retain its used length for wiping")
 
     d40_helpers = {
         "emulator D40 receive": emulator_crypto[

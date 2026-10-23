@@ -1,5 +1,9 @@
 #pragma once
 
+// While this sentinel owns pending_chain, ISO-DEP consumes its logical response.
+// Native AdditionalFrame must never interpret it as a frame byte count.
+#define DFC_ISO_DEP_RESPONSE_PENDING SIZE_MAX
+
 #include "dfc_credential.h"
 #include "dfc_secure_messaging.h"
 

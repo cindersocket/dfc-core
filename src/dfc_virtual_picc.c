@@ -76,20 +76,55 @@ static bool direct_response_is_pending(const DfcVirtualPiccSession* session) {
     return session->pending_response_offset == DFC_DIRECT_RESPONSE_PENDING;
 }
 
+static bool iso_response_is_staged(const DfcVirtualPiccSession* session) {
+    return session->emulator->pending_chain_frame == DFC_ISO_DEP_RESPONSE_PENDING;
+}
+
+static uint8_t* response_storage(DfcVirtualPiccSession* session) {
+    return iso_response_is_staged(session) ? session->emulator->pending_chain :
+                                             session->pending_response;
+}
+
+static void release_iso_response(DfcVirtualPiccSession* session) {
+    if(!iso_response_is_staged(session)) return;
+    DfcEmulator* emulator = session->emulator;
+    dfc_secure_wipe(emulator->pending_chain, emulator->pending_chain_len);
+    emulator->pending_chain_len = 0;
+    emulator->pending_chain_offset = 0;
+    emulator->pending_chain_frame = 0;
+}
+
 static void truncate_pending_command(DfcVirtualPiccSession* session, size_t retained_len) {
-    dfc_secure_wipe(
-        session->pending_command + retained_len, session->pending_command_len - retained_len);
+    size_t small_len = session->pending_command_len;
+    if(small_len > sizeof(session->pending_command)) small_len = sizeof(session->pending_command);
+    if(retained_len < small_len)
+        dfc_secure_wipe(session->pending_command + retained_len, small_len - retained_len);
+    // ISO reassembly borrows native command storage only outside a native chain.
+    if(!session->emulator->command_chain_active && session->emulator->command_chain) {
+        if(retained_len == 0) {
+            dfc_emulator_discard_command_chain(session->emulator);
+        } else if(retained_len < session->pending_command_len) {
+            dfc_secure_wipe(
+                session->emulator->command_chain + retained_len,
+                session->pending_command_len - retained_len);
+        }
+    }
     session->pending_command_len = retained_len;
 }
 
 static void clear_direct_response(DfcVirtualPiccSession* session) {
     truncate_pending_command(session, 0);
-    dfc_secure_wipe(session->pending_response, session->pending_response_len);
+    if(!iso_response_is_staged(session))
+        dfc_secure_wipe(session->pending_response, session->pending_response_len);
+    release_iso_response(session);
     session->pending_response_len = 0;
     session->pending_response_offset = 0;
 }
 
 static void clear_transport_storage(DfcVirtualPiccSession* session) {
+    release_iso_response(session);
+    if(!session->emulator->command_chain_active && session->emulator->command_chain)
+        dfc_emulator_discard_command_chain(session->emulator);
     dfc_secure_wipe(session->pending_command, sizeof(session->pending_command));
     dfc_secure_wipe(session->pending_response, sizeof(session->pending_response));
     dfc_secure_wipe(session->pending_response_prefix, sizeof(session->pending_response_prefix));
@@ -114,7 +149,7 @@ static DfcVirtualPiccStatus replay_direct_response(
     }
     if(response_capacity < session->pending_response_len)
         return DfcVirtualPiccStatusBufferTooSmall;
-    memcpy(response, session->pending_response, session->pending_response_len);
+    memcpy(response, response_storage(session), session->pending_response_len);
     *response_len = session->pending_response_len;
     clear_direct_response(session);
     return DfcVirtualPiccStatusOk;
@@ -834,12 +869,13 @@ static DfcVirtualPiccStatus write_next_iso_dep_response_block(
         if(more) response[0] |= DFC_ISO_DEP_MORE;
         memcpy(
             response + session->pending_response_prefix_len,
-            session->pending_response + session->pending_response_offset,
+            response_storage(session) + session->pending_response_offset,
             chunk_len);
         *response_len = session->pending_response_prefix_len + chunk_len;
         session->pending_response_offset += chunk_len;
         session->picc_sequence ^= 0x01;
         if(!more) {
+            release_iso_response(session);
             session->pending_response_len = 0;
             session->pending_response_offset = 0;
             session->pending_response_prefix_len = 0;
@@ -857,7 +893,7 @@ static DfcVirtualPiccStatus write_next_iso_dep_response_block(
     bool more = (session->pending_response_offset + chunk_len) < session->pending_response_len;
     DfcVirtualPiccStatus status = build_iso_dep_i_block(
         session,
-        session->pending_response + session->pending_response_offset,
+        response_storage(session) + session->pending_response_offset,
         chunk_len,
         more,
         response,
@@ -866,6 +902,7 @@ static DfcVirtualPiccStatus write_next_iso_dep_response_block(
     if(status != DfcVirtualPiccStatusOk) return status;
     session->pending_response_offset += chunk_len;
     if(!more) {
+        release_iso_response(session);
         session->pending_response_len = 0;
         session->pending_response_offset = 0;
     }
@@ -1163,7 +1200,9 @@ static DfcVirtualPiccStatus handle_native_exchange(
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len) {
-    uint8_t clear_command[DFC_WORKER_MAX_BUFFER_SIZE];
+    uint8_t short_clear_command[DFC_WORKER_MAX_BUFFER_SIZE];
+    uint8_t* clear_command = short_clear_command;
+    size_t clear_capacity = sizeof(short_clear_command);
     uint8_t secured_response[DFC_WORKER_MAX_BUFFER_SIZE];
     size_t clear_command_len = 0;
     DfcByteBuf* tx = NULL;
@@ -1171,26 +1210,43 @@ static DfcVirtualPiccStatus handle_native_exchange(
     const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
     const uint8_t* tx_data = integrity_error;
     size_t tx_len = sizeof(integrity_error);
+    if(command_len > clear_capacity && command[0] == DFC_CMD_WRITE_RECORD_ISO &&
+       !session->emulator->command_chain_active && command_len <= DFC_EMULATOR_CHAIN_BUFFER_SIZE) {
+        if(!session->emulator->command_chain)
+            session->emulator->command_chain =
+                dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocEmulator);
+        if(!session->emulator->command_chain) goto cleanup;
+        clear_command = session->emulator->command_chain;
+        clear_capacity = DFC_EMULATOR_CHAIN_BUFFER_SIZE;
+        if(session->emulator->command_chain_len < command_len)
+            session->emulator->command_chain_len = command_len;
+    }
     DfcEv2CommandSecurity security = dfc_ev2_prepare_command(
-        session->emulator,
-        command,
-        command_len,
-        clear_command,
-        sizeof(clear_command),
-        &clear_command_len);
+        session->emulator, command, command_len, clear_command, clear_capacity, &clear_command_len);
     bool invalid_command = security == DfcEv2CommandInvalid;
     if(invalid_command) {
         dfc_emulator_reset_session(session->emulator);
     } else {
         tx = dfc_bytebuf_alloc(DFC_WORKER_MAX_BUFFER_SIZE);
         if(!tx) goto cleanup;
-        bool handled = dfc_emulator_handle_command(
-            session->emulator, clear_command, clear_command_len, tx, NULL);
+        bool handled = dfc_emulator_handle_transport_command(
+            session->emulator, clear_command, clear_command_len, tx);
         DFC_UNUSED(handled);
 
         tx_data = dfc_bytebuf_get_data(tx);
         tx_len = dfc_bytebuf_get_size_bytes(tx);
         if(tx_len == 0) goto cleanup;
+    }
+    // The emulator lends its existing chain buffer until delivery or abort.
+    // Prefix status in place so EV2 can protect the complete answer once.
+    bool staged_iso_response = iso_response_is_staged(session);
+    if(staged_iso_response) {
+        DfcEmulator* emulator = session->emulator;
+        memmove(emulator->pending_chain + 1, emulator->pending_chain, emulator->pending_chain_len);
+        emulator->pending_chain[0] = DFC_STATUS_OK;
+        emulator->pending_chain_len++;
+        tx_data = emulator->pending_chain;
+        tx_len = emulator->pending_chain_len;
     }
     size_t secured_response_len = 0;
     bool protect_ev2_response = security == DfcEv2CommandSecured || security == DfcEv2CommandFull;
@@ -1205,16 +1261,43 @@ static DfcVirtualPiccStatus handle_native_exchange(
                clear_command_len,
                tx_data,
                tx_len,
-               secured_response,
-               sizeof(secured_response),
+               staged_iso_response ? session->emulator->pending_chain : secured_response,
+               staged_iso_response ? sizeof(session->emulator->pending_chain) :
+                                     sizeof(secured_response),
                &secured_response_len)) {
             goto cleanup;
         }
-        tx_data = secured_response;
+        tx_data = staged_iso_response ? session->emulator->pending_chain : secured_response;
         tx_len = secured_response_len;
     }
 
     status = DfcVirtualPiccStatusOk;
+    if(staged_iso_response) {
+        uint8_t* staged = session->emulator->pending_chain;
+        if(iso_wrapped) {
+            uint8_t native_status = staged[0];
+            memmove(staged, staged + 1, tx_len - 1);
+            staged[tx_len - 1] = 0x91;
+            staged[tx_len++] = native_status;
+        }
+        session->emulator->pending_chain_len = tx_len;
+        if(response_capacity >= tx_len) {
+            memcpy(response, staged, tx_len);
+            *response_len = tx_len;
+            release_iso_response(session);
+        } else if(retry_command) {
+            if(retry_command_len > sizeof(session->pending_command)) goto cleanup;
+            memcpy(session->pending_command, retry_command, retry_command_len);
+            session->pending_command_len = retry_command_len;
+            session->pending_response_len = tx_len;
+            session->pending_response_offset = DFC_DIRECT_RESPONSE_PENDING;
+            status = DfcVirtualPiccStatusBufferTooSmall;
+        } else {
+            // The frame sender reads directly from the lent chain buffer.
+            *response_len = tx_len;
+        }
+        goto cleanup;
+    }
     if(!iso_wrapped) {
         status = write_response(tx_data, tx_len, response, response_capacity, response_len) ?
                      DfcVirtualPiccStatusOk :
@@ -1234,7 +1317,11 @@ static DfcVirtualPiccStatus handle_native_exchange(
     }
 
 cleanup:
-    dfc_secure_wipe(clear_command, sizeof(clear_command));
+    if(status != DfcVirtualPiccStatusOk && status != DfcVirtualPiccStatusBufferTooSmall)
+        release_iso_response(session);
+    dfc_secure_wipe(short_clear_command, sizeof(short_clear_command));
+    if(!session->emulator->command_chain_active && session->emulator->command_chain)
+        dfc_emulator_discard_command_chain(session->emulator);
     dfc_secure_wipe(secured_response, sizeof(secured_response));
     if(tx) {
         dfc_secure_wipe(tx, sizeof(*tx));
@@ -1333,20 +1420,36 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
             *response_len = 2;
             return DfcVirtualPiccStatusOk;
         }
-        uint8_t native_command[DFC_WORKER_MAX_BUFFER_SIZE];
+        uint8_t short_command[DFC_WORKER_MAX_BUFFER_SIZE];
+        uint8_t* native_command = short_command;
+        size_t native_capacity = sizeof(short_command);
+        if((size_t)lc + 1 > native_capacity && command[1] == DFC_CMD_WRITE_RECORD_ISO &&
+           !session->emulator->command_chain_active) {
+            native_command = session->emulator->command_chain;
+            if(!native_command) {
+                native_command =
+                    dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocEmulator);
+                session->emulator->command_chain = native_command;
+            }
+            if(!native_command) return DfcVirtualPiccStatusProtocolError;
+            native_capacity = DFC_EMULATOR_CHAIN_BUFFER_SIZE;
+            if(session->emulator->command_chain_len < (size_t)lc + 1)
+                session->emulator->command_chain_len = (size_t)lc + 1;
+        }
         size_t native_len = 0;
-        native_command[native_len++] = command[1];
+        uint8_t instruction = command[1];
         if(lc > 0) {
-            if(native_len + lc > sizeof(native_command)) {
+            if((size_t)lc + 1 > native_capacity) {
                 if(response_capacity < 2) return DfcVirtualPiccStatusBufferTooSmall;
                 response[0] = 0x91;
                 response[1] = DFC_STATUS_LENGTH_ERROR;
                 *response_len = 2;
                 return DfcVirtualPiccStatusOk;
             }
-            memcpy(native_command + native_len, command + 5, lc);
-            native_len += lc;
+            memmove(native_command + 1, command + 5, lc);
         }
+        native_command[native_len++] = instruction;
+        native_len += lc;
         return handle_native_exchange(
             session,
             native_command,
@@ -1436,17 +1539,52 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
         }
 
         size_t pending_command_len_before = session->pending_command_len;
+        uint8_t* command_storage = session->pending_command;
+        size_t command_capacity = sizeof(session->pending_command);
+        if(session->pending_command_len > command_capacity && !session->emulator->command_chain) {
+            truncate_pending_command(session, 0);
+            return DfcVirtualPiccStatusProtocolError;
+        }
+        if(!session->emulator->command_chain_active &&
+           (session->emulator->command_chain ||
+            inf_len > command_capacity - session->pending_command_len)) {
+            if(!session->emulator->command_chain) {
+                const uint8_t* header = session->pending_command_len ? session->pending_command :
+                                                                       inf;
+                size_t header_len = session->pending_command_len ? session->pending_command_len :
+                                                                   inf_len;
+                if(header_len < 2 || (header[0] != DFC_CMD_WRITE_RECORD_ISO &&
+                                      !(header[0] == DFC_ISO7816_CLA_WRAPPER &&
+                                        header[1] == DFC_CMD_WRITE_RECORD_ISO)))
+                    return DfcVirtualPiccStatusBufferTooSmall;
+                session->emulator->command_chain =
+                    dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocEmulator);
+                if(!session->emulator->command_chain) return DfcVirtualPiccStatusProtocolError;
+                memcpy(
+                    session->emulator->command_chain,
+                    session->pending_command,
+                    session->pending_command_len);
+            }
+            command_storage = session->emulator->command_chain;
+            command_capacity = DFC_EMULATOR_CHAIN_BUFFER_SIZE;
+        }
+        if(session->pending_command_len > command_capacity) {
+            truncate_pending_command(session, 0);
+            return DfcVirtualPiccStatusProtocolError;
+        }
         if((more || session->pending_command_len) &&
-           inf_len > sizeof(session->pending_command) - session->pending_command_len)
+           inf_len > command_capacity - session->pending_command_len)
             return DfcVirtualPiccStatusBufferTooSmall;
         if(more && response_capacity < offset) return DfcVirtualPiccStatusBufferTooSmall;
         if(!more && frame_len > sizeof(session->pending_command))
             return DfcVirtualPiccStatusBufferTooSmall;
 
         if(more || session->pending_command_len) {
-            memcpy(session->pending_command + session->pending_command_len, inf, inf_len);
+            memcpy(command_storage + session->pending_command_len, inf, inf_len);
             session->pending_command_len += inf_len;
-            inf = session->pending_command;
+            if(command_storage == session->emulator->command_chain)
+                session->emulator->command_chain_len = session->pending_command_len;
+            inf = command_storage;
             inf_len = session->pending_command_len;
         }
 
@@ -1473,7 +1611,11 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             &apdu_response_len,
             false);
         if(status != DfcVirtualPiccStatusOk) {
-            truncate_pending_command(session, pending_command_len_before);
+            if(session->pending_command_len > sizeof(session->pending_command) &&
+               !session->emulator->command_chain)
+                truncate_pending_command(session, 0);
+            else
+                truncate_pending_command(session, pending_command_len_before);
             return status;
         }
         truncate_pending_command(session, 0);

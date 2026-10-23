@@ -940,8 +940,8 @@ static DfcReaderStatus step_authenticate_ev2(
 // ----------------------------------------------------------- command ---
 
 static bool is_file_read(uint8_t ins) {
-    return ins == DFC_CMD_READ_DATA || ins == DFC_CMD_READ_RECORDS || ins == 0xAB ||
-           ins == DFC_CMD_GET_VALUE;
+    return ins == DFC_CMD_READ_DATA || ins == DFC_CMD_READ_RECORDS ||
+           ins == DFC_CMD_READ_RECORDS_ISO || ins == DFC_CMD_GET_VALUE;
 }
 
 static bool is_file_command(uint8_t ins) {
@@ -949,7 +949,9 @@ static bool is_file_command(uint8_t ins) {
     case DFC_CMD_READ_DATA:
     case DFC_CMD_WRITE_DATA:
     case DFC_CMD_READ_RECORDS:
+    case DFC_CMD_READ_RECORDS_ISO:
     case DFC_CMD_WRITE_RECORD:
+    case DFC_CMD_WRITE_RECORD_ISO:
     case DFC_CMD_UPDATE_RECORD:
     case DFC_CMD_UPDATE_RECORD_ISO:
     case DFC_CMD_GET_VALUE:
@@ -968,6 +970,7 @@ static size_t file_header_length(uint8_t ins) {
     switch(ins) {
     case DFC_CMD_WRITE_DATA:
     case DFC_CMD_WRITE_RECORD:
+    case DFC_CMD_WRITE_RECORD_ISO:
         return FILE_HEADER_LENGTH;
     case DFC_CMD_UPDATE_RECORD:
     case DFC_CMD_UPDATE_RECORD_ISO:
@@ -1001,8 +1004,8 @@ static size_t next_stream_emit_capacity(const DfcReaderExchange* exchange) {
     }
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     else if(session->auth_mode == DFC_READER_AUTH_EV2 && stream->comm_mode != DFC_COMM_PLAIN) {
-        wire_len = dfc_secure_messaging_command_payload_length(
-            NULL, true, stream->comm_mode, body_len);
+        wire_len =
+            dfc_secure_messaging_command_payload_length(NULL, true, stream->comm_mode, body_len);
     }
 #endif
 
@@ -1058,9 +1061,7 @@ static bool set_frame(
     return true;
 }
 
-static DfcReaderStatus fail_prepared_command(
-    DfcReaderExchange* exchange,
-    DfcReaderStatus status) {
+static DfcReaderStatus fail_prepared_command(DfcReaderExchange* exchange, DfcReaderStatus status) {
     dfc_secure_wipe(exchange->frame, sizeof(exchange->frame));
     exchange->frame_len = 0;
     return status;
@@ -1078,8 +1079,8 @@ static DfcReaderStatus
         size_t wire_len;
         wire_len = dfc_secure_messaging_command_payload_length(
             &session->sm, false, ex->comm_mode, body_len);
-        if(wire_len == SIZE_MAX ||
-           header_len > sizeof(ex->frame) || wire_len > sizeof(ex->frame) - header_len) {
+        if(wire_len == SIZE_MAX || header_len > sizeof(ex->frame) ||
+           wire_len > sizeof(ex->frame) - header_len) {
             return DfcReaderInvalid;
         }
         uint8_t head[1 + UPDATE_RECORD_HEADER_LENGTH];
@@ -1141,8 +1142,8 @@ static DfcReaderStatus
         size_t wire_len;
         wire_len = dfc_secure_messaging_command_payload_length(
             &session->sm, false, DFC_COMM_ENCIPHERED, body_len);
-        if(wire_len == SIZE_MAX ||
-           header_len > sizeof(ex->frame) || wire_len > sizeof(ex->frame) - header_len) {
+        if(wire_len == SIZE_MAX || header_len > sizeof(ex->frame) ||
+           wire_len > sizeof(ex->frame) - header_len) {
             return DfcReaderInvalid;
         }
         uint8_t head[1 + UPDATE_RECORD_HEADER_LENGTH];
@@ -1163,8 +1164,8 @@ static DfcReaderStatus
         return DfcReaderOk;
     }
 
-    bool transmits_mac =
-        ex->comm_mode == DFC_COMM_MAC && dfc_secure_messaging_ev1_transmits_command_mac(ins);
+    bool transmits_mac = ex->comm_mode == DFC_COMM_MAC &&
+                         dfc_secure_messaging_ev1_transmits_command_mac(ins);
     if(transmits_mac && DFC_WORKER_CMAC_SIZE > sizeof(ex->frame) - command->data_len) {
         return DfcReaderInvalid;
     }
@@ -1328,9 +1329,8 @@ DfcReaderStatus dfc_reader_exchange_begin(
 
     DfcReaderStatus st = DfcReaderOk;
     if(session->auth_mode == DFC_READER_AUTH_NONE) {
-        st = set_frame(exchange, command->data, command->data_len, NULL, 0) ?
-                 DfcReaderOk :
-                 DfcReaderInvalid;
+        st = set_frame(exchange, command->data, command->data_len, NULL, 0) ? DfcReaderOk :
+                                                                              DfcReaderInvalid;
     } else if(session->auth_mode == DFC_CMD_AUTHENTICATE_LEGACY) {
         st = prepare_legacy(exchange, command, header_len);
     } else if(session_is_ev1(session)) {
@@ -1998,7 +1998,7 @@ DfcReaderStatus dfc_reader_create_delegated_application_begin(
     // The header goes alone, and the card asks for the rest.
     exchange->first_frame_len = header.data_len;
     result = set_frame(exchange, body, body_len, mac, sizeof(mac)) ? DfcReaderOk :
-                                                                    DfcReaderInvalid;
+                                                                     DfcReaderInvalid;
 cleanup:
     dfc_secure_wipe(key_data, sizeof(key_data));
     dfc_secure_wipe(iv, sizeof(iv));

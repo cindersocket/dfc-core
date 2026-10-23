@@ -67,15 +67,24 @@
 #define DFC_CMD_READ_DATA                    0xBD
 #define DFC_CMD_WRITE_DATA                   0x3D
 #define DFC_CMD_WRITE_RECORD                 0x3B
+#define DFC_CMD_WRITE_RECORD_ISO             0x8B
 #define DFC_CMD_READ_RECORDS                 0xBB
-#define DFC_CMD_UPDATE_RECORD                0xDB
-#define DFC_CMD_UPDATE_RECORD_ISO            0xBA
-#define DFC_CMD_CLEAR_RECORD_FILE            0xEB
-#define DFC_CMD_PREPARE_PROXIMITY_CHECK      0xF0
-#define DFC_CMD_PROXIMITY_CHECK              0xF2
-#define DFC_CMD_VERIFY_PROXIMITY_CHECK       0xFD
-#define DFC_CMD_READ_SIGNATURE               0x3C
-#define DFC_CMD_SET_CONFIGURATION            0x5C
+#define DFC_CMD_READ_RECORDS_ISO             0xAB
+
+// Classify record variants without changing bytes authenticated on the wire.
+static inline uint8_t dfc_record_command_base(uint8_t command) {
+    if(command == DFC_CMD_READ_RECORDS_ISO) return DFC_CMD_READ_RECORDS;
+    if(command == DFC_CMD_WRITE_RECORD_ISO) return DFC_CMD_WRITE_RECORD;
+    return command;
+}
+#define DFC_CMD_UPDATE_RECORD           0xDB
+#define DFC_CMD_UPDATE_RECORD_ISO       0xBA
+#define DFC_CMD_CLEAR_RECORD_FILE       0xEB
+#define DFC_CMD_PREPARE_PROXIMITY_CHECK 0xF0
+#define DFC_CMD_PROXIMITY_CHECK         0xF2
+#define DFC_CMD_VERIFY_PROXIMITY_CHECK  0xFD
+#define DFC_CMD_READ_SIGNATURE          0x3C
+#define DFC_CMD_SET_CONFIGURATION       0x5C
 
 // ISO7816-4 framing: readers/drivers commonly probe with a standard SELECT (CLA=0x00,
 // INS=0xA4) before or instead of native framing, and some PC/SC paths pass native DESFire

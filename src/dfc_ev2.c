@@ -20,7 +20,7 @@ enum {
 static DfcFile* target_file(DfcEmulator* emulator, const uint8_t* command, size_t command_len) {
     if(command_len < 2 || emulator->selected_application != DfcEmulatorSelectedApplicationApp)
         return NULL;
-    switch(command[0]) {
+    switch(dfc_record_command_base(command[0])) {
     case DFC_CMD_READ_DATA:
     case DFC_CMD_WRITE_DATA:
     case DFC_CMD_READ_RECORDS:
@@ -178,11 +178,12 @@ DfcEv2CommandSecurity dfc_ev2_prepare_command(
 
     if(1 + secured_data_len > clear_capacity) return DfcEv2CommandInvalid;
     DfcFile* file = target_file(emulator, command, command_len);
+    uint8_t base_command = dfc_record_command_base(command[0]);
     bool full_command = file && file->comm_settings == DFC_COMM_ENCIPHERED;
     size_t encrypted_header_len = 0;
     bool decrypt_data = false;
     if(file && file->comm_settings == DFC_COMM_ENCIPHERED) {
-        if(command[0] == DFC_CMD_WRITE_DATA || command[0] == DFC_CMD_WRITE_RECORD)
+        if(base_command == DFC_CMD_WRITE_DATA || base_command == DFC_CMD_WRITE_RECORD)
             encrypted_header_len = DfcEv2FileCommandHeaderLength, decrypt_data = true;
         if(command[0] == DFC_CMD_UPDATE_RECORD || command[0] == DFC_CMD_UPDATE_RECORD_ISO)
             encrypted_header_len = DfcEv2UpdateRecordHeaderLength, decrypt_data = true;
@@ -239,19 +240,17 @@ bool dfc_ev2_protect_response(
     const uint8_t* response_data = clear_response + 1;
     size_t response_data_len = clear_response_len - 1;
     DfcFile* file = target_file(emulator, clear_command, clear_command_len);
+    uint8_t base_command = dfc_record_command_base(clear_command[0]);
     bool encrypt = file && file->comm_settings == DFC_COMM_ENCIPHERED &&
-                   (clear_command[0] == DFC_CMD_READ_DATA ||
-                    clear_command[0] == DFC_CMD_READ_RECORDS ||
-                    clear_command[0] == DFC_CMD_GET_VALUE);
+                   (base_command == DFC_CMD_READ_DATA || base_command == DFC_CMD_READ_RECORDS ||
+                    base_command == DFC_CMD_GET_VALUE);
 
     size_t protected_data_len = response_data_len;
     if(encrypt) {
-        if(response_data_len >= DFC_WORKER_MAX_BUFFER_SIZE) return false;
+        if(response_data_len >= secured_capacity) return false;
         protected_data_len = (response_data_len / DFC_AES_KEY_LENGTH + 1) * DFC_AES_KEY_LENGTH;
     }
-    if(protected_data_len > DFC_WORKER_MAX_BUFFER_SIZE ||
-       protected_data_len > DFC_EV2_MAC_DATA_MAX)
-        return false;
+    if(protected_data_len > DFC_EV2_MAC_DATA_MAX) return false;
     const size_t response_overhead = 1 + DFC_WIRE_MAC_LENGTH;
     if(secured_capacity < response_overhead ||
        protected_data_len > secured_capacity - response_overhead)
@@ -325,7 +324,7 @@ DfcEv2CommandSecurity dfc_ev2_prepare_command(
     size_t* clear_len) {
     DFC_UNUSED(emulator);
     if(command_len > clear_capacity) return DfcEv2CommandInvalid;
-    memcpy(clear_command, command, command_len);
+    memmove(clear_command, command, command_len);
     *clear_len = command_len;
     return DfcEv2CommandPlain;
 }

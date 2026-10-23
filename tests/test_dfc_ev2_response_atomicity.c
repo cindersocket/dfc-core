@@ -19,6 +19,10 @@ static DfcFile encrypted_file;
 static uint16_t observed_encrypt_counter;
 static uint16_t observed_mac_counter;
 
+enum {
+    AtomicOutputCapacity = DFC_EV2_MAC_DATA_MAX + DFC_AES_KEY_LENGTH + DFC_WIRE_MAC_LENGTH + 1,
+};
+
 DfcFile* dfc_credential_find_file_in_app(
     DfcCredential* credential,
     size_t application_index,
@@ -112,7 +116,8 @@ static void assert_failure_is_atomic(
     const uint8_t* clear_response,
     size_t clear_response_len,
     size_t secured_capacity) {
-    uint8_t secured[DFC_WORKER_MAX_BUFFER_SIZE + DFC_WIRE_MAC_LENGTH + 1];
+    uint8_t secured[AtomicOutputCapacity];
+    munit_assert_size(secured_capacity, <=, sizeof(secured));
     memset(secured, 0xA5, sizeof(secured));
     uint8_t before[sizeof(secured)];
     memcpy(before, secured, sizeof(before));
@@ -338,9 +343,9 @@ static MunitResult
     DfcCredential credential;
     init_emulator(&emulator, &credential);
     const uint8_t command[] = {DFC_CMD_GET_VERSION};
-    uint8_t response[DFC_WORKER_MAX_BUFFER_SIZE + 2] = {DFC_STATUS_OK};
+    uint8_t response[DFC_EV2_MAC_DATA_MAX + 2] = {DFC_STATUS_OK};
     assert_failure_is_atomic(
-        &emulator, command, sizeof(command), response, sizeof(response), SIZE_MAX);
+        &emulator, command, sizeof(command), response, sizeof(response), AtomicOutputCapacity);
     return MUNIT_OK;
 }
 
@@ -355,9 +360,9 @@ static MunitResult
     encrypted_file.number = 1;
     encrypted_file.comm_settings = DFC_COMM_ENCIPHERED;
     const uint8_t command[] = {DFC_CMD_READ_DATA, 1};
-    uint8_t response[DFC_WORKER_MAX_BUFFER_SIZE + 1] = {DFC_STATUS_OK};
+    uint8_t response[DFC_EV2_MAC_DATA_MAX + 1] = {DFC_STATUS_OK};
     assert_failure_is_atomic(
-        &emulator, command, sizeof(command), response, sizeof(response), SIZE_MAX);
+        &emulator, command, sizeof(command), response, sizeof(response), AtomicOutputCapacity);
     return MUNIT_OK;
 }
 
@@ -371,8 +376,8 @@ static MunitResult test_encrypted_boundary_succeeds(const MunitParameter params[
     encrypted_file.number = 1;
     encrypted_file.comm_settings = DFC_COMM_ENCIPHERED;
     const uint8_t command[] = {DFC_CMD_READ_DATA, 1};
-    uint8_t response[DFC_WORKER_MAX_BUFFER_SIZE] = {DFC_STATUS_OK};
-    uint8_t secured[DFC_WORKER_MAX_BUFFER_SIZE + DFC_WIRE_MAC_LENGTH + 1];
+    uint8_t response[DFC_EV2_MAC_DATA_MAX] = {DFC_STATUS_OK};
+    uint8_t secured[DFC_EV2_MAC_DATA_MAX + DFC_WIRE_MAC_LENGTH + 1];
     size_t secured_len = 0;
 
     munit_assert_true(dfc_ev2_protect_response(
@@ -481,7 +486,40 @@ static MunitResult test_last_counter_value_succeeds(const MunitParameter params[
     return MUNIT_OK;
 }
 
+static MunitResult test_above_old_limit_succeeds(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    for(size_t encrypted = 0; encrypted < 2; encrypted++) {
+        DfcEmulator emulator;
+        DfcCredential credential;
+        init_emulator(&emulator, &credential);
+        emulator.selected_application = DfcEmulatorSelectedApplicationApp;
+        encrypted_file.number = 1;
+        encrypted_file.comm_settings = encrypted ? DFC_COMM_ENCIPHERED : DFC_COMM_MAC;
+        const uint8_t command[] = {DFC_CMD_READ_RECORDS_ISO, 1};
+        uint8_t response[1 + 513] = {DFC_STATUS_OK};
+        uint8_t secured[1 + 528 + DFC_WIRE_MAC_LENGTH];
+        memset(response + 1, 0x31, sizeof(response) - 1);
+        size_t secured_len = 0;
+        munit_assert_true(dfc_ev2_protect_response(
+            &emulator,
+            command,
+            sizeof(command),
+            response,
+            sizeof(response),
+            secured,
+            sizeof(secured),
+            &secured_len));
+        munit_assert_uint16(emulator.ev2_command_counter, ==, 8);
+        munit_assert_uint16(observed_mac_counter, ==, 8);
+        munit_assert_size(secured_len, ==, 1 + (encrypted ? 528 : 513) + DFC_WIRE_MAC_LENGTH);
+        munit_assert_memory_equal(513, secured + 1, response + 1);
+    }
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+    {"/above-old-limit", test_above_old_limit_succeeds, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/prepare-command-failures",
      test_prepare_command_failures_are_atomic,
      NULL,

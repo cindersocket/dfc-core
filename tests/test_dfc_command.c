@@ -158,9 +158,14 @@ static MunitResult test_file_commands(const MunitParameter params[], void* data)
     assert_apdu(&c, "903D00000A0F00000003000001020300");
     munit_assert_int(dfc_command_read_records(&c, 2, 1, 3, false), ==, DfcCommandOk);
     assert_apdu(&c, "90BB0000070201000003000000");
+    munit_assert_int(dfc_command_read_records(&c, 2, 1, 3, true), ==, DfcCommandOk);
+    assert_apdu(&c, "90AB0000070201000003000000");
     const uint8_t record[] = {0xDE, 0xAD, 0xBE, 0xEF};
     munit_assert_int(dfc_command_write_record(&c, 2, 0, record, sizeof(record), false), ==, DfcCommandOk);
     assert_apdu(&c, "903B00000B02000000040000DEADBEEF00");
+    munit_assert_int(
+        dfc_command_write_record(&c, 2, 0, record, sizeof(record), true), ==, DfcCommandOk);
+    assert_apdu(&c, "908B00000B02000000040000DEADBEEF00");
     const uint8_t update[] = {0xA1, 0xA2, 0xA3};
     munit_assert_int(dfc_command_update_record(&c, 2, 1, 2, update, sizeof(update), false), ==, DfcCommandOk);
     assert_apdu(&c, "90DB00000D02010000020000030000A1A2A300");

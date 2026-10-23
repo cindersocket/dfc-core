@@ -272,7 +272,7 @@ bool dfc_secure_messaging_update_ev1_command_full(
 }
 
 bool dfc_secure_messaging_ev1_transmits_command_mac(uint8_t cmd) {
-    switch(cmd) {
+    switch(dfc_record_command_base(cmd)) {
     case DFC_CMD_WRITE_DATA:
     case DFC_CMD_WRITE_RECORD:
     case DFC_CMD_UPDATE_RECORD:

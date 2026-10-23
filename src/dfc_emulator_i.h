@@ -57,3 +57,10 @@ bool dfc_emulator_handle_iso7816_select(
 
 const char* dfc_desfire_command_name(uint8_t cmd, const DfcEmulator* emulator);
 const char* dfc_iso_dep_control_frame_name(uint8_t pcb);
+
+// Opt in to ISO response staging; the caller must deliver or wipe pending_chain.
+bool dfc_emulator_handle_transport_command(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer);

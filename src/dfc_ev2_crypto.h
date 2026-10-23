@@ -23,7 +23,7 @@
 // Largest body one EV2 MAC covers. A chained command is MACed as a whole, so
 // this is sized above one frame.
 #ifndef DFC_EV2_MAC_DATA_MAX
-#define DFC_EV2_MAC_DATA_MAX 512
+#define DFC_EV2_MAC_DATA_MAX DFC_EMULATOR_CHAIN_BUFFER_SIZE
 #endif
 
 // Which direction a data field travels, selecting the IV label.
