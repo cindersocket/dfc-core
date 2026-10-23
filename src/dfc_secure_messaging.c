@@ -583,7 +583,7 @@ static size_t enciphered_encode(
     return padded_len;
 }
 
-static bool enciphered_decode(
+static size_t enciphered_decode(
     DfcSecureMessaging* sm,
     const uint8_t* crc_prefix,
     size_t crc_prefix_len,
@@ -591,15 +591,13 @@ static bool enciphered_decode(
     size_t crc_suffix_len,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out,
-    size_t* out_len) {
-    if(out_len) *out_len = 0;
-    if(!sm || !out || !wrapped || !out_len || wrapped_len > DFC_SM_MAX_CRYPTO_SIZE) return false;
+    uint8_t* out) {
+    if(!sm || !out || !wrapped || wrapped_len > DFC_SM_MAX_CRYPTO_SIZE) return SIZE_MAX;
     size_t block_size = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_AES_KEY_LENGTH :
                                                                  DFC_SM_LEGACY_BLOCK_SIZE;
     if(wrapped_len % block_size != 0) {
         dfc_secure_wipe(out, wrapped_len);
-        return false;
+        return SIZE_MAX;
     }
     uint8_t next_iv[16] = {0};
     if(sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY) {
@@ -619,7 +617,7 @@ static bool enciphered_decode(
     if(!ok) {
         dfc_secure_wipe(out, wrapped_len);
         dfc_secure_wipe(next_iv, sizeof(next_iv));
-        return false;
+        return SIZE_MAX;
     }
 
     size_t crc_len = sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 2 : 4;
@@ -683,12 +681,11 @@ static bool enciphered_decode(
     if(sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY) memcpy(sm->iv, next_iv, sizeof(sm->iv));
     if(data_len < wrapped_len) dfc_secure_wipe(out + data_len, wrapped_len - data_len);
     dfc_secure_wipe(next_iv, sizeof(next_iv));
-    *out_len = data_len;
-    return true;
+    return data_len;
 failure:
     dfc_secure_wipe(out, wrapped_len);
     dfc_secure_wipe(next_iv, sizeof(next_iv));
-    return false;
+    return SIZE_MAX;
 }
 
 // PCD -> PICC direction (reader sending a command). `header` is the command's
@@ -781,7 +778,10 @@ bool dfc_secure_messaging_unwrap(
         return true;
     }
 
-    return enciphered_decode(sm, NULL, 0, &status, 1, wrapped, wrapped_len, out, out_len);
+    size_t clear_len = enciphered_decode(sm, NULL, 0, &status, 1, wrapped, wrapped_len, out);
+    if(clear_len == SIZE_MAX) return false;
+    *out_len = clear_len;
+    return true;
 }
 
 // PICC -> PCD direction (emulator generating a response): mirrors dfc_secure_messaging_unwrap's
@@ -880,9 +880,7 @@ size_t dfc_secure_messaging_verify_command(
         return data_len;
     }
 
-    size_t clear_len = 0;
-    return enciphered_decode(
-               sm, header, header_len, NULL, 0, wrapped, wrapped_len, out, &clear_len) ?
-               clear_len :
-               0;
+    size_t clear_len =
+        enciphered_decode(sm, header, header_len, NULL, 0, wrapped, wrapped_len, out);
+    return clear_len == SIZE_MAX ? 0 : clear_len;
 }
