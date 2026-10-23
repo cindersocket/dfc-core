@@ -1416,10 +1416,7 @@ static void handle_change_file_settings(
     file->comm_settings = comm_settings;
     file->access_rights = access_rights;
 #if DFC_ENABLE_SDM
-    memset(
-        &file->sdm_enabled,
-        0,
-        offsetof(DfcFile, sdm_read_counter) - offsetof(DfcFile, sdm_enabled));
+    memset(&file->sdm_resettable, 0, sizeof(file->sdm_resettable));
     if(settings) {
         file->sdm_options = sdm_options;
         file->sdm_access_rights = sdm_access_rights;

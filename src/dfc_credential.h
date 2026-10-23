@@ -25,6 +25,34 @@ typedef enum {
     DfcModelCapacity,
 } DfcModelStatus;
 
+#if DFC_ENABLE_SDM
+#define DFC_SDM_RESETTABLE_FIELDS(X)       \
+    X(bool, sdm_enabled)                   \
+    X(uint8_t, sdm_options)                \
+    X(uint16_t, sdm_access_rights)         \
+    X(bool, sdm_has_uid_offset)            \
+    X(uint32_t, sdm_uid_offset)            \
+    X(bool, sdm_has_counter_offset)        \
+    X(uint32_t, sdm_counter_offset)        \
+    X(bool, sdm_has_picc_data_offset)      \
+    X(uint32_t, sdm_picc_data_offset)      \
+    X(bool, sdm_has_mac_input_offset)      \
+    X(uint32_t, sdm_mac_input_offset)      \
+    X(bool, sdm_has_mac_offset)            \
+    X(uint32_t, sdm_mac_offset)            \
+    X(bool, sdm_has_encrypted_file_offset) \
+    X(uint32_t, sdm_encrypted_file_offset) \
+    X(uint32_t, sdm_encrypted_file_length) \
+    X(bool, sdm_has_counter_limit)         \
+    X(uint32_t, sdm_counter_limit)
+
+typedef struct {
+#define DFC_SDM_FIELD(type, name) type name;
+    DFC_SDM_RESETTABLE_FIELDS(DFC_SDM_FIELD)
+#undef DFC_SDM_FIELD
+} DfcSdmResettable;
+#endif
+
 typedef struct {
     size_t app_index;
     uint8_t number;
@@ -57,24 +85,14 @@ typedef struct {
     uint32_t max_records;
     uint32_t record_count;
 #if DFC_ENABLE_SDM
-    bool sdm_enabled;
-    uint8_t sdm_options;
-    uint16_t sdm_access_rights;
-    bool sdm_has_uid_offset;
-    uint32_t sdm_uid_offset;
-    bool sdm_has_counter_offset;
-    uint32_t sdm_counter_offset;
-    bool sdm_has_picc_data_offset;
-    uint32_t sdm_picc_data_offset;
-    bool sdm_has_mac_input_offset;
-    uint32_t sdm_mac_input_offset;
-    bool sdm_has_mac_offset;
-    uint32_t sdm_mac_offset;
-    bool sdm_has_encrypted_file_offset;
-    uint32_t sdm_encrypted_file_offset;
-    uint32_t sdm_encrypted_file_length;
-    bool sdm_has_counter_limit;
-    uint32_t sdm_counter_limit;
+    union {
+        DfcSdmResettable sdm_resettable;
+        struct {
+#define DFC_SDM_FIELD(type, name) type name;
+            DFC_SDM_RESETTABLE_FIELDS(DFC_SDM_FIELD)
+#undef DFC_SDM_FIELD
+        };
+    };
     uint32_t sdm_read_counter;
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
@@ -86,6 +104,29 @@ typedef struct {
     uint8_t previous_reader_id[DFC_TRANSACTION_READER_ID_LENGTH];
 #endif
 } DfcFile;
+
+#if DFC_ENABLE_SDM
+#define DFC_ASSERT_SDM_ALIAS(type, name)                                          \
+    _Static_assert(                                                               \
+        offsetof(DfcFile, name) ==                                                \
+            offsetof(DfcFile, sdm_resettable) + offsetof(DfcSdmResettable, name), \
+        #name " must alias the named SDM reset storage");
+DFC_SDM_RESETTABLE_FIELDS(DFC_ASSERT_SDM_ALIAS)
+#undef DFC_ASSERT_SDM_ALIAS
+_Static_assert(
+    offsetof(DfcSdmResettable, sdm_enabled) == 0,
+    "SDM reset storage must start with sdm_enabled");
+_Static_assert(
+    offsetof(DfcSdmResettable, sdm_counter_limit) +
+            sizeof(((DfcSdmResettable*)0)->sdm_counter_limit) ==
+        sizeof(DfcSdmResettable),
+    "SDM reset storage must end with sdm_counter_limit");
+_Static_assert(
+    offsetof(DfcFile, sdm_read_counter) ==
+        offsetof(DfcFile, sdm_resettable) + sizeof(DfcSdmResettable),
+    "SDM read counter must follow the resettable settings");
+#undef DFC_SDM_RESETTABLE_FIELDS
+#endif
 
 typedef struct {
     uint8_t aid[3];
