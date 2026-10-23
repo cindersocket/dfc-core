@@ -2047,7 +2047,7 @@ static void handle_authenticate_ev2_continuation(
             sizeof(emulator->ev2_reader_capabilities));
     }
     emulator->ev2_session_active = true;
-    emulator->ev2_command_counter = 0;
+    if(!emulator->ev2_authentication_non_first) emulator->ev2_command_counter = 0;
     dfc_emulator_commit_auth_family(emulator, DfcEmulatorAuthFamilyEv2);
     dfc_secure_wipe(clear, sizeof(clear));
     dfc_secure_wipe(rotated_b, sizeof(rotated_b));

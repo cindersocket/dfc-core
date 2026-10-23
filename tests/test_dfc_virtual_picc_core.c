@@ -481,7 +481,7 @@ static MunitResult test_iso_command_aborts_ev2_first_and_non_first(
         munit_assert_uint8(emulator->ev2_static_key[0], ==, 0x11);
         munit_assert_false(emulator->ev2_session_active);
         munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, 0);
-        munit_assert_uint16(emulator->ev2_command_counter, ==, 0);
+        munit_assert_uint16(emulator->ev2_command_counter, ==, non_first ? 0x1234 : 0);
         assert_zeroed_bytes(
             emulator->ev2_session_encryption_key, sizeof(emulator->ev2_session_encryption_key));
         assert_zeroed_bytes(emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));

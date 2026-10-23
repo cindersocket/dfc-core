@@ -253,7 +253,7 @@ static void clear_native_authentication(DfcEmulator* emulator) {
 static void clear_ev2_authentication(DfcEmulator* emulator, bool keep_transaction_context) {
     emulator->ev2_session_active = false;
     emulator->ev2_authenticated_key_no = 0;
-    emulator->ev2_command_counter = 0;
+    if(!keep_transaction_context) emulator->ev2_command_counter = 0;
     dfc_secure_wipe(
         emulator->ev2_session_encryption_key, sizeof(emulator->ev2_session_encryption_key));
     dfc_secure_wipe(emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));

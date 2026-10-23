@@ -33,6 +33,8 @@
   bytes, replay buffers, and secret scratch storage.
 - Make reader, native, ISO, ISO-DEP, EV1, and EV2 retries state-atomic across
   authentication, response-capacity, chaining, and transport failures.
+- Preserve the transaction identifier and command counter when EV2 NonFirst
+  authentication changes the active key (#118).
 - Report required JNI response lengths, wipe invalidated ISO-DEP responses,
   reset expired activations, and support ISO-DEP record commands.
 - Roll back failed SDM, delegated-application, transaction-MAC, CommitReaderID,
