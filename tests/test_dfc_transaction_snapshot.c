@@ -793,9 +793,6 @@ static char* family_values[] = {
     "value",
     "linear",
     "cyclic",
-#if DFC_ENABLE_TRANSACTION_MAC
-    "transaction-mac",
-#endif
     NULL};
 static char* finish_values[] = {"commit", "abort", NULL};
 static MunitParameterEnum family_params[] = {

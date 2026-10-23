@@ -2819,7 +2819,10 @@ static void handle_delete_file(DfcEmulator* emulator, const uint8_t* apdu, DfcBy
     uint8_t file_no = apdu[1];
     DfcFile* file = dfc_credential_find_file_in_app(
         emulator->credential, emulator->selected_app_index, file_no);
-    if(file) {
+    bool deletes_transaction_mac = file && file->type == DFC_FILE_TYPE_TRANSACTION_MAC;
+    if(deletes_transaction_mac) {
+        (void)dfc_emulator_abort_transaction(emulator);
+    } else if(file) {
         dfc_emulator_transaction_snapshot_delete_file(
             emulator, (size_t)(file - emulator->credential->files));
     }
@@ -3095,33 +3098,52 @@ static DfcFile* transaction_mac_file(DfcEmulator* emulator) {
     return NULL;
 }
 
+static bool transaction_mac_file_create_ready(
+    DfcEmulator* emulator,
+    uint8_t file_number,
+    DfcByteBuf* tx_buffer) {
+    DfcCredential* credential = emulator->credential;
+    if(file_number > DFC_EV1_MAX_FILE_NUMBER ||
+       dfc_credential_find_file_in_app(credential, emulator->selected_app_index, file_number)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        return false;
+    }
+    if(dfc_credential_count_files_in_app(credential, emulator->selected_app_index) >=
+           DFC_EV1_MAX_FILES_PER_APP ||
+       credential->num_files >= DFC_MAX_FILES) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COUNT_ERROR);
+        return false;
+    }
+    if(credential->file_pool_used > DFC_FILE_POOL_SIZE ||
+       DFC_TRANSACTION_MAC_FILE_LENGTH > DFC_FILE_POOL_SIZE - credential->file_pool_used) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return false;
+    }
+    return true;
+}
+
 static void handle_create_transaction_mac_file(
     DfcEmulator* emulator,
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer) {
+    if(!require_create_delete_access(emulator, tx_buffer)) return;
+
     const size_t command_length = 1 + 5 + DFC_AES_KEY_LENGTH + 1;
     if(buffer_len != command_length || transaction_mac_file(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
+    if(!transaction_mac_file_create_ready(emulator, buffer[1], tx_buffer)) return;
+
+    /* No fallible operation remains after the transaction boundary moves. */
+    (void)dfc_emulator_abort_transaction(emulator);
     DfcFile* file =
         dfc_credential_create_file(emulator->credential, emulator->selected_app_index, buffer[1]);
-    if(!file || !dfc_file_resize(emulator->credential, file, DFC_TRANSACTION_MAC_FILE_LENGTH)) {
-        if(file) {
-            (void)dfc_credential_delete_file(
-                emulator->credential, emulator->selected_app_index, buffer[1]);
-        }
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
-    if(!dfc_emulator_transaction_snapshot_insert_file(
-           emulator, (size_t)(file - emulator->credential->files))) {
-        (void)dfc_credential_delete_file(
-            emulator->credential, emulator->selected_app_index, buffer[1]);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
+    DFC_ASSERT(file);
+    bool resized = dfc_file_resize(emulator->credential, file, DFC_TRANSACTION_MAC_FILE_LENGTH);
+    DFC_ASSERT(resized);
+    DFC_UNUSED(resized);
     file->number = buffer[1];
     file->type = DFC_FILE_TYPE_TRANSACTION_MAC;
     file->comm_settings = buffer[2];
@@ -5263,14 +5285,17 @@ static void commit_ev1_command_update(
 }
 #endif
 
-static void finalize_native_command(DfcEmulator* emulator, const DfcByteBuf* tx_buffer) {
+static void finalize_native_command(
+    DfcEmulator* emulator,
+    bool preserve_transaction_on_failure,
+    const DfcByteBuf* tx_buffer) {
     size_t response_len = dfc_bytebuf_get_size_bytes(tx_buffer);
     if(response_len == 0) return;
     uint8_t status = dfc_bytebuf_get_data(tx_buffer)[0];
     if(status == DFC_STATUS_OK || status == DFC_CMD_ADDITIONAL_FRAME ||
        status == DFC_STATUS_SPECIAL_SUCCESS)
         return;
-    dfc_emulator_abort_transaction(emulator);
+    if(!preserve_transaction_on_failure) dfc_emulator_abort_transaction(emulator);
     if(emulator->auth_cipher != DFC_CMD_AUTHENTICATE_LEGACY)
         dfc_emulator_clear_active_authentication(emulator);
 }
@@ -5540,7 +5565,10 @@ static bool dispatch_native_command(
         return true;
 #endif
     case DFC_CMD_DELETE_FILE:
-        if(buffer_len < 2) return false;
+        if(buffer_len != 2) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+            return true;
+        }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_delete_file(emulator, buffer, tx_buffer);
         apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
@@ -5761,8 +5789,20 @@ bool dfc_emulator_handle_command(
     size_t buffer_len,
     DfcByteBuf* tx_buffer,
     void* context) {
+    bool preserve_transaction_on_failure = false;
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(buffer_len > 0 && buffer[0] == DFC_CMD_CREATE_TRANSACTION_MAC_FILE) {
+        preserve_transaction_on_failure = true;
+    } else if(
+        buffer_len == 2 && buffer[0] == DFC_CMD_DELETE_FILE &&
+        emulator->selected_application == DfcEmulatorSelectedApplicationApp) {
+        DfcFile* target = dfc_credential_find_file_in_app(
+            emulator->credential, emulator->selected_app_index, buffer[1]);
+        preserve_transaction_on_failure = target && target->type == DFC_FILE_TYPE_TRANSACTION_MAC;
+    }
+#endif
     if(!dispatch_native_command(emulator, buffer, buffer_len, tx_buffer, context)) return false;
-    finalize_native_command(emulator, tx_buffer);
+    finalize_native_command(emulator, preserve_transaction_on_failure, tx_buffer);
     return true;
 }
 
