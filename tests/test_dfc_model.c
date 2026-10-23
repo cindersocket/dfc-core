@@ -18,8 +18,8 @@ static void observe_zeroed_sm(const void* ptr, void* context) {
         *zeroed = *zeroed && bytes[index] == 0;
 }
 
-static MunitResult test_secure_messaging_wiped_before_free(
-    const MunitParameter params[], void* data) {
+static MunitResult
+    test_secure_messaging_wiped_before_free(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     const uint8_t key[DFC_AES_KEY_LENGTH] = {1};
@@ -201,8 +201,8 @@ static MunitResult test_mixed_key_set_matrix(const MunitParameter params[], void
     return MUNIT_OK;
 }
 
-static MunitResult test_roll_key_set_updates_active_type(
-    const MunitParameter params[], void* data) {
+static MunitResult
+    test_roll_key_set_updates_active_type(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     DfcCredential credential;
@@ -340,8 +340,8 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
     dfc_credential_copy_model(&bad, &source);
     app = &bad.apps[0];
     munit_assert_true(dfc_credential_key_sets_resize(&bad, app, 2, 2, 16, 16));
-    app->key_settings_2 = (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) |
-                                   DFC_KEY_TYPE_3K3DES);
+    app->key_settings_2 =
+        (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) | DFC_KEY_TYPE_3K3DES);
     app->key_len = 24;
     app->key_set_types[0] = DFC_KEY_SET_TYPE_3K3DES;
     app->key_set_types[1] = DFC_KEY_SET_TYPE_AES;
@@ -363,13 +363,21 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
 }
 
 static MunitTest tests[] = {
-    {"/secure-messaging-wiped-before-free", test_secure_messaging_wiped_before_free, NULL, NULL,
-     MUNIT_TEST_OPTION_NONE, NULL},
+    {"/secure-messaging-wiped-before-free",
+     test_secure_messaging_wiped_before_free,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/valid-matrix", test_valid_matrix, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #if DFC_ENABLE_KEY_SETS
     {"/mixed-key-set-matrix", test_mixed_key_set_matrix, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
-    {"/roll-key-set-updates-active-type", test_roll_key_set_updates_active_type, NULL, NULL,
-     MUNIT_TEST_OPTION_NONE, NULL},
+    {"/roll-key-set-updates-active-type",
+     test_roll_key_set_updates_active_type,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #endif
     {"/shared-primitive-boundaries",
      test_shared_primitive_boundaries,

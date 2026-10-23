@@ -326,21 +326,12 @@ static MunitResult
                                           0x5A,
                                           payload);
                 } else {
-                    payload_len = invalid_tail ?
-                                      build_legacy_change_key_payload_with_nonzero_tail(
-                                          session_key,
-                                          session_key_len,
-                                          new_key,
-                                          key_len,
-                                          0x5A,
-                                          payload) :
-                                      build_legacy_change_key_payload(
-                                          session_key,
-                                          session_key_len,
-                                          new_key,
-                                          key_len,
-                                          0x5A,
-                                          payload);
+                    payload_len =
+                        invalid_tail ?
+                            build_legacy_change_key_payload_with_nonzero_tail(
+                                session_key, session_key_len, new_key, key_len, 0x5A, payload) :
+                            build_legacy_change_key_payload(
+                                session_key, session_key_len, new_key, key_len, 0x5A, payload);
                 }
 
                 DfcCredential credential_before = credential;
@@ -362,11 +353,12 @@ static MunitResult
 
                 if(invalid_tail) {
                     munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_INTEGRITY_ERROR);
-                    munit_assert_memory_equal(
-                        sizeof(credential), &credential, &credential_before);
+                    munit_assert_memory_equal(sizeof(credential), &credential, &credential_before);
                     munit_assert_not_null(session->emulator->secure_messaging);
                     munit_assert_memory_equal(
-                        sizeof(session_before), session->emulator->secure_messaging, &session_before);
+                        sizeof(session_before),
+                        session->emulator->secure_messaging,
+                        &session_before);
                     munit_assert_uint8(session->emulator->auth_key_no, ==, 0);
                 } else {
                     munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);

@@ -23,6 +23,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Check every binding language
         run: ./scripts/check-format.sh
+      - name: Test C formatting scope
+        run: python3 tests/test_check_c_format.py
       - name: Test documentation link checker
         run: python3 tests/test_check_docs.py
       - name: Test stack-usage checker

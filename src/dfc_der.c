@@ -713,8 +713,7 @@ static bool model_key_slice_is_valid(const DfcCredential* c, const DfcApplicatio
             if(app->key_storage_len != app->max_key_size) return false;
             if(key_length > app->max_key_size ||
                dfc_key_set_type_length(app->key_set_types[0]) != key_length ||
-               (settings & DFC_KEY_TYPE_MASK) !=
-                   dfc_key_type_for_set_type(app->key_set_types[0]))
+               (settings & DFC_KEY_TYPE_MASK) != dfc_key_type_for_set_type(app->key_set_types[0]))
                 return false;
             for(size_t set = 0; set < app->num_key_sets; set++) {
                 size_t width = dfc_key_set_type_length(app->key_set_types[set]);

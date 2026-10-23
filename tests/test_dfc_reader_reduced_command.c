@@ -24,8 +24,7 @@ static void assert_ev1_internal_capacity_is_atomic(
     DfcReaderOptions options = {.comm_mode = comm_mode};
     DfcReaderExchange exchange;
     munit_assert_int(
-        dfc_reader_exchange_begin(
-            &exchange, &session, DfcReaderFramingIso7816, &command, &options),
+        dfc_reader_exchange_begin(&exchange, &session, DfcReaderFramingIso7816, &command, &options),
         ==,
         DfcReaderInvalid);
     munit_assert_memory_equal(sizeof(before), &session, &before);
@@ -33,9 +32,8 @@ static void assert_ev1_internal_capacity_is_atomic(
     munit_assert_memory_equal(sizeof(exchange.frame), exchange.frame, ((uint8_t[16]){0}));
 }
 
-static MunitResult test_internal_command_capacity_is_invalid(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_internal_command_capacity_is_invalid(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcReaderSession session;
@@ -46,8 +44,7 @@ static MunitResult test_internal_command_capacity_is_invalid(
     memset(command.data, 0xA5, command.data_len);
 
     munit_assert_int(
-        dfc_reader_exchange_begin(
-            &exchange, &session, DfcReaderFramingIso7816, &command, &options),
+        dfc_reader_exchange_begin(&exchange, &session, DfcReaderFramingIso7816, &command, &options),
         ==,
         DfcReaderInvalid);
 
@@ -57,8 +54,7 @@ static MunitResult test_internal_command_capacity_is_invalid(
     command.data_len = 9;
     options.comm_mode = DFC_COMM_MAC;
     munit_assert_int(
-        dfc_reader_exchange_begin(
-            &exchange, &session, DfcReaderFramingIso7816, &command, &options),
+        dfc_reader_exchange_begin(&exchange, &session, DfcReaderFramingIso7816, &command, &options),
         ==,
         DfcReaderInvalid);
 #endif
@@ -74,11 +70,7 @@ static MunitResult test_internal_command_capacity_is_invalid(
     };
     for(size_t i = 0; i < sizeof(ev1_sessions) / sizeof(ev1_sessions[0]); i++) {
         assert_ev1_internal_capacity_is_atomic(
-            ev1_sessions[i].cipher,
-            ev1_sessions[i].key_len,
-            DFC_CMD_WRITE_DATA,
-            9,
-            DFC_COMM_MAC);
+            ev1_sessions[i].cipher, ev1_sessions[i].key_len, DFC_CMD_WRITE_DATA, 9, DFC_COMM_MAC);
         assert_ev1_internal_capacity_is_atomic(
             ev1_sessions[i].cipher,
             ev1_sessions[i].key_len,

@@ -434,8 +434,7 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
             audit.reader.sm.session_key,
             ((uint8_t[sizeof(audit.reader.sm.session_key)]){0}));
         munit_assert_not_null(audit.picc->emulator->secure_messaging);
-        munit_assert_false(
-            dfc_emulator_native_authentication_active(audit.picc->emulator));
+        munit_assert_false(dfc_emulator_native_authentication_active(audit.picc->emulator));
         munit_assert_uint8(audit.picc->emulator->auth_cipher, ==, 0);
         munit_assert_uint8(audit.picc->emulator->auth_key_no, ==, 0);
         munit_assert_memory_equal(
@@ -713,7 +712,8 @@ static void assert_native_exchange_bytebuf_wiped(size_t response_capacity, int e
     DfcVirtualPiccSession* picc = dfc_virtual_picc_session_alloc(&credential);
     munit_assert_not_null(picc);
     DfcVirtualPiccActivation activation;
-    munit_assert_int(dfc_virtual_picc_scan_iso14443a(picc, &activation), ==, DfcVirtualPiccStatusOk);
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(picc, &activation), ==, DfcVirtualPiccStatusOk);
 
     const uint8_t command[] = {0xFF};
     uint8_t response[16] = {0};
@@ -749,8 +749,8 @@ static MunitResult test_d40_block_cleanup_paths(const MunitParameter params[], v
         AuditDesKey, sizeof(AuditDesKey), encrypted, sizeof(encrypted), plain));
 
     memset(plain, 0xA5, sizeof(plain));
-    munit_assert_false(dfc_emulator_d40_receive_plain(
-        AuditDesKey, 7, encrypted, sizeof(encrypted), plain));
+    munit_assert_false(
+        dfc_emulator_d40_receive_plain(AuditDesKey, 7, encrypted, sizeof(encrypted), plain));
     munit_assert_memory_equal(sizeof(plain), plain, ((uint8_t[sizeof(plain)]){0}));
 
     ReaderAuthAudit audit;
@@ -764,21 +764,13 @@ static MunitResult test_d40_block_cleanup_paths(const MunitParameter params[], v
     DfcReaderExchange exchange;
     munit_assert_int(
         reader_auth_audit_native(
-            &audit,
-            &exchange,
-            DFC_CMD_AUTHENTICATE_LEGACY,
-            AuditDesKey,
-            sizeof(AuditDesKey)),
+            &audit, &exchange, DFC_CMD_AUTHENTICATE_LEGACY, AuditDesKey, sizeof(AuditDesKey)),
         ==,
         DfcReaderOk);
     const uint8_t wrong_key[sizeof(AuditDesKey)] = {0xFF};
     munit_assert_int(
         reader_auth_audit_native(
-            &audit,
-            &exchange,
-            DFC_CMD_AUTHENTICATE_LEGACY,
-            wrong_key,
-            sizeof(wrong_key)),
+            &audit, &exchange, DFC_CMD_AUTHENTICATE_LEGACY, wrong_key, sizeof(wrong_key)),
         !=,
         DfcReaderOk);
     reader_auth_audit_close(&audit);

@@ -70,7 +70,10 @@ void dfc_ffi_port_system_random(uint8_t* buf, size_t len) {
     size_t filled = 0;
     while(filled < len) {
         ssize_t n = read(fd, buf + filled, len - filled);
-        if(n > 0) { filled += (size_t)n; continue; }
+        if(n > 0) {
+            filled += (size_t)n;
+            continue;
+        }
         if(n < 0 && errno == EINTR) continue;
         close(fd);
         abort();

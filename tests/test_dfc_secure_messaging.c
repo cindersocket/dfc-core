@@ -231,7 +231,8 @@ static size_t encode_for_overlap_test(
         sm, DFC_COMM_ENCIPHERED, header, sizeof(header), plain, plain_len, out);
 }
 
-static MunitResult test_enciphered_encode_accepts_partial_overlap(const MunitParameter p[], void* d) {
+static MunitResult
+    test_enciphered_encode_accepts_partial_overlap(const MunitParameter p[], void* d) {
     (void)p;
     (void)d;
     static const struct {
@@ -252,7 +253,8 @@ static MunitResult test_enciphered_encode_accepts_partial_overlap(const MunitPar
             for(size_t length_index = 0; length_index < sizeof(lengths) / sizeof(lengths[0]);
                 length_index++) {
                 uint8_t plain[17];
-                for(size_t i = 0; i < sizeof(plain); i++) plain[i] = (uint8_t)(0x31u + i);
+                for(size_t i = 0; i < sizeof(plain); i++)
+                    plain[i] = (uint8_t)(0x31u + i);
                 DfcSecureMessaging* baseline =
                     alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
                 uint8_t expected[DFC_SM_MAX_SIZE];
@@ -309,29 +311,28 @@ static MunitResult test_command_payload_lengths_match_encoder(const MunitParamet
                 size_t predicted = dfc_secure_messaging_command_payload_length(
                     sm, false, modes[mode_index], lengths[length_index]);
                 munit_assert_size(predicted, !=, SIZE_MAX);
-                size_t actual = dfc_secure_messaging_wrap(sm,
-                                                          modes[mode_index],
-                                                          header,
-                                                          sizeof(header),
-                                                          plain,
-                                                          lengths[length_index],
-                                                          encoded);
+                size_t actual = dfc_secure_messaging_wrap(
+                    sm,
+                    modes[mode_index],
+                    header,
+                    sizeof(header),
+                    plain,
+                    lengths[length_index],
+                    encoded);
                 munit_assert_size(predicted, ==, actual);
                 dfc_secure_messaging_free(sm);
             }
         }
     }
 
-    size_t length =
-        dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_MAC, 16);
+    size_t length = dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_MAC, 16);
     munit_assert_size(length, ==, 16 + DFC_WIRE_MAC_LENGTH);
     length = dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_ENCIPHERED, 15);
     munit_assert_size(length, ==, DFC_AES_KEY_LENGTH + DFC_WIRE_MAC_LENGTH);
     length = dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_ENCIPHERED, 16);
     munit_assert_size(length, ==, 2 * DFC_AES_KEY_LENGTH + DFC_WIRE_MAC_LENGTH);
     munit_assert_size(
-        dfc_secure_messaging_command_payload_length(
-            NULL, true, DFC_COMM_ENCIPHERED, SIZE_MAX),
+        dfc_secure_messaging_command_payload_length(NULL, true, DFC_COMM_ENCIPHERED, SIZE_MAX),
         ==,
         SIZE_MAX);
     munit_assert_size(
@@ -339,9 +340,7 @@ static MunitResult test_command_payload_lengths_match_encoder(const MunitParamet
         ==,
         SIZE_MAX);
     munit_assert_size(
-        dfc_secure_messaging_command_payload_length(NULL, false, DFC_COMM_MAC, 1),
-        ==,
-        SIZE_MAX);
+        dfc_secure_messaging_command_payload_length(NULL, false, DFC_COMM_MAC, 1), ==, SIZE_MAX);
     DfcSecureMessaging* sm = alloc_session(DFC_CMD_AUTHENTICATE_AES, DFC_AES_KEY_LENGTH);
     munit_assert_size(
         dfc_secure_messaging_command_payload_length(sm, false, 0x02, 1), ==, SIZE_MAX);

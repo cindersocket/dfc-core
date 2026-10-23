@@ -426,8 +426,7 @@ static MunitResult
     len = command(emulator, request, sizeof(request), response);
     munit_assert_size(len, ==, 1 + DFC_EV2_RANDOM_LENGTH);
     const uint8_t malformed_continuation[] = {DFC_CMD_ADDITIONAL_FRAME};
-    len = command(
-        emulator, malformed_continuation, sizeof(malformed_continuation), response);
+    len = command(emulator, malformed_continuation, sizeof(malformed_continuation), response);
     munit_assert_size(len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_AUTHENTICATION_ERR);
     munit_assert_false(emulator->ev2_session_active);

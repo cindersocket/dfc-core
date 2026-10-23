@@ -76,8 +76,8 @@ static uint8_t command_file_comm(
     DfcFileAccess access;
     if(target) *target = file;
     if(!file || !command_file_access(command[0], &access)) return DFC_COMM_PLAIN;
-    uint8_t configured =
-        command[0] == DFC_CMD_CHANGE_FILE_SETTINGS ? DFC_COMM_ENCIPHERED : file->comm_settings;
+    uint8_t configured = command[0] == DFC_CMD_CHANGE_FILE_SETTINGS ? DFC_COMM_ENCIPHERED :
+                                                                      file->comm_settings;
     return dfc_emulator_file_effective_comm_settings(emulator, file, access, configured);
 }
 
@@ -99,10 +99,7 @@ static bool bypass_secure_messaging(uint8_t command) {
     return false;
 }
 
-static bool plain_file_command(
-    DfcEmulator* emulator,
-    const uint8_t* command,
-    size_t command_len) {
+static bool plain_file_command(DfcEmulator* emulator, const uint8_t* command, size_t command_len) {
     const uint8_t* logical = command;
     size_t logical_len = command_len;
     if(command[0] == DFC_CMD_ADDITIONAL_FRAME && emulator->command_chain_active &&

@@ -28,8 +28,8 @@
 
 #ifdef DFC_FIRMWARE_BUILD
 void dfc_assert_fail(const char* file, int line);
-#define DFC_ASSERT(expr)                          \
-    do {                                          \
+#define DFC_ASSERT(expr)                                 \
+    do {                                                 \
         if(!(expr)) dfc_assert_fail(__FILE__, __LINE__); \
     } while(0)
 #else

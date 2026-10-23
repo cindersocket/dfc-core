@@ -99,16 +99,15 @@ static inline size_t dfc_secure_messaging_command_payload_length(
     size_t overhead;
     size_t block = 1;
     if(comm_mode == DFC_COMM_MAC) {
-        overhead = ev2 || sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY ?
-                       DFC_WIRE_MAC_LENGTH :
-                       DFC_SM_LEGACY_MAC_LENGTH;
+        overhead = ev2 || sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY ? DFC_WIRE_MAC_LENGTH :
+                                                                      DFC_SM_LEGACY_MAC_LENGTH;
     } else if(ev2) {
         overhead = 1;
         block = DFC_AES_KEY_LENGTH;
     } else {
         overhead = sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 2 : 4;
         block = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_AES_KEY_LENGTH :
-                                                            DFC_SM_LEGACY_BLOCK_SIZE;
+                                                         DFC_SM_LEGACY_BLOCK_SIZE;
     }
     size_t trailer = ev2 && comm_mode == DFC_COMM_ENCIPHERED ? DFC_WIRE_MAC_LENGTH : 0;
     size_t maximum_extra = overhead + block - 1 + trailer;

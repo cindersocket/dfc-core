@@ -318,9 +318,8 @@ static MunitResult test_read_data_mac_file_uses_single_ev1_response_mac(
     return MUNIT_OK;
 }
 
-static MunitResult test_get_version_frames_use_ev1_response_mac(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_get_version_frames_use_ev1_response_mac(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;

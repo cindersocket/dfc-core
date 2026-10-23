@@ -64,7 +64,8 @@ static MunitResult test_authentication_mode_names_accept_d40_and_legacy_aliases(
     (void)data;
 
     uint8_t auth_command = 0;
-    munit_assert_string_equal(dfc_authentication_mode_to_string(DFC_CMD_AUTHENTICATE_LEGACY), "D40");
+    munit_assert_string_equal(
+        dfc_authentication_mode_to_string(DFC_CMD_AUTHENTICATE_LEGACY), "D40");
     munit_assert_true(dfc_authentication_mode_from_string("D40", &auth_command));
     munit_assert_uint8(auth_command, ==, DFC_CMD_AUTHENTICATE_LEGACY);
     munit_assert_true(dfc_authentication_mode_from_string("Legacy", &auth_command));
@@ -267,7 +268,7 @@ static MunitResult test_derive_session_key_3k3des(const MunitParameter params[],
 static MunitTest tests[] = {
     {"/rotate_left", test_rotate_left, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/detectable_uid",
-        test_detectable_uid_accepts_supported_lengths_starting_with_04,
+     test_detectable_uid_accepts_supported_lengths_starting_with_04,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

@@ -162,8 +162,8 @@ bool dfc_emulator_transaction_snapshot_mirror_write(
     DfcCredential* credential = emulator->credential;
     if(file_index >= credential->num_files || (length && !data)) return false;
     DfcFile* file = &credential->files[file_index];
-    if(file->app_index != emulator->transaction_snapshot_app_index ||
-       offset > file->data_len || length > file->data_len - offset ||
+    if(file->app_index != emulator->transaction_snapshot_app_index || offset > file->data_len ||
+       length > file->data_len - offset ||
        file->data_offset > emulator->transaction_snapshot_pool_length ||
        offset > emulator->transaction_snapshot_pool_length - file->data_offset ||
        length > emulator->transaction_snapshot_pool_length - file->data_offset - offset) {

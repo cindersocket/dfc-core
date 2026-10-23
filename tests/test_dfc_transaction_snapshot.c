@@ -134,8 +134,7 @@ static void finish_transaction(SnapshotFixture* fixture, bool commit) {
     exchange_status(fixture->session, command, sizeof(command), DFC_STATUS_OK);
 }
 
-static void
-    create_family(DfcVirtualPiccSession* session, const char* family, uint8_t file_number);
+static void create_family(DfcVirtualPiccSession* session, const char* family, uint8_t file_number);
 
 static void create_standard_file(DfcVirtualPiccSession* session, uint8_t file_number) {
     const uint8_t command[] = {
@@ -543,9 +542,7 @@ static MunitResult test_replacement_and_shrink_wipe(const MunitParameter params[
     return MUNIT_OK;
 }
 
-static MunitResult test_immediate_write_survives_abort(
-    const MunitParameter params[],
-    void* data) {
+static MunitResult test_immediate_write_survives_abort(const MunitParameter params[], void* data) {
     (void)data;
     const char* family = munit_parameters_get(params, "family");
     bool after = strcmp(munit_parameters_get(params, "position"), "after") == 0;
@@ -564,12 +561,9 @@ static MunitResult test_immediate_write_survives_abort(
         fixture.session, file_number, 2, replacement, sizeof(replacement), DFC_STATUS_OK);
     finish_transaction(&fixture, false);
 
-    DfcFile* standard =
-        dfc_credential_find_file_in_app(&fixture.credential, 0, file_number);
+    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, file_number);
     munit_assert_memory_equal(
-        sizeof(replacement),
-        dfc_file_data_const(&fixture.credential, standard) + 2,
-        replacement);
+        sizeof(replacement), dfc_file_data_const(&fixture.credential, standard) + 2, replacement);
     munit_assert_true(fixture.credential.dirty);
     DfcFile* backup = dfc_credential_find_file_in_app(&fixture.credential, 0, 2);
     munit_assert_memory_equal(
@@ -586,9 +580,8 @@ static MunitResult test_immediate_write_survives_abort(
     return MUNIT_OK;
 }
 
-static MunitResult test_multiple_immediate_writes_survive_abort(
-    const MunitParameter params[],
-    void* data) {
+static MunitResult
+    test_multiple_immediate_writes_survive_abort(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     SnapshotFixture fixture;
@@ -605,10 +598,8 @@ static MunitResult test_multiple_immediate_writes_survive_abort(
     DfcFile* before = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
     DfcFile* after = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
     munit_assert_memory_equal(2, dfc_file_data_const(&fixture.credential, before), first);
-    munit_assert_memory_equal(
-        2, dfc_file_data_const(&fixture.credential, before) + 4, second);
-    munit_assert_memory_equal(
-        4, dfc_file_data_const(&fixture.credential, after) + 2, third);
+    munit_assert_memory_equal(2, dfc_file_data_const(&fixture.credential, before) + 4, second);
+    munit_assert_memory_equal(4, dfc_file_data_const(&fixture.credential, after) + 2, third);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -622,7 +613,8 @@ static MunitResult test_failed_immediate_write_does_not_rebase_snapshot(
     fixture_open(&fixture);
     open_transaction_family(&fixture, "backup");
     const uint8_t rejected[] = {0x81, 0x82, 0x83, 0x84};
-    write_data_status(fixture.session, 1, 6, rejected, sizeof(rejected), DFC_STATUS_BOUNDARY_ERROR);
+    write_data_status(
+        fixture.session, 1, 6, rejected, sizeof(rejected), DFC_STATUS_BOUNDARY_ERROR);
     DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
     munit_assert_memory_equal(
         8,
@@ -633,9 +625,8 @@ static MunitResult test_failed_immediate_write_does_not_rebase_snapshot(
     return MUNIT_OK;
 }
 
-static MunitResult test_immediate_write_retry_executes_once(
-    const MunitParameter params[],
-    void* data) {
+static MunitResult
+    test_immediate_write_retry_executes_once(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     SnapshotFixture fixture;
@@ -666,9 +657,8 @@ static MunitResult test_immediate_write_retry_executes_once(
     return MUNIT_OK;
 }
 
-static MunitResult test_immediate_write_preserves_co_pending_value(
-    const MunitParameter params[],
-    void* data) {
+static MunitResult
+    test_immediate_write_preserves_co_pending_value(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     SnapshotFixture fixture;
@@ -687,9 +677,8 @@ static MunitResult test_immediate_write_preserves_co_pending_value(
     return MUNIT_OK;
 }
 
-static MunitResult test_chained_immediate_write_survives_abort(
-    const MunitParameter params[],
-    void* data) {
+static MunitResult
+    test_chained_immediate_write_survives_abort(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     SnapshotFixture fixture;
@@ -794,12 +783,7 @@ static MunitResult test_iso_update_binary_publishes_existing_transaction(
     return MUNIT_OK;
 }
 
-static char* family_values[] = {
-    "backup",
-    "value",
-    "linear",
-    "cyclic",
-    NULL};
+static char* family_values[] = {"backup", "value", "linear", "cyclic", NULL};
 static char* finish_values[] = {"commit", "abort", NULL};
 static MunitParameterEnum family_params[] = {
     {"family", family_values},

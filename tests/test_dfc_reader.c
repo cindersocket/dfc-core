@@ -767,12 +767,13 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
     for(size_t capacity = 0; capacity < DFC_ISO7816_STATUS_WORD_LENGTH; capacity++) {
         response_len = SIZE_MAX;
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                               select_iso_app,
-                                               sizeof(select_iso_app),
-                                               response,
-                                               capacity,
-                                               &response_len),
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc,
+                select_iso_app,
+                sizeof(select_iso_app),
+                response,
+                capacity,
+                &response_len),
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
         munit_assert_size(response_len, ==, 0);
@@ -781,17 +782,16 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
         munit_assert_memory_equal(
             sizeof(select_emulator_before), &select_emulator_before, link.picc->emulator);
         munit_assert_memory_equal(
-            sizeof(select_sm_before),
-            &select_sm_before,
-            link.picc->emulator->secure_messaging);
+            sizeof(select_sm_before), &select_sm_before, link.picc->emulator->secure_messaging);
     }
     munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                           select_iso_app,
-                                           sizeof(select_iso_app),
-                                           response,
-                                           DFC_ISO7816_STATUS_WORD_LENGTH,
-                                           &response_len),
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            select_iso_app,
+            sizeof(select_iso_app),
+            response,
+            DFC_ISO7816_STATUS_WORD_LENGTH,
+            &response_len),
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_memory_equal(
@@ -857,12 +857,8 @@ static DfcReaderStatus
         expected_exchange.session = &expected_session;
         uint8_t expected_tx[DFC_COMMAND_MAX_APDU];
         size_t expected_tx_len = 0;
-        DfcReaderStatus expected_status = dfc_reader_step(&expected_exchange,
-                                                          answer,
-                                                          rx_len,
-                                                          expected_tx,
-                                                          sizeof(expected_tx),
-                                                          &expected_tx_len);
+        DfcReaderStatus expected_status = dfc_reader_step(
+            &expected_exchange, answer, rx_len, expected_tx, sizeof(expected_tx), &expected_tx_len);
         st = dfc_reader_step(ex, answer, rx_len, tx, 0, &tx_len);
         if(st == DfcReaderBufferTooSmall) {
             munit_assert_size(tx_len, ==, 0);
@@ -905,16 +901,14 @@ static void assert_internal_response_overflow_is_terminal(
     DfcReaderExchange exchange;
     DfcReaderOptions options = {.comm_mode = comm};
     munit_assert_int(
-        dfc_reader_exchange_begin(
-            &exchange, &link->session, link->framing, command, &options),
+        dfc_reader_exchange_begin(&exchange, &link->session, link->framing, command, &options),
         ==,
         DfcReaderOk);
 
     uint8_t emitted[DFC_COMMAND_MAX_APDU];
     size_t emitted_len = 0;
     munit_assert_int(
-        dfc_reader_step(
-            &exchange, NULL, 0, emitted, sizeof(emitted), &emitted_len),
+        dfc_reader_step(&exchange, NULL, 0, emitted, sizeof(emitted), &emitted_len),
         ==,
         DfcReaderPending);
 
@@ -923,12 +917,7 @@ static void assert_internal_response_overflow_is_terminal(
     oversized[sizeof(oversized) - 1] = DFC_CMD_ADDITIONAL_FRAME;
     size_t ignored = 0;
     DfcReaderStatus status = dfc_reader_step(
-        &exchange,
-        oversized,
-        sizeof(oversized),
-        emitted,
-        sizeof(emitted),
-        &ignored);
+        &exchange, oversized, sizeof(oversized), emitted, sizeof(emitted), &ignored);
     munit_assert_int(status, ==, DfcReaderProtocolError);
     munit_assert_int(status, !=, DfcReaderBufferTooSmall);
 }
@@ -1003,14 +992,15 @@ static MunitResult
     uint8_t payload[] = {0xA5};
     DfcReaderExchange exchange;
     munit_assert_int(
-        dfc_reader_write_data_begin(&exchange,
-                                    &session,
-                                    DfcReaderFramingNative,
-                                    7,
-                                    3,
-                                    payload,
-                                    sizeof(payload),
-                                    DFC_COMM_PLAIN),
+        dfc_reader_write_data_begin(
+            &exchange,
+            &session,
+            DfcReaderFramingNative,
+            7,
+            3,
+            payload,
+            sizeof(payload),
+            DFC_COMM_PLAIN),
         ==,
         DfcReaderOk);
 
@@ -1633,8 +1623,7 @@ static MunitResult
             DfcReaderOk);
         munit_assert_int(dfc_command_get_version(&command), ==, DfcCommandOk);
         assert_internal_response_overflow_is_terminal(&link, &command, DFC_COMM_PLAIN);
-        munit_assert_int(
-            dfc_command_read_data(&command, FileFull, 0, 1), ==, DfcCommandOk);
+        munit_assert_int(dfc_command_read_data(&command, FileFull, 0, 1), ==, DfcCommandOk);
         assert_internal_response_overflow_is_terminal(&link, &command, DFC_COMM_ENCIPHERED);
         link_close(&link);
     }
@@ -1646,8 +1635,7 @@ static MunitResult
         munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
         munit_assert_int(dfc_command_get_version(&command), ==, DfcCommandOk);
         assert_internal_response_overflow_is_terminal(&link, &command, DFC_COMM_MAC);
-        munit_assert_int(
-            dfc_command_read_data(&command, FileFull, 0, 1), ==, DfcCommandOk);
+        munit_assert_int(dfc_command_read_data(&command, FileFull, 0, 1), ==, DfcCommandOk);
         assert_internal_response_overflow_is_terminal(&link, &command, DFC_COMM_ENCIPHERED);
         link_close(&link);
     }
@@ -1946,15 +1934,15 @@ static MunitResult
     uint8_t capacity_response[64];
     size_t capacity_command_len = 0;
     size_t capacity_response_len = 0;
-    iso7816_authenticate_begin(
-        &link, &capacity_exchange, capacity_command, &capacity_command_len);
+    iso7816_authenticate_begin(&link, &capacity_exchange, capacity_command, &capacity_command_len);
     munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                           capacity_command,
-                                           capacity_command_len,
-                                           capacity_response,
-                                           sizeof(capacity_response),
-                                           &capacity_response_len),
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            capacity_command,
+            capacity_command_len,
+            capacity_response,
+            sizeof(capacity_response),
+            &capacity_response_len),
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_uint8(link.picc->emulator->iso_auth_phase, ==, 1);
@@ -1965,29 +1953,29 @@ static MunitResult
     for(size_t capacity = 0; capacity < DFC_ISO7816_STATUS_WORD_LENGTH; capacity++) {
         capacity_response_len = SIZE_MAX;
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                               select_parent,
-                                               sizeof(select_parent),
-                                               capacity_response,
-                                               capacity,
-                                               &capacity_response_len),
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc,
+                select_parent,
+                sizeof(select_parent),
+                capacity_response,
+                capacity,
+                &capacity_response_len),
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
         munit_assert_size(capacity_response_len, ==, 0);
         munit_assert_memory_equal(
             sizeof(capacity_session_before), &capacity_session_before, link.picc);
         munit_assert_memory_equal(
-            sizeof(capacity_emulator_before),
-            &capacity_emulator_before,
-            link.picc->emulator);
+            sizeof(capacity_emulator_before), &capacity_emulator_before, link.picc->emulator);
     }
     munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                           select_parent,
-                                           sizeof(select_parent),
-                                           capacity_response,
-                                           DFC_ISO7816_STATUS_WORD_LENGTH,
-                                           &capacity_response_len),
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            select_parent,
+            sizeof(select_parent),
+            capacity_response,
+            DFC_ISO7816_STATUS_WORD_LENGTH,
+            &capacity_response_len),
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_uint8(link.picc->emulator->iso_auth_phase, ==, 0);
@@ -1997,49 +1985,50 @@ static MunitResult
     // the caller supplies no room for its error status.
     link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
     select_app(&link, AID_AES);
-    iso7816_authenticate_begin(
-        &link, &capacity_exchange, capacity_command, &capacity_command_len);
-    iso7816_advance_authentication(&link,
-                                   &capacity_exchange,
-                                   capacity_command,
-                                   &capacity_command_len,
-                                   capacity_response,
-                                   &capacity_response_len);
-    iso7816_advance_authentication(&link,
-                                   &capacity_exchange,
-                                   capacity_command,
-                                   &capacity_command_len,
-                                   capacity_response,
-                                   &capacity_response_len);
+    iso7816_authenticate_begin(&link, &capacity_exchange, capacity_command, &capacity_command_len);
+    iso7816_advance_authentication(
+        &link,
+        &capacity_exchange,
+        capacity_command,
+        &capacity_command_len,
+        capacity_response,
+        &capacity_response_len);
+    iso7816_advance_authentication(
+        &link,
+        &capacity_exchange,
+        capacity_command,
+        &capacity_command_len,
+        capacity_response,
+        &capacity_response_len);
     munit_assert_uint8(link.picc->emulator->iso_auth_phase, ==, 2);
     capacity_session_before = *link.picc;
     capacity_emulator_before = *link.picc->emulator;
     for(size_t capacity = 0; capacity < DFC_ISO7816_STATUS_WORD_LENGTH; capacity++) {
         capacity_response_len = SIZE_MAX;
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                               capacity_command,
-                                               capacity_command_len - 1,
-                                               capacity_response,
-                                               capacity,
-                                               &capacity_response_len),
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc,
+                capacity_command,
+                capacity_command_len - 1,
+                capacity_response,
+                capacity,
+                &capacity_response_len),
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
         munit_assert_size(capacity_response_len, ==, 0);
         munit_assert_memory_equal(
             sizeof(capacity_session_before), &capacity_session_before, link.picc);
         munit_assert_memory_equal(
-            sizeof(capacity_emulator_before),
-            &capacity_emulator_before,
-            link.picc->emulator);
+            sizeof(capacity_emulator_before), &capacity_emulator_before, link.picc->emulator);
     }
     munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                           capacity_command,
-                                           capacity_command_len - 1,
-                                           capacity_response,
-                                           DFC_ISO7816_STATUS_WORD_LENGTH,
-                                           &capacity_response_len),
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            capacity_command,
+            capacity_command_len - 1,
+            capacity_response,
+            DFC_ISO7816_STATUS_WORD_LENGTH,
+            &capacity_response_len),
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_memory_equal(
@@ -2192,14 +2181,14 @@ static MunitResult
     bool cache_valid_before = link.picc->emulator->sdm_read_cache_valid;
     uint32_t counter_before = file->sdm_read_counter;
     dirty_before = link.credential.dirty;
-    const uint8_t read_binary[] =
-        {DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00, 0x10};
-    const uint8_t read_binary_short[] =
-        {DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00};
-    const uint8_t read_binary_long[] =
-        {DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00, 0x10, 0x00};
-    const uint8_t read_binary_bad_range[] =
-        {DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, LONG_FILE_SIZE, 0x01};
+    const uint8_t read_binary[] = {
+        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00, 0x10};
+    const uint8_t read_binary_short[] = {
+        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00};
+    const uint8_t read_binary_long[] = {
+        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00, 0x10, 0x00};
+    const uint8_t read_binary_bad_range[] = {
+        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, LONG_FILE_SIZE, 0x01};
 
     const struct {
         const uint8_t* command;
@@ -2208,10 +2197,7 @@ static MunitResult
         DfcVirtualPiccStatus expected;
     } rejected_reads[] = {
         {read_binary, sizeof(read_binary), 1, DfcVirtualPiccStatusBufferTooSmall},
-        {read_binary_short,
-         sizeof(read_binary_short),
-         sizeof(response),
-         DfcVirtualPiccStatusOk},
+        {read_binary_short, sizeof(read_binary_short), sizeof(response), DfcVirtualPiccStatusOk},
         {read_binary_long, sizeof(read_binary_long), sizeof(response), DfcVirtualPiccStatusOk},
         {read_binary_bad_range,
          sizeof(read_binary_bad_range),
@@ -2221,12 +2207,13 @@ static MunitResult
     for(size_t i = 0; i < sizeof(rejected_reads) / sizeof(rejected_reads[0]); i++) {
         response_len = SIZE_MAX;
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                               rejected_reads[i].command,
-                                               rejected_reads[i].command_len,
-                                               response,
-                                               rejected_reads[i].response_capacity,
-                                               &response_len),
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc,
+                rejected_reads[i].command,
+                rejected_reads[i].command_len,
+                response,
+                rejected_reads[i].response_capacity,
+                &response_len),
             ==,
             rejected_reads[i].expected);
         munit_assert_uint32(file->sdm_read_counter, ==, counter_before);
@@ -2238,12 +2225,8 @@ static MunitResult
 
     response_len = 0;
     munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(link.picc,
-                                           read_binary,
-                                           sizeof(read_binary),
-                                           response,
-                                           sizeof(response),
-                                           &response_len),
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, read_binary, sizeof(read_binary), response, sizeof(response), &response_len),
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 0x10 + DFC_ISO7816_STATUS_WORD_LENGTH);
@@ -3709,8 +3692,7 @@ static MunitResult test_virtual_card_select(const MunitParameter params[], void*
     for(size_t capacity = 0; capacity < DFC_ISO7816_STATUS_WORD_LENGTH; capacity++) {
         rx_len = SIZE_MAX;
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(
-                link.picc, apdu, apdu_len, rx, capacity, &rx_len),
+            dfc_virtual_picc_iso_dep_exchange(link.picc, apdu, apdu_len, rx, capacity, &rx_len),
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
         munit_assert_size(rx_len, ==, 0);
@@ -3738,8 +3720,7 @@ static MunitResult test_virtual_card_select(const MunitParameter params[], void*
     for(size_t capacity = 0; capacity < DFC_ISO7816_STATUS_WORD_LENGTH; capacity++) {
         rx_len = SIZE_MAX;
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(
-                link.picc, apdu, apdu_len, rx, capacity, &rx_len),
+            dfc_virtual_picc_iso_dep_exchange(link.picc, apdu, apdu_len, rx, capacity, &rx_len),
             ==,
             DfcVirtualPiccStatusBufferTooSmall);
         munit_assert_size(rx_len, ==, 0);

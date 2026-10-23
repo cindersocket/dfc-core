@@ -213,9 +213,7 @@ static void assert_reader_prepare_failure(
         memset(session.ev2_encryption_key, 0x21, sizeof(session.ev2_encryption_key));
         memset(session.ev2_mac_key, 0x32, sizeof(session.ev2_mac_key));
         memset(
-            session.ev2_transaction_identifier,
-            0x43,
-            sizeof(session.ev2_transaction_identifier));
+            session.ev2_transaction_identifier, 0x43, sizeof(session.ev2_transaction_identifier));
     }
     DfcReaderSession before = session;
     DfcReaderExchange exchange;
@@ -223,8 +221,7 @@ static void assert_reader_prepare_failure(
     fail_at = cbc_failure ? 0 : 1;
     fail_cbc = cbc_failure;
     munit_assert_int(
-        dfc_reader_exchange_begin(
-            &exchange, &session, DfcReaderFramingIso7816, command, &options),
+        dfc_reader_exchange_begin(&exchange, &session, DfcReaderFramingIso7816, command, &options),
         ==,
         DfcReaderIntegrityError);
     assert_zeroed(exchange.frame, sizeof(exchange.frame));
@@ -240,8 +237,7 @@ static MunitResult test_reader_prepare_crypto_failures_are_terminal(
     (void)params;
     (void)user_data;
     DfcCommand mac_command = {.ins = DFC_CMD_GET_KEY_SETTINGS, .data_len = 0};
-    assert_reader_prepare_failure(
-        DFC_CMD_AUTHENTICATE_AES, 16, DFC_COMM_MAC, false, &mac_command);
+    assert_reader_prepare_failure(DFC_CMD_AUTHENTICATE_AES, 16, DFC_COMM_MAC, false, &mac_command);
     for(size_t key_len = 8; key_len <= 24; key_len += 8) {
         assert_reader_prepare_failure(
             DFC_CMD_AUTHENTICATE_ISO, key_len, DFC_COMM_MAC, false, &mac_command);
@@ -269,8 +265,7 @@ static MunitResult test_reader_prepare_crypto_failures_are_terminal(
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     assert_reader_prepare_failure(
         DFC_READER_AUTH_EV2, 16, DFC_COMM_ENCIPHERED, true, &write_command);
-    assert_reader_prepare_failure(
-        DFC_READER_AUTH_EV2, 16, DFC_COMM_MAC, false, &mac_command);
+    assert_reader_prepare_failure(DFC_READER_AUTH_EV2, 16, DFC_COMM_MAC, false, &mac_command);
 #endif
     return MUNIT_OK;
 }
@@ -422,9 +417,9 @@ static DfcEmulator* get_value_fault_emulator(
     const uint8_t aid[3] = {1, 2, 3};
     uint8_t key_type = cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_KEY_TYPE_AES :
                        key_len == DFC_MAX_KEY_LEN         ? DFC_KEY_TYPE_3K3DES :
-                                                           DFC_KEY_TYPE_DES_2K3DES;
-    munit_assert_not_null(dfc_credential_create_application_desfire_order(
-        credential, aid, 0x0F, key_type | 1));
+                                                            DFC_KEY_TYPE_DES_2K3DES;
+    munit_assert_not_null(
+        dfc_credential_create_application_desfire_order(credential, aid, 0x0F, key_type | 1));
     DfcFile* file = dfc_credential_create_file(credential, 0, 1);
     munit_assert_not_null(file);
     file->type = DFC_FILE_TYPE_VALUE;
@@ -454,8 +449,7 @@ static void assert_get_value_protection_failure(
     size_t failed_operation,
     bool cbc_failure) {
     DfcCredential credential;
-    DfcEmulator* emulator =
-        get_value_fault_emulator(&credential, cipher, key_len, comm_mode);
+    DfcEmulator* emulator = get_value_fault_emulator(&credential, cipher, key_len, comm_mode);
     const uint8_t command[] = {DFC_CMD_GET_VALUE, 1};
     uint8_t response[64];
 
@@ -534,13 +528,9 @@ static void assert_ev2_session_cleared(const DfcEmulator* emulator) {
     munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, 0);
     munit_assert_uint16(emulator->ev2_command_counter, ==, 0);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_transaction_identifier),
-        emulator->ev2_transaction_identifier,
-        zero);
+        sizeof(emulator->ev2_transaction_identifier), emulator->ev2_transaction_identifier, zero);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_session_encryption_key),
-        emulator->ev2_session_encryption_key,
-        zero);
+        sizeof(emulator->ev2_session_encryption_key), emulator->ev2_session_encryption_key, zero);
     munit_assert_memory_equal(
         sizeof(emulator->ev2_session_mac_key), emulator->ev2_session_mac_key, zero);
     munit_assert_memory_equal(
@@ -582,8 +572,9 @@ static void prepare_ev2_continuation(
     }
 }
 
-static MunitResult
-    test_ev2_crypto_failures_clear_accepted_session(const MunitParameter params[], void* user_data) {
+static MunitResult test_ev2_crypto_failures_clear_accepted_session(
+    const MunitParameter params[],
+    void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
@@ -776,8 +767,7 @@ static void assert_transaction_mac_failure_aborts(
     transaction->type = DFC_FILE_TYPE_TRANSACTION_MAC;
     transaction->transaction_counter = 9;
     memset(transaction->transaction_mac_key, 0x42, sizeof(transaction->transaction_mac_key));
-    munit_assert_true(
-        dfc_file_resize(&credential, transaction, DFC_TRANSACTION_MAC_FILE_LENGTH));
+    munit_assert_true(dfc_file_resize(&credential, transaction, DFC_TRANSACTION_MAC_FILE_LENGTH));
 
     DfcEmulator* emulator = dfc_emulator_alloc(&credential);
     munit_assert_not_null(emulator);
@@ -792,8 +782,7 @@ static void assert_transaction_mac_failure_aborts(
     aes_operation = 0;
     fail_at = 1;
     fail_aes_operation = failed_cmac_operation;
-    size_t response_len =
-        fault_emulator_command(emulator, command, command_len, response, true);
+    size_t response_len = fault_emulator_command(emulator, command, command_len, response, true);
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
     munit_assert_int(value->value, ==, 100);
@@ -831,10 +820,8 @@ static MunitResult
     return MUNIT_OK;
 }
 
-static DfcEmulator* transaction_test_emulator(
-    DfcCredential* credential,
-    DfcFile** value,
-    DfcFile** transaction) {
+static DfcEmulator*
+    transaction_test_emulator(DfcCredential* credential, DfcFile** value, DfcFile** transaction) {
     munit_assert_true(dfc_credential_clear(credential));
     credential->card.generation = DfcGenerationEv3;
     const uint8_t aid[3] = {1, 2, 3};
@@ -850,12 +837,8 @@ static DfcEmulator* transaction_test_emulator(
     *transaction = dfc_credential_create_file(credential, 0, 2);
     munit_assert_not_null(*transaction);
     (*transaction)->type = DFC_FILE_TYPE_TRANSACTION_MAC;
-    memset(
-        (*transaction)->transaction_mac_key,
-        0x42,
-        sizeof((*transaction)->transaction_mac_key));
-    munit_assert_true(
-        dfc_file_resize(credential, *transaction, DFC_TRANSACTION_MAC_FILE_LENGTH));
+    memset((*transaction)->transaction_mac_key, 0x42, sizeof((*transaction)->transaction_mac_key));
+    munit_assert_true(dfc_file_resize(credential, *transaction, DFC_TRANSACTION_MAC_FILE_LENGTH));
     DfcEmulator* emulator = dfc_emulator_alloc(credential);
     munit_assert_not_null(emulator);
     emulator->selected_application = DfcEmulatorSelectedApplicationApp;
@@ -863,9 +846,8 @@ static DfcEmulator* transaction_test_emulator(
     return emulator;
 }
 
-static MunitResult test_transaction_transcript_bounds(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_transaction_transcript_bounds(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     static DfcCredential credential;
@@ -877,19 +859,16 @@ static MunitResult test_transaction_transcript_bounds(
     DfcEmulator* emulator = transaction_test_emulator(&credential, &value, &transaction);
     emulator->transaction_input_len = DFC_TRANSACTION_INPUT_MAX_LENGTH - DFC_AES_KEY_LENGTH;
     memset(emulator->transaction_input, 0x35, emulator->transaction_input_len);
-    size_t response_len =
-        fault_emulator_command(emulator, credit, sizeof(credit), response, true);
+    size_t response_len = fault_emulator_command(emulator, credit, sizeof(credit), response, true);
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
-    munit_assert_size(
-        emulator->transaction_input_len, ==, DFC_TRANSACTION_INPUT_MAX_LENGTH);
+    munit_assert_size(emulator->transaction_input_len, ==, DFC_TRANSACTION_INPUT_MAX_LENGTH);
     munit_assert_true(value->value_pending);
     munit_assert_int(value->value_pending_delta, ==, 7);
     dfc_emulator_free(emulator);
 
     emulator = transaction_test_emulator(&credential, &value, &transaction);
-    emulator->transaction_input_len =
-        DFC_TRANSACTION_INPUT_MAX_LENGTH - DFC_AES_KEY_LENGTH + 1;
+    emulator->transaction_input_len = DFC_TRANSACTION_INPUT_MAX_LENGTH - DFC_AES_KEY_LENGTH + 1;
     memset(emulator->transaction_input, 0x5A, emulator->transaction_input_len);
     response_len = fault_emulator_command(emulator, credit, sizeof(credit), response, true);
     munit_assert_size(response_len, ==, 1);
@@ -925,8 +904,7 @@ static MunitResult test_transaction_transcript_bounds(
         emulator, commit_reader_id, sizeof(commit_reader_id), response, true);
     munit_assert_size(response_len, ==, 1 + DFC_TRANSACTION_READER_ID_LENGTH);
     munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
-    munit_assert_size(
-        emulator->transaction_input_len, ==, DFC_TRANSACTION_INPUT_MAX_LENGTH);
+    munit_assert_size(emulator->transaction_input_len, ==, DFC_TRANSACTION_INPUT_MAX_LENGTH);
     dfc_emulator_free(emulator);
 
     emulator = transaction_test_emulator(&credential, &value, &transaction);
@@ -943,9 +921,8 @@ static MunitResult test_transaction_transcript_bounds(
     return MUNIT_OK;
 }
 
-static MunitResult test_transaction_counter_does_not_wrap(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_transaction_counter_does_not_wrap(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     static DfcCredential credential;
@@ -982,9 +959,8 @@ static MunitResult test_transaction_counter_does_not_wrap(
     return MUNIT_OK;
 }
 
-static MunitResult test_commit_reader_id_is_transactional(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_commit_reader_id_is_transactional(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     static DfcCredential credential;
@@ -1011,15 +987,13 @@ static MunitResult test_commit_reader_id_is_transactional(
     munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
     for(size_t i = 0; i < sizeof(original); i++)
         munit_assert_uint8(response[i + 1], ==, (uint8_t)(original[i] ^ 0xA7));
-    munit_assert_memory_equal(
-        sizeof(original), transaction->previous_reader_id, original);
+    munit_assert_memory_equal(sizeof(original), transaction->previous_reader_id, original);
 
     const uint8_t abort[] = {DFC_CMD_ABORT_TRANSACTION};
     response_len = fault_emulator_command(emulator, abort, sizeof(abort), response, true);
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
-    munit_assert_memory_equal(
-        sizeof(original), transaction->previous_reader_id, original);
+    munit_assert_memory_equal(sizeof(original), transaction->previous_reader_id, original);
     munit_assert_size(emulator->transaction_input_len, ==, 0);
     assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
 
@@ -1078,10 +1052,7 @@ static void assert_proximity_terminal_wipe(size_t failed_mac_operation) {
 
     uint8_t transcript[DFC_PROXIMITY_TRANSCRIPT_MAX] = {0};
     memcpy(transcript, response + 1, DFC_PROXIMITY_RANDOM_LENGTH);
-    memcpy(
-        transcript + DFC_PROXIMITY_RANDOM_LENGTH,
-        round + 2,
-        DFC_PROXIMITY_RANDOM_LENGTH);
+    memcpy(transcript + DFC_PROXIMITY_RANDOM_LENGTH, round + 2, DFC_PROXIMITY_RANDOM_LENGTH);
     uint8_t verify[1 + DFC_WIRE_MAC_LENGTH] = {DFC_CMD_VERIFY_PROXIMITY_CHECK};
     munit_assert_true(dfc_reader_proximity_check_mac(
         credential.picc_proximity_key,
@@ -1126,9 +1097,8 @@ static MunitResult
 }
 #endif
 
-static MunitResult test_transaction_file_creation_rolls_back(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_transaction_file_creation_rolls_back(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     static DfcCredential credential;
@@ -2009,8 +1979,9 @@ static void begin_delegated_creation(DfcReaderExchange* exchange, FaultLink* lin
         DfcReaderOk);
 }
 
-static MunitResult
-    test_delegated_begin_crypto_failures_are_terminal(const MunitParameter params[], void* user_data) {
+static MunitResult test_delegated_begin_crypto_failures_are_terminal(
+    const MunitParameter params[],
+    void* user_data) {
     (void)params;
     (void)user_data;
     const DfcCommandCreateDelegatedApplication app = {
