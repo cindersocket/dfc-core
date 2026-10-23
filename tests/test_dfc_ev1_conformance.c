@@ -1513,6 +1513,78 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult test_change_file_settings_validates_sdm_counter_access(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = open_rights_file_over_the_air(&credential, 0xEE, 0xEE);
+    credential.card.generation = DfcGenerationEv3;
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+
+    const uint8_t missing_key[] = {
+        0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x41, 0xF9, 0xEF, 0x00, 0x00, 0x00};
+    set_sdm_settings_sentinels(session, file);
+    assert_rejected_change_is_atomic(
+        session, file, missing_key, sizeof(missing_key), DFC_STATUS_PARAMETER_ERROR);
+
+    set_sdm_settings_sentinels(session, file);
+    assert_rejected_change_is_atomic(
+        session, file, missing_key, sizeof(missing_key) - 1, DFC_STATUS_LENGTH_ERROR);
+
+    const uint8_t counter_disabled[] = {0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xF3, 0xFF};
+    set_sdm_settings_sentinels(session, file);
+    assert_rejected_change_is_atomic(
+        session, file, counter_disabled, sizeof(counter_disabled), DFC_STATUS_PARAMETER_ERROR);
+
+    const uint8_t file_read_rfu[] = {
+        0x5F, 0x01, 0x40, 0xEE, 0xEE, 0x01, 0xFF, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    set_sdm_settings_sentinels(session, file);
+    assert_rejected_change_is_atomic(
+        session, file, file_read_rfu, sizeof(file_read_rfu), DFC_STATUS_PARAMETER_ERROR);
+
+    const struct {
+        uint8_t counter_access;
+        uint16_t stored_rights;
+    } accepted[] = {
+        {0x03, 0xEFF3},
+        {DFC_SDM_FREE_ACCESS, 0xEFFE},
+        {DFC_SDM_DENIED_ACCESS, 0xEFFF},
+    };
+    for(size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
+        uint8_t command[] = {
+            0x90,
+            0x5F,
+            0x00,
+            0x00,
+            0x0A,
+            0x01,
+            0x40,
+            0xEE,
+            0xEE,
+            0x41,
+            (uint8_t)(0xF0 | accepted[i].counter_access),
+            0xEF,
+            0x00,
+            0x00,
+            0x00,
+            0x00};
+        set_sdm_settings_sentinels(session, file);
+        assert_status(session, command, sizeof(command), DFC_STATUS_OK);
+        munit_assert_uint16(file->sdm_access_rights, ==, accepted[i].stored_rights);
+        munit_assert_true(file->sdm_has_counter_offset);
+        munit_assert_uint32(file->sdm_counter_offset, ==, 0);
+        munit_assert_true(credential.dirty);
+        munit_assert_false(session->emulator->sdm_read_cache_valid);
+    }
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
 static MunitResult test_change_file_settings_success_replaces_sdm_settings(
     const MunitParameter params[],
     void* data) {
@@ -1839,6 +1911,12 @@ static MunitTest tests[] = {
 #if DFC_ENABLE_SDM
     {"/change-file-settings-rejections-are-atomic",
      test_change_file_settings_rejections_are_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-validates-sdm-counter-access",
+     test_change_file_settings_validates_sdm_counter_access,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

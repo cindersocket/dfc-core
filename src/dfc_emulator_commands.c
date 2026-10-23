@@ -1388,6 +1388,11 @@ static void handle_change_file_settings(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;
         }
+        if((sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) == 0 &&
+           (sdm_access_rights & DFC_SDM_ACCESS_MASK) != DFC_SDM_DENIED_ACCESS) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
         if((sdm_fields & (1u << DfcSdmFieldMacInputOffset)) != 0 && sdm_file_read >= key_count) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;
@@ -1396,8 +1401,11 @@ static void handle_change_file_settings(
 #endif
     uint32_t key_references = access_rights;
 #if DFC_ENABLE_SDM
-    if(settings) key_references |= (uint32_t)(sdm_access_rights & 0xF000u) << 4;
-    const size_t reference_count = 5;
+    if(settings) {
+        key_references |= (uint32_t)(sdm_access_rights & 0xF000u) << 4;
+        key_references |= (uint32_t)(sdm_access_rights & DFC_SDM_ACCESS_MASK) << 20;
+    }
+    const size_t reference_count = 6;
 #else
     const size_t reference_count = 4;
 #endif
