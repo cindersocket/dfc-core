@@ -641,6 +641,15 @@ def variable_output(call: object, *args: object) -> bytes:
     return bytes(out[: size.value])
 
 
+def _integer(value: int, name: str) -> int:
+    from .errors import InvalidArgumentError
+
+    try:
+        return operator.index(value)
+    except TypeError as error:
+        raise InvalidArgumentError(-1, f"{name} must be an integer") from error
+
+
 def unsigned(value: int, bits: int, name: str) -> int:
     """Return ``value`` unchanged if it fits an unsigned ``bits``-wide native parameter.
 
@@ -649,9 +658,20 @@ def unsigned(value: int, bits: int, name: str) -> int:
     """
     from .errors import InvalidArgumentError
 
-    number = operator.index(value)
+    number = _integer(value, name)
     if not 0 <= number < 1 << bits:
         raise InvalidArgumentError(-1, f"{name} does not fit an unsigned {bits}-bit integer")
+    return number
+
+
+def signed(value: int, bits: int, name: str) -> int:
+    """Return ``value`` unchanged if it fits a signed ``bits``-wide native parameter."""
+    from .errors import InvalidArgumentError
+
+    number = _integer(value, name)
+    limit = 1 << (bits - 1)
+    if not -limit <= number < limit:
+        raise InvalidArgumentError(-1, f"{name} does not fit a signed {bits}-bit integer")
     return number
 
 

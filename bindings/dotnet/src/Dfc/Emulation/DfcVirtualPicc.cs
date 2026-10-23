@@ -58,6 +58,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 {
     private const int ResponseCapacity = 1024;
     private const int NoCard = 1;
+    private static readonly TimeSpan MaximumNativeElapsed = TimeSpan.FromMilliseconds(uint.MaxValue);
 
     internal delegate int PiccCreator(
         nint credential,
@@ -268,20 +269,16 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     }
 
     /// <summary>Advances the card's notion of time.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="elapsed" /> is negative or exceeds <see cref="uint.MaxValue" /> milliseconds.
+    /// </exception>
     public void AdvanceTime(TimeSpan elapsed)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
-        if (elapsed.TotalMilliseconds > uint.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(elapsed));
-        }
+        var milliseconds = NativeMilliseconds(elapsed, saturate: false);
         lock (gate)
         {
             using var lease = new PiccHandleLease(handle);
-            _ = Native.dfc_ffi_picc_advance_time(
-                lease.Raw,
-                (uint)elapsed.TotalMilliseconds
-            );
+            _ = Native.dfc_ffi_picc_advance_time(lease.Raw, milliseconds);
         }
     }
 
@@ -410,8 +407,25 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         lastTimestamp = now;
         if (elapsed > TimeSpan.Zero)
         {
-            _ = Native.dfc_ffi_picc_advance_time(raw, (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue));
+            // Once the native transaction timer expires, additional elapsed time has no effect.
+            _ = Native.dfc_ffi_picc_advance_time(raw, NativeMilliseconds(elapsed, saturate: true));
         }
+    }
+
+    private static uint NativeMilliseconds(TimeSpan elapsed, bool saturate)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
+        if (elapsed > MaximumNativeElapsed)
+        {
+            if (saturate)
+            {
+                return uint.MaxValue;
+            }
+
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(elapsed, MaximumNativeElapsed);
+        }
+
+        return checked((uint)elapsed.TotalMilliseconds);
     }
 
     [UnmanagedCallersOnly]

@@ -494,6 +494,40 @@ def test_codec_picc_and_reader_lifecycle() -> None:
 NATIVE_MAX_CLEAR_HEADER = 10
 
 
+@pytest.mark.parametrize(
+    ("value", "bits"),
+    [(255, 8), (2**32 - 1, 32)],
+)
+def test_unsigned_native_integer_accepts_maximum(value: int, bits: int) -> None:
+    assert _native.unsigned(value, bits, "value") == value
+
+
+@pytest.mark.parametrize("value", [256, -1, 1.5])
+def test_unsigned_native_integer_refuses_out_of_range_or_non_integer(value: object) -> None:
+    with pytest.raises(InvalidArgumentError):
+        _native.unsigned(value, 8, "value")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [-(2**31), 2**31 - 1])
+def test_signed_native_integer_accepts_boundaries(value: int) -> None:
+    assert _native.signed(value, 32, "value") == value
+
+
+@pytest.mark.parametrize("value", [-(2**31) - 1, 2**31, 1.5])
+def test_signed_native_integer_refuses_out_of_range_or_non_integer(value: object) -> None:
+    with pytest.raises(InvalidArgumentError):
+        _native.signed(value, 32, "value")  # type: ignore[arg-type]
+
+
+def _exchange_with_framing(reader: Reader, framing: int) -> object:
+    previous = reader.framing
+    try:
+        reader.framing = framing
+        return reader.exchange(Command.get_version())
+    finally:
+        reader.framing = previous
+
+
 def test_reader_header_len_reaches_native_unnarrowed() -> None:
     credential = Credential.decode(FIXTURE.read_bytes())
     with VirtualPicc(credential) as picc:
@@ -505,6 +539,8 @@ def test_reader_header_len_reaches_native_unnarrowed() -> None:
             for bad in (NATIVE_MAX_CLEAR_HEADER + 1, -2, 2**31, 2**32 + 3, -(2**31) - 1):
                 with pytest.raises(InvalidArgumentError):
                     reader.exchange(command, header_len=bad)
+            with pytest.raises(InvalidArgumentError):
+                reader.exchange(command, header_len=1.5)  # type: ignore[arg-type]
             assert reader.exchange(command).status == 0
 
 
@@ -512,14 +548,22 @@ def test_reader_header_len_reaches_native_unnarrowed() -> None:
     "call",
     [
         lambda reader, _picc: reader.exchange(Command.get_version(), comm_mode=256),
+        lambda reader, _picc: _exchange_with_framing(reader, 2**32),
         lambda reader, _picc: reader.write_data(1, 0, b"x", comm_mode=256),
         lambda reader, _picc: reader.authenticate(0x1A, 256, bytes(16), random_a=bytes(8)),
+        lambda reader, _picc: reader.authenticate(256, 0, bytes(16), random_a=bytes(8)),
+        lambda reader, _picc: reader.authenticate_ev2(256, bytes(16), random_a=bytes(16)),
+        lambda reader, _picc: reader.authenticate_iso7816(0, 256, bytes(16), bytes(16), bytes(16)),
+        lambda reader, _picc: reader.create_delegated_application(
+            b"", bytes(16), bytes(16), bytes(7), bytes(16), 256
+        ),
         lambda reader, _picc: reader.write_data(1, 2**32, b"x"),
         lambda reader, _picc: reader.update_record(1, -1, 0, b"x"),
         lambda reader, _picc: reader.change_key_cryptogram(
             0, bytes(16), bytes(16), aes_key=True, new_version=256
         ),
         lambda _reader, picc: picc.advance_time(-1),
+        lambda _reader, picc: picc.advance_time(2**32),
     ],
 )
 def test_caller_integers_are_refused_not_narrowed(

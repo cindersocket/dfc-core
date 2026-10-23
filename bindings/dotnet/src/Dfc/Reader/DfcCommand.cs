@@ -9,9 +9,7 @@ using Dfc.Interop;
 /// native command encoder, which validates every field the way the card does; secure messaging is applied later,
 /// by <see cref="DfcReader" />.
 /// </summary>
-/// <param name="Instruction">The instruction octet.</param>
-/// <param name="Data">The data field.</param>
-public sealed record DfcCommand(byte Instruction, ReadOnlyMemory<byte> Data)
+public sealed record DfcCommand
 {
     /// <summary>Largest data field one frame carries.</summary>
     public const int MaximumData = 255;
@@ -19,18 +17,32 @@ public sealed record DfcCommand(byte Instruction, ReadOnlyMemory<byte> Data)
     /// <summary>Instruction of an additional frame.</summary>
     public const byte AdditionalFrame = 0xAF;
 
-    /// <summary>This command as an ISO 7816 envelope: 90 INS 00 00 [Lc data] 00.</summary>
-    /// <exception cref="InvalidOperationException">
-    /// The record was built directly with more than <see cref="MaximumData" /> data octets, which Lc cannot carry;
-    /// <see cref="Raw" /> refuses such data up front.
-    /// </exception>
-    public byte[] ToApdu()
+    /// <summary>Creates one native command frame.</summary>
+    /// <exception cref="InvalidOperationException">The data field exceeds <see cref="MaximumData" />.</exception>
+    public DfcCommand(byte instruction, ReadOnlyMemory<byte> data)
     {
-        if (Data.Length > MaximumData)
+        if (data.Length > MaximumData)
         {
-            throw new InvalidOperationException($"A native frame carries at most {MaximumData} octets of data.");
+            throw new InvalidOperationException(TooMuchDataMessage);
         }
 
+        Instruction = instruction;
+        Data = data;
+    }
+
+    /// <summary>The instruction octet.</summary>
+    public byte Instruction { get; }
+
+    /// <summary>The data field.</summary>
+    public ReadOnlyMemory<byte> Data { get; }
+
+    /// <summary>Deconstructs the command into its instruction and data.</summary>
+    public void Deconstruct(out byte instruction, out ReadOnlyMemory<byte> data) =>
+        (instruction, data) = (Instruction, Data);
+
+    /// <summary>This command as an ISO 7816 envelope: 90 INS 00 00 [Lc data] 00.</summary>
+    public byte[] ToApdu()
+    {
         if (Data.Length == 0)
         {
             return [0x90, Instruction, 0x00, 0x00, 0x00];
@@ -48,7 +60,10 @@ public sealed record DfcCommand(byte Instruction, ReadOnlyMemory<byte> Data)
     public static Result<DfcCommand, DfcProtocolError> Raw(byte instruction, ReadOnlySpan<byte> data) =>
         data.Length <= MaximumData
             ? new DfcCommand(instruction, data.ToArray())
-            : Invalid("A native frame carries at most 255 octets of data.");
+            : Invalid(TooMuchDataMessage);
+
+    private static string TooMuchDataMessage =>
+        $"A native frame carries at most {MaximumData} octets of data.";
 
     // --------------------------------------------------------- discovery ---
 

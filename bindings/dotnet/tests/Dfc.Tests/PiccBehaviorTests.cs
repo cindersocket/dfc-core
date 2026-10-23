@@ -243,13 +243,75 @@ public sealed class PiccBehaviorTests
     public void AdvanceTime_RefusesValuesThatDoNotFitTheNativeDelta()
     {
         using var picc = Fixtures.Picc(Fixtures.Credential());
-        picc.Activate();
+        picc.AdvanceTime(TimeSpan.FromMilliseconds(uint.MaxValue));
+        var before = picc.Snapshot();
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            picc.AdvanceTime(TimeSpan.FromMilliseconds((double)uint.MaxValue + 1)));
+            picc.AdvanceTime(TimeSpan.FromMilliseconds(uint.MaxValue) + TimeSpan.FromTicks(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => picc.AdvanceTime(TimeSpan.MaxValue));
 
-        picc.AdvanceTime(TimeSpan.Zero);
-        Assert.That(picc.Snapshot().Selection, Is.Not.EqualTo(DfcSelection.None));
+        var after = picc.Snapshot();
+        Assert.Multiple(() =>
+        {
+            Assert.That(after.Selection, Is.EqualTo(before.Selection));
+            Assert.That(after.SelectedAid, Is.EqualTo(before.SelectedAid));
+            Assert.That(after.Dirty, Is.EqualTo(before.Dirty));
+            Assert.That(after.Authentication, Is.EqualTo(before.Authentication));
+            Assert.That(after.AuthenticatedKeyNo, Is.EqualTo(before.AuthenticatedKeyNo));
+            Assert.That(after.Ev2Session, Is.EqualTo(before.Ev2Session));
+            Assert.That(after.VirtualCardSelected, Is.EqualTo(before.VirtualCardSelected));
+            Assert.That(after.ProximityVerified, Is.EqualTo(before.ProximityVerified));
+        });
+    }
+
+    [Test]
+    public async Task ClockFollowing_SaturatesElapsedTimeBeyondTheNativeDelta()
+    {
+        var clock = new ManualTimeProvider();
+        var credential = FreeFileCredential(
+            DfcCommunicationMode.Plain,
+            DfcFileType.BackupData,
+            4,
+            DfcGeneration.Ev3
+        );
+        var timedApplication = credential.Applications[0] with
+        {
+            CapabilityData = [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+        };
+        using var picc = Fixtures.Ok(DfcVirtualPicc.Create(
+            credential with { Applications = [timedApplication] },
+            clock: clock
+        ));
+        Fixtures.Ok(picc.Activate());
+        using var reader = new DfcReader(picc);
+        await Fixtures.SelectAsync(reader, Hex("030201"));
+        Fixtures.Ok(await reader.WriteDataAsync(1, 0, Hex("01020304")));
+
+        clock.Advance((long)uint.MaxValue + 1000);
+        var expired = picc.Exchange(Hex("9060000000"));
+        Assert.Multiple(() =>
+        {
+            Assert.That(expired.IsFailure, Is.True);
+            Assert.That(expired.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.NoCard));
+            Assert.That(picc.Snapshot().Selection, Is.EqualTo(DfcSelection.Picc));
+        });
+
+        Fixtures.Ok(picc.Activate());
+        await Fixtures.SelectAsync(reader, Hex("030201"));
+        var after = Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.ReadData(1, 0, 0)));
+
+        Assert.That(after.Data, Is.EqualTo(new byte[4]));
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long timestamp;
+
+        public override long TimestampFrequency => 1000;
+
+        public override long GetTimestamp() => timestamp;
+
+        public void Advance(long milliseconds) => timestamp += milliseconds;
     }
 
     [Test]
@@ -569,7 +631,16 @@ public sealed class PiccBehaviorTests
         DfcFileType type = DfcFileType.StandardData,
         uint size = 8)
     {
-        var credential = Fixtures.Credential(DfcGeneration.Ev1);
+        return Fixtures.Picc(FreeFileCredential(mode, type, size));
+    }
+
+    private static DfcCredential FreeFileCredential(
+        DfcCommunicationMode mode,
+        DfcFileType type = DfcFileType.StandardData,
+        uint size = 8,
+        DfcGeneration generation = DfcGeneration.Ev1)
+    {
+        var credential = Fixtures.Credential(generation);
         var application = new DfcApplication(
             [0x03, 0x02, 0x01],
             0x0F,
@@ -579,7 +650,7 @@ public sealed class PiccBehaviorTests
             [new DfcFile(1, type, (byte)mode, 0xEEEE,
                 new DfcFileContents.Data(size, new byte[size], true))]
         );
-        return Fixtures.Picc(credential with { Applications = [application] });
+        return credential with { Applications = [application] };
     }
 
     private static byte[] Hex(string value) => Convert.FromHexString(value);

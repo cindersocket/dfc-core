@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Self
 
 from . import _native as N
-from .errors import InvalidArgumentError
 from .models import ReaderState, Response, Transport
 
 PENDING = 1
@@ -105,6 +104,9 @@ class Reader:
         if not self._finalizer.alive:
             raise RuntimeError("reader is closed")
 
+    def _native_framing(self) -> int:
+        return N.unsigned(self.framing, 32, "framing")
+
     def close(self) -> None:
         with self._lock:
             self._finalizer()
@@ -172,10 +174,9 @@ class Reader:
         ``header_len`` is -1 to derive the clear header, or a non-negative
         length accepted by the native reader.
         """
-        if not -(2**31) <= header_len < 2**31:
-            raise InvalidArgumentError(-1, "header_len does not fit a 32-bit integer")
+        clear_header_length = N.signed(header_len, 32, "header_len")
         comm = N.unsigned(comm_mode, 8, "comm_mode")
-        framing = N.unsigned(self.framing, 32, "framing")
+        framing = self._native_framing()
         with self._lock:
             self._open()
             _raw, pointer = N.byte_pointer(command.data)
@@ -187,7 +188,7 @@ class Reader:
                 pointer,
                 len(command.data),
                 comm,
-                header_len,
+                clear_header_length,
             )
             N.raise_status(status)
             return self._run()
@@ -197,7 +198,7 @@ class Reader:
     ) -> Response:
         cipher_id = N.unsigned(cipher, 8, "cipher")
         key_number = N.unsigned(key_no, 8, "key_no")
-        framing = N.unsigned(self.framing, 32, "framing")
+        framing = self._native_framing()
         challenge = bytearray(
             random_a or secrets.token_bytes(16 if cipher == 0xAA or len(key) == 24 else 8)
         )
@@ -233,7 +234,7 @@ class Reader:
         capabilities: bytes = b"",
     ) -> Response:
         key_number = N.unsigned(key_no, 8, "key_no")
-        framing = N.unsigned(self.framing, 32, "framing")
+        framing = self._native_framing()
         challenge = bytearray(random_a or secrets.token_bytes(16))
         kb, kp = N.byte_pointer(key)
         rb, rp = N.byte_pointer(challenge)
@@ -307,7 +308,7 @@ class Reader:
         initial_version: int,
     ) -> Response:
         version = N.unsigned(initial_version, 8, "initial_version")
-        framing = N.unsigned(self.framing, 32, "framing")
+        framing = self._native_framing()
         values = [
             N.byte_pointer(v)
             for v in (header, dam_encryption_key, dam_mac_key, random_prefix, initial_key)
@@ -399,7 +400,7 @@ class Reader:
         position = N.unsigned(offset, 32, "offset")
         record = None if record_number is None else N.unsigned(record_number, 32, "record_number")
         comm = N.unsigned(comm_mode, 8, "comm_mode")
-        framing = N.unsigned(self.framing, 32, "framing")
+        framing = self._native_framing()
         _raw, pointer = N.byte_pointer(data)
         with self._lock:
             self._open()
