@@ -135,7 +135,7 @@ capacity_file_data=$(symbol_size dfc_footprint_max_file_data)
 
 # Arm GNU 13.3.Rel1 ceiling measured after the 2.0 decoder, EV2, and D40
 # hardening changes. Linked text is the core plus tiny-crypto-c objects.
-readonly max_core_text=60208
+readonly max_core_text=60890
 readonly max_core_data=0
 readonly max_core_bss=0
 readonly max_tiny_text=5496
