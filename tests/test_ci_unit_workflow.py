@@ -25,9 +25,7 @@ def matrix_rows(job: str) -> list[tuple[str, ...]]:
     for encoded in re.findall(r"(?m)^          - \{ (?P<row>[^}]+) \}$", job):
         row = {
             key: json.loads(value) if value.startswith('"') else value
-            for key, value in re.findall(
-                r"([a-z]+): (\"(?:[^\"\\]|\\.)*\"|[^,]+)(?:, |$)", encoded
-            )
+            for key, value in re.findall(r"([a-z]+): (\"(?:[^\"\\]|\\.)*\"|[^,]+)(?:, |$)", encoded)
         }
         rows.append(tuple(row[key] for key in MATRIX_KEYS))
     return rows
