@@ -47,6 +47,8 @@
   application changes and terminal command failures.
 - Correct transaction snapshots, rollback, Transaction-MAC lifecycle, and ISO
   update publication.
+- Enforce file access rights and supported communication modes for ISO binary
+  and record operations, including authenticated read CMACs (#120).
 - Apply the effective communication mode after access-right evaluation.
 - Validate SDM counter keys, metadata-mirroring applicability, reset layouts,
   and reserved access-rights values, and reset the SDM read counter when its

@@ -85,6 +85,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_examples \
 	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
+	test_dfc_iso_file_access \
 	test_dfc_iso_chained_records_secure test_dfc_iso_response_lifetime \
 	test_dfc_effective_comm test_dfc_reader_header_bounds test_dfc_decode_failure_atomicity
 

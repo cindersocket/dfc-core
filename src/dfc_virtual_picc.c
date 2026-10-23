@@ -1123,6 +1123,127 @@ static DfcVirtualPiccStatus handle_iso_select(
         response_len);
 }
 
+static DfcVirtualPiccStatus
+    write_iso_security_status(uint8_t* response, size_t response_capacity, size_t* response_len) {
+    return write_status_word(
+        DFC_ISO7816_SW_SECURITY_HI,
+        DFC_ISO7816_SW_SECURITY_LO,
+        response,
+        response_capacity,
+        response_len);
+}
+
+static bool
+    iso_file_read_comm(DfcVirtualPiccSession* session, const DfcFile* file, uint8_t* comm) {
+    if(!dfc_emulator_file_access_allowed(session->emulator, file, DfcFileAccessRead)) return false;
+    if(!dfc_emulator_native_authentication_active(session->emulator) &&
+       dfc_emulator_file_access_is_free(file, DfcFileAccessRead)) {
+        *comm = DFC_COMM_PLAIN;
+        return true;
+    }
+    *comm = dfc_emulator_file_effective_comm_settings(
+        session->emulator, file, DfcFileAccessRead, file->comm_settings);
+    if(session->emulator->secure_messaging &&
+       session->emulator->secure_messaging->cipher != DFC_CMD_AUTHENTICATE_LEGACY &&
+       *comm != DFC_COMM_ENCIPHERED)
+        *comm = DFC_COMM_MAC;
+    return *comm != DFC_COMM_ENCIPHERED &&
+           (*comm != DFC_COMM_MAC || dfc_emulator_native_authentication_active(session->emulator));
+}
+
+static size_t iso_file_mac_len(const DfcSecureMessaging* sm) {
+    return sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? DFC_SM_LEGACY_MAC_LENGTH :
+                                                       DFC_WIRE_MAC_LENGTH;
+}
+
+static bool iso_file_read_fits(
+    const DfcVirtualPiccSession* session,
+    uint8_t comm,
+    size_t data_len,
+    size_t response_capacity) {
+    size_t mac_len = comm == DFC_COMM_MAC ? iso_file_mac_len(session->emulator->secure_messaging) :
+                                            0;
+    return response_capacity >= DFC_ISO7816_STATUS_WORD_LENGTH + mac_len &&
+           data_len <= response_capacity - DFC_ISO7816_STATUS_WORD_LENGTH - mac_len;
+}
+
+static bool iso_file_read_length(
+    const DfcVirtualPiccSession* session,
+    uint8_t comm,
+    uint8_t le,
+    size_t available,
+    size_t* data_len) {
+    if(le == 0) {
+        *data_len = available;
+        return true;
+    }
+    size_t requested = le;
+    if(comm == DFC_COMM_MAC) {
+        size_t mac_len = iso_file_mac_len(session->emulator->secure_messaging);
+        if(requested == mac_len && session->credential->card.generation == DfcGenerationEv1) {
+            *data_len = available;
+            return true;
+        }
+        if(requested <= mac_len) return false;
+        requested -= mac_len;
+    }
+    *data_len = DFC_MIN(requested, available);
+    return true;
+}
+
+static DfcVirtualPiccStatus write_iso_file_read_response(
+    DfcVirtualPiccSession* session,
+    uint8_t comm,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t* response,
+    size_t response_capacity,
+    size_t* response_len) {
+    if(data_len && !data) {
+        return write_status_word(
+            DFC_ISO7816_SW_NO_DIAGNOSTIC_HI,
+            DFC_ISO7816_SW_NO_DIAGNOSTIC_LO,
+            response,
+            response_capacity,
+            response_len);
+    }
+    size_t mac_len = comm == DFC_COMM_MAC ? iso_file_mac_len(session->emulator->secure_messaging) :
+                                            0;
+    size_t payload_len = data_len;
+    if(comm == DFC_COMM_MAC) {
+        if(data_len) memcpy(response, data, data_len);
+        payload_len = session->emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_LEGACY ?
+                          dfc_secure_messaging_generate_response(
+                              session->emulator->secure_messaging,
+                              DFC_COMM_MAC,
+                              DFC_ISO7816_SW_OK_LO,
+                              data,
+                              data_len,
+                              response) :
+                          dfc_secure_messaging_generate_ev1_response_in_place(
+                              session->emulator->secure_messaging,
+                              DFC_ISO7816_SW_OK_LO,
+                              response,
+                              data_len,
+                              response_capacity - DFC_ISO7816_STATUS_WORD_LENGTH);
+        if(payload_len != data_len + mac_len) {
+            dfc_emulator_reset_session(session->emulator);
+            return write_status_word(
+                DFC_ISO7816_SW_NO_DIAGNOSTIC_HI,
+                DFC_ISO7816_SW_NO_DIAGNOSTIC_LO,
+                response,
+                response_capacity,
+                response_len);
+        }
+    } else if(data_len) {
+        memcpy(response, data, data_len);
+    }
+    response[payload_len] = DFC_ISO7816_SW_OK_HI;
+    response[payload_len + 1] = DFC_ISO7816_SW_OK_LO;
+    *response_len = payload_len + DFC_ISO7816_STATUS_WORD_LENGTH;
+    return DfcVirtualPiccStatusOk;
+}
+
 static DfcVirtualPiccStatus handle_iso_file_command(
     DfcVirtualPiccSession* session,
     const uint8_t* command,
@@ -1138,10 +1259,17 @@ static DfcVirtualPiccStatus handle_iso_file_command(
             response_capacity,
             response_len);
     }
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(session->emulator->ev2_session_active)
+        return write_iso_security_status(response, response_capacity, response_len);
+#endif
     DfcFile* file = &session->credential->files[session->iso_file_index];
     uint8_t* data = dfc_file_data(session->credential, file);
     if(command[1] == DFC_ISO7816_INS_READ_BINARY &&
        (file->type == DFC_FILE_TYPE_STANDARD_DATA || file->type == DFC_FILE_TYPE_BACKUP_DATA)) {
+        uint8_t comm = DFC_COMM_PLAIN;
+        if(!iso_file_read_comm(session, file, &comm))
+            return write_iso_security_status(response, response_capacity, response_len);
         if(command_len != 5) {
             return write_status_word(
                 DFC_ISO7816_SW_WRONG_PARAMETERS_HI,
@@ -1159,19 +1287,17 @@ static DfcVirtualPiccStatus handle_iso_file_command(
                 response_capacity,
                 response_len);
         }
-        size_t requested = command[4] == 0 ? file->data_len - offset : command[4];
-        if(requested > file->data_len - offset) {
+        size_t requested;
+        if(!iso_file_read_length(session, comm, command[4], file->data_len - offset, &requested)) {
             return write_status_word(
-                DFC_ISO7816_SW_WRONG_PARAMETERS_HI,
-                DFC_ISO7816_SW_WRONG_PARAMETERS_LO,
+                DFC_ISO7816_SW_WRONG_LE_HI,
+                DFC_ISO7816_SW_WRONG_LE_LO,
                 response,
                 response_capacity,
                 response_len);
         }
-        if(response_capacity < DFC_ISO7816_STATUS_WORD_LENGTH ||
-           requested > response_capacity - DFC_ISO7816_STATUS_WORD_LENGTH) {
+        if(!iso_file_read_fits(session, comm, requested, response_capacity))
             return DfcVirtualPiccStatusBufferTooSmall;
-        }
 #if DFC_ENABLE_SDM
         if(file->sdm_enabled) {
             if(!dfc_emulator_render_sdm_read(session->emulator, file)) {
@@ -1185,15 +1311,22 @@ static DfcVirtualPiccStatus handle_iso_file_command(
             data = session->emulator->sdm_read_cache;
         }
 #endif
-        memcpy(response, data + offset, requested);
-        response[requested] = DFC_ISO7816_SW_OK_HI;
-        response[requested + 1] = DFC_ISO7816_SW_OK_LO;
-        *response_len = requested + DFC_ISO7816_STATUS_WORD_LENGTH;
-        return DfcVirtualPiccStatusOk;
+        return write_iso_file_read_response(
+            session,
+            comm,
+            data ? data + offset : NULL,
+            requested,
+            response,
+            response_capacity,
+            response_len);
     }
 
     if(command[1] == DFC_ISO7816_INS_UPDATE_BINARY && command_len >= 5 &&
        (file->type == DFC_FILE_TYPE_STANDARD_DATA || file->type == DFC_FILE_TYPE_BACKUP_DATA)) {
+        if(!dfc_emulator_file_access_allowed(session->emulator, file, DfcFileAccessWrite) ||
+           file->comm_settings != DFC_COMM_PLAIN) {
+            return write_iso_security_status(response, response_capacity, response_len);
+        }
         size_t offset = ((size_t)command[2] << 8) | command[3];
         size_t write_len = command[4];
         if(command_len != 5 + write_len || offset > file->data_len ||
@@ -1223,6 +1356,9 @@ static DfcVirtualPiccStatus handle_iso_file_command(
 
     if(command[1] == DFC_ISO7816_INS_READ_RECORD &&
        (file->type == DFC_FILE_TYPE_LINEAR_RECORD || file->type == DFC_FILE_TYPE_CYCLIC_RECORD)) {
+        uint8_t comm = DFC_COMM_PLAIN;
+        if(!iso_file_read_comm(session, file, &comm))
+            return write_iso_security_status(response, response_capacity, response_len);
         size_t record_number = command[2];
         if(command_len != 5 || record_number == 0 || record_number > file->record_count) {
             return write_status_word(
@@ -1232,13 +1368,20 @@ static DfcVirtualPiccStatus handle_iso_file_command(
                 response_capacity,
                 response_len);
         }
-        if(file->record_size + DFC_ISO7816_STATUS_WORD_LENGTH > response_capacity)
+        size_t requested;
+        if(!iso_file_read_length(session, comm, command[4], file->record_size, &requested)) {
+            return write_status_word(
+                DFC_ISO7816_SW_WRONG_LE_HI,
+                DFC_ISO7816_SW_WRONG_LE_LO,
+                response,
+                response_capacity,
+                response_len);
+        }
+        if(!iso_file_read_fits(session, comm, requested, response_capacity))
             return DfcVirtualPiccStatusBufferTooSmall;
-        memcpy(response, data + (record_number - 1) * file->record_size, file->record_size);
-        response[file->record_size] = DFC_ISO7816_SW_OK_HI;
-        response[file->record_size + 1] = DFC_ISO7816_SW_OK_LO;
-        *response_len = file->record_size + DFC_ISO7816_STATUS_WORD_LENGTH;
-        return DfcVirtualPiccStatusOk;
+        const uint8_t* record = data ? data + (record_number - 1) * file->record_size : NULL;
+        return write_iso_file_read_response(
+            session, comm, record, requested, response, response_capacity, response_len);
     }
 
     return write_status_word(

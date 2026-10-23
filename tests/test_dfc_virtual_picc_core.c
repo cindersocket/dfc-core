@@ -123,6 +123,7 @@ static MunitResult
     credential.card.generation = DfcGenerationEv3;
     add_applications_for_chained_listing(&credential);
     DfcFile* file = &credential.files[0];
+    file->access_rights = 0xEEEE;
     file->sdm_enabled = true;
     file->sdm_read_counter = 41;
 
@@ -949,6 +950,7 @@ static void prepare_iso_file_session(
     size_t* response_len) {
     load_standard_credential(credential);
     credential->files[0].comm_settings = DFC_COMM_PLAIN;
+    credential->files[0].access_rights = 0xEEEE;
     *session = dfc_virtual_picc_session_alloc(credential);
     munit_assert_not_null(*session);
     activate_iso_dep(*session, cid, response, 64, response_len);
@@ -1407,6 +1409,7 @@ static MunitResult test_iso_file_capacity_and_request_classification(
     file->record_size = 3;
     file->record_count = 1;
     file->comm_settings = DFC_COMM_PLAIN;
+    file->access_rights = 0xEEEE;
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
     munit_assert_not_null(session);
     DfcVirtualPiccActivation activation;

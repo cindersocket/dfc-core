@@ -323,18 +323,16 @@ static bool access_nibble_allows(uint8_t nibble, const DfcEmulator* emulator) {
 }
 
 static bool file_allows_read(const DfcFile* file, const DfcEmulator* emulator) {
-    return access_nibble_allows(access_read_nibble(file->access_rights), emulator) ||
-           access_nibble_allows(access_read_write_nibble(file->access_rights), emulator);
+    return dfc_emulator_file_access_allowed(emulator, file, DfcFileAccessRead);
 }
 
 static bool file_allows_write(const DfcFile* file, const DfcEmulator* emulator) {
-    return access_nibble_allows(access_write_nibble(file->access_rights), emulator) ||
-           access_nibble_allows(access_read_write_nibble(file->access_rights), emulator);
+    return dfc_emulator_file_access_allowed(emulator, file, DfcFileAccessWrite);
 }
 
 #if DFC_ENABLE_RECORD_FILES
 static bool file_allows_read_write(const DfcFile* file, const DfcEmulator* emulator) {
-    return access_nibble_allows(access_read_write_nibble(file->access_rights), emulator);
+    return dfc_emulator_file_access_allowed(emulator, file, DfcFileAccessReadWrite);
 }
 #endif
 
