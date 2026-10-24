@@ -105,7 +105,7 @@ bool dfc_ev2_mac(
     return true;
 }
 
-bool dfc_ev2_equal(const uint8_t* a, const uint8_t* b, size_t len) {
+bool dfc_ct_equal(const uint8_t* a, const uint8_t* b, size_t len) {
     return memcmp(a, b, len) == 0;
 }
 
