@@ -612,11 +612,8 @@ static MunitResult test_read_data_type_error_aborts_pending_transaction(
     return MUNIT_OK;
 }
 
-static MunitResult test_get_version_terminal_frame_uses_ev1_response_mac(
-    const MunitParameter params[],
-    void* user_data) {
-    (void)params;
-    (void)user_data;
+static void check_get_version_terminal_frame(uint8_t cipher, size_t key_len, const char* name) {
+    munit_logf(MUNIT_LOG_INFO, "GetVersion terminal MAC with %s", name);
     DfcCredential credential;
     load_standard_credential(&credential);
     credential.card.generation = DfcGenerationEv1;
@@ -626,11 +623,9 @@ static MunitResult test_get_version_terminal_frame_uses_ev1_response_mac(
     munit_assert_int(
         dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
 
-    uint8_t key[16] = {0};
-    session->emulator->secure_messaging =
-        dfc_secure_messaging_alloc(DFC_CMD_AUTHENTICATE_ISO, key, sizeof(key), NULL);
-    DfcSecureMessaging* reader =
-        dfc_secure_messaging_alloc(DFC_CMD_AUTHENTICATE_ISO, key, sizeof(key), NULL);
+    uint8_t key[24] = {0};
+    session->emulator->secure_messaging = dfc_secure_messaging_alloc(cipher, key, key_len, NULL);
+    DfcSecureMessaging* reader = dfc_secure_messaging_alloc(cipher, key, key_len, NULL);
     munit_assert_not_null(session->emulator->secure_messaging);
     munit_assert_not_null(reader);
 
@@ -641,6 +636,11 @@ static MunitResult test_get_version_terminal_frame_uses_ev1_response_mac(
     uint8_t response[64];
     uint8_t recovered[32];
     size_t response_len = 0;
+    static const uint8_t frame_one[] = {0x04, 0x01, 0x01, 0x01, 0x00, 0x18, 0x05};
+    static const uint8_t frame_two[] = {0x04, 0x01, 0x01, 0x01, 0x03, 0x18, 0x05};
+    static const uint8_t frame_three[] = {
+        0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x24};
+    const uint8_t* expected_plain[] = {frame_one, frame_two};
     for(size_t i = 0; i < 3; i++) {
         munit_assert_int(
             dfc_virtual_picc_iso_dep_exchange(
@@ -653,21 +653,57 @@ static MunitResult test_get_version_terminal_frame_uses_ev1_response_mac(
         munit_assert_size(response_len, ==, plain_len + mac_len + 2);
         munit_assert_uint8(response[response_len - 2], ==, 0x91);
         munit_assert_uint8(response[response_len - 1], ==, status);
+        if(i < 2) munit_assert_memory_equal(plain_len, response, expected_plain[i]);
         uint8_t previous_iv[sizeof(reader->iv)];
         memcpy(previous_iv, reader->iv, sizeof(previous_iv));
-        dfc_secure_messaging_update_ev1_command(
-            reader, i == 0 ? DFC_CMD_GET_VERSION : DFC_CMD_ADDITIONAL_FRAME, NULL, 0);
+        munit_assert_true(dfc_secure_messaging_update_ev1_command(
+            reader, i == 0 ? DFC_CMD_GET_VERSION : DFC_CMD_ADDITIONAL_FRAME, NULL, 0));
         munit_assert_memory_not_equal(sizeof(previous_iv), previous_iv, reader->iv);
         if(i == 2) {
             size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
                 reader, status, response, response_len - 2, recovered, sizeof(recovered));
             munit_assert_size(recovered_len, ==, plain_len);
-            munit_assert_memory_equal(7, recovered, credential.uid);
+            munit_assert_memory_equal(sizeof(frame_three), recovered, frame_three);
         }
     }
 
+    // The following protected response proves the terminal CMAC became the IV
+    // on both sides of the exchange.
+    const uint8_t get_key_settings[] = {0x90, DFC_CMD_GET_KEY_SETTINGS, 0, 0, 0};
+    munit_assert_true(
+        dfc_secure_messaging_update_ev1_command(reader, DFC_CMD_GET_KEY_SETTINGS, NULL, 0));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session,
+            get_key_settings,
+            sizeof(get_key_settings),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 2 + DFC_WIRE_MAC_LENGTH + 2);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
+    size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
+        reader, DFC_STATUS_OK, response, response_len - 2, recovered, sizeof(recovered));
+    munit_assert_size(recovered_len, ==, 2);
+    munit_assert_uint8(recovered[0], ==, credential.picc_key_settings_1);
+    munit_assert_uint8(recovered[1], ==, credential.picc_key_settings_2);
+
     dfc_secure_messaging_free(reader);
     dfc_virtual_picc_session_free(session);
+}
+
+static MunitResult test_get_version_terminal_frame_uses_ev1_response_mac(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    check_get_version_terminal_frame(DFC_CMD_AUTHENTICATE_ISO, 8, "DES");
+    check_get_version_terminal_frame(DFC_CMD_AUTHENTICATE_ISO, 16, "two-key TDEA");
+    check_get_version_terminal_frame(DFC_CMD_AUTHENTICATE_ISO, 24, "three-key TDEA");
+    check_get_version_terminal_frame(DFC_CMD_AUTHENTICATE_AES, 16, "AES");
     return MUNIT_OK;
 }
 

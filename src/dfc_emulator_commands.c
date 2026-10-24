@@ -5359,9 +5359,9 @@ static void
     if(status == DFC_STATUS_SPECIAL_SUCCESS ||
        (status == DFC_CMD_ADDITIONAL_FRAME && payload_len == 0))
         return;
-    // GetVersion's first two frames advance the command IV but remain plain.
-    // The final frame authenticates the complete exchange and becomes the IV
-    // used by the next command.
+    // GetVersion's first two response bodies remain plain. The three command
+    // CMACs advance the IV; only the terminal response body and status are
+    // authenticated, and that response CMAC becomes the next command's IV.
     if(cmd == DFC_CMD_GET_VERSION && status == DFC_CMD_ADDITIONAL_FRAME) return;
     if(status != DFC_STATUS_OK && status != DFC_CMD_ADDITIONAL_FRAME) {
         dfc_emulator_reset_session(emulator);
