@@ -330,6 +330,41 @@ static void build_read_data_command(uint32_t offset, uint32_t length, uint8_t co
     command[12] = 0x00;
 }
 
+static size_t exchange_read_data(
+    DfcVirtualPiccSession* session,
+    uint32_t offset,
+    uint32_t length,
+    uint8_t* response,
+    size_t response_capacity) {
+    uint8_t command[13];
+    build_read_data_command(offset, length, command);
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, command, sizeof(command), response, response_capacity, &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    return response_len;
+}
+
+static void seed_incompatible_file_state(DfcFile* file) {
+    switch(file->type) {
+    case DFC_FILE_TYPE_VALUE:
+        file->value_lower_limit = -41;
+        file->value_upper_limit = 93;
+        file->value = 17;
+        break;
+    case DFC_FILE_TYPE_LINEAR_RECORD:
+    case DFC_FILE_TYPE_CYCLIC_RECORD:
+        file->record_size = 4;
+        file->max_records = 3;
+        file->record_count = 2;
+        break;
+    default:
+        munit_error("incompatible ReadData fixture requires a value or record file");
+    }
+}
+
 static DfcVirtualPiccSession* prepare_read_data_session(
     DfcCredential* credential,
     uint8_t file_type,
@@ -377,6 +412,7 @@ static MunitResult
             DfcVirtualPiccSession* session =
                 prepare_read_data_session(&credential, incompatible_types[i], 8, 0x5A);
             DfcFile* file = &credential.files[0];
+            seed_incompatible_file_state(file);
             uint8_t* file_data = dfc_file_data(&credential, file);
             DfcFile file_before = *file;
             uint8_t file_data_before[8];
@@ -388,23 +424,16 @@ static MunitResult
             munit_assert_not_null(session->emulator->secure_messaging);
             session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_ISO;
             session->emulator->auth_key_no = 1;
+            munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
-            uint8_t read_data[13];
-            build_read_data_command(
-                rejected_ranges[range][0], rejected_ranges[range][1], read_data);
             uint8_t response[32];
             memset(response, 0xA5, sizeof(response));
-            size_t response_len = 0;
-            munit_assert_int(
-                dfc_virtual_picc_iso_dep_exchange(
-                    session,
-                    read_data,
-                    sizeof(read_data),
-                    response,
-                    sizeof(response),
-                    &response_len),
-                ==,
-                DfcVirtualPiccStatusOk);
+            size_t response_len = exchange_read_data(
+                session,
+                rejected_ranges[range][0],
+                rejected_ranges[range][1],
+                response,
+                sizeof(response));
             munit_assert_size(response_len, ==, 2);
             munit_assert_memory_equal(
                 response_len, response, ((uint8_t[]){0x91, DFC_STATUS_PERMISSION_DENIED}));
@@ -447,34 +476,19 @@ static MunitResult
         for(size_t byte = 0; byte < file_len; byte++)
             file_data[byte] = (uint8_t)(0x40 + byte);
 
-        uint8_t read_data[13];
         uint8_t response[32];
-        size_t response_len = 0;
-        build_read_data_command(0, 0, read_data);
-        munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(
-                session, read_data, sizeof(read_data), response, sizeof(response), &response_len),
-            ==,
-            DfcVirtualPiccStatusOk);
+        size_t response_len = exchange_read_data(session, 0, 0, response, sizeof(response));
         munit_assert_size(response_len, ==, file_len + 2);
         munit_assert_memory_equal(file_len, response, file_data);
         munit_assert_memory_equal(2, response + file_len, ((uint8_t[]){0x91, 0x00}));
 
-        build_read_data_command((uint32_t)(file_len - 1), 1, read_data);
-        munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(
-                session, read_data, sizeof(read_data), response, sizeof(response), &response_len),
-            ==,
-            DfcVirtualPiccStatusOk);
+        response_len =
+            exchange_read_data(session, (uint32_t)(file_len - 1), 1, response, sizeof(response));
         munit_assert_size(response_len, ==, 3);
         munit_assert_memory_equal(3, response, ((uint8_t[]){file_data[file_len - 1], 0x91, 0x00}));
 
-        build_read_data_command(0, (uint32_t)(file_len + 1), read_data);
-        munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(
-                session, read_data, sizeof(read_data), response, sizeof(response), &response_len),
-            ==,
-            DfcVirtualPiccStatusOk);
+        response_len =
+            exchange_read_data(session, 0, (uint32_t)(file_len + 1), response, sizeof(response));
         munit_assert_size(response_len, ==, 2);
         munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_BOUNDARY_ERROR}));
 
@@ -490,23 +504,16 @@ static MunitResult test_read_data_transaction_mac_uses_configured_protection(
     (void)user_data;
 
     DfcCredential credential;
-    load_standard_credential(&credential);
+    DfcVirtualPiccSession* session = prepare_read_data_session(
+        &credential, DFC_FILE_TYPE_TRANSACTION_MAC, DFC_TRANSACTION_MAC_FILE_LENGTH, 0);
     DfcFile* file = &credential.files[0];
-    file->type = DFC_FILE_TYPE_TRANSACTION_MAC;
     file->comm_settings = DFC_COMM_ENCIPHERED;
     file->access_rights = 0x1EFE;
-    munit_assert_true(dfc_file_resize(&credential, file, DFC_TRANSACTION_MAC_FILE_LENGTH));
     uint8_t* file_data = dfc_file_data(&credential, file);
     munit_assert_not_null(file_data);
     for(size_t i = 0; i < DFC_TRANSACTION_MAC_FILE_LENGTH; i++)
         file_data[i] = (uint8_t)(0x70 + i);
 
-    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
-    munit_assert_not_null(session);
-    DfcVirtualPiccActivation activation;
-    munit_assert_int(
-        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
-    session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
     session->emulator->auth_key_no = 1;
     session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_ISO;
     uint8_t session_key[16] = {0};
@@ -529,12 +536,12 @@ static MunitResult test_read_data_transaction_mac_uses_configured_protection(
         size_t expected_len = accepted_ranges[range][1];
 
         uint8_t response[64];
-        size_t response_len = 0;
-        munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(
-                session, read_data, sizeof(read_data), response, sizeof(response), &response_len),
-            ==,
-            DfcVirtualPiccStatusOk);
+        size_t response_len = exchange_read_data(
+            session,
+            accepted_ranges[range][0],
+            accepted_ranges[range][1],
+            response,
+            sizeof(response));
         munit_assert_size(response_len, >, expected_len + 2);
         munit_assert_uint8(response[response_len - 2], ==, 0x91);
         munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
@@ -554,15 +561,9 @@ static MunitResult test_read_data_transaction_mac_uses_configured_protection(
         munit_assert_memory_equal(expected_len, clear, file_data + accepted_ranges[range][0]);
     }
 
-    uint8_t oversized[13];
-    build_read_data_command(0, DFC_TRANSACTION_MAC_FILE_LENGTH + 1, oversized);
     uint8_t response[64];
-    size_t response_len = 0;
-    munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(
-            session, oversized, sizeof(oversized), response, sizeof(response), &response_len),
-        ==,
-        DfcVirtualPiccStatusOk);
+    size_t response_len = exchange_read_data(
+        session, 0, DFC_TRANSACTION_MAC_FILE_LENGTH + 1, response, sizeof(response));
     munit_assert_size(response_len, ==, 2);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_BOUNDARY_ERROR}));
     munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
@@ -579,37 +580,33 @@ static MunitResult test_read_data_type_error_aborts_pending_transaction(
     (void)user_data;
 
     DfcCredential credential;
-    load_standard_credential(&credential);
+    DfcVirtualPiccSession* session =
+        prepare_read_data_session(&credential, DFC_FILE_TYPE_VALUE, 8, 0x5A);
     DfcFile* file = &credential.files[0];
-    file->type = DFC_FILE_TYPE_VALUE;
-    file->access_rights = 0xEEEE;
-    file->value = 17;
+    seed_incompatible_file_state(file);
     file->value_pending = true;
     file->value_pending_delta = 5;
-    file->sdm_read_counter = 7;
+    uint8_t session_key[16] = {0};
+    session->emulator->secure_messaging = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_ISO, session_key, sizeof(session_key), NULL);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_ISO;
+    session->emulator->auth_key_no = 1;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
-    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
-    munit_assert_not_null(session);
-    DfcVirtualPiccActivation activation;
-    munit_assert_int(
-        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
-    session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
-
-    uint8_t read_data[13];
-    build_read_data_command(0, 0, read_data);
     uint8_t response[32];
-    size_t response_len = 0;
-    munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(
-            session, read_data, sizeof(read_data), response, sizeof(response), &response_len),
-        ==,
-        DfcVirtualPiccStatusOk);
+    size_t response_len = exchange_read_data(session, 0, 0, response, sizeof(response));
     munit_assert_size(response_len, ==, 2);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_PERMISSION_DENIED}));
+    // Error finalization rolls back the open transaction and retires the
+    // authenticated session after returning the card status.
     munit_assert_false(file->value_pending);
     munit_assert_int32(file->value_pending_delta, ==, 0);
+    munit_assert_int32(file->value_lower_limit, ==, -41);
+    munit_assert_int32(file->value_upper_limit, ==, 93);
     munit_assert_int32(file->value, ==, 17);
     munit_assert_uint32(file->sdm_read_counter, ==, 7);
+    munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
