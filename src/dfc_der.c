@@ -278,6 +278,14 @@ static void w_constructed(Writer* w, uint8_t tag, BodyFn fn, const void* ctx) {
     }
     w_byte(w, tag);
     w_len(w, probe.len);
+    if(!w->buf) {
+        if(probe.len > SIZE_MAX - w->len) {
+            w->overflow = true;
+            return;
+        }
+        w->len += probe.len;
+        return;
+    }
     fn(w, ctx);
 }
 
