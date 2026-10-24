@@ -1336,33 +1336,81 @@ static void
     }
 }
 
-static void handle_change_file_settings(
+// Unwraps commands that carry a clear header followed by a protected body.
+// The caller owns command-IV advancement, so these commands must be deferred
+// by the dispatcher. SIZE_MAX means the body failed authentication.
+static size_t unwrap_write_payload(
     DfcEmulator* emulator,
     const uint8_t* apdu,
     size_t apdu_len,
+    size_t header_len,
+    uint8_t comm,
+    uint8_t* out,
+    size_t out_cap) {
+    size_t cmd_header = 1 + header_len;
+    if(apdu_len < cmd_header) return SIZE_MAX;
+    const uint8_t* wrapped = apdu + cmd_header;
+    size_t wrapped_len = apdu_len - cmd_header;
+    if(!dfc_emulator_native_authentication_active(emulator)) {
+        if(wrapped_len > out_cap) return SIZE_MAX;
+        memcpy(out, wrapped, wrapped_len);
+        return wrapped_len;
+    }
+    bool ev1_sm = dfc_secure_messaging_applies_ev1(emulator->secure_messaging, apdu[0]);
+    if(ev1_sm && comm == DFC_COMM_MAC && dfc_secure_messaging_ev1_transmits_command_mac(apdu[0])) {
+        size_t clear_body = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
+            emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1);
+        if(clear_body == SIZE_MAX || clear_body < header_len) return SIZE_MAX;
+        size_t data_len = clear_body - header_len;
+        if(data_len > out_cap) return SIZE_MAX;
+        if(data_len) memcpy(out, apdu + cmd_header, data_len);
+        return data_len;
+    }
+    if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
+        size_t data_len = dfc_secure_messaging_verify_command(
+            emulator->secure_messaging,
+            DFC_COMM_ENCIPHERED,
+            apdu,
+            cmd_header,
+            wrapped,
+            wrapped_len,
+            out,
+            out_cap);
+        if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
+        return data_len;
+    }
+    if(ev1_sm) {
+        if(wrapped_len > out_cap) return SIZE_MAX;
+        memcpy(out, wrapped, wrapped_len);
+        if(!dfc_secure_messaging_update_ev1_command(
+               emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1)) {
+            dfc_secure_wipe(out, wrapped_len);
+            return SIZE_MAX;
+        }
+        return wrapped_len;
+    }
+    if(comm == DFC_COMM_PLAIN) {
+        if(wrapped_len > out_cap) return SIZE_MAX;
+        memcpy(out, wrapped, wrapped_len);
+        return wrapped_len;
+    }
+    size_t data_len = dfc_secure_messaging_verify_command(
+        emulator->secure_messaging, comm, apdu, cmd_header, wrapped, wrapped_len, out, out_cap);
+    if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
+    return data_len;
+}
+
+static void apply_change_file_settings(
+    DfcEmulator* emulator,
+    DfcFile* file,
+    const uint8_t* body,
+    size_t body_len,
     DfcByteBuf* tx_buffer) {
-    DfcFile* file = dfc_credential_find_file_in_app(
-        emulator->credential, emulator->selected_app_index, apdu[1]);
-    if(!file) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
-        return;
-    }
-
-    uint8_t change_key = access_change_nibble(file->access_rights);
-    if(change_key == DFC_ACCESS_DENY) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-        return;
-    }
-    if(!access_nibble_allows(change_key, emulator)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-
     size_t key_count = emulator_num_keys(emulator);
 
-    if(apdu_len != 5) {
+    if(body_len != 3) {
 #if DFC_ENABLE_SDM
-        if((apdu[2] & DFC_SDM_ENABLED_MASK) == 0) {
+        if(body_len == 0 || (body[0] & DFC_SDM_ENABLED_MASK) == 0) {
 #endif
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return;
@@ -1370,19 +1418,19 @@ static void handle_change_file_settings(
         }
 #endif
     }
-    uint8_t comm_settings = apdu[2];
-    uint16_t access_rights = access_rights_from_wire(apdu[3], apdu[4]);
+    uint8_t comm_settings = body[0];
+    uint16_t access_rights = access_rights_from_wire(body[1], body[2]);
 #if DFC_ENABLE_SDM
     const uint8_t* settings = NULL;
     uint8_t sdm_options = 0;
     uint8_t sdm_fields = 0;
     uint16_t sdm_access_rights = 0;
     if((comm_settings & DFC_SDM_ENABLED_MASK) != 0) {
-        if(apdu_len < 5 + DFC_SDM_BASE_SETTINGS_LENGTH) {
+        if(body_len < 3 + DFC_SDM_BASE_SETTINGS_LENGTH) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return;
         }
-        settings = apdu + 5;
+        settings = body + 3;
         sdm_options = settings[DFC_SDM_OPTIONS_OFFSET];
         sdm_access_rights =
             (uint16_t)(settings[DFC_SDM_ACCESS_RIGHTS_OFFSET] |
@@ -1406,14 +1454,14 @@ static void handle_change_file_settings(
         }
         if((sdm_options & DFC_SDM_COUNTER_LIMIT_MASK) != 0)
             sdm_fields |= 1u << DfcSdmFieldCounterLimit;
-        size_t expected_len = 5 + DFC_SDM_BASE_SETTINGS_LENGTH;
+        size_t expected_len = 3 + DFC_SDM_BASE_SETTINGS_LENGTH;
         for(uint8_t fields = sdm_fields; fields != 0; fields >>= 1) {
             if((fields & 1u) != 0) expected_len += DFC_SDM_OFFSET_LENGTH;
         }
-        if(apdu_len != expected_len) {
+        if(body_len != expected_len) {
             dfc_bytebuf_append_byte(
                 tx_buffer,
-                apdu_len < expected_len ? DFC_STATUS_LENGTH_ERROR : DFC_STATUS_PARAMETER_ERROR);
+                body_len < expected_len ? DFC_STATUS_LENGTH_ERROR : DFC_STATUS_PARAMETER_ERROR);
             return;
         }
         if((sdm_access_rights & 0x00F0u) != 0x00F0u) {
@@ -1482,6 +1530,59 @@ static void handle_change_file_settings(
 #endif
     dfc_credential_mark_dirty(emulator->credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+}
+
+static void handle_change_file_settings(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer) {
+    DfcFile* file = dfc_credential_find_file_in_app(
+        emulator->credential, emulator->selected_app_index, apdu[1]);
+    if(!file) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
+        return;
+    }
+
+    uint8_t change_key = access_change_nibble(file->access_rights);
+    if(change_key == DFC_ACCESS_DENY) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+    if(!access_nibble_allows(change_key, emulator)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+        return;
+    }
+
+    const uint8_t* body = apdu + 2;
+    size_t body_len = apdu_len - 2;
+    size_t clear_len = 0;
+    bool ev2_active = false;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    ev2_active = emulator->ev2_session_active;
+#endif
+    if(dfc_emulator_native_authentication_active(emulator) && !ev2_active) {
+        // Free access stays plain; key-gated settings use the secure-write Full path.
+        uint8_t protection = change_key == DFC_ACCESS_FREE ? DFC_COMM_PLAIN : DFC_COMM_ENCIPHERED;
+        clear_len = unwrap_write_payload(
+            emulator,
+            apdu,
+            apdu_len,
+            1,
+            protection,
+            emulator->pending_chain,
+            sizeof(emulator->pending_chain));
+        if(clear_len == SIZE_MAX) {
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return;
+        }
+        body = emulator->pending_chain;
+        body_len = clear_len;
+    }
+
+    apply_change_file_settings(emulator, file, body, body_len, tx_buffer);
+    dfc_secure_wipe(emulator->pending_chain, clear_len);
 }
 
 static bool storage_version_code(const DfcCard* card, uint8_t* code) {
@@ -4415,17 +4516,6 @@ static void handle_get_file_counters(
 }
 #endif
 
-#if DFC_ENABLE_RECORD_FILES
-static size_t unwrap_write_payload(
-    DfcEmulator* emulator,
-    const uint8_t* apdu,
-    size_t apdu_len,
-    size_t header_len,
-    uint8_t comm,
-    uint8_t* out,
-    size_t out_cap);
-#endif
-
 static void handle_write_data(
     DfcEmulator* emulator,
     const uint8_t* apdu,
@@ -4679,75 +4769,6 @@ static void handle_write_record(
     file->transaction_pending = true;
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
-
-#if DFC_ENABLE_RECORD_FILES
-// Unwraps the payload of a command that carries a clear header and a written
-// body, under the session's communication mode. `header_len` is the octet count
-// after the command byte that precede the body. Returns the cleartext body
-// length, or SIZE_MAX when an integrity check fails. A command reaching this
-// carries its own command CMAC update, so it must be listed as deferred in the
-// dispatcher.
-static size_t unwrap_write_payload(
-    DfcEmulator* emulator,
-    const uint8_t* apdu,
-    size_t apdu_len,
-    size_t header_len,
-    uint8_t comm,
-    uint8_t* out,
-    size_t out_cap) {
-    size_t cmd_header = 1 + header_len;
-    if(apdu_len < cmd_header) return SIZE_MAX;
-    const uint8_t* wrapped = apdu + cmd_header;
-    size_t wrapped_len = apdu_len - cmd_header;
-    if(!dfc_emulator_native_authentication_active(emulator)) {
-        if(wrapped_len > out_cap) return SIZE_MAX;
-        memcpy(out, wrapped, wrapped_len);
-        return wrapped_len;
-    }
-    bool ev1_sm = dfc_secure_messaging_applies_ev1(emulator->secure_messaging, apdu[0]);
-    if(ev1_sm && comm == DFC_COMM_MAC && dfc_secure_messaging_ev1_transmits_command_mac(apdu[0])) {
-        size_t clear_body = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
-            emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1);
-        if(clear_body == SIZE_MAX || clear_body < header_len) return SIZE_MAX;
-        size_t data_len = clear_body - header_len;
-        if(data_len > out_cap) return SIZE_MAX;
-        if(data_len) memcpy(out, apdu + cmd_header, data_len);
-        return data_len;
-    }
-    if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
-        size_t data_len = dfc_secure_messaging_verify_command(
-            emulator->secure_messaging,
-            DFC_COMM_ENCIPHERED,
-            apdu,
-            cmd_header,
-            wrapped,
-            wrapped_len,
-            out,
-            out_cap);
-        if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
-        return data_len;
-    }
-    if(ev1_sm) {
-        if(wrapped_len > out_cap) return SIZE_MAX;
-        memcpy(out, wrapped, wrapped_len);
-        if(!dfc_secure_messaging_update_ev1_command(
-               emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1)) {
-            dfc_secure_wipe(out, wrapped_len);
-            return SIZE_MAX;
-        }
-        return wrapped_len;
-    }
-    if(comm == DFC_COMM_PLAIN) {
-        if(wrapped_len > out_cap) return SIZE_MAX;
-        memcpy(out, wrapped, wrapped_len);
-        return wrapped_len;
-    }
-    size_t data_len = dfc_secure_messaging_verify_command(
-        emulator->secure_messaging, comm, apdu, cmd_header, wrapped, wrapped_len, out, out_cap);
-    if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
-    return data_len;
-}
-#endif
 
 static void
     handle_read_records(DfcEmulator* emulator, const uint8_t* apdu, DfcByteBuf* tx_buffer) {
@@ -5332,9 +5353,9 @@ static bool dispatch_native_command(
     }
 
     // Handlers that own EV1 command IV updates themselves:
-    // ChangeKey (Full cryptogram), WriteData / Credit / Debit / LimitedCredit
-    // (MAC-on-wire or Full decrypt).
-    bool defer_ev1_cmd_cmac = cmd == DFC_CMD_CHANGE_KEY ||
+    // ChangeKey and ChangeFileSettings (Full cryptograms), plus WriteData /
+    // Credit / Debit / LimitedCredit (MAC-on-wire or Full decrypt).
+    bool defer_ev1_cmd_cmac = cmd == DFC_CMD_CHANGE_KEY || cmd == DFC_CMD_CHANGE_FILE_SETTINGS ||
                               dfc_secure_messaging_ev1_transmits_command_mac(cmd);
 #if DFC_ENABLE_PROXIMITY_CHECK
     defer_ev1_cmd_cmac = defer_ev1_cmd_cmac || cmd == DFC_CMD_PREPARE_PROXIMITY_CHECK;
@@ -5481,7 +5502,7 @@ static bool dispatch_native_command(
         handle_get_file_settings(emulator, buffer, tx_buffer);
         return true;
     case DFC_CMD_CHANGE_FILE_SETTINGS:
-        if(buffer_len < 5) return false;
+        if(buffer_len < 2) return false;
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_change_file_settings(emulator, buffer, buffer_len, tx_buffer);
         return true;

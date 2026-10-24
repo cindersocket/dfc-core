@@ -30,6 +30,8 @@
 - Refactor credential validation and serialization around explicit model invariants.
 - Reject invalid communication settings, key references, transaction-MAC key
   types, and reserved access-right fields across credential codecs (#135).
+- Require Full protection for key-gated ChangeFileSettings commands while
+  retaining plaintext operation for free change access (#122).
 - Reject standard ISO file operations for Transaction-MAC applications and
   report EV1 short reads with the EOF warning (#120).
 - Accept zero-initialized credentials with empty file and key pools.

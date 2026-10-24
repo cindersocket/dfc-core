@@ -110,6 +110,19 @@ static void assert_status(
     munit_assert_uint8(response[1], ==, expected_status);
 }
 
+static void assert_trailing_status(
+    DfcVirtualPiccSession* session,
+    const uint8_t* cmd,
+    size_t cmd_len,
+    uint8_t expected_status) {
+    uint8_t response[128];
+    size_t response_len = 0;
+    exchange(session, cmd, cmd_len, response, sizeof(response), &response_len);
+    munit_assert_size(response_len, >=, 2);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    munit_assert_uint8(response[response_len - 1], ==, expected_status);
+}
+
 static DfcVirtualPiccSession* open_file_policy(
     DfcCredential* credential,
     uint8_t key_settings_1,
@@ -1175,6 +1188,40 @@ static void reselect_and_authenticate(DfcVirtualPiccSession* session, uint8_t ke
         DFC_STATUS_OK);
 }
 
+static size_t build_protected_change_file_settings(
+    DfcVirtualPiccSession* session,
+    uint8_t file_no,
+    const uint8_t* settings,
+    size_t settings_len,
+    bool wrong_key,
+    uint8_t* apdu,
+    size_t apdu_capacity) {
+    DfcSecureMessaging reader = *session->emulator->secure_messaging;
+    reader.pcd = true;
+    if(wrong_key) reader.session_key[0] ^= 0x80;
+    const uint8_t header[] = {DFC_CMD_CHANGE_FILE_SETTINGS, file_no};
+    munit_assert_size(apdu_capacity, >=, 6);
+    size_t wrapped_len = dfc_secure_messaging_wrap(
+        &reader,
+        DFC_COMM_ENCIPHERED,
+        header,
+        sizeof(header),
+        settings,
+        settings_len,
+        apdu + 6,
+        apdu_capacity - 7);
+    munit_assert_size(wrapped_len, >, 0);
+    munit_assert_size(wrapped_len, <=, UINT8_MAX - 1);
+    apdu[0] = DFC_ISO7816_CLA_WRAPPER;
+    apdu[1] = DFC_CMD_CHANGE_FILE_SETTINGS;
+    apdu[2] = 0;
+    apdu[3] = 0;
+    apdu[4] = (uint8_t)(1 + wrapped_len);
+    apdu[5] = file_no;
+    apdu[6 + wrapped_len] = 0;
+    return 7 + wrapped_len;
+}
+
 static void assert_write_status(DfcVirtualPiccSession* session, uint8_t expected_status) {
     const uint8_t write_data[] = {
         0x90,
@@ -1297,10 +1344,12 @@ static MunitResult test_change_file_settings_round_trips_logical_rights(
     DfcVirtualPiccSession* session = open_rights_file_over_the_air(&credential, 0x30, 0x12);
 
     // Rewrite the rights to logical 0x2130 with wire octets 30 21.
-    const uint8_t change[] = {
-        0x90, 0x5F, 0x00, 0x00, 0x04, 0x01, DFC_COMM_PLAIN, 0x30, 0x21, 0x00};
     reselect_and_authenticate(session, 0x00);
-    assert_status(session, change, sizeof(change), DFC_STATUS_OK);
+    const uint8_t settings[] = {DFC_COMM_PLAIN, 0x30, 0x21};
+    uint8_t change[32];
+    size_t change_len = build_protected_change_file_settings(
+        session, 1, settings, sizeof(settings), false, change, sizeof(change));
+    assert_status(session, change, change_len, DFC_STATUS_OK);
     munit_assert_uint16(credential.files[0].access_rights, ==, 0x2130);
 
     // Read is now key 2, write key 1.
@@ -1363,20 +1412,12 @@ static MunitResult test_change_file_settings_rejects_missing_files_and_keys(
     };
     for(size_t i = 0; i < sizeof(invalid_rights) / sizeof(invalid_rights[0]); i++) {
         reselect_and_authenticate(session, 0x00);
-        uint8_t command[] = {
-            0x90,
-            0x5F,
-            0x00,
-            0x00,
-            0x04,
-            0x01,
-            DFC_COMM_PLAIN,
-            invalid_rights[i][0],
-            invalid_rights[i][1],
-            0x00,
-        };
+        uint8_t settings[] = {DFC_COMM_PLAIN, invalid_rights[i][0], invalid_rights[i][1]};
+        uint8_t command[32];
+        size_t command_len = build_protected_change_file_settings(
+            session, 1, settings, sizeof(settings), false, command, sizeof(command));
         assert_file_settings_unchanged(
-            session, file, command, sizeof(command), DFC_STATUS_PARAMETER_ERROR);
+            session, file, command, command_len, DFC_STATUS_PARAMETER_ERROR);
     }
 
     dfc_virtual_picc_session_free(session);
@@ -1447,6 +1488,7 @@ static MunitResult
         int8_t authenticated_key;
     } accepted[] = {
         {DFC_ACCESS_FREE, -1},
+        {DFC_ACCESS_FREE, 0},
         {1, 1},
     };
     for(size_t i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
@@ -1457,15 +1499,123 @@ static MunitResult
             reselect_and_authenticate(session, (uint8_t)accepted[i].authenticated_key);
         }
         dfc_credential_clear_dirty(&credential);
-        const uint8_t change[] = {
+        const uint8_t settings[] = {DFC_COMM_MAC, 0xE0, 0x1E};
+        const uint8_t plain_change[] = {
             0x90, 0x5F, 0x00, 0x00, 0x04, 0x01, DFC_COMM_MAC, 0xE0, 0x1E, 0x00};
-        assert_status(session, change, sizeof(change), DFC_STATUS_OK);
+        uint8_t change[32];
+        memcpy(change, plain_change, sizeof(plain_change));
+        size_t change_len = sizeof(plain_change);
+        if(accepted[i].authenticated_key >= 0 && accepted[i].change_access != DFC_ACCESS_FREE) {
+            change_len = build_protected_change_file_settings(
+                session, 1, settings, sizeof(settings), false, change, sizeof(change));
+        }
+        assert_trailing_status(session, change, change_len, DFC_STATUS_OK);
         munit_assert_uint8(credential.files[0].comm_settings, ==, DFC_COMM_MAC);
         munit_assert_uint16(credential.files[0].access_rights, ==, 0x1EE0);
         munit_assert_true(credential.dirty);
         dfc_virtual_picc_session_free(session);
     }
 
+    return MUNIT_OK;
+}
+
+static DfcVirtualPiccSession*
+    open_authenticated_change_file(DfcCredential* credential, uint8_t cipher) {
+    DfcVirtualPiccSession* session = open_rights_file_over_the_air(credential, 0xE0, 0xEE);
+    uint8_t session_key[16];
+    for(size_t i = 0; i < sizeof(session_key); i++)
+        session_key[i] = (uint8_t)(0x30 + i);
+    session->emulator->secure_messaging =
+        dfc_secure_messaging_alloc(cipher, session_key, sizeof(session_key), NULL);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    session->emulator->auth_key_no = 0;
+    return session;
+}
+
+static MunitResult
+    test_change_file_settings_requires_full_protection(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+
+    const uint8_t ciphers[] = {DFC_CMD_AUTHENTICATE_LEGACY, DFC_CMD_AUTHENTICATE_AES};
+    const uint8_t settings[] = {DFC_COMM_MAC, 0xE0, 0x0E};
+    for(size_t cipher_index = 0; cipher_index < sizeof(ciphers); cipher_index++) {
+        DfcCredential credential;
+        DfcVirtualPiccSession* session =
+            open_authenticated_change_file(&credential, ciphers[cipher_index]);
+        uint8_t command[48];
+        size_t command_len = build_protected_change_file_settings(
+            session, 1, settings, sizeof(settings), false, command, sizeof(command));
+        assert_trailing_status(session, command, command_len, DFC_STATUS_OK);
+        munit_assert_uint8(credential.files[0].comm_settings, ==, DFC_COMM_MAC);
+        munit_assert_uint16(credential.files[0].access_rights, ==, 0x0EE0);
+        dfc_virtual_picc_session_free(session);
+    }
+
+    DfcCredential free_credential;
+    DfcVirtualPiccSession* free_session =
+        open_rights_file_over_the_air(&free_credential, 0xEE, 0xEE);
+    uint8_t session_key[16] = {0};
+    free_session->emulator->secure_messaging = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
+    munit_assert_not_null(free_session->emulator->secure_messaging);
+    free_session->emulator->auth_key_no = 0;
+    const uint8_t free_change[] = {
+        0x90, DFC_CMD_CHANGE_FILE_SETTINGS, 0, 0, 4, 1, DFC_COMM_MAC, 0xEE, 0xEE, 0};
+    assert_trailing_status(free_session, free_change, sizeof(free_change), DFC_STATUS_OK);
+    munit_assert_uint8(free_credential.files[0].comm_settings, ==, DFC_COMM_MAC);
+    dfc_virtual_picc_session_free(free_session);
+
+    enum ProtectedFailure {
+        ProtectedFailurePlaintext,
+        ProtectedFailureTruncated,
+        ProtectedFailureCorrupted,
+        ProtectedFailureWrongKey,
+    };
+    const enum ProtectedFailure failures[] = {
+        ProtectedFailurePlaintext,
+        ProtectedFailureTruncated,
+        ProtectedFailureCorrupted,
+        ProtectedFailureWrongKey,
+    };
+    for(size_t cipher_index = 0; cipher_index < sizeof(ciphers); cipher_index++) {
+        for(size_t failure_index = 0; failure_index < sizeof(failures) / sizeof(failures[0]);
+            failure_index++) {
+            DfcCredential credential;
+            DfcVirtualPiccSession* session =
+                open_authenticated_change_file(&credential, ciphers[cipher_index]);
+            DfcFile before = credential.files[0];
+            uint8_t command[48];
+            size_t command_len;
+            if(failures[failure_index] == ProtectedFailurePlaintext) {
+                const uint8_t plain[] = {
+                    0x90, DFC_CMD_CHANGE_FILE_SETTINGS, 0, 0, 4, 1, DFC_COMM_MAC, 0xE0, 0x0E, 0};
+                memcpy(command, plain, sizeof(plain));
+                command_len = sizeof(plain);
+            } else {
+                command_len = build_protected_change_file_settings(
+                    session,
+                    1,
+                    settings,
+                    sizeof(settings),
+                    failures[failure_index] == ProtectedFailureWrongKey,
+                    command,
+                    sizeof(command));
+                if(failures[failure_index] == ProtectedFailureTruncated) {
+                    command[4]--;
+                    command[command_len - 2] = 0;
+                    command_len--;
+                } else if(failures[failure_index] == ProtectedFailureCorrupted) {
+                    command[6] ^= 0x80;
+                }
+            }
+
+            assert_status(session, command, command_len, DFC_STATUS_INTEGRITY_ERROR);
+            munit_assert_memory_equal(sizeof(before), &before, &credential.files[0]);
+            munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
+            dfc_virtual_picc_session_free(session);
+        }
+    }
     return MUNIT_OK;
 }
 
@@ -2122,6 +2272,12 @@ static MunitTest tests[] = {
      NULL},
     {"/change-file-settings-enforces-change-access",
      test_change_file_settings_enforces_change_access,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/change-file-settings-requires-full-protection",
+     test_change_file_settings_requires_full_protection,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
