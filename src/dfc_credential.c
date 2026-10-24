@@ -665,22 +665,53 @@ static void dfc_credential_rotate_key_set_metadata(DfcApplication* app) {
     app->key_set_initialized[app->num_key_sets - 1] = first_initialized;
 }
 
+static size_t dfc_greatest_common_divisor(size_t a, size_t b) {
+    while(b != 0) {
+        size_t remainder = a % b;
+        a = b;
+        b = remainder;
+    }
+    return a;
+}
+
+// Rotate fixed-width key blocks without copying a complete key set onto the
+// embedded stack. The caller wipes the one-key scratch after every cycle.
+static void dfc_rotate_key_blocks_left(
+    uint8_t* blocks,
+    size_t block_count,
+    size_t block_width,
+    size_t shift,
+    uint8_t scratch[DFC_MAX_KEY_LEN]) {
+    size_t cycles = dfc_greatest_common_divisor(block_count, shift);
+    for(size_t cycle = 0; cycle < cycles; cycle++) {
+        size_t current = cycle;
+        memcpy(scratch, blocks + current * block_width, block_width);
+        while(true) {
+            size_t next = (current + shift) % block_count;
+            if(next == cycle) break;
+            memcpy(blocks + current * block_width, blocks + next * block_width, block_width);
+            current = next;
+        }
+        memcpy(blocks + current * block_width, scratch, block_width);
+        dfc_secure_wipe(scratch, DFC_MAX_KEY_LEN);
+    }
+}
+
 bool dfc_credential_roll_key_set(
     DfcCredential* credential,
     DfcApplication* app,
     size_t key_set_number) {
     if(!credential || !app || key_set_number == 0 || key_set_number >= app->num_key_sets)
         return false;
-    size_t set_length = app->num_keys * dfc_credential_stored_key_length(app->key_storage_len);
-    uint8_t first_set[DFC_MAX_KEYS * DFC_MAX_KEY_LEN];
+    size_t key_width = dfc_credential_stored_key_length(app->key_storage_len);
+    size_t block_count = app->num_keys * app->num_key_sets;
+    size_t shift = key_set_number * app->num_keys;
+    uint8_t scratch[DFC_MAX_KEY_LEN];
+    dfc_rotate_key_blocks_left(
+        credential->key_pool + app->key_offset, block_count, key_width, shift, scratch);
     for(size_t rotation = 0; rotation < key_set_number; rotation++) {
-        uint8_t* keys = credential->key_pool + app->key_offset;
-        memcpy(first_set, keys, set_length);
-        memmove(keys, keys + set_length, (app->num_key_sets - 1) * set_length);
-        memcpy(keys + (app->num_key_sets - 1) * set_length, first_set, set_length);
         dfc_credential_rotate_key_set_metadata(app);
     }
-    dfc_secure_wipe(first_set, sizeof(first_set));
     app->key_len = dfc_key_set_type_length(app->key_set_types[0]);
     app->key_settings_2 = (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) |
                                     dfc_key_type_for_set_type(app->key_set_types[0]));
