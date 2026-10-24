@@ -266,10 +266,11 @@ jobs:
           cmake --build build-mismatch --parallel --target dfc
           mkdir mismatch
           cp build-mismatch/libdfc.so mismatch/
+          cp build-mismatch/libdfc.so.2 mismatch/
       - uses: actions/upload-artifact@v4
         with:
           name: native-layout-mismatch
-          path: mismatch/libdfc.so
+          path: mismatch/libdfc.so*
 
   dotnet:
     name: .NET (${{ matrix.rid }})
