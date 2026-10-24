@@ -328,9 +328,19 @@ static bool append_data(DfcReaderExchange* ex, const uint8_t* data, size_t len) 
     return true;
 }
 
-static void
-    begin_common(DfcReaderExchange* ex, DfcReaderSession* session, DfcReaderFraming framing) {
-    memset(ex, 0, sizeof(*ex));
+static void begin_common(
+    DfcReaderExchange* ex,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    bool reuse_command_buffers) {
+    if(reuse_command_buffers) {
+        // A streamed continuation overwrites the active frame and bounds the
+        // response with data_len. Reset its control state without clearing the
+        // two large buffers that those lengths already make inaccessible.
+        memset(ex, 0, offsetof(DfcReaderExchange, frame));
+    } else {
+        memset(ex, 0, sizeof(*ex));
+    }
     ex->session = session;
     ex->framing = framing;
 }
@@ -366,7 +376,7 @@ DfcReaderStatus dfc_reader_authenticate_begin(
     if(iso && key_len != 8 && key_len != 16 && key_len != 24) return DfcReaderInvalid;
     if(random_a_len != dfc_reader_challenge_length(cipher, key_len)) return DfcReaderInvalid;
 
-    begin_common(exchange, session, framing);
+    begin_common(exchange, session, framing, false);
     exchange->kind = KindAuthenticate;
     exchange->auth_cipher = cipher;
     exchange->auth_key_no = key_no;
@@ -402,7 +412,7 @@ DfcReaderStatus dfc_reader_authenticate_iso7816_begin(
         (key_len != DFC_AES_KEY_LENGTH || random_len != DFC_ISO7816_AUTH_CHALLENGE_2TDEA)) ||
        (!aes && !tdea3 && !tdea2))
         return DfcReaderInvalid;
-    begin_common(exchange, session, DfcReaderFramingIso7816);
+    begin_common(exchange, session, DfcReaderFramingIso7816, false);
     exchange->kind = KindAuthenticateIso7816;
     exchange->auth_cipher = aes ? DFC_CMD_AUTHENTICATE_AES : DFC_CMD_AUTHENTICATE_ISO;
     exchange->auth_algorithm = algorithm;
@@ -433,7 +443,7 @@ DfcReaderStatus dfc_reader_authenticate_ev2_begin(
         return DfcReaderInvalid;
     if(!first && (capabilities || session->auth_mode != DFC_READER_AUTH_EV2))
         return DfcReaderInvalid;
-    begin_common(exchange, session, framing);
+    begin_common(exchange, session, framing, false);
     exchange->kind = KindAuthenticateEv2;
     exchange->auth_first = first;
     exchange->auth_key_no = key_no;
@@ -1315,12 +1325,13 @@ static DfcReaderStatus
 }
 #endif
 
-DfcReaderStatus dfc_reader_exchange_begin(
+static DfcReaderStatus reader_exchange_begin(
     DfcReaderExchange* exchange,
     DfcReaderSession* session,
     DfcReaderFraming framing,
     const DfcCommand* command,
-    const DfcReaderOptions* options) {
+    const DfcReaderOptions* options,
+    bool reuse_command_buffers) {
     if(!exchange || !session || !command || command->data_len > DFC_COMMAND_MAX_DATA) {
         return DfcReaderInvalid;
     }
@@ -1343,7 +1354,7 @@ DfcReaderStatus dfc_reader_exchange_begin(
         return DfcReaderInvalid;
     }
 
-    begin_common(exchange, session, framing);
+    begin_common(exchange, session, framing, reuse_command_buffers);
     exchange->kind = KindCommand;
     exchange->ins = command->ins;
     exchange->comm_mode = options->comm_mode;
@@ -1376,6 +1387,15 @@ DfcReaderStatus dfc_reader_exchange_begin(
     return st;
 }
 
+DfcReaderStatus dfc_reader_exchange_begin(
+    DfcReaderExchange* exchange,
+    DfcReaderSession* session,
+    DfcReaderFraming framing,
+    const DfcCommand* command,
+    const DfcReaderOptions* options) {
+    return reader_exchange_begin(exchange, session, framing, command, options, false);
+}
+
 static DfcReaderStatus begin_stream_chunk(
     DfcReaderExchange* exchange,
     DfcReaderSession* session,
@@ -1405,7 +1425,7 @@ static DfcReaderStatus begin_stream_chunk(
     if(encoded != DfcCommandOk) return DfcReaderInvalid;
     DfcReaderOptions options = {.comm_mode = stream->comm_mode};
     DfcReaderStatus status =
-        dfc_reader_exchange_begin(exchange, session, framing, &command, &options);
+        reader_exchange_begin(exchange, session, framing, &command, &options, stream->offset != 0);
     if(status == DfcReaderOk) {
         exchange->stream = *stream;
         exchange->stream.offset += chunk;
@@ -2021,7 +2041,7 @@ DfcReaderStatus dfc_reader_create_delegated_application_begin(
         goto cleanup;
     }
 
-    begin_common(exchange, session, framing);
+    begin_common(exchange, session, framing, false);
     exchange->kind = KindCommand;
     exchange->ins = DFC_CMD_CREATE_DELEGATED_APPLICATION;
     exchange->response_plan = PlanEv2Mac;
