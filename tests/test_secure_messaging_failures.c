@@ -1876,6 +1876,103 @@ static MunitResult
     fault_link_close(&link);
     return MUNIT_OK;
 }
+
+static void assert_sdm_random_failure_is_atomic(bool iso_read) {
+    static FaultLink link;
+    const uint8_t key[DFC_AES_KEY_LENGTH] = {0x11};
+    fail_random_fill = false;
+    fault_link_open(&link, DFC_CMD_AUTHENTICATE_AES, DFC_KEY_TYPE_AES, key, sizeof(key));
+    DfcFile* file = configure_sdm_fault_file(&link);
+    DfcEmulator* emulator = link.picc->emulator;
+    link.credential.card.generation = DfcGenerationEv3;
+    file->comm_settings = DFC_COMM_PLAIN;
+    file->access_rights = 0xEEEE;
+    dfc_emulator_retire_authentication(emulator);
+
+    emulator->sdm_read_cache_valid = false;
+    emulator->sdm_read_cache_file_number = 0xA5;
+    emulator->sdm_read_cache_len = 17;
+    memset(emulator->sdm_read_cache, 0x5A, sizeof(emulator->sdm_read_cache));
+    const uint32_t counter_before = file->sdm_read_counter;
+    const uint8_t cache_file_before = emulator->sdm_read_cache_file_number;
+    const size_t cache_len_before = emulator->sdm_read_cache_len;
+    uint8_t cache_before[DFC_SDM_READ_CACHE_SIZE];
+    memcpy(cache_before, emulator->sdm_read_cache, sizeof(cache_before));
+    const DfcEmulatorSelectedApplication selection_before = emulator->selected_application;
+    const size_t app_index_before = emulator->selected_app_index;
+    const uint8_t auth_cipher_before = emulator->auth_cipher;
+    const uint8_t auth_key_before = emulator->auth_key_no;
+    DfcSecureMessaging secure_messaging_before = *emulator->secure_messaging;
+
+    const uint8_t native_read[] = {
+        DFC_ISO7816_CLA_WRAPPER, DFC_CMD_READ_DATA, 0, 0, 7, 1, 0, 0, 0, 3, 0, 0, 0};
+    const uint8_t iso_read_binary[] = {0, DFC_ISO7816_INS_READ_BINARY, 0, 0, 3};
+    const uint8_t* command = iso_read ? iso_read_binary : native_read;
+    const size_t command_len = iso_read ? sizeof(iso_read_binary) : sizeof(native_read);
+    if(iso_read) {
+        link.picc->iso_file_selected = true;
+        link.picc->iso_file_index = 0;
+    }
+    const bool iso_file_selected_before = link.picc->iso_file_selected;
+    const size_t iso_file_index_before = link.picc->iso_file_index;
+    uint8_t response[16];
+    size_t response_len = 0;
+
+    fail_random_fill = true;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, command, command_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    fail_random_fill = false;
+    munit_assert_size(response_len, ==, 2);
+    if(iso_read) {
+        munit_assert_memory_equal(
+            2,
+            response,
+            ((uint8_t[]){DFC_ISO7816_SW_WRONG_PARAMETERS_HI, DFC_ISO7816_SW_WRONG_PARAMETERS_LO}));
+    } else {
+        munit_assert_uint8(response[0], ==, 0x91);
+        munit_assert_uint8(response[1], ==, DFC_STATUS_PARAMETER_ERROR);
+    }
+    munit_assert_uint32(file->sdm_read_counter, ==, counter_before);
+    munit_assert_false(emulator->sdm_read_cache_valid);
+    munit_assert_uint8(emulator->sdm_read_cache_file_number, ==, cache_file_before);
+    munit_assert_size(emulator->sdm_read_cache_len, ==, cache_len_before);
+    munit_assert_memory_equal(sizeof(cache_before), emulator->sdm_read_cache, cache_before);
+    munit_assert_int(emulator->selected_application, ==, selection_before);
+    munit_assert_size(emulator->selected_app_index, ==, app_index_before);
+    munit_assert_uint8(emulator->auth_cipher, ==, auth_cipher_before);
+    munit_assert_uint8(emulator->auth_key_no, ==, auth_key_before);
+    munit_assert_memory_equal(
+        sizeof(secure_messaging_before), emulator->secure_messaging, &secure_messaging_before);
+    munit_assert_int(link.picc->iso_file_selected, ==, iso_file_selected_before);
+    munit_assert_size(link.picc->iso_file_index, ==, iso_file_index_before);
+
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, command, command_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 5);
+    munit_assert_memory_equal(
+        2,
+        response + 3,
+        iso_read ? ((uint8_t[]){0x90, 0x00}) : ((uint8_t[]){0x91, DFC_STATUS_OK}));
+    munit_assert_uint32(file->sdm_read_counter, ==, counter_before + 1);
+    munit_assert_true(emulator->sdm_read_cache_valid);
+    munit_assert_uint8(emulator->sdm_read_cache_file_number, ==, file->number);
+    fault_link_close(&link);
+}
+
+static MunitResult
+    test_sdm_random_padding_failure_is_atomic(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    assert_sdm_random_failure_is_atomic(false);
+    assert_sdm_random_failure_is_atomic(true);
+    return MUNIT_OK;
+}
 #endif
 
 #if DFC_ENABLE_DELEGATED_APPLICATIONS && DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -2379,6 +2476,12 @@ static MunitTest tests[] = {
      NULL},
     {"/sdm/counter-chain-guards",
      test_sdm_counter_and_chain_guards,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/sdm/random-padding-atomicity",
+     test_sdm_random_padding_failure_is_atomic,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

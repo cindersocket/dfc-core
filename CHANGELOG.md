@@ -69,6 +69,8 @@
 - Standardize replay-random exhaustion across the hosted bindings.
 - Make random providers fallible in ABI 4 and fail random-dependent operations
   atomically, with consistent error propagation through every binding.
+- Verify SDM random-padding failures leave counters, cached renders, and card
+  sessions unchanged across native and ISO reads (#134).
 - Make credential factory and blank initialization, and virtual-card
   anticollision, report random-source failures through boolean return values.
 - Abort rejected ISO authentication handshakes and require a fresh challenge.

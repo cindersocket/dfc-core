@@ -18,6 +18,7 @@ dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --verify-no-changes
     ../../scripts/release-notes.py \
     ../../tests/test_check_c_format.py ../../tests/test_check_docs.py \
     ../../tests/check_decoder_registry.py ../../tests/test_check_decoder_registry.py \
+    ../../tests/check_random_failure_registry.py \
     ../../tests/test_check_stack_usage.py \
     ../../tests/test_cargo_package.py ../../tests/test_ci_unit_workflow.py \
     ../../tests/test_check_version.py \
@@ -31,6 +32,7 @@ dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --verify-no-changes
     ../../scripts/release-notes.py \
     ../../tests/test_check_c_format.py ../../tests/test_check_docs.py \
     ../../tests/check_decoder_registry.py ../../tests/test_check_decoder_registry.py \
+    ../../tests/check_random_failure_registry.py \
     ../../tests/test_check_stack_usage.py \
     ../../tests/test_cargo_package.py ../../tests/test_ci_unit_workflow.py \
     ../../tests/test_check_version.py \
