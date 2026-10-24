@@ -44,9 +44,16 @@ static void write_uint32_le(uint8_t output[DFC_UINT32_BYTE_COUNT], uint32_t valu
 }
 #endif
 
-static bool value_delta_in_bounds(const DfcFile* file, int32_t delta) {
-    int64_t next = (int64_t)file->value + file->value_pending_delta + delta;
-    return next >= file->value_lower_limit && next <= file->value_upper_limit;
+static bool value_delta_result(const DfcFile* file, int32_t delta, int32_t* result) {
+    int64_t current = file->value_pending ?
+                          (file->value_pending_absolute ?
+                               file->value_pending_value :
+                               (int64_t)file->value + file->value_pending_delta) :
+                          file->value;
+    int64_t next = current + delta;
+    if(next < file->value_lower_limit || next > file->value_upper_limit) return false;
+    *result = (int32_t)next;
+    return true;
 }
 
 static void handle_select_application(
@@ -2959,8 +2966,12 @@ static void
     file->value_upper_limit = upper_limit;
     file->value = value;
     file->limited_credit = apdu[17];
+    file->limited_credit_value = 0;
+    file->limited_credit_pending = 0;
     file->value_pending = false;
     file->value_pending_delta = 0;
+    file->value_pending_value = 0;
+    file->value_pending_absolute = false;
     if(!dfc_emulator_transaction_snapshot_insert_file(
            emulator, (size_t)(file - credential->files))) {
         (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
@@ -3216,15 +3227,22 @@ static void handle_value_delta(
         return;
     }
 
-    if(limited_credit) {
-        dfc_bytebuf_append_byte(
-            tx_buffer,
-            file->limited_credit == 0 ? DFC_STATUS_PERMISSION_DENIED : DFC_STATUS_BOUNDARY_ERROR);
-        return;
-    }
-
     int32_t delta = debit ? -amount : amount;
-    if(!value_delta_in_bounds(file, delta)) {
+    if(limited_credit) {
+        if((file->limited_credit & 0x01u) == 0) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+        int32_t available = file->limited_credit_pending > 0 ? file->limited_credit_pending :
+                                                               file->limited_credit_value;
+        if(file->limited_credit_pending == DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED ||
+           amount > available) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+            return;
+        }
+    }
+    int32_t next_value;
+    if(!value_delta_result(file, delta, &next_value)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
@@ -3239,8 +3257,22 @@ static void handle_value_delta(
         return;
     }
 #endif
+    int64_t aggregate = (int64_t)next_value - file->value;
     file->value_pending = true;
-    file->value_pending_delta += delta;
+    file->value_pending_value = next_value;
+    file->value_pending_absolute = true;
+    file->value_pending_delta = aggregate > INT32_MAX ? INT32_MAX :
+                                aggregate < INT32_MIN ? INT32_MIN :
+                                                        (int32_t)aggregate;
+    if(limited_credit) {
+        file->limited_credit_pending = DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED;
+    } else if(debit && file->limited_credit_pending >= 0) {
+        if(amount > INT32_MAX - file->limited_credit_pending) {
+            file->limited_credit_pending = INT32_MAX;
+        } else {
+            file->limited_credit_pending += amount;
+        }
+    }
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
 
@@ -4126,6 +4158,9 @@ static void clear_selected_app_pending_values(DfcEmulator* emulator) {
         }
         file->value_pending = false;
         file->value_pending_delta = 0;
+        file->value_pending_value = 0;
+        file->value_pending_absolute = false;
+        file->limited_credit_pending = 0;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
     dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));

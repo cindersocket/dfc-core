@@ -17,6 +17,8 @@
 // application.
 #define DFC_FILE_OWNER_PICC ((size_t)0xFFFFFFFEu)
 
+#define DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED (-1)
+
 // One status vocabulary for the in-memory model and both credential codecs.
 typedef enum {
     DfcModelOk = 0,
@@ -76,9 +78,19 @@ typedef struct {
             int32_t value_lower_limit;
             int32_t value_upper_limit;
             int32_t value;
+            // The public delta remains 32-bit for ABI compatibility. The exact
+            // pending value handles transactions spanning the full value range
+            // without adding an aligned 64-bit member on embedded targets.
             int32_t value_pending_delta;
+            int32_t value_pending_value;
+            // The committed one-use limit survives field loss. During a
+            // transaction, non-negative values accumulate debits and the
+            // named sentinel marks a successfully staged LimitedCredit.
+            int32_t limited_credit_value;
+            int32_t limited_credit_pending;
             uint8_t limited_credit;
             bool value_pending;
+            bool value_pending_absolute;
         };
         // Record files. The pool slice holds the leading known records in card
         // order, so data_len is a whole multiple of record_size.

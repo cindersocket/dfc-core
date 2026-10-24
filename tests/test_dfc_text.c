@@ -218,6 +218,39 @@ static MunitResult test_load_either_encoding(const MunitParameter params[], void
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_limited_credit_value_round_trip(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static DfcCredential credential;
+    static DfcCredential decoded;
+    static char output[DFC_TEXT_MAX_SIZE];
+    DfcTextError detail = {0};
+    munit_assert_int(
+        dfc_text_parse(&credential, MINIMAL, sizeof(MINIMAL) - 1, &detail), ==, DfcTextOk);
+
+    DfcFile* value = dfc_credential_create_file(&credential, 0, 2);
+    munit_assert_not_null(value);
+    value->type = DFC_FILE_TYPE_VALUE;
+    value->comm_settings = DFC_COMM_PLAIN;
+    value->access_rights = 0xEEEE;
+    value->value_lower_limit = 0;
+    value->value_upper_limit = 100;
+    value->value = 40;
+    value->limited_credit = 1;
+    value->limited_credit_value = 7;
+
+    size_t output_len = 0;
+    munit_assert_int(
+        dfc_text_write(&credential, output, sizeof(output), &output_len), ==, DfcTextOk);
+    munit_assert_not_null(strstr(output, "Application 00 File 01 Limited Credit Value: 7\n"));
+    munit_assert_int(dfc_text_parse(&decoded, output, output_len, &detail), ==, DfcTextOk);
+    const DfcFile* restored = dfc_credential_find_file_in_app(&decoded, 0, 2);
+    munit_assert_not_null(restored);
+    munit_assert_int32(restored->limited_credit_value, ==, 7);
+    return MUNIT_OK;
+}
+
 // A mutated copy of MINIMAL, so every rejection differs from an accepted
 // document in exactly one way.
 static DfcTextStatus mutate(const char* find, const char* replace, DfcTextError* detail) {
@@ -495,6 +528,12 @@ static MunitTest tests[] = {
      NULL},
 #endif
     {"/load-either-encoding", test_load_either_encoding, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/limited-credit-value-round-trip",
+     test_limited_credit_value_round_trip,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

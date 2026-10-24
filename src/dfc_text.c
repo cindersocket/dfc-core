@@ -468,6 +468,19 @@ static bool req_int32(P* p, const char* key, int32_t* out) {
     return true;
 }
 
+static bool opt_nonnegative_int32(P* p, const char* key, int32_t* out) {
+    *out = 0;
+    Line l;
+    if(!lookup(p, key, &l, true)) return !p->failed;
+    int64_t value = 0;
+    if(!parse_decimal(p, &l, key, false, &value)) return false;
+    if(value < 0 || value > INT32_MAX) {
+        return fail(p, l.number, "%s: outside 0..Int32Max", key);
+    }
+    *out = (int32_t)value;
+    return true;
+}
+
 static bool req_bool(P* p, const char* key, bool* out) {
     Line l;
     if(!required(p, key, &l)) return false;
@@ -680,7 +693,9 @@ static bool parse_value_contents(P* p, const char* prefix, DfcFile* f) {
         return fail(p, 0, "%s: Value outside its own limits", prefix);
     }
     snprintf(key, sizeof(key), "%s Limited Credit", prefix);
-    return req_hex(p, key, &f->limited_credit, 1);
+    if(!req_hex(p, key, &f->limited_credit, 1)) return false;
+    snprintf(key, sizeof(key), "%s Limited Credit Value", prefix);
+    return opt_nonnegative_int32(p, key, &f->limited_credit_value);
 }
 
 static bool parse_record_contents(P* p, const char* prefix, DfcFile* f) {
@@ -1652,6 +1667,10 @@ static DfcTextStatus write_files(W* w, const DfcCredential* c, const char* paren
             w_line_int(w, key, f->value);
             snprintf(key, sizeof(key), "%s Limited Credit", prefix);
             w_line_hex(w, key, &f->limited_credit, 1);
+            if(f->limited_credit_value != 0) {
+                snprintf(key, sizeof(key), "%s Limited Credit Value", prefix);
+                w_line_int(w, key, f->limited_credit_value);
+            }
         } else if(f->type == TYPE_TMAC) {
 #if DFC_ENABLE_TRANSACTION_MAC
             snprintf(key, sizeof(key), "%s Transaction Counter", prefix);

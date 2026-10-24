@@ -351,6 +351,9 @@ bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
         }
         file->value_pending = false;
         file->value_pending_delta = 0;
+        file->value_pending_value = 0;
+        file->value_pending_absolute = false;
+        file->limited_credit_pending = 0;
         changed = true;
     }
     return changed;
@@ -361,9 +364,19 @@ void dfc_emulator_publish_transaction(DfcEmulator* emulator) {
         DfcFile* file = &emulator->credential->files[i];
         if(file->app_index != emulator->selected_app_index) continue;
         if(file->type == DFC_FILE_TYPE_VALUE && file->value_pending) {
-            file->value += file->value_pending_delta;
+            file->value = file->value_pending_absolute ?
+                              file->value_pending_value :
+                              (int32_t)((int64_t)file->value + file->value_pending_delta);
+            if(file->limited_credit_pending == DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED) {
+                file->limited_credit_value = 0;
+            } else if(file->limited_credit_pending > 0) {
+                file->limited_credit_value = file->limited_credit_pending;
+            }
             file->value_pending = false;
             file->value_pending_delta = 0;
+            file->value_pending_value = 0;
+            file->value_pending_absolute = false;
+            file->limited_credit_pending = 0;
         }
         file->transaction_pending = false;
     }

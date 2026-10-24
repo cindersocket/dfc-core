@@ -152,6 +152,7 @@
 #define VAL_UPPER   P(1)
 #define VAL_CURRENT P(2)
 #define VAL_LIMITED P(3)
+#define VAL_LIMIT   P(4)
 
 // RecordContents
 #define REC_SIZE     P(0)
@@ -331,6 +332,7 @@ static void body_value_contents(Writer* w, const void* p) {
     w_int(w, VAL_UPPER, f->value_upper_limit);
     w_int(w, VAL_CURRENT, f->value);
     w_tlv(w, VAL_LIMITED, &f->limited_credit, 1);
+    if(f->limited_credit_value != 0) w_int(w, VAL_LIMIT, f->limited_credit_value);
 }
 
 static void body_records(Writer* w, const void* p) {
@@ -971,7 +973,11 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
             if(f->value_lower_limit > f->value || f->value > f->value_upper_limit) {
                 return DfcDerMalformed;
             }
-            if(f->limited_credit > 3) return DfcDerMalformed;
+            if(f->limited_credit > 3 ||
+               ((f->limited_credit & 0x01u) == 0 && f->limited_credit_value != 0) ||
+               f->limited_credit_value < 0) {
+                return DfcDerMalformed;
+            }
         } else if(f->type == FILE_TYPE_TMAC) {
             // A transaction-MAC file is an EV2 feature (section 2.2.4 rule 13).
             if(c->card.generation < DfcGenerationEv2) {
@@ -1638,7 +1644,8 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
         if(file->contents_complete && file->data_len != size) return DfcDerMalformed;
     } else if(file->type == FILE_TYPE_VALUE) {
         if(!value) return DfcDerMalformed;
-        static const uint8_t vorder[] = {VAL_LOWER, VAL_UPPER, VAL_CURRENT, VAL_LIMITED};
+        static const uint8_t vorder[] = {
+            VAL_LOWER, VAL_UPPER, VAL_CURRENT, VAL_LIMITED, VAL_LIMIT};
         Fields v;
         if(!r_fields(*value, vorder, sizeof(vorder), &v)) return DfcDerMalformed;
         int64_t lower, upper, current;
@@ -1653,6 +1660,14 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
         file->value_upper_limit = (int32_t)upper;
         file->value = (int32_t)current;
         if(!r_octets(f_get(&v, VAL_LIMITED), 1, &file->limited_credit)) return DfcDerMalformed;
+        const Slice* limit_field = f_get(&v, VAL_LIMIT);
+        if(limit_field) {
+            int64_t limit;
+            if(!r_int(limit_field, &limit) || limit < 0 || limit > INT32_MAX) {
+                return DfcDerMalformed;
+            }
+            file->limited_credit_value = (int32_t)limit;
+        }
     } else if(file->type == FILE_TYPE_TMAC) {
         if(!transaction_mac) return DfcDerMalformed;
 #if DFC_ENABLE_TRANSACTION_MAC

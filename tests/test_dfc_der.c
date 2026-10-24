@@ -79,6 +79,7 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     value->value_upper_limit = 1000;
     value->value = 42;
     value->limited_credit = 0x03;
+    value->limited_credit_value = 17;
 
     DfcFile* rec = dfc_credential_create_file(&src, 0, 0x04);
     munit_assert_not_null(rec);
@@ -139,6 +140,7 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     munit_assert_int32(d1->value_upper_limit, ==, 1000);
     munit_assert_int32(d1->value, ==, 42);
     munit_assert_uint8(d1->limited_credit, ==, 0x03);
+    munit_assert_int32(d1->limited_credit_value, ==, 17);
 
     const DfcFile* d2 = dfc_credential_find_file_in_app(&dst, 0, 0x04);
     munit_assert_not_null(d2);
@@ -511,6 +513,13 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     v->value_lower_limit = 0;
     v->value_upper_limit = 100;
     v->value = 500;
+    munit_assert_int(dfc_der_encode(&bad_value, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+    v->value = 50;
+    v->limited_credit = 0;
+    v->limited_credit_value = 1;
+    munit_assert_int(dfc_der_encode(&bad_value, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+    v->limited_credit = 1;
+    v->limited_credit_value = -1;
     munit_assert_int(dfc_der_encode(&bad_value, buf, sizeof(buf), &len), ==, DfcDerMalformed);
 
     // A reserved ISO file ID.
