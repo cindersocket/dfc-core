@@ -19,6 +19,7 @@ from dfc_core import (
     _native,
     capabilities,
 )
+from dfc_core import reader as reader_module
 
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
 
@@ -280,7 +281,7 @@ def test_reader_preserves_card_status_after_growing_command_buffer() -> None:
         reader.exchange(Command(0x3D, bytes(200)))
 
     assert caught.value.card_status == 0x1C
-    assert len(transport.command) > 64
+    assert len(transport.command) == reader_module.INITIAL_OUTPUT_CAPACITY + 1
 
 
 @pytest.mark.parametrize(
