@@ -1,4 +1,5 @@
 #include "dfc_virtual_picc_test_helpers.h"
+#include "dfc_emulator_i.h"
 
 static MunitResult test_iso_authentication_resets_ev1_secure_messaging_iv(
     const MunitParameter params[],
@@ -99,7 +100,7 @@ static MunitResult test_iso_authentication_resets_ev1_secure_messaging_iv(
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
-        expected_sm, DFC_STATUS_OK, response, response_len - 2, recovered);
+        expected_sm, DFC_STATUS_OK, response, response_len - 2, recovered, sizeof(recovered));
 
     // The fixture holds logical rights 0x1230, emitted low octet first.
     uint8_t expected_settings[] = {0x00, 0x01, 0x30, 0x12, 0x03, 0x00, 0x00};
@@ -192,7 +193,8 @@ static MunitResult test_ev1_error_response_clears_authenticated_session(
     munit_assert_size(response_len, ==, 2);
     munit_assert_uint8(response[0], ==, 0x91);
     munit_assert_uint8(response[1], ==, DFC_STATUS_PARAMETER_ERROR);
-    munit_assert_null(session->emulator->secure_messaging);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
@@ -316,9 +318,8 @@ static MunitResult test_read_data_mac_file_uses_single_ev1_response_mac(
     return MUNIT_OK;
 }
 
-static MunitResult test_get_version_frames_use_ev1_response_mac(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_get_version_frames_use_ev1_response_mac(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
@@ -362,7 +363,7 @@ static MunitResult test_get_version_frames_use_ev1_response_mac(
             reader, i == 0 ? DFC_CMD_GET_VERSION : DFC_CMD_ADDITIONAL_FRAME, NULL, 0);
         munit_assert_memory_not_equal(sizeof(previous_iv), previous_iv, reader->iv);
         size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
-            reader, status, response, response_len - 2, recovered);
+            reader, status, response, response_len - 2, recovered, sizeof(recovered));
         munit_assert_size(recovered_len, ==, plain_len);
         if(i == 2) munit_assert_memory_equal(7, recovered, credential.uid);
     }
@@ -432,7 +433,8 @@ static MunitResult test_get_version_length_error_clears_ev1_session(
         munit_assert_size(response_len, ==, 2);
         munit_assert_uint8(response[0], ==, 0x91);
         munit_assert_uint8(response[1], ==, DFC_STATUS_LENGTH_ERROR);
-        munit_assert_null(session->emulator->secure_messaging);
+        munit_assert_not_null(session->emulator->secure_messaging);
+        munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
         munit_assert_uint8(session->emulator->get_version_frame, ==, 0);
         dfc_virtual_picc_session_free(session);
     }

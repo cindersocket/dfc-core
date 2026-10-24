@@ -83,12 +83,17 @@ public sealed class ReaderTests
         var card = picc.Snapshot().Ev2Session;
         Assert.That(card, Is.Not.Null);
         Assert.That(card!.CommandCounter, Is.EqualTo(reader.Session.Ev2CommandCounter));
+        Assert.That(card.CommandCounter, Is.GreaterThan(0));
         Assert.That(card.TransactionIdentifier, Is.EqualTo(reader.Session.Ev2TransactionIdentifier));
 
         var transaction = reader.Session.Ev2TransactionIdentifier;
         Fixtures.Ok(await reader.AuthenticateEv2NonFirstAsync(0, Fixtures.AesKey0));
         Assert.That(reader.Session.Ev2TransactionIdentifier, Is.EqualTo(transaction));
-        Assert.That(reader.Session.Ev2CommandCounter, Is.EqualTo((ushort)0));
+        Assert.That(reader.Session.Ev2CommandCounter, Is.Zero);
+        card = picc.Snapshot().Ev2Session;
+        Assert.That(card, Is.Not.Null);
+        Assert.That(card!.CommandCounter, Is.Zero);
+        Assert.That(card.CommandCounter, Is.EqualTo(reader.Session.Ev2CommandCounter));
     }
 
     [Test]
@@ -229,6 +234,49 @@ public sealed class ReaderTests
         var result = await reader.ExchangeAsync(DfcCommand.GetVersion());
         Assert.That(result.IsFailure, Is.True);
         Assert.That(result.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.NoCard));
+    }
+
+    // DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH in dfc_ffi.h; the native layer owns the bound, so this mirrors it
+    // only to probe the edge. The binding must neither narrow nor wrap what the caller passes.
+    private const int NativeMaxClearHeader = 10;
+
+    [TestCase(NativeMaxClearHeader + 1)]
+    [TestCase(int.MaxValue)]
+    [TestCase(int.MinValue)]
+    [TestCase(-2)]
+    public async Task EncryptedHeaderLength_OutOfRange_IsRefusedAsInvalidAndReaderStaysUsable(int length)
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        using var reader = new DfcReader(picc);
+        await Fixtures.SelectAsync(reader, Fixtures.AesAid);
+        Fixtures.Ok(await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0));
+        var write = Fixtures.Ok(DfcCommand.WriteData(Fixtures.FileFull, 0, Fixtures.Pattern(7, 16)));
+
+        var refused = await reader.ExchangeAsync(write, DfcCommunicationMode.Full, length);
+
+        Assert.That(refused.IsFailure, Is.True);
+        Assert.That(refused.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.Invalid));
+        Assert.That(reader.IsAuthenticated, Is.True, "a refused option leaves the session alone");
+        // null derives the head from the instruction; the same reader then completes a normal exchange.
+        Fixtures.Ok(await reader.ExchangeAsync(write, DfcCommunicationMode.Full, null));
+        var read = Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.ReadData(Fixtures.FileFull, 0, 16), DfcCommunicationMode.Full));
+        Assert.That(read.Data, Is.EqualTo(Fixtures.Pattern(7, 16)));
+    }
+
+    [TestCase(-1)]
+    [TestCase(NativeMaxClearHeader)]
+    public async Task EncryptedHeaderLength_ValidBoundary_IsAcceptedByTheBinding(int length)
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        using var reader = new DfcReader(picc);
+        await Fixtures.SelectAsync(reader, Fixtures.AesAid);
+        Fixtures.Ok(await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0));
+        var write = Fixtures.Ok(DfcCommand.WriteData(Fixtures.FileFull, 0, Fixtures.Pattern(7, 16)));
+
+        var result = await reader.ExchangeAsync(write, DfcCommunicationMode.Full, length);
+
+        // The card may judge the odd framing; the binding must not call the argument invalid.
+        Assert.That(result.IsSuccess || result.Error.Kind != DfcProtocolErrorKind.Invalid, Is.True);
     }
 
     private sealed class Recorder(IDfcApduExchange inner) : IDfcApduExchange

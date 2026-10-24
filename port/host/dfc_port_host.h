@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "dfc_port.h"
+
 #define DFC_HOST_RANDOM_BUFFER_MAX 64
 
 // Queues the octets dfc_random_fill returns, so a session replays exactly. A
@@ -17,3 +19,7 @@ size_t dfc_host_random_remaining(void);
 // Test hook invoked immediately before the host allocator releases a block.
 typedef void (*DfcHostFreeObserver)(const void* ptr, void* context);
 void dfc_host_set_free_observer(DfcHostFreeObserver observer, void* context);
+
+// Makes exactly the next allocation with this tag fail.
+void dfc_host_fail_next_allocation(DfcAllocTag tag);
+void dfc_host_fail_allocation_after(DfcAllocTag tag, size_t successful_allocations);

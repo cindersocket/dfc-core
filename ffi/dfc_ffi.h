@@ -42,6 +42,22 @@ extern "C" {
 #define DFC_FFI_UNSUPPORTED      (-4)
 #define DFC_FFI_RANDOM_FAILED    (-5)
 
+// Stable reader-step statuses returned by dfc_ffi_reader_step.
+#define DFC_FFI_READER_OK               0
+#define DFC_FFI_READER_PENDING          1
+#define DFC_FFI_READER_INVALID          2
+#define DFC_FFI_READER_BUFFER_TOO_SMALL 3
+#define DFC_FFI_READER_PROTOCOL_ERROR   4
+#define DFC_FFI_READER_INTEGRITY_ERROR  5
+#define DFC_FFI_READER_CARD_ERROR       6
+#define DFC_FFI_READER_UNSUPPORTED      7
+
+// Largest explicit clear-header length accepted by reader exchange calls.
+#define DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH 10
+
+// Virtual-PICC family status returned when an exchange response does not fit.
+#define DFC_FFI_PICC_BUFFER_TOO_SMALL 3
+
 #define DFC_FFI_MESSAGE_MAX 96
 
 typedef struct DfcFfiCredential DfcFfiCredential;
@@ -428,7 +444,12 @@ DFC_FFI_EXPORT int32_t dfc_ffi_picc_create_take(
     DfcFfiPicc** out);
 DFC_FFI_EXPORT void dfc_ffi_picc_free(DfcFfiPicc* picc);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_activate(DfcFfiPicc* picc, DfcFfiActivation* out);
-// One APDU (ISO 7816 or native framing) or one ISO-DEP block.
+// Largest response buffer the virtual PICC can require for one exchange.
+DFC_FFI_EXPORT size_t dfc_ffi_picc_response_capacity(void);
+// One APDU (ISO 7816 or native framing) or one ISO-DEP block. After the
+// virtual-PICC buffer-too-small status from a native operation, retry the exact
+// command with a larger response buffer; the completed response is retained
+// and the operation is not executed again.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_exchange(
     DfcFfiPicc* picc,
     const uint8_t* command,
@@ -445,6 +466,7 @@ DFC_FFI_EXPORT int32_t dfc_ffi_picc_frame_exchange(
     size_t* response_len);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_field_off(DfcFfiPicc* picc);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_reset_protocol(DfcFfiPicc* picc);
+// A timer expiry rolls back pending writes and requires a fresh scan.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_advance_time(DfcFfiPicc* picc, uint32_t elapsed_milliseconds);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out);
 // A new credential holding the card's current state.
@@ -505,7 +527,10 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_authenticate_ev2_begin(
     const uint8_t* capabilities,
     size_t capabilities_len);
 // `comm_mode` is DFC_COMM_PLAIN, _MAC or _ENCIPHERED; `header_len` of -1
-// derives the clear head of an encrypted field from the instruction.
+// derives the clear head of an encrypted field from the instruction. Any other
+// value is a head length and must lie in
+// 0..DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH; anything else, negative values below -1 included, returns
+// DFC_FFI_INVALID_ARGUMENT before the exchange or the session is touched.
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_exchange_begin(
     DfcFfiReaderExchange* exchange,
     DfcFfiReaderSession* session,
@@ -556,6 +581,8 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_create_delegated_application_begin(
     const uint8_t* initial_key,
     size_t initial_key_len,
     uint8_t initial_version);
+// The reader buffer-too-small status leaves the response and exchange
+// unconsumed. Retry the same call with a larger output buffer.
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_step(
     DfcFfiReaderExchange* exchange,
     const uint8_t* response,
@@ -564,8 +591,10 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_step(
     size_t out_cap,
     size_t* out_len);
 DFC_FFI_EXPORT uint8_t dfc_ffi_reader_result_status(const DfcFfiReaderExchange* exchange);
+// Querying with `out == NULL` preserves the result. A successful copy transfers
+// the bytes to caller-owned storage and clears the exchange's result buffer.
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_result_data(
-    const DfcFfiReaderExchange* exchange,
+    DfcFfiReaderExchange* exchange,
     uint8_t* out,
     size_t cap,
     size_t* len);

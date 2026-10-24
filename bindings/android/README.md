@@ -2,7 +2,9 @@
 
 The Android binding packages the Java API, `IsoDepTransport`, and the native
 DFC engine in one AAR. It supports API 26 and later on `arm64-v8a`,
-`armeabi-v7a`, `x86_64`, and `x86`.
+`armeabi-v7a`, `x86_64`, and `x86`. Its consumer rules retain the exact
+`DfcException` class and constructor that native error reporting resolves, so
+applications may safely enable R8 shrinking and obfuscation.
 
 ## Read a physical card
 
@@ -36,8 +38,11 @@ The checked-in Gradle wrapper builds the AAR, example APK, and Android lint:
 
 ```sh
 cd bindings/android
-./gradlew --no-daemon :dfc:assembleRelease :sample:assembleDebug :dfc:lintRelease
+./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease :dfc:lintRelease
 ```
 
 The artifacts are `dfc/build/outputs/aar/dfc-release.aar` and
-`../../examples/android/build/outputs/apk/debug/sample-debug.apk`.
+`../../examples/android/build/outputs/apk/release/sample-release.apk`. The
+release sample is minified. Its release instrumentation test deliberately
+rejects a credential in native code and verifies that the resulting
+`DfcException` remains constructible.

@@ -129,8 +129,9 @@ public sealed class DfcReader : IDisposable
     {
         get
         {
+            using var handles = AcquireHandles();
             NativeReaderState state;
-            _ = Native.dfc_ffi_reader_session_state(SessionRaw, &state);
+            _ = Native.dfc_ffi_reader_session_state(handles.Session, &state);
             return new DfcReaderSession(
                 (DfcSessionKind)state.AuthMode,
                 state.KeyNo,
@@ -146,14 +147,21 @@ public sealed class DfcReader : IDisposable
     public bool IsAuthenticated => Session.Kind != DfcSessionKind.None;
 
     /// <summary>Forgets the session, as the card does when it ends one.</summary>
-    public void ClearSession() => Native.dfc_ffi_reader_session_clear(SessionRaw);
+    public void ClearSession()
+    {
+        using var handles = AcquireHandles();
+        ClearSession(handles);
+    }
 
     /// <summary>
     /// Exchanges one command under the session, following every additional frame. <paramref name="mode" /> is the
     /// communication mode of the file the command addresses. <paramref name="encryptedHeaderLength" /> overrides
     /// how many data octets stay clear when the field is encrypted.
+    /// <c>null</c> (or -1) derives the head from the instruction. The value goes to the native library unchanged, which
+    /// alone owns the bound (DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH); a refusal returns a failure of kind
+    /// <see cref="DfcProtocolErrorKind.Invalid" />, leaving the session and this reader untouched.
     /// </summary>
-    public Task<Result<DfcResponse, DfcProtocolError>> ExchangeAsync(
+    public async Task<Result<DfcResponse, DfcProtocolError>> ExchangeAsync(
         DfcCommand command,
         DfcCommunicationMode mode = DfcCommunicationMode.Plain,
         int? encryptedHeaderLength = null,
@@ -161,8 +169,22 @@ public sealed class DfcReader : IDisposable
     )
     {
         ArgumentNullException.ThrowIfNull(command);
-        int st = BeginExchange(command, mode, encryptedHeaderLength ?? -1);
-        return st == 0 ? RunAsync(cancellationToken) : Task.FromResult(Failure<DfcResponse>(st));
+        using var handles = AcquireHandles();
+        return await ExchangeAsync(handles, command, mode, encryptedHeaderLength, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<Result<DfcResponse, DfcProtocolError>> ExchangeAsync(
+        ReaderHandles handles,
+        DfcCommand command,
+        DfcCommunicationMode mode,
+        int? encryptedHeaderLength,
+        CancellationToken cancellationToken
+    )
+    {
+        int st = BeginExchange(handles, command, mode, encryptedHeaderLength ?? -1);
+        return st == 0
+            ? await RunAsync(handles, cancellationToken).ConfigureAwait(false)
+            : Failure<DfcResponse>(handles, st);
     }
 
     /// <summary>Writes a caller-owned payload in bounded commands.</summary>
@@ -173,15 +195,18 @@ public sealed class DfcReader : IDisposable
         DfcCommunicationMode mode = DfcCommunicationMode.Plain,
         CancellationToken cancellationToken = default)
     {
+        using var handles = AcquireHandles();
         using var pinned = data.Pin();
         int status;
         unsafe
         {
             status = Native.dfc_ffi_reader_write_data_begin(
-                ExchangeRaw, SessionRaw, (uint)framing, fileNumber, offset,
+                handles.Exchange, handles.Session, (uint)framing, fileNumber, offset,
                 (byte*)pinned.Pointer, (nuint)data.Length, (byte)mode);
         }
-        return status == 0 ? await RunAsync(cancellationToken).ConfigureAwait(false) : Failure<DfcResponse>(status);
+        return status == 0
+            ? await RunAsync(handles, cancellationToken).ConfigureAwait(false)
+            : Failure<DfcResponse>(handles, status);
     }
 
     /// <summary>Writes one record across bounded commands; commit or abort the record afterward.</summary>
@@ -192,15 +217,18 @@ public sealed class DfcReader : IDisposable
         DfcCommunicationMode mode = DfcCommunicationMode.Plain,
         CancellationToken cancellationToken = default)
     {
+        using var handles = AcquireHandles();
         using var pinned = data.Pin();
         int status;
         unsafe
         {
             status = Native.dfc_ffi_reader_write_record_begin(
-                ExchangeRaw, SessionRaw, (uint)framing, fileNumber, offset,
+                handles.Exchange, handles.Session, (uint)framing, fileNumber, offset,
                 (byte*)pinned.Pointer, (nuint)data.Length, (byte)mode);
         }
-        return status == 0 ? await RunAsync(cancellationToken).ConfigureAwait(false) : Failure<DfcResponse>(status);
+        return status == 0
+            ? await RunAsync(handles, cancellationToken).ConfigureAwait(false)
+            : Failure<DfcResponse>(handles, status);
     }
 
     /// <summary>Updates one record across bounded commands; commit or abort afterward.</summary>
@@ -212,24 +240,32 @@ public sealed class DfcReader : IDisposable
         DfcCommunicationMode mode = DfcCommunicationMode.Plain,
         CancellationToken cancellationToken = default)
     {
+        using var handles = AcquireHandles();
         using var pinned = data.Pin();
         int status;
         unsafe
         {
             status = Native.dfc_ffi_reader_update_record_begin(
-                ExchangeRaw, SessionRaw, (uint)framing, fileNumber, recordNumber, offset,
+                handles.Exchange, handles.Session, (uint)framing, fileNumber, recordNumber, offset,
                 (byte*)pinned.Pointer, (nuint)data.Length, (byte)mode);
         }
-        return status == 0 ? await RunAsync(cancellationToken).ConfigureAwait(false) : Failure<DfcResponse>(status);
+        return status == 0
+            ? await RunAsync(handles, cancellationToken).ConfigureAwait(false)
+            : Failure<DfcResponse>(handles, status);
     }
 
-    private unsafe int BeginExchange(DfcCommand command, DfcCommunicationMode mode, int headerLength)
+    private unsafe int BeginExchange(
+        ReaderHandles handles,
+        DfcCommand command,
+        DfcCommunicationMode mode,
+        int headerLength
+    )
     {
         fixed (byte* d = command.Data.Span)
         {
             return Native.dfc_ffi_reader_exchange_begin(
-                ExchangeRaw,
-                SessionRaw,
+                handles.Exchange,
+                handles.Session,
                 (uint)framing,
                 command.Instruction,
                 d,
@@ -258,28 +294,35 @@ public sealed class DfcReader : IDisposable
         CancellationToken cancellationToken = default
     )
     {
+        using var handles = AcquireHandles();
         var challengeLength = mode == DfcAuthenticationMode.Aes || key.Length == 24 ? 16 : 8;
         var randomA = new byte[challengeLength];
         random.Fill(randomA);
-        int st = BeginAuthenticate(mode, keyNo, key, randomA);
+        int st = BeginAuthenticate(handles, mode, keyNo, key, randomA);
         CryptographicZero(randomA);
         if (st != 0)
         {
-            return Failure<DfcResponse>(st).Error;
+            return Failure<DfcResponse>(handles, st).Error;
         }
 
-        var result = await RunAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RunAsync(handles, cancellationToken).ConfigureAwait(false);
         return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
     }
 
-    private unsafe int BeginAuthenticate(DfcAuthenticationMode mode, byte keyNo, ReadOnlyMemory<byte> key, byte[] randomA)
+    private unsafe int BeginAuthenticate(
+        ReaderHandles handles,
+        DfcAuthenticationMode mode,
+        byte keyNo,
+        ReadOnlyMemory<byte> key,
+        byte[] randomA
+    )
     {
         fixed (byte* k = key.Span)
         fixed (byte* r = randomA)
         {
             return Native.dfc_ffi_reader_authenticate_begin(
-                ExchangeRaw,
-                SessionRaw,
+                handles.Exchange,
+                handles.Session,
                 (uint)framing,
                 (byte)mode,
                 keyNo,
@@ -298,6 +341,7 @@ public sealed class DfcReader : IDisposable
         ReadOnlyMemory<byte> key,
         CancellationToken cancellationToken = default)
     {
+        using var handles = AcquireHandles();
         var challengeLength = algorithm == DfcIso7816AuthAlgorithm.Tdea2 ? 8 : 16;
         var randomFirst = new byte[challengeLength];
         var randomSecond = new byte[challengeLength];
@@ -311,14 +355,14 @@ public sealed class DfcReader : IDisposable
             fixed (byte* second = randomSecond)
             {
                 status = Native.dfc_ffi_reader_authenticate_iso7816_begin(
-                    ExchangeRaw, SessionRaw, keyReference, k, (nuint)key.Length,
+                    handles.Exchange, handles.Session, keyReference, k, (nuint)key.Length,
                     (byte)algorithm, first, second, (nuint)challengeLength);
             }
         }
         CryptographicZero(randomFirst);
         CryptographicZero(randomSecond);
-        if (status != 0) return Failure<DfcResponse>(status).Error;
-        var result = await RunAsync(cancellationToken).ConfigureAwait(false);
+        if (status != 0) return Failure<DfcResponse>(handles, status).Error;
+        var result = await RunAsync(handles, cancellationToken).ConfigureAwait(false);
         return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
     }
 
@@ -350,21 +394,23 @@ public sealed class DfcReader : IDisposable
         CancellationToken cancellationToken = default
     )
     {
-        var (st, cryptogram) = BuildCryptogram(keyNo, newKey, currentKey, aesKey, newVersion);
+        using var handles = AcquireHandles();
+        var (st, cryptogram) = BuildCryptogram(handles, keyNo, newKey, currentKey, aesKey, newVersion);
         if (st != 0)
         {
-            return Failure<DfcResponse>(st).Error;
+            return Failure<DfcResponse>(handles, st).Error;
         }
 
         var data = new byte[1 + cryptogram.Length];
         data[0] = keyNo;
         cryptogram.CopyTo(data.AsSpan(1));
-        var result = await ExchangeAsync(new DfcCommand(0xC4, data), DfcCommunicationMode.Plain, null, cancellationToken)
+        var result = await ExchangeAsync(handles, new DfcCommand(0xC4, data), DfcCommunicationMode.Plain, null, cancellationToken)
             .ConfigureAwait(false);
         return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
     }
 
     private unsafe (int Status, byte[] Cryptogram) BuildCryptogram(
+        ReaderHandles handles,
         byte keyNo,
         ReadOnlyMemory<byte> newKey,
         ReadOnlyMemory<byte> currentKey,
@@ -379,7 +425,7 @@ public sealed class DfcReader : IDisposable
         fixed (byte* o = cryptogram)
         {
             int st = Native.dfc_ffi_reader_change_key_cryptogram(
-                SessionRaw,
+                handles.Session,
                 keyNo,
                 n,
                 (nuint)newKey.Length,
@@ -404,13 +450,15 @@ public sealed class DfcReader : IDisposable
         CancellationToken cancellationToken = default
     )
     {
-        var (st, data) = BuildChangeKeyEv2(keySetNo, keyNo, newKey, currentKey, newVersion);
+        using var handles = AcquireHandles();
+        var (st, data) = BuildChangeKeyEv2(handles, keySetNo, keyNo, newKey, currentKey, newVersion);
         if (st != 0)
         {
-            return Failure<DfcResponse>(st).Error;
+            return Failure<DfcResponse>(handles, st).Error;
         }
 
         var result = await ExchangeAsync(
+                handles,
                 new DfcCommand(0xC6, data),
                 DfcCommunicationMode.Plain,
                 null,
@@ -421,6 +469,7 @@ public sealed class DfcReader : IDisposable
     }
 
     private unsafe (int Status, byte[] Data) BuildChangeKeyEv2(
+        ReaderHandles handles,
         byte keySetNo,
         byte keyNo,
         ReadOnlyMemory<byte> newKey,
@@ -440,7 +489,7 @@ public sealed class DfcReader : IDisposable
         fixed (byte* o = data)
         {
             int st = Native.dfc_ffi_reader_change_key_ev2_data(
-                SessionRaw,
+                handles.Session,
                 keySetNo,
                 keyNo,
                 n,
@@ -466,6 +515,7 @@ public sealed class DfcReader : IDisposable
             return new DfcProtocolError(DfcProtocolErrorKind.Invalid, "The AID or a DAM key has the wrong length.");
         }
 
+        using var handles = AcquireHandles();
         var header = new byte[10];
         request.Aid.CopyTo(header, 0);
         header[3] = (byte)request.SlotNumber;
@@ -477,17 +527,22 @@ public sealed class DfcReader : IDisposable
         header[9] = request.KeySettings2;
         var prefix = new byte[7];
         random.Fill(prefix);
-        int st = BeginDelegated(header, request, prefix);
+        int st = BeginDelegated(handles, header, request, prefix);
         if (st != 0)
         {
-            return Failure<DfcResponse>(st).Error;
+            return Failure<DfcResponse>(handles, st).Error;
         }
 
-        var result = await RunAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RunAsync(handles, cancellationToken).ConfigureAwait(false);
         return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
     }
 
-    private unsafe int BeginDelegated(byte[] header, DfcDelegatedApplicationRequest request, byte[] prefix)
+    private unsafe int BeginDelegated(
+        ReaderHandles handles,
+        byte[] header,
+        DfcDelegatedApplicationRequest request,
+        byte[] prefix
+    )
     {
         fixed (byte* h = header)
         fixed (byte* e = request.DamEncryptionKey)
@@ -496,8 +551,8 @@ public sealed class DfcReader : IDisposable
         fixed (byte* k = request.InitialKey)
         {
             return Native.dfc_ffi_reader_create_delegated_application_begin(
-                ExchangeRaw,
-                SessionRaw,
+                handles.Exchange,
+                handles.Session,
                 (uint)framing,
                 h,
                 (nuint)header.Length,
@@ -526,7 +581,14 @@ public sealed class DfcReader : IDisposable
             return new DfcProtocolError(DfcProtocolErrorKind.Invalid, "The key is 16 octets and the rounds divide eight.");
         }
 
-        var prepared = await ExchangeAsync(new DfcCommand(0xF0, ReadOnlyMemory<byte>.Empty), DfcCommunicationMode.Plain, null, cancellationToken)
+        using var handles = AcquireHandles();
+        var prepared = await ExchangeAsync(
+                handles,
+                new DfcCommand(0xF0, ReadOnlyMemory<byte>.Empty),
+                DfcCommunicationMode.Plain,
+                null,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (prepared.IsFailure)
         {
@@ -545,7 +607,13 @@ public sealed class DfcReader : IDisposable
             data[0] = (byte)perRound;
             challenge.CopyTo(data, 1);
             var started = Stopwatch.GetTimestamp();
-            var answer = await ExchangeAsync(new DfcCommand(0xF2, data), DfcCommunicationMode.Plain, null, cancellationToken)
+            var answer = await ExchangeAsync(
+                    handles,
+                    new DfcCommand(0xF2, data),
+                    DfcCommunicationMode.Plain,
+                    null,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
             var elapsed = Stopwatch.GetElapsedTime(started);
             if (answer.IsFailure)
@@ -565,7 +633,13 @@ public sealed class DfcReader : IDisposable
 
         var transcriptBytes = transcript.ToArray();
         var mac = ProximityMac(key.Span, fromCard: false, published, transcriptBytes);
-        var verify = await ExchangeAsync(new DfcCommand(0xFD, mac), DfcCommunicationMode.Plain, null, cancellationToken)
+        var verify = await ExchangeAsync(
+                handles,
+                new DfcCommand(0xFD, mac),
+                DfcCommunicationMode.Plain,
+                null,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (verify.IsFailure)
         {
@@ -593,12 +667,13 @@ public sealed class DfcReader : IDisposable
             return new DfcProtocolError(DfcProtocolErrorKind.Invalid, "The identifier or a select key has the wrong length.");
         }
 
+        using var handles = AcquireHandles();
         var select = new byte[installationId.Length + 6];
         select[1] = 0xA4;
         select[2] = 0x04;
         select[4] = (byte)installationId.Length;
         installationId.Span.CopyTo(select.AsSpan(5));
-        var answer = await transport.TransmitAsync(select, cancellationToken).ConfigureAwait(false);
+        var answer = await TransmitAsync(handles, select, cancellationToken).ConfigureAwait(false);
         if (answer.IsFailure)
         {
             return answer.Error;
@@ -607,12 +682,10 @@ public sealed class DfcReader : IDisposable
         var (st, clear, authenticate) = OpenVirtualCard(answer.Value, selectEncryptionKey, selectMacKey);
         if (st != 0)
         {
-            return Failure<DfcVirtualCardSelection>(st).Error;
+            return Failure<DfcVirtualCardSelection>(handles, st).Error;
         }
 
-        var confirmed = await transport
-            .TransmitAsync(authenticate, cancellationToken)
-            .ConfigureAwait(false);
+        var confirmed = await TransmitAsync(handles, authenticate, cancellationToken).ConfigureAwait(false);
         if (confirmed.IsFailure)
         {
             return confirmed.Error;
@@ -660,23 +733,9 @@ public sealed class DfcReader : IDisposable
 
     // ---------------------------------------------------------- plumbing ---
 
-    private nint SessionRaw
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(session.IsClosed, this);
-            return session.DangerousGetHandle();
-        }
-    }
+    private ReaderHandles AcquireHandles() => new(session, exchange);
 
-    private nint ExchangeRaw
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(exchange.IsClosed, this);
-            return exchange.DangerousGetHandle();
-        }
-    }
+    private static void ClearSession(ReaderHandles handles) => Native.dfc_ffi_reader_session_clear(handles.Session);
 
     private async Task<UnitResult<DfcProtocolError>> AuthenticateEv2Async(
         bool first,
@@ -691,20 +750,22 @@ public sealed class DfcReader : IDisposable
             return new DfcProtocolError(DfcProtocolErrorKind.Invalid, "EV2 authentication needs a 16-octet AES key.");
         }
 
+        using var handles = AcquireHandles();
         var randomA = new byte[16];
         random.Fill(randomA);
-        int st = BeginAuthenticateEv2(first, keyNo, key, randomA, capabilities);
+        int st = BeginAuthenticateEv2(handles, first, keyNo, key, randomA, capabilities);
         CryptographicZero(randomA);
         if (st != 0)
         {
-            return Failure<DfcResponse>(st).Error;
+            return Failure<DfcResponse>(handles, st).Error;
         }
 
-        var result = await RunAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RunAsync(handles, cancellationToken).ConfigureAwait(false);
         return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
     }
 
     private unsafe int BeginAuthenticateEv2(
+        ReaderHandles handles,
         bool first,
         byte keyNo,
         ReadOnlyMemory<byte> key,
@@ -717,8 +778,8 @@ public sealed class DfcReader : IDisposable
         fixed (byte* c = capabilities.Span)
         {
             return Native.dfc_ffi_reader_authenticate_ev2_begin(
-                ExchangeRaw,
-                SessionRaw,
+                handles.Exchange,
+                handles.Session,
                 (uint)framing,
                 first ? (byte)1 : (byte)0,
                 keyNo,
@@ -730,21 +791,24 @@ public sealed class DfcReader : IDisposable
         }
     }
 
-    private async Task<Result<DfcResponse, DfcProtocolError>> RunAsync(CancellationToken cancellationToken)
+    private async Task<Result<DfcResponse, DfcProtocolError>> RunAsync(
+        ReaderHandles handles,
+        CancellationToken cancellationToken
+    )
     {
         byte[]? answer = null;
         while (true)
         {
-            var (status, frame) = Step(answer);
+            var (status, frame) = Step(handles, answer);
             if (status != Pending)
             {
-                return status == 0 ? Collect() : Failure<DfcResponse>(status);
+                return status == 0 ? Collect(handles) : Failure<DfcResponse>(handles, status);
             }
 
-            var sent = await transport.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
+            var sent = await TransmitAsync(handles, frame, cancellationToken).ConfigureAwait(false);
             if (sent.IsFailure)
             {
-                ClearSession();
+                ClearSession(handles);
                 return sent.Error;
             }
 
@@ -752,7 +816,24 @@ public sealed class DfcReader : IDisposable
         }
     }
 
-    private unsafe (int Status, byte[] Frame) Step(byte[]? answer)
+    private async ValueTask<Result<byte[], DfcProtocolError>> TransmitAsync(
+        ReaderHandles handles,
+        ReadOnlyMemory<byte> frame,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await transport.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ClearSession(handles);
+            throw;
+        }
+    }
+
+    private unsafe (int Status, byte[] Frame) Step(ReaderHandles handles, byte[]? answer)
     {
         var frame = new byte[FrameCapacity];
         nuint length;
@@ -760,26 +841,33 @@ public sealed class DfcReader : IDisposable
         fixed (byte* a = answer)
         fixed (byte* f = frame)
         {
-            st = Native.dfc_ffi_reader_step(ExchangeRaw, a, (nuint)(answer?.Length ?? 0), f, FrameCapacity, &length);
+            st = Native.dfc_ffi_reader_step(
+                handles.Exchange,
+                a,
+                (nuint)(answer?.Length ?? 0),
+                f,
+                FrameCapacity,
+                &length
+            );
         }
 
         return (st, st == Pending ? frame[..(int)length] : []);
     }
 
-    private unsafe Result<DfcResponse, DfcProtocolError> Collect()
+    private unsafe Result<DfcResponse, DfcProtocolError> Collect(ReaderHandles handles)
     {
         var data = new byte[ResultCapacity];
         nuint length;
         fixed (byte* d = data)
         {
-            _ = Native.dfc_ffi_reader_result_data(ExchangeRaw, d, ResultCapacity, &length);
+            _ = Native.dfc_ffi_reader_result_data(handles.Exchange, d, ResultCapacity, &length);
         }
 
-        return new DfcResponse(Native.dfc_ffi_reader_result_status(ExchangeRaw), data[..(int)length]);
+        return new DfcResponse(Native.dfc_ffi_reader_result_status(handles.Exchange), data[..(int)length]);
     }
 
-    private Result<T, DfcProtocolError> Failure<T>(int status) =>
-        DfcProtocolError.FromReaderStatus(status, Native.dfc_ffi_reader_result_status(ExchangeRaw));
+    private static Result<T, DfcProtocolError> Failure<T>(ReaderHandles handles, int status) =>
+        DfcProtocolError.FromReaderStatus(status, Native.dfc_ffi_reader_result_status(handles.Exchange));
 
     private unsafe static byte[] ProximityMac(ReadOnlySpan<byte> key, bool fromCard, byte[] published, byte[] transcript)
     {
@@ -802,6 +890,49 @@ public sealed class DfcReader : IDisposable
         if (status != 0)
         {
             throw new InsufficientMemoryException("The native reader could not be allocated.");
+        }
+    }
+
+    private readonly struct ReaderHandles : IDisposable
+    {
+        private readonly ReaderHandle sessionHandle;
+        private readonly ReaderHandle exchangeHandle;
+
+        public ReaderHandles(ReaderHandle session, ReaderHandle exchange)
+        {
+            bool sessionAdded = false;
+            bool exchangeAdded = false;
+            try
+            {
+                session.DangerousAddRef(ref sessionAdded);
+                exchange.DangerousAddRef(ref exchangeAdded);
+                sessionHandle = session;
+                exchangeHandle = exchange;
+                Session = session.DangerousGetHandle();
+                Exchange = exchange.DangerousGetHandle();
+            }
+            catch (ObjectDisposedException)
+            {
+                if (exchangeAdded)
+                {
+                    exchange.DangerousRelease();
+                }
+                if (sessionAdded)
+                {
+                    session.DangerousRelease();
+                }
+                throw new ObjectDisposedException(nameof(DfcReader));
+            }
+        }
+
+        public nint Session { get; }
+
+        public nint Exchange { get; }
+
+        public void Dispose()
+        {
+            exchangeHandle.DangerousRelease();
+            sessionHandle.DangerousRelease();
         }
     }
 

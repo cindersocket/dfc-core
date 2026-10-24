@@ -147,6 +147,11 @@ These cache variables select the build:
 | `DFC_FEATURE_DEFINITIONS` | empty | Semicolon-separated `DFC_ENABLE_*` values ending in `=0` or `=1` |
 | `DFC_MAX_APPS`, `DFC_MAX_FILES`, `DFC_MAX_KEYS`, `DFC_FILE_POOL_SIZE`, `DFC_KEY_POOL_SIZE`, `DFC_MAX_FILE_DATA` | profile defaults | Set fixed model and transfer buffers for the device |
 
+Shared and JNI libraries enable position-independent code. Static core, static
+FFI, and Rust target libraries use the toolchain's native code model. Set
+`CMAKE_POSITION_INDEPENDENT_CODE=ON` when a downstream static-library consumer
+requires position-independent objects.
+
 For a small embedded card build with only the binary decoder:
 
 ```sh
@@ -180,7 +185,26 @@ native engine keeps its existing fixed capacities and uses the platform port
 for the protocol session. This avoids a second credential model and leaves file
 and application capacity unchanged.
 
-## 7. Verify the integration
+## 7. Measure the embedded footprint
+
+The Cortex-M4 CI job configures the full EV3 target through CMake at `-Os` with
+Arm GNU Toolchain 13.3.Rel1 and the pinned tiny-crypto-c revision. It records
+linked and per-object text, data, and BSS sizes, the largest static stack
+frames, public model sizes, and configured storage capacities. Linked text must
+equal the core and tiny-crypto-c text totals. A missing stack-usage record or a
+dynamically sized stack frame fails the gate.
+
+Run the same gate with a clean checkout of the pinned tiny-crypto-c revision:
+
+```sh
+TINY_CRYPTO_DIR=/path/to/tiny-crypto-c ./scripts/check-embedded-footprint.sh
+```
+
+The report is written to `build-embedded-footprint/report.txt`. The capacity
+assertions hold the target defaults at 28 applications, 32 files, 14 keys,
+8,192 file-pool bytes, 4,096 key-pool bytes, and 2,048 bytes per file.
+
+## 8. Verify the integration
 
 Run the host tests before you build for the target:
 

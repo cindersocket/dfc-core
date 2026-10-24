@@ -11,7 +11,7 @@ EV3 profile. No preinstalled `libdfc` is required:
 
 ```toml
 [dependencies]
-dfc-core = "1.2.1"
+dfc-core = "2.0.0"
 ```
 
 Load a text or binary credential, validate it, and transfer ownership into a
@@ -64,7 +64,7 @@ Target builds are `no_std` with `alloc`. Select exactly one role and profile:
 
 ```toml
 [dependencies]
-dfc-core = { version = "1.2.1", default-features = false, features = [
+dfc-core = { version = "2.0.0", default-features = false, features = [
     "bundled",
     "role-target",
     "profile-minimal-ev3",
@@ -102,3 +102,11 @@ fingerprint before creating hosted handles. Random callbacks are contained at
 the FFI boundary: they must return exactly the requested byte count, and panic
 or length mismatch is reported after native control returns.
 
+## Reader clear-header length
+
+`Reader::exchange(command, mode, clear_header)` derives the clear head of an
+encrypted field from the instruction when `clear_header` is `None`. `Some(n)` is
+a head length no larger than `DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH`.
+The native core refuses a larger value, and a value that does not fit the native
+`int32_t` is refused before the call, both as `Error::InvalidArgument`; the
+session stays usable.

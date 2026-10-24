@@ -44,6 +44,12 @@ Transport failures clear the managed reader session.
 `DfcCommand.SelectApplication` accepts the same human-readable AID byte order
 used by `DfcApplication.Aid` and converts it to wire order.
 
+For deterministic tests, pass a `DfcScriptedRandomSource` to
+`DfcVirtualPicc.Create`. `Append` queues bytes for later random requests,
+`Remaining` reports the unread count, and `Clear` wipes and discards unread
+bytes before a new replay segment is appended. A request larger than the queue
+fails without consuming bytes.
+
 The runnable [.NET example](../../examples/dotnet/README.md) validates a
 credential, activates a virtual card, and performs a multi-frame `GetVersion`
 exchange through the public reader and transport APIs.

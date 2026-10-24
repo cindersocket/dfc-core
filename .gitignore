@@ -2,6 +2,7 @@ tests/dfc_probe_apdu
 tests/dfc_virtual_picc_host
 tests/test_*
 !tests/test_*.c
+!tests/test_*.py
 *.o
 *.dSYM/
 __pycache__/

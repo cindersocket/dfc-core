@@ -83,6 +83,7 @@ int32_t dfc_target_picc_frame_exchange(
     size_t* response_len);
 int32_t dfc_target_picc_field_off(DfcTargetPicc* picc);
 int32_t dfc_target_picc_reset_protocol(DfcTargetPicc* picc);
+// A timer expiry rolls back pending writes and requires a fresh scan.
 int32_t dfc_target_picc_advance_time(DfcTargetPicc* picc, uint32_t elapsed_milliseconds);
 int32_t dfc_target_picc_snapshot(const DfcTargetPicc* picc, DfcTargetSnapshot* out);
 int32_t dfc_target_picc_mark_persisted(DfcTargetPicc* picc);

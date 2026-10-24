@@ -25,17 +25,31 @@ try (DfcVirtualPicc picc = DfcVirtualPicc.create(credential);
 ```
 
 Both classes own native resources and should be used in try-with-resources.
+`DfcReader.exchange(..., int encryptedHeaderLength)` passes the clear-header length
+to the native core unchanged (-1 derives it from the instruction). The core owns the
+valid range; a refused value throws `DfcException` with status `-1`
+(`DFC_FFI_INVALID_ARGUMENT`) and leaves the reader usable. The JNI layer likewise refuses
+instruction, communication, cipher, key and algorithm values outside 0..255 with the same
+exception instead of wrapping them.
+
+Elapsed milliseconds outside the native unsigned 32-bit range are refused before
+the JNI call. Public `DfcVirtualPicc.advanceTime` reports that range as an
+`IllegalArgumentException`; raw JNI callers receive `DfcException` status `-1`.
+
 `DfcReader` is blocking and serializes its methods. Hardware transports should
 throw `IOException` when their link fails; the reader then clears its session.
 `DfcCommand.selectApplication` accepts the same human-readable AID byte order
 used by credential text and converts it to wire order.
 
-`DfcVirtualPicc.createForReplay` consumes its non-empty random script in order.
-Each native random request must fit completely in the remaining script. An
-undersized script makes that operation and every later operation on the card
-that can mutate state or process protocol fail; create a new card with a complete
-script to continue. `snapshot()` remains available after exhaustion so callers
-can verify that the failed operation did not change card state.
+`DfcVirtualPicc.createForReplay` consumes its random script in order. Each native
+random request must fit completely in the remaining script. An undersized request
+consumes no bytes, fails that operation with status `-5`, and leaves later
+operations usable. `snapshot()` remains available after failure so callers can
+verify that card state did not change. An empty script is valid and fails on its
+first random request. Use `appendReplayRandom` immediately before the event that
+needs those bytes; `replayRandomRemaining` exposes the current queue length for
+test assertions. `clearReplayRandom` wipes and discards unread bytes so the next
+event starts with newly appended replay data.
 
 The runnable [Java example](../../examples/java/README.md) loads a credential,
 activates it, and executes the multi-frame `GetVersion` exchange. Android

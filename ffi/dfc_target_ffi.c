@@ -29,7 +29,7 @@ void dfc_target_credential_destroy(void* storage) {
 }
 
 int32_t dfc_target_credential_decode(void* storage, const uint8_t* content, size_t len) {
-    if(!storage || (!content && len)) return DfcDerMalformed;
+    if(!storage) return DfcDerMalformed;
     return dfc_der_decode(storage, content, len);
 }
 
@@ -137,8 +137,7 @@ int32_t dfc_target_picc_reset_protocol(DfcTargetPicc* picc) {
 
 int32_t dfc_target_picc_advance_time(DfcTargetPicc* picc, uint32_t elapsed_milliseconds) {
     if(!picc) return DfcVirtualPiccStatusProtocolError;
-    dfc_emulator_advance_time(picc->session->emulator, elapsed_milliseconds);
-    return DfcVirtualPiccStatusOk;
+    return dfc_virtual_picc_advance_time(picc->session, elapsed_milliseconds);
 }
 
 int32_t dfc_target_picc_snapshot(const DfcTargetPicc* picc, DfcTargetSnapshot* out) {

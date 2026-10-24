@@ -54,6 +54,13 @@ public final class DfcReader implements AutoCloseable {
         throw new IllegalStateException("reader is closed");
       return value;
     }
+    boolean owns(long expected) {
+      return handle.get() == expected;
+    }
+    void require(long expected) {
+      if (!owns(expected))
+        throw new IllegalStateException("reader is closed");
+    }
     @Override
     public void run() {
       long value = handle.getAndSet(0);
@@ -85,11 +92,16 @@ public final class DfcReader implements AutoCloseable {
       Communication communication) throws DfcException, IOException {
     return exchange(command, framing, communication, -1);
   }
+  /**
+   * Runs one command. {@code encryptedHeaderLength} is the clear-header length of an encrypted
+   * file write, or -1 to derive it from the instruction. The native core owns the valid range;
+   * this method passes the integer through unchanged. A refused value (below -1 or above the
+   * native maximum) throws {@link DfcException} with status {@code DFC_FFI_INVALID_ARGUMENT}
+   * (-1), before any session state changes, so the reader stays usable.
+   */
   public synchronized DfcResponse exchange(DfcCommand command, Framing framing,
       Communication communication, int encryptedHeaderLength) throws DfcException, IOException {
     Objects.requireNonNull(command, "command");
-    if (encryptedHeaderLength < -1 || encryptedHeaderLength > 255)
-      throw new IllegalArgumentException("encryptedHeaderLength");
     long handle = state.require();
     DfcNative.readerBegin(handle, framing.ordinal(), command.instruction(), command.data(),
         communication.nativeValue, encryptedHeaderLength);
@@ -128,86 +140,88 @@ public final class DfcReader implements AutoCloseable {
     };
     if (!valid)
       throw new IllegalArgumentException("unsupported key length for " + cipher);
-    return cipher == Cipher.AES || (cipher == Cipher.ISO && keyLength == 24) ? 16 :
-        8;
-    }
-    public synchronized void authenticateIso7816(
-        int keyReference, Iso7816Algorithm algorithm, byte[] key) throws DfcException, IOException {
-      Objects.requireNonNull(algorithm, "algorithm");
-      byte[] first = new byte[algorithm.randomLength], second = new byte[algorithm.randomLength];
-      RANDOM.nextBytes(first);
-      RANDOM.nextBytes(second);
-      try {
-        authenticateIso7816ForReplay(keyReference, algorithm, key, first, second);
-      } finally {
-        Arrays.fill(first, (byte) 0);
-        Arrays.fill(second, (byte) 0);
-      }
-    }
-    public synchronized void authenticateIso7816ForReplay(int keyReference,
-        Iso7816Algorithm algorithm, byte[] key, byte[] randomFirst, byte[] randomSecond)
-        throws DfcException, IOException {
-      Objects.requireNonNull(algorithm, "algorithm");
-      Objects.requireNonNull(key, "key");
-      if ((keyReference & ~0xff) != 0 || randomFirst.length != algorithm.randomLength
-          || randomSecond.length != algorithm.randomLength)
-        throw new IllegalArgumentException("authentication parameters");
-      long handle = state.require();
-      DfcNative.readerAuthenticateIso7816(
-          handle, keyReference, algorithm.nativeValue, key, randomFirst, randomSecond);
-      complete(handle);
-    }
-    public synchronized void authenticateEv2First(int keyNumber, byte[] key, byte[] capabilities,
-        Framing framing) throws DfcException, IOException {
-      authenticateEv2(false, true, keyNumber, key, capabilities, framing, null);
-    }
-    public synchronized void authenticateEv2NonFirst(int keyNumber, byte[] key, Framing framing)
-        throws DfcException, IOException {
-      authenticateEv2(false, false, keyNumber, key, new byte[0], framing, null);
-    }
-    public synchronized void authenticateEv2ForReplay(boolean first, int keyNumber, byte[] key,
-        byte[] capabilities, Framing framing, byte[] randomA) throws DfcException, IOException {
-      authenticateEv2(true, first, keyNumber, key, capabilities, framing, randomA);
-    }
-    private void authenticateEv2(boolean replay, boolean first, int keyNumber, byte[] key,
-        byte[] capabilities, Framing framing, byte[] suppliedRandom)
-        throws DfcException, IOException {
-      Objects.requireNonNull(key, "key");
-      Objects.requireNonNull(capabilities, "capabilities");
-      Objects.requireNonNull(framing, "framing");
-      if (key.length != 16 || capabilities.length > 6 || (keyNumber & ~0xff) != 0)
-        throw new IllegalArgumentException("EV2 authentication parameters");
-      byte[] randomA = replay ? Objects.requireNonNull(suppliedRandom, "randomA") : new byte[16];
-      if (randomA.length != 16)
-        throw new IllegalArgumentException("randomA");
-      if (!replay)
-        RANDOM.nextBytes(randomA);
-      long handle = state.require();
-      try {
-        DfcNative.readerAuthenticateEv2(
-            handle, framing.ordinal(), first, keyNumber, key, randomA, capabilities);
-        complete(handle);
-      } finally {
-        if (!replay)
-          Arrays.fill(randomA, (byte) 0);
-      }
-    }
-    private DfcResponse complete(long handle) throws DfcException, IOException {
-      byte[] answer = null;
-      for (;;) {
-        byte[] command = DfcNative.readerStep(handle, answer);
-        if (command == null)
-          return new DfcResponse(DfcNative.readerResult(handle), DfcNative.readerStatus(handle));
-        try {
-          answer = Objects.requireNonNull(transport.transceive(command), "transport returned null");
-        } catch (IOException | RuntimeException error) {
-          DfcNative.readerClear(handle);
-          throw error;
-        }
-      }
-    }
-    @Override
-    public synchronized void close() {
-      cleanable.clean();
+    return cipher == Cipher.AES || (cipher == Cipher.ISO && keyLength == 24) ? 16 : 8;
+  }
+
+  public synchronized void authenticateIso7816(
+      int keyReference, Iso7816Algorithm algorithm, byte[] key) throws DfcException, IOException {
+    Objects.requireNonNull(algorithm, "algorithm");
+    byte[] first = new byte[algorithm.randomLength], second = new byte[algorithm.randomLength];
+    RANDOM.nextBytes(first);
+    RANDOM.nextBytes(second);
+    try {
+      authenticateIso7816ForReplay(keyReference, algorithm, key, first, second);
+    } finally {
+      Arrays.fill(first, (byte) 0);
+      Arrays.fill(second, (byte) 0);
     }
   }
+  public synchronized void authenticateIso7816ForReplay(int keyReference,
+      Iso7816Algorithm algorithm, byte[] key, byte[] randomFirst, byte[] randomSecond)
+      throws DfcException, IOException {
+    Objects.requireNonNull(algorithm, "algorithm");
+    Objects.requireNonNull(key, "key");
+    if ((keyReference & ~0xff) != 0 || randomFirst.length != algorithm.randomLength
+        || randomSecond.length != algorithm.randomLength)
+      throw new IllegalArgumentException("authentication parameters");
+    long handle = state.require();
+    DfcNative.readerAuthenticateIso7816(
+        handle, keyReference, algorithm.nativeValue, key, randomFirst, randomSecond);
+    complete(handle);
+  }
+  public synchronized void authenticateEv2First(int keyNumber, byte[] key, byte[] capabilities,
+      Framing framing) throws DfcException, IOException {
+    authenticateEv2(false, true, keyNumber, key, capabilities, framing, null);
+  }
+  public synchronized void authenticateEv2NonFirst(int keyNumber, byte[] key, Framing framing)
+      throws DfcException, IOException {
+    authenticateEv2(false, false, keyNumber, key, new byte[0], framing, null);
+  }
+  public synchronized void authenticateEv2ForReplay(boolean first, int keyNumber, byte[] key,
+      byte[] capabilities, Framing framing, byte[] randomA) throws DfcException, IOException {
+    authenticateEv2(true, first, keyNumber, key, capabilities, framing, randomA);
+  }
+  private void authenticateEv2(boolean replay, boolean first, int keyNumber, byte[] key,
+      byte[] capabilities, Framing framing, byte[] suppliedRandom)
+      throws DfcException, IOException {
+    Objects.requireNonNull(key, "key");
+    Objects.requireNonNull(capabilities, "capabilities");
+    Objects.requireNonNull(framing, "framing");
+    if (key.length != 16 || capabilities.length > 6 || (keyNumber & ~0xff) != 0)
+      throw new IllegalArgumentException("EV2 authentication parameters");
+    byte[] randomA = replay ? Objects.requireNonNull(suppliedRandom, "randomA") : new byte[16];
+    if (randomA.length != 16)
+      throw new IllegalArgumentException("randomA");
+    if (!replay)
+      RANDOM.nextBytes(randomA);
+    long handle = state.require();
+    try {
+      DfcNative.readerAuthenticateEv2(
+          handle, framing.ordinal(), first, keyNumber, key, randomA, capabilities);
+      complete(handle);
+    } finally {
+      if (!replay)
+        Arrays.fill(randomA, (byte) 0);
+    }
+  }
+  private DfcResponse complete(long handle) throws DfcException, IOException {
+    byte[] answer = null;
+    for (;;) {
+      byte[] command = DfcNative.readerStep(handle, answer);
+      if (command == null)
+        return new DfcResponse(DfcNative.readerResult(handle), DfcNative.readerStatus(handle));
+      try {
+        answer = Objects.requireNonNull(transport.transceive(command), "transport returned null");
+        state.require(handle);
+      } catch (IOException | RuntimeException error) {
+        if (state.owns(handle))
+          DfcNative.readerClear(handle);
+        throw error;
+      }
+    }
+  }
+  @Override
+  public synchronized void close() {
+    cleanable.clean();
+  }
+}

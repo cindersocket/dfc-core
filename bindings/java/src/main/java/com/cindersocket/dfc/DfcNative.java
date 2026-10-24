@@ -14,6 +14,9 @@ final class DfcNative {
   static native String credentialText(byte[] binary) throws DfcException;
   static native void credentialValidate(byte[] binary) throws DfcException;
   static native long piccCreate(byte[] binary, byte[] randomScript) throws DfcException;
+  static native void piccAppendReplayRandom(long handle, byte[] bytes) throws DfcException;
+  static native void piccClearReplayRandom(long handle) throws DfcException;
+  static native int piccReplayRandomRemaining(long handle) throws DfcException;
   static native void piccFree(long handle);
   static native byte[] piccActivate(long handle) throws DfcException;
   static native byte[] piccSnapshot(long handle) throws DfcException;

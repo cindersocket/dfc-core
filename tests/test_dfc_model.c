@@ -18,8 +18,8 @@ static void observe_zeroed_sm(const void* ptr, void* context) {
         *zeroed = *zeroed && bytes[index] == 0;
 }
 
-static MunitResult test_secure_messaging_wiped_before_free(
-    const MunitParameter params[], void* data) {
+static MunitResult
+    test_secure_messaging_wiped_before_free(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     const uint8_t key[DFC_AES_KEY_LENGTH] = {1};
@@ -148,6 +148,131 @@ static void assert_model_rejected(const DfcCredential* credential) {
         dfc_text_write(credential, text, sizeof(text), &length), ==, DfcTextMalformed);
 }
 
+static bool access_nibble_is_valid_for_keys(uint8_t nibble, size_t key_count) {
+    return nibble >= DFC_ACCESS_FREE || nibble < key_count;
+}
+
+static bool ordinary_access_rights_are_valid(uint16_t rights, size_t key_count) {
+    for(size_t shift = 0; shift < 16; shift += 4) {
+        if(!access_nibble_is_valid_for_keys((uint8_t)(rights >> shift) & 0x0F, key_count)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential source;
+    build_model(&source, DFC_DESFIRE_UID_LEN, DFC_KEY_TYPE_AES, DFC_KEY_TYPE_AES);
+
+    for(unsigned value = 0; value <= UINT8_MAX; value++) {
+        DfcCredential candidate;
+        dfc_credential_copy_model(&candidate, &source);
+        candidate.files[0].comm_settings = (uint8_t)value;
+        uint8_t mode = (uint8_t)value & DFC_COMM_MODE_MASK;
+        bool valid =
+            (value & ~DFC_COMM_MODE_MASK) == 0 &&
+            (mode == DFC_COMM_PLAIN || mode == DFC_COMM_MAC || mode == DFC_COMM_ENCIPHERED);
+        munit_assert_int(
+            dfc_credential_validate_model(&candidate), ==, valid ? DfcModelOk : DfcModelMalformed);
+    }
+
+    for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
+        DfcCredential candidate;
+        dfc_credential_copy_model(&candidate, &source);
+        candidate.files[0].access_rights = (uint16_t)rights;
+        munit_assert_int(
+            dfc_credential_validate_model(&candidate),
+            ==,
+            ordinary_access_rights_are_valid((uint16_t)rights, 2) ? DfcModelOk :
+                                                                    DfcModelMalformed);
+    }
+
+    DfcCredential value_file;
+    dfc_credential_copy_model(&value_file, &source);
+    DfcFile* value = &value_file.files[0];
+    munit_assert_true(dfc_file_resize(&value_file, value, 0));
+    value->type = DFC_FILE_TYPE_VALUE;
+    value->contents_complete = false;
+    value->value_lower_limit = -1;
+    value->value_upper_limit = 1;
+    value->value = 0;
+    for(unsigned setting = 0; setting <= UINT8_MAX; setting++) {
+        value->limited_credit = (uint8_t)setting;
+        munit_assert_int(
+            dfc_credential_validate_model(&value_file),
+            ==,
+            setting <= 3 ? DfcModelOk : DfcModelMalformed);
+    }
+
+#if DFC_ENABLE_TRANSACTION_MAC
+    DfcCredential transaction_mac;
+    dfc_credential_copy_model(&transaction_mac, &source);
+    DfcFile* transaction_file = &transaction_mac.files[0];
+    munit_assert_true(dfc_file_resize(&transaction_mac, transaction_file, 0));
+    transaction_file->type = DFC_FILE_TYPE_TRANSACTION_MAC;
+    transaction_file->contents_complete = false;
+    transaction_file->declared_size = 0;
+    transaction_file->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+    transaction_file->access_rights = 0xEFFE;
+    munit_assert_int(dfc_credential_validate_model(&transaction_mac), ==, DfcModelOk);
+
+    for(unsigned value = 0; value <= UINT8_MAX; value++) {
+        transaction_file->transaction_mac_key_type = (uint8_t)value;
+        munit_assert_int(
+            dfc_credential_validate_model(&transaction_mac),
+            ==,
+            value == DFC_TRANSACTION_MAC_KEY_TYPE_AES ? DfcModelOk : DfcModelMalformed);
+    }
+
+    transaction_file->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+    for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
+        transaction_file->access_rights = (uint16_t)rights;
+        bool valid = ordinary_access_rights_are_valid((uint16_t)rights, 2) &&
+                     (((rights >> 8) & 0x0F) == DFC_ACCESS_DENY);
+        munit_assert_int(
+            dfc_credential_validate_model(&transaction_mac),
+            ==,
+            valid ? DfcModelOk : DfcModelMalformed);
+    }
+#endif
+
+#if DFC_ENABLE_SDM
+    DfcCredential sdm;
+    dfc_credential_copy_model(&sdm, &source);
+    DfcFile* sdm_file = &sdm.files[0];
+    sdm_file->sdm_enabled = true;
+    sdm_file->comm_settings = DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN;
+    sdm_file->sdm_access_rights = 0xEFFE;
+    const uint8_t sdm_option_mask = DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
+                                    DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
+                                    DFC_SDM_ASCII_ENCODING_MASK;
+    for(unsigned options = 0; options <= UINT8_MAX; options++) {
+        sdm_file->sdm_options = (uint8_t)options;
+        munit_assert_int(
+            dfc_credential_validate_model(&sdm),
+            ==,
+            (options & ~sdm_option_mask) == 0 ? DfcModelOk : DfcModelMalformed);
+    }
+    sdm_file->sdm_options = 0;
+    for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
+        sdm_file->sdm_access_rights = (uint16_t)rights;
+        uint8_t meta = (uint8_t)(rights >> 12);
+        uint8_t file_read = (uint8_t)(rights >> 8) & 0x0F;
+        uint8_t reserved = (uint8_t)(rights >> 4) & 0x0F;
+        uint8_t counter = (uint8_t)rights & 0x0F;
+        bool valid = access_nibble_is_valid_for_keys(meta, 2) &&
+                     access_nibble_is_valid_for_keys(file_read, 2) &&
+                     reserved == DFC_ACCESS_DENY && access_nibble_is_valid_for_keys(counter, 2);
+        munit_assert_int(
+            dfc_credential_validate_model(&sdm), ==, valid ? DfcModelOk : DfcModelMalformed);
+    }
+#endif
+    return MUNIT_OK;
+}
+
 static MunitResult test_valid_matrix(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -201,8 +326,8 @@ static MunitResult test_mixed_key_set_matrix(const MunitParameter params[], void
     return MUNIT_OK;
 }
 
-static MunitResult test_roll_key_set_updates_active_type(
-    const MunitParameter params[], void* data) {
+static MunitResult
+    test_roll_key_set_updates_active_type(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     DfcCredential credential;
@@ -340,8 +465,8 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
     dfc_credential_copy_model(&bad, &source);
     app = &bad.apps[0];
     munit_assert_true(dfc_credential_key_sets_resize(&bad, app, 2, 2, 16, 16));
-    app->key_settings_2 = (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) |
-                                   DFC_KEY_TYPE_3K3DES);
+    app->key_settings_2 =
+        (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) | DFC_KEY_TYPE_3K3DES);
     app->key_len = 24;
     app->key_set_types[0] = DFC_KEY_SET_TYPE_3K3DES;
     app->key_set_types[1] = DFC_KEY_SET_TYPE_AES;
@@ -363,13 +488,27 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
 }
 
 static MunitTest tests[] = {
-    {"/secure-messaging-wiped-before-free", test_secure_messaging_wiped_before_free, NULL, NULL,
-     MUNIT_TEST_OPTION_NONE, NULL},
+    {"/secure-messaging-wiped-before-free",
+     test_secure_messaging_wiped_before_free,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/valid-matrix", test_valid_matrix, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/serialized-domain-sweeps",
+     test_serialized_domain_sweeps,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #if DFC_ENABLE_KEY_SETS
     {"/mixed-key-set-matrix", test_mixed_key_set_matrix, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
-    {"/roll-key-set-updates-active-type", test_roll_key_set_updates_active_type, NULL, NULL,
-     MUNIT_TEST_OPTION_NONE, NULL},
+    {"/roll-key-set-updates-active-type",
+     test_roll_key_set_updates_active_type,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #endif
     {"/shared-primitive-boundaries",
      test_shared_primitive_boundaries,

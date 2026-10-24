@@ -14,6 +14,7 @@ internal static unsafe partial class Native
     internal const int BufferTooSmall = -2;
     internal const int OutOfMemory = -3;
     internal const int Unsupported = -4;
+    internal const int RandomFailed = -5;
     internal const int OwnerPicc = -1;
 
     private static readonly Lazy<bool> Checked = new(CheckAbi);

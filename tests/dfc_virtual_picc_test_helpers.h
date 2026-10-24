@@ -38,6 +38,14 @@ size_t build_legacy_change_key_payload(
     uint8_t version,
     uint8_t* out);
 
+size_t build_legacy_change_key_payload_with_nonzero_tail(
+    const uint8_t* session_key,
+    size_t session_key_len,
+    const uint8_t* new_key,
+    size_t new_key_len,
+    uint8_t version,
+    uint8_t* out);
+
 size_t build_legacy_encrypted_payload(
     const uint8_t* session_key,
     size_t session_key_len,
@@ -46,6 +54,16 @@ size_t build_legacy_encrypted_payload(
     uint8_t* out);
 
 size_t build_legacy_change_other_key_payload(
+    const uint8_t* session_key,
+    size_t session_key_len,
+    uint8_t key_no,
+    const uint8_t* old_key,
+    const uint8_t* new_key,
+    size_t key_len,
+    uint8_t version,
+    uint8_t* out);
+
+size_t build_legacy_change_other_key_payload_with_nonzero_tail(
     const uint8_t* session_key,
     size_t session_key_len,
     uint8_t key_no,

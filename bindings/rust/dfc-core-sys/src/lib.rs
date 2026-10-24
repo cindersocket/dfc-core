@@ -4,11 +4,6 @@
 #[cfg(not(feature = "role-target"))]
 include!("bindings.rs");
 
-#[cfg(not(feature = "role-target"))]
-unsafe extern "C" {
-    pub fn dfc_ffi_layout_fingerprint() -> u64;
-}
-
 #[cfg(feature = "role-target")]
 mod target;
 #[cfg(feature = "role-target")]

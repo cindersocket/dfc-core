@@ -22,7 +22,7 @@ public final class DfcJniReplayRandomTest {
             action.run();
             throw new AssertionError(message);
         } catch (DfcException expected) {
-            check(expected.getMessage().contains("random script"), "specific replay failure");
+            check(expected.status() == -5, "random failure must preserve ABI status -5");
         }
     }
 
@@ -41,8 +41,15 @@ public final class DfcJniReplayRandomTest {
         DfcCredential credential =
             DfcCredentialCodec.load(Files.readAllBytes(Path.of(arguments[0])));
 
-        expectFailure(() -> DfcVirtualPicc.createForReplay(credential, new byte[0]),
-            "empty replay script must be rejected");
+        try (DfcVirtualPicc picc = DfcVirtualPicc.createForReplay(credential, new byte[0])) {
+            check(picc.replayRandomRemaining() == 0, "empty replay queue");
+            picc.activate();
+            expectFailure(() -> picc.exchange(ISO_AUTHENTICATE),
+                "an empty script must fail on its first random request");
+            picc.resetProtocol();
+            check(picc.exchange(new byte[] {(byte) 0x90, 0x60, 0, 0, 0}).length > 2,
+                "random failure must not block later non-random operations");
+        }
 
         try (DfcVirtualPicc picc = DfcVirtualPicc.createForReplay(credential, new byte[7])) {
             picc.activate();
@@ -50,9 +57,35 @@ public final class DfcJniReplayRandomTest {
             expectFailure(() -> picc.exchange(ISO_AUTHENTICATE),
                 "short replay script must fail instead of padding");
             checkSameState(before, picc.snapshot());
-            expectFailure(() -> picc.exchange(new byte[] {(byte) 0x90, 0x60, 0, 0, 0}),
-                "replay exhaustion must remain sticky");
-            expectFailure(picc::resetProtocol, "protocol reset must not hide replay exhaustion");
+            check(picc.replayRandomRemaining() == 7,
+                "an undersized draw must not consume replay bytes");
+            picc.appendReplayRandom(new byte[] {(byte) 0xa5});
+            check(picc.replayRandomRemaining() == 8, "appended replay byte");
+            picc.resetProtocol();
+            check(picc.exchange(ISO_AUTHENTICATE).length > 2,
+                "the completed random queue must satisfy a retry");
+            check(picc.replayRandomRemaining() == 0, "successful draw consumes the queue");
+            picc.resetProtocol();
+            check(picc.exchange(new byte[] {(byte) 0x90, 0x60, 0, 0, 0}).length > 2,
+                "replay exhaustion must not poison unrelated operations");
+        }
+
+        byte[] replacement = new byte[8];
+        Arrays.fill(replacement, (byte) 0xa5);
+        byte[] initial = new byte[11];
+        Arrays.fill(initial, (byte) 0x3c);
+        try (DfcVirtualPicc reset = DfcVirtualPicc.createForReplay(credential, initial);
+             DfcVirtualPicc fresh = DfcVirtualPicc.createForReplay(credential, replacement)) {
+            reset.activate();
+            fresh.activate();
+            check(reset.exchange(ISO_AUTHENTICATE).length > 2, "initial replay draw");
+            check(reset.replayRandomRemaining() == 3, "initial draw leaves an unread tail");
+            reset.resetProtocol();
+            reset.clearReplayRandom();
+            check(reset.replayRandomRemaining() == 0, "clear discards unread replay bytes");
+            reset.appendReplayRandom(replacement);
+            check(Arrays.equals(reset.exchange(ISO_AUTHENTICATE), fresh.exchange(ISO_AUTHENTICATE)),
+                "the next draw after clear must start with replacement bytes");
         }
 
         byte[] exact = new byte[8];
@@ -65,7 +98,7 @@ public final class DfcJniReplayRandomTest {
             expectFailure(() -> picc.exchange(ISO_AUTHENTICATE),
                 "the next random request must report exhaustion");
             expectFailure(() -> picc.exchange(ISO_AUTHENTICATE),
-                "exhaustion must remain sticky after repeated calls");
+                "each undersized random request must report -5");
         }
 
         byte[] twoRequests = new byte[16];

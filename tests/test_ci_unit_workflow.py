@@ -1,0 +1,124 @@
+"""Regression tests for the bounded unit-test workflow."""
+
+from __future__ import annotations
+
+import json
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+MATRIX_KEYS = ("label", "backend", "sanitize", "cc", "release", "packages")
+
+
+def workflow_text() -> str:
+    return WORKFLOW.read_text(encoding="utf-8")
+
+
+def unit_job() -> str:
+    workflow = workflow_text()
+    match = re.search(r"(?ms)^  unit:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow)
+    if match is None:
+        raise AssertionError("unit job not found")
+    return match.group("body")
+
+
+def matrix_rows(job: str) -> list[tuple[str, ...]]:
+    rows = []
+    for encoded in re.findall(r"(?m)^          - \{ (?P<row>[^}]+) \}$", job):
+        row = {
+            key: json.loads(value) if value.startswith('"') else value
+            for key, value in re.findall(r"([a-z]+): (\"(?:[^\"\\]|\\.)*\"|[^,]+)(?:, |$)", encoded)
+        }
+        rows.append(tuple(row[key] for key in MATRIX_KEYS))
+    return rows
+
+
+class UnitWorkflowTests(unittest.TestCase):
+    def test_pull_requests_run_once_and_superseded_runs_are_cancelled(self) -> None:
+        workflow = workflow_text()
+
+        self.assertIn("on:\n  push:\n    branches: [master]\n  pull_request:\n", workflow)
+        self.assertIn(
+            "concurrency:\n"
+            "  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}\n"
+            "  cancel-in-progress: true\n",
+            workflow,
+        )
+
+    def test_matrix_variants_are_complete_and_uniquely_named(self) -> None:
+        job = unit_job()
+
+        self.assertIn("name: Unit suite (${{ matrix.label }})", job)
+        self.assertEqual(
+            matrix_rows(job),
+            [
+                ("mbedTLS GCC", "mbedtls", "", "gcc", "", "libmbedtls-dev"),
+                (
+                    "mbedTLS GCC ASan+UBSan",
+                    "mbedtls",
+                    "address,undefined",
+                    "gcc",
+                    "",
+                    "libmbedtls-dev",
+                ),
+                ("tiny GCC", "tiny", "", "gcc", "", ""),
+                ("tiny GCC ASan+UBSan", "tiny", "address,undefined", "gcc", "", ""),
+                (
+                    "tiny, memory",
+                    "tiny",
+                    "memory",
+                    "clang",
+                    "",
+                    "clang libclang-rt-18-dev",
+                ),
+                ("tiny GCC Release", "tiny", "", "gcc", "1", ""),
+            ],
+        )
+
+    def test_job_and_steps_have_hard_time_limits(self) -> None:
+        job = unit_job()
+
+        self.assertIn("    timeout-minutes: 30\n", job)
+        self.assertEqual(job.count("timeout-minutes: 5"), 3)
+        self.assertIn("timeout-minutes: 20", job)
+
+    def test_dependency_setup_matches_each_backend(self) -> None:
+        job = unit_job()
+
+        self.assertIn("if: matrix.packages != ''", job)
+        self.assertIn("install -y --no-install-recommends ${{ matrix.packages }}", job)
+        self.assertRegex(
+            job,
+            r"(?s)- name: Fetch tiny-crypto-c\n"
+            r"        if: matrix\.backend == 'tiny'\n"
+            r"        uses: actions/checkout@v4",
+        )
+
+    def test_apt_waits_are_bounded(self) -> None:
+        job = unit_job()
+
+        self.assertEqual(job.count("timeout 180s"), 2)
+        for option in (
+            "Acquire::Retries=2",
+            "Acquire::http::Timeout=20",
+            "Acquire::https::Timeout=20",
+            "DPkg::Lock::Timeout=60",
+        ):
+            self.assertEqual(job.count(option), 2)
+
+    def test_unit_command_forwards_every_matrix_setting(self) -> None:
+        job = unit_job()
+        command = (
+            "make -C tests test CRYPTO_BACKEND=${{ matrix.backend }} "
+            "TINY_CRYPTO_DIR=../dependencies/tiny-crypto-c CC=${{ matrix.cc }} "
+            "SANITIZE=${{ matrix.sanitize }} RELEASE=${{ matrix.release }}"
+        )
+
+        self.assertIn("- name: Run unit suite\n        timeout-minutes: 20", job)
+        self.assertIn(f"run: {command}", job)
+
+
+if __name__ == "__main__":
+    unittest.main()

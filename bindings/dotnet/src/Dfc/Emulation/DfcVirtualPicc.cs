@@ -58,19 +58,38 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 {
     private const int ResponseCapacity = 1024;
     private const int NoCard = 1;
+    private static readonly TimeSpan MaximumNativeElapsed = TimeSpan.FromMilliseconds(uint.MaxValue);
+
+    internal delegate int PiccCreator(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    );
+
+    internal readonly record struct CreationHooks(
+        PiccCreator Create,
+        Action<nint>? AfterCreate = null,
+        Action<nint>? Free = null
+    );
 
     private readonly PiccHandle handle;
-    private readonly GCHandle randomRoot;
+    private readonly PiccOperations operations;
     private readonly TimeProvider? clock;
     private long lastTimestamp;
     private readonly Lock gate = new();
 
-    private DfcVirtualPicc(PiccHandle handle, GCHandle randomRoot, TimeProvider? clock)
+    private DfcVirtualPicc(
+        PiccHandle handle,
+        PiccOperations operations,
+        TimeProvider? clock,
+        long lastTimestamp
+    )
     {
         this.handle = handle;
-        this.randomRoot = randomRoot;
+        this.operations = operations;
         this.clock = clock;
-        lastTimestamp = clock?.GetTimestamp() ?? 0;
+        this.lastTimestamp = lastTimestamp;
     }
 
     /// <summary>
@@ -82,6 +101,26 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         DfcCredential credential,
         IDfcRandomSource? random = null,
         TimeProvider? clock = null
+    ) => CreateCore(credential, random, clock, null, null);
+
+    internal static Result<DfcVirtualPicc, DfcError> CreateForTesting(
+        DfcCredential credential,
+        IDfcRandomSource? random,
+        TimeProvider? clock,
+        CreationHooks hooks
+    ) => CreateCore(credential, random, clock, hooks, null);
+
+    internal static Result<DfcVirtualPicc, DfcError> CreateWithOperationsForTesting(
+        DfcCredential credential,
+        PiccOperations operations
+    ) => CreateCore(credential, null, null, null, operations);
+
+    private static Result<DfcVirtualPicc, DfcError> CreateCore(
+        DfcCredential credential,
+        IDfcRandomSource? random,
+        TimeProvider? clock,
+        CreationHooks? hooks,
+        PiccOperations? operations
     )
     {
         var written = CredentialMarshaller.Write(credential);
@@ -91,36 +130,94 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         }
 
         using var source = written.Value;
-        var root = random is null ? default : GCHandle.Alloc(random);
-        nint picc;
-        int st;
-        bool added = false;
-        source.DangerousAddRef(ref added);
+        var initialTimestamp = clock?.GetTimestamp() ?? 0;
+        GCHandle root = default;
+        nint picc = 0;
+        PiccHandle? pendingHandle = null;
         try
         {
-            st = random is null
-                ? Native.dfc_ffi_picc_create(source.DangerousGetHandle(), null, 0, &picc)
-                : Native.dfc_ffi_picc_create(source.DangerousGetHandle(), &RandomTrampoline, GCHandle.ToIntPtr(root), &picc);
+            root = random is null ? default : GCHandle.Alloc(random);
+            int st;
+            bool added = false;
+            source.DangerousAddRef(ref added);
+            try
+            {
+                var create = hooks?.Create;
+                st = create is null
+                    ? Native.dfc_ffi_picc_create(
+                        source.DangerousGetHandle(),
+                        random is null ? null : &RandomTrampoline,
+                        random is null ? 0 : GCHandle.ToIntPtr(root),
+                        &picc
+                    )
+                    : create(
+                        source.DangerousGetHandle(),
+                        random is null ? null : &RandomTrampoline,
+                        random is null ? 0 : GCHandle.ToIntPtr(root),
+                        &picc
+                    );
+            }
+            finally
+            {
+                if (added)
+                {
+                    source.DangerousRelease();
+                }
+            }
+
+            if (st != 0)
+            {
+                return DfcError.FromStatus(st, "the virtual PICC could not be created");
+            }
+
+            if (hooks?.AfterCreate is { } afterCreate)
+            {
+                afterCreate(picc);
+            }
+
+            pendingHandle = new PiccHandle(picc, root);
+            picc = 0;
+            root = default;
+            var card = new DfcVirtualPicc(
+                pendingHandle,
+                operations ?? PiccOperations.Default,
+                clock,
+                initialTimestamp
+            );
+            pendingHandle = null;
+            return card;
         }
         finally
         {
-            if (added)
+            if (pendingHandle is not null)
             {
-                source.DangerousRelease();
+                pendingHandle.Dispose();
+            }
+            else
+            {
+                try
+                {
+                    if (picc != 0)
+                    {
+                        if (hooks?.Free is { } free)
+                        {
+                            free(picc);
+                        }
+                        else
+                        {
+                            Native.dfc_ffi_picc_free(picc);
+                        }
+                    }
+                }
+                finally
+                {
+                    if (root.IsAllocated)
+                    {
+                        root.Free();
+                    }
+                }
             }
         }
-
-        if (st != 0)
-        {
-            if (root.IsAllocated)
-            {
-                root.Free();
-            }
-
-            return DfcError.FromStatus(st, "the virtual PICC could not be created");
-        }
-
-        return new DfcVirtualPicc(new PiccHandle(picc), root, clock);
     }
 
     /// <summary>Runs anticollision and reports what the card presented.</summary>
@@ -130,14 +227,19 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         int st;
         lock (gate)
         {
-            st = Native.dfc_ffi_picc_activate(Raw, &activation);
+            using var lease = new PiccHandleLease(handle);
+            st = Native.dfc_ffi_picc_activate(lease.Raw, &activation);
         }
 
         if (st != 0)
         {
-            return st == NoCard
-                ? new DfcProtocolError(DfcProtocolErrorKind.NoCard, "No card answered anticollision.")
-                : new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"Activation failed with status {st}.");
+            return st switch
+            {
+                NoCard => new DfcProtocolError(DfcProtocolErrorKind.NoCard, "No card answered anticollision."),
+                Native.RandomFailed => new DfcProtocolError(
+                    DfcProtocolErrorKind.RandomSource, "The virtual card's random source failed."),
+                _ => new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"Activation failed with status {st}."),
+            };
         }
 
         return new DfcActivation(
@@ -169,7 +271,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     {
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_field_off(Raw);
+            using var lease = new PiccHandleLease(handle);
+            operations.FieldOff(lease.Raw);
         }
     }
 
@@ -178,17 +281,22 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     {
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_reset_protocol(Raw);
+            using var lease = new PiccHandleLease(handle);
+            operations.ResetProtocol(lease.Raw);
         }
     }
 
     /// <summary>Advances the card's notion of time.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="elapsed" /> is negative or exceeds <see cref="uint.MaxValue" /> milliseconds.
+    /// </exception>
     public void AdvanceTime(TimeSpan elapsed)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
+        var milliseconds = NativeMilliseconds(elapsed, saturate: false);
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_advance_time(Raw, (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue));
+            using var lease = new PiccHandleLease(handle);
+            operations.AdvanceTime(lease.Raw, milliseconds);
         }
     }
 
@@ -198,7 +306,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         NativeSnapshot s;
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_snapshot(Raw, &s);
+            using var lease = new PiccHandleLease(handle);
+            s = operations.Snapshot(lease.Raw);
         }
 
         DfcEv2SessionSnapshot? ev2 = s.Ev2Active != 0
@@ -231,7 +340,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         nint exported;
         lock (gate)
         {
-            CredentialMarshaller.Check(Native.dfc_ffi_picc_export(Raw, &exported));
+            using var lease = new PiccHandleLease(handle);
+            CredentialMarshaller.Check(Native.dfc_ffi_picc_export(lease.Raw, &exported));
         }
 
         using var credential = new CredentialHandle(exported);
@@ -243,26 +353,17 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     {
         lock (gate)
         {
-            _ = Native.dfc_ffi_picc_mark_persisted(Raw);
+            using var lease = new PiccHandleLease(handle);
+            operations.MarkPersisted(lease.Raw);
         }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        handle.Dispose();
-        if (randomRoot.IsAllocated)
+        lock (gate)
         {
-            randomRoot.Free();
-        }
-    }
-
-    private nint Raw
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(handle.IsClosed, this);
-            return handle.DangerousGetHandle();
+            handle.Dispose();
         }
     }
 
@@ -273,27 +374,46 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         int st;
         lock (gate)
         {
-            FollowClock();
+            using var lease = new PiccHandleLease(handle);
+            FollowClock(lease.Raw);
             fixed (byte* c = command)
             fixed (byte* r = response)
             {
                 st = frame
-                    ? Native.dfc_ffi_picc_frame_exchange(Raw, c, (nuint)command.Length, r, ResponseCapacity, &length)
-                    : Native.dfc_ffi_picc_exchange(Raw, c, (nuint)command.Length, r, ResponseCapacity, &length);
+                    ? Native.dfc_ffi_picc_frame_exchange(
+                        lease.Raw,
+                        c,
+                        (nuint)command.Length,
+                        r,
+                        ResponseCapacity,
+                        &length
+                    )
+                    : Native.dfc_ffi_picc_exchange(
+                        lease.Raw,
+                        c,
+                        (nuint)command.Length,
+                        r,
+                        ResponseCapacity,
+                        &length
+                    );
             }
         }
 
         if (st != 0)
         {
-            return st == NoCard
-                ? new DfcProtocolError(DfcProtocolErrorKind.NoCard, "The card is not activated.")
-                : new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"The card could not answer (status {st}).");
+            return st switch
+            {
+                NoCard => new DfcProtocolError(DfcProtocolErrorKind.NoCard, "The card is not activated."),
+                Native.RandomFailed => new DfcProtocolError(
+                    DfcProtocolErrorKind.RandomSource, "The virtual card's random source failed."),
+                _ => new DfcProtocolError(DfcProtocolErrorKind.Protocol, $"The card could not answer (status {st})."),
+            };
         }
 
         return response[..(int)length].ToArray();
     }
 
-    private void FollowClock()
+    private void FollowClock(nint raw)
     {
         if (clock is null)
         {
@@ -302,11 +422,28 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
         var now = clock.GetTimestamp();
         var elapsed = clock.GetElapsedTime(lastTimestamp, now);
-        lastTimestamp = now;
         if (elapsed > TimeSpan.Zero)
         {
-            _ = Native.dfc_ffi_picc_advance_time(Raw, (uint)Math.Min(elapsed.TotalMilliseconds, uint.MaxValue));
+            // Once the native transaction timer expires, additional elapsed time has no effect.
+            operations.AdvanceTime(raw, NativeMilliseconds(elapsed, saturate: true));
         }
+        lastTimestamp = now;
+    }
+
+    private static uint NativeMilliseconds(TimeSpan elapsed, bool saturate)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(elapsed, TimeSpan.Zero);
+        if (elapsed > MaximumNativeElapsed)
+        {
+            if (saturate)
+            {
+                return uint.MaxValue;
+            }
+
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(elapsed, MaximumNativeElapsed);
+        }
+
+        return checked((uint)elapsed.TotalMilliseconds);
     }
 
     [UnmanagedCallersOnly]
@@ -328,9 +465,12 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
     private sealed class PiccHandle : SafeHandle
     {
-        public PiccHandle(nint picc)
+        private GCHandle randomRoot;
+
+        public PiccHandle(nint picc, GCHandle randomRoot)
             : base(IntPtr.Zero, ownsHandle: true)
         {
+            this.randomRoot = randomRoot;
             SetHandle(picc);
         }
 
@@ -338,8 +478,42 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
         protected override bool ReleaseHandle()
         {
-            Native.dfc_ffi_picc_free(handle);
+            try
+            {
+                Native.dfc_ffi_picc_free(handle);
+            }
+            finally
+            {
+                if (randomRoot.IsAllocated)
+                {
+                    randomRoot.Free();
+                }
+            }
             return true;
         }
+    }
+
+    private readonly ref struct PiccHandleLease
+    {
+        private readonly PiccHandle handle;
+
+        public PiccHandleLease(PiccHandle handle)
+        {
+            this.handle = handle;
+            bool added = false;
+            try
+            {
+                handle.DangerousAddRef(ref added);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw new ObjectDisposedException(nameof(DfcVirtualPicc));
+            }
+            Raw = handle.DangerousGetHandle();
+        }
+
+        public nint Raw { get; }
+
+        public void Dispose() => handle.DangerousRelease();
     }
 }

@@ -20,17 +20,17 @@
 #if DFC_ENABLE_READER
 
 // Largest data field a single native frame carries: the one-octet Lc bounds it.
-#define DFC_COMMAND_MAX_DATA 255
+#define DFC_COMMAND_MAX_DATA      255
 // CLA INS P1 P2 Lc data Le.
 #define DFC_COMMAND_APDU_OVERHEAD 6
 #define DFC_COMMAND_MAX_APDU      (DFC_COMMAND_MAX_DATA + DFC_COMMAND_APDU_OVERHEAD)
 
-#define DFC_COMMAND_AID_LENGTH             3
-#define DFC_COMMAND_DF_NAME_MAX_LENGTH     16
-#define DFC_COMMAND_READER_ID_LENGTH       16
-#define DFC_COMMAND_TMAC_KEY_LENGTH        16
-#define DFC_COMMAND_EV2_CAPABILITY_LENGTH  6
-#define DFC_COMMAND_UINT24_MAX             0xFFFFFFu
+#define DFC_COMMAND_AID_LENGTH            3
+#define DFC_COMMAND_DF_NAME_MAX_LENGTH    16
+#define DFC_COMMAND_READER_ID_LENGTH      16
+#define DFC_COMMAND_TMAC_KEY_LENGTH       16
+#define DFC_COMMAND_EV2_CAPABILITY_LENGTH 6
+#define DFC_COMMAND_UINT24_MAX            0xFFFFFFu
 
 typedef enum {
     DfcCommandOk = 0,

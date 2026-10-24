@@ -8,11 +8,13 @@ from . import _native
 from .credential import Credential
 from .errors import (
     BufferTooSmallError,
+    CardError,
     CredentialError,
     DfcError,
     DfcMemoryError,
     InvalidArgumentError,
     ProtocolError,
+    RandomSourceError,
     UnsupportedError,
 )
 from .models import (
@@ -76,6 +78,7 @@ __all__ = [
     "BuildRole",
     "Capabilities",
     "Card",
+    "CardError",
     "Command",
     "Credential",
     "CredentialError",
@@ -87,6 +90,7 @@ __all__ = [
     "Key",
     "PiccSettings",
     "ProtocolError",
+    "RandomSourceError",
     "Reader",
     "ReaderState",
     "Response",

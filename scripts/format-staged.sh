@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$root"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+
+# Re-staging a formatted file would also capture its unstaged edits. Refuse that
+# ambiguous case so a commit cannot absorb another change by accident.
+for file in $staged; do
+    if ! git diff --quiet -- "$file"; then
+        echo "format-staged: $file has unstaged edits" >&2
+        exit 1
+    fi
+done
+
+for file in $staged; do
+    [ -f "$file" ] || continue
+    case "$file" in
+        *.c|*.h|*.java)
+            uvx --from clang-format==21.1.7 clang-format -i "$file"
+            ;;
+        *.py)
+            uv run --project bindings/python --frozen --extra test ruff format "$file"
+            ;;
+        *.rs)
+            rustfmt --edition 2021 "$file"
+            ;;
+        bindings/dotnet/*.cs|bindings/dotnet/**/*.cs)
+            dotnet format bindings/dotnet/Dfc.sln --include "$file"
+            ;;
+        examples/dotnet/*.cs)
+            dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --include "$file"
+            ;;
+    esac
+    git add -- "$file"
+done

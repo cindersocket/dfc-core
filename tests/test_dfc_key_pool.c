@@ -65,6 +65,52 @@ static MunitResult test_resize_allocate_and_release(const MunitParameter params[
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_resize_accepts_zero_initialized_model(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    for(size_t app_first = 0; app_first < 2; app_first++) {
+        DfcCredential credential = {0};
+        DfcApplication app = {0};
+        DfcApplication* first = app_first ? &app : NULL;
+        DfcApplication* second = app_first ? NULL : &app;
+
+        munit_assert_true(dfc_credential_keys_resize(&credential, first, 1, 16));
+        uint8_t* first_key = dfc_credential_key(&credential, first, 0);
+        munit_assert_not_null(first_key);
+        memset(first_key, 0xA5, 16);
+
+        munit_assert_true(dfc_credential_keys_resize(&credential, second, 1, 16));
+        uint8_t* second_key = dfc_credential_key(&credential, second, 0);
+        munit_assert_not_null(second_key);
+        memset(second_key, 0x5A, 16);
+        munit_assert_size(credential.key_pool_used, ==, 32);
+        munit_assert_uint8(dfc_credential_key(&credential, first, 0)[0], ==, 0xA5);
+        munit_assert_uint8(dfc_credential_key(&credential, first, 0)[15], ==, 0xA5);
+        munit_assert_uint8(dfc_credential_key(&credential, second, 0)[0], ==, 0x5A);
+        munit_assert_uint8(dfc_credential_key(&credential, second, 0)[15], ==, 0x5A);
+
+        uint8_t guard[32];
+        memcpy(guard, credential.key_pool, sizeof(guard));
+        DfcApplication empty = {0};
+        munit_assert_true(dfc_credential_keys_resize(&credential, &empty, 0, 16));
+        munit_assert_size(empty.key_offset, ==, DFC_KEY_POOL_NONE);
+        munit_assert_size(empty.key_pool_len, ==, 0);
+        munit_assert_size(credential.key_pool_used, ==, sizeof(guard));
+        munit_assert_memory_equal(sizeof(guard), guard, credential.key_pool);
+
+        DfcApplication oversized = {0};
+        munit_assert_false(
+            dfc_credential_keys_resize(&credential, &oversized, DFC_MAX_KEYS + 1, 16));
+        munit_assert_size(oversized.key_offset, ==, 0);
+        munit_assert_size(oversized.key_pool_len, ==, 0);
+        munit_assert_size(credential.key_pool_used, ==, sizeof(guard));
+        munit_assert_memory_equal(sizeof(guard), guard, credential.key_pool);
+    }
+
+    return MUNIT_OK;
+}
+
 static MunitResult test_format_picc_keeps_picc_keys(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -193,9 +239,160 @@ static MunitResult test_resize_moves_slice(const MunitParameter params[], void* 
     return MUNIT_OK;
 }
 
+// A capacity failure must leave the old slice intact. Callers can then report
+// the failed update without losing the keys that still back the live model.
+static MunitResult test_failed_resize_preserves_slice(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential c;
+    memset(&c, 0, sizeof(c));
+    dfc_credential_clear(&c);
+
+    DfcApplication* app = add_app(&c, 0x01, DFC_KEY_TYPE_AES | 1);
+    munit_assert_not_null(app);
+    fill_keys(&c, app, 0xA5);
+    app->key_versions[0] = 0x5A;
+
+    size_t fillers = 0;
+    for(size_t i = 1; i < DFC_MAX_APPS; i++) {
+        DfcApplication* filler =
+            add_app(&c, (uint8_t)(0x20 + i), DFC_KEY_TYPE_3K3DES | DFC_MAX_KEYS);
+        if(!filler) break;
+        fillers++;
+    }
+    munit_assert_size(fillers, >, 0);
+
+    size_t used = c.key_pool_used;
+    size_t offset = app->key_offset;
+    size_t pool_len = app->key_pool_len;
+    uint8_t saved_key[16];
+    memcpy(saved_key, dfc_credential_key_const(&c, app, 0), sizeof(saved_key));
+
+    munit_assert_false(dfc_credential_keys_resize(&c, app, DFC_MAX_KEYS, DFC_MAX_KEY_LEN));
+    munit_assert_size(c.key_pool_used, ==, used);
+    munit_assert_size(app->key_offset, ==, offset);
+    munit_assert_size(app->key_pool_len, ==, pool_len);
+    munit_assert_size(app->num_keys, ==, 1);
+    munit_assert_size(app->key_len, ==, 16);
+    munit_assert_uint8(app->key_versions[0], ==, 0x5A);
+    munit_assert_memory_equal(sizeof(saved_key), saved_key, dfc_credential_key_const(&c, app, 0));
+
+    // Freeing one maximum-width filler makes the same resize valid, proving
+    // the rejection was capacity-only and did not poison the model.
+    munit_assert_true(dfc_credential_delete_application_at(&c, c.num_apps - 1));
+    munit_assert_true(dfc_credential_keys_resize(&c, app, DFC_MAX_KEYS, DFC_MAX_KEY_LEN));
+
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_resize_rejects_malformed_pool_metadata(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential c;
+    memset(&c, 0, sizeof(c));
+    dfc_credential_clear(&c);
+    DfcApplication* app = add_app(&c, 0x01, DFC_KEY_TYPE_AES | 1);
+    munit_assert_not_null(app);
+
+    size_t used = c.key_pool_used;
+    size_t offset = app->key_offset;
+    size_t pool_len = app->key_pool_len;
+    c.key_pool_used = DFC_KEY_POOL_SIZE + 1;
+    munit_assert_false(dfc_credential_keys_resize(&c, app, 1, 16));
+    c.key_pool_used = used;
+
+    app->key_offset = used + 1;
+    munit_assert_false(dfc_credential_keys_resize(&c, app, 1, 16));
+    app->key_offset = used;
+    app->key_pool_len = 1;
+    munit_assert_false(dfc_credential_keys_resize(&c, app, 1, 16));
+    app->key_offset = DFC_KEY_POOL_NONE;
+    app->key_pool_len = 1;
+    munit_assert_false(dfc_credential_keys_resize(&c, app, 1, 16));
+    app->key_offset = offset;
+    app->key_pool_len = 0;
+    munit_assert_false(dfc_credential_keys_resize(&c, app, 0, 16));
+
+    app->key_offset = offset;
+    app->key_pool_len = pool_len;
+    munit_assert_true(dfc_credential_keys_resize(&c, app, 1, 16));
+    return MUNIT_OK;
+}
+
+#if DFC_ENABLE_KEY_SETS
+static MunitResult
+    test_failed_resize_preserves_key_set_metadata(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential c;
+    memset(&c, 0, sizeof(c));
+    dfc_credential_clear(&c);
+
+    DfcApplication* app = add_app(&c, 0x01, DFC_KEY_TYPE_AES | 1);
+    munit_assert_not_null(app);
+    munit_assert_true(dfc_credential_key_sets_resize(&c, app, 2, 1, 16, 16));
+    app->key_set_versions[0] = 0x31;
+    app->key_set_versions[1] = 0x42;
+    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
+    app->key_set_types[1] = DFC_KEY_SET_TYPE_AES;
+    app->key_set_initialized[0] = true;
+    app->key_set_initialized[1] = false;
+    app->additional_key_versions[0][0] = 0x53;
+    memset(dfc_credential_key(&c, app, 0), 0xA5, 16);
+
+    for(size_t i = 1; i < DFC_MAX_APPS; i++) {
+        DfcApplication* filler =
+            add_app(&c, (uint8_t)(0x20 + i), DFC_KEY_TYPE_3K3DES | DFC_MAX_KEYS);
+        if(!filler) break;
+    }
+    size_t free = dfc_credential_key_pool_free(&c);
+    if(free >= 304) {
+        size_t keys = (free - 303 + 15) / 16;
+        DfcApplication* filler = add_app(&c, 0x70, (uint8_t)(DFC_KEY_TYPE_AES | keys));
+        munit_assert_not_null(filler);
+    }
+    munit_assert_size(dfc_credential_key_pool_free(&c), <, 304);
+
+    size_t used = c.key_pool_used;
+    size_t offset = app->key_offset;
+    size_t pool_len = app->key_pool_len;
+    uint8_t key[16];
+    memcpy(key, dfc_credential_key_const(&c, app, 0), sizeof(key));
+    uint8_t versions[DFC_MAX_KEY_SETS];
+    uint8_t types[DFC_MAX_KEY_SETS];
+    bool initialized[DFC_MAX_KEY_SETS];
+    uint8_t additional[DFC_ADDITIONAL_KEY_SET_COUNT][DFC_MAX_KEYS];
+    memcpy(versions, app->key_set_versions, sizeof(versions));
+    memcpy(types, app->key_set_types, sizeof(types));
+    memcpy(initialized, app->key_set_initialized, sizeof(initialized));
+    memcpy(additional, app->additional_key_versions, sizeof(additional));
+
+    munit_assert_false(dfc_credential_keys_resize(&c, app, DFC_MAX_KEYS, DFC_MAX_KEY_LEN));
+    munit_assert_size(c.key_pool_used, ==, used);
+    munit_assert_size(app->key_offset, ==, offset);
+    munit_assert_size(app->key_pool_len, ==, pool_len);
+    munit_assert_size(app->num_key_sets, ==, 2);
+    munit_assert_size(app->max_key_size, ==, 16);
+    munit_assert_memory_equal(sizeof(key), key, dfc_credential_key_const(&c, app, 0));
+    munit_assert_memory_equal(sizeof(versions), versions, app->key_set_versions);
+    munit_assert_memory_equal(sizeof(types), types, app->key_set_types);
+    munit_assert_memory_equal(sizeof(initialized), initialized, app->key_set_initialized);
+    munit_assert_memory_equal(sizeof(additional), additional, app->additional_key_versions);
+
+    return MUNIT_OK;
+}
+#endif
+
 static MunitTest tests[] = {
     {"/resize-allocate-and-release",
      test_resize_allocate_and_release,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/resize-accepts-zero-initialized-model",
+     test_resize_accepts_zero_initialized_model,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
@@ -214,6 +411,26 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/resize-moves-slice", test_resize_moves_slice, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/failed-resize-preserves-slice",
+     test_failed_resize_preserves_slice,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/resize-rejects-malformed-pool-metadata",
+     test_resize_rejects_malformed_pool_metadata,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#if DFC_ENABLE_KEY_SETS
+    {"/failed-resize-preserves-key-set-metadata",
+     test_failed_resize_preserves_key_set_metadata,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

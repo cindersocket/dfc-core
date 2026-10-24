@@ -88,7 +88,13 @@ typedef struct {
     // recognised (rule 4).
     size_t total;
     size_t consumed;
-    size_t last_claimed_line;
+    size_t cursor_pos;
+    size_t cursor_line;
+    size_t lookahead_end;
+    Line lookahead;
+    const char* last_key;
+    size_t last_key_len;
+    bool has_lookahead;
     uint8_t seen[TRACKED_LINES / 8];
     bool tracked;
 
@@ -240,41 +246,68 @@ static bool prescan(P* p) {
     return true;
 }
 
-// Find the single line carrying `key`. A second occurrence is a duplicate and
-// therefore an error (rule 2). Claiming a line marks it recognised.
-static bool lookup(P* p, const char* key, Line* out, bool claim) {
-    if(p->failed) return false;
-    size_t key_len = strlen(key);
-    size_t pos = 0;
-    size_t number = 0;
-    bool found = false;
+// Peek at the next significant line. Grammar rules request keys in wire order,
+// so valid documents are consumed in one forward pass rather than rescanned
+// from byte zero for every field.
+static bool peek_line(P* p, Line* out) {
+    if(p->has_lookahead) {
+        *out = p->lookahead;
+        return true;
+    }
+    size_t pos = p->cursor_pos;
+    size_t number = p->cursor_line;
     while(true) {
         const char* s;
         size_t n;
-        if(!raw_line(p, &pos, &s, &n)) break;
+        if(!raw_line(p, &pos, &s, &n)) return false;
         number++;
         if(line_is_skipped(s, n)) continue;
-        Line l;
-        if(!split_line(p, s, n, number, &l)) return false;
-        if(l.key_len != key_len || memcmp(l.key, key, key_len) != 0) continue;
-        if(found) return fail(p, number, "duplicate key %s", key);
-        *out = l;
-        found = true;
+        if(!split_line(p, s, n, number, &p->lookahead)) return false;
+        p->lookahead_end = pos;
+        p->has_lookahead = true;
+        *out = p->lookahead;
+        return true;
     }
-    if(found && claim) {
-        if(out->number <= p->last_claimed_line) {
-            return fail(p, out->number, "%s: out of order", key);
+}
+
+// Claim the next line when it carries `key`. Optional keys can therefore be
+// tested without consuming the following field.
+static bool lookup(P* p, const char* key, Line* out, bool claim) {
+    if(p->failed) return false;
+    Line line;
+    if(!peek_line(p, &line)) return false;
+    size_t key_len = strlen(key);
+    if(line.key_len != key_len || memcmp(line.key, key, key_len) != 0) {
+        if(p->last_key && line.key_len == p->last_key_len &&
+           memcmp(line.key, p->last_key, line.key_len) == 0) {
+            return fail(p, line.number, "duplicate key %.*s", (int)line.key_len, line.key);
         }
-        p->last_claimed_line = out->number;
-        p->consumed++;
-        mark_seen(p, out->number);
+        return false;
     }
-    return found;
+    *out = line;
+    if(claim) {
+        p->cursor_pos = p->lookahead_end;
+        p->cursor_line = line.number;
+        p->has_lookahead = false;
+        p->last_key = line.key;
+        p->last_key_len = line.key_len;
+        p->consumed++;
+        mark_seen(p, line.number);
+    }
+    return true;
 }
 
 static bool required(P* p, const char* key, Line* out) {
     if(lookup(p, key, out, true)) return true;
     if(p->failed) return false;
+    Line next;
+    if(peek_line(p, &next)) {
+        return fail(
+            p,
+            next.number,
+            "missing required key %s; next key is unrecognised or out of order",
+            key);
+    }
     return fail(p, 0, "missing required key %s", key);
 }
 
@@ -464,8 +497,20 @@ static bool
     opt_uint(P* p, const char* key, uint32_t lo, uint32_t hi, uint32_t* out, bool* present) {
     *present = false;
     Line l;
-    if(!lookup(p, key, &l, false)) return !p->failed;
-    if(!req_uint(p, key, lo, hi, out)) return false;
+    if(!lookup(p, key, &l, true)) return !p->failed;
+    int64_t value = 0;
+    if(!parse_decimal(p, &l, key, false, &value)) return false;
+    if((uint64_t)value < lo || (uint64_t)value > hi) {
+        return fail(
+            p,
+            l.number,
+            "%s: %lu outside %lu..%lu",
+            key,
+            (unsigned long)value,
+            (unsigned long)lo,
+            (unsigned long)hi);
+    }
+    *out = (uint32_t)value;
     *present = true;
     return true;
 }
@@ -655,20 +700,46 @@ static bool parse_record_contents(P* p, const char* prefix, DfcFile* f) {
     f->max_records = (uint32_t)rmax;
     f->record_count = (uint32_t)rcount;
 
-    // Count the stored records first: the pool slice is sized once, so the
-    // records cannot be decoded as they are found.
+    // Count the contiguous record lines without moving the parser. The pool
+    // slice is sized once, then the same short span is consumed and decoded.
     size_t stored = 0;
+    size_t pos = p->cursor_pos;
+    size_t number = p->cursor_line;
     while(true) {
         snprintf(key, sizeof(key), "%s Record %02X", prefix, (unsigned)stored);
+        const char* s;
+        size_t len;
         Line l;
-        if(!lookup(p, key, &l, true)) break;
-        size_t n = 0;
-        if(!hex_count(p, &l, key, &n)) return false;
-        if(n != rsize) return fail(p, l.number, "%s: length is not Record Size", key);
+        do {
+            if(!raw_line(p, &pos, &s, &len)) goto records_counted;
+            number++;
+        } while(line_is_skipped(s, len));
+        if(!split_line(p, s, len, number, &l)) return false;
+        size_t key_len = strlen(key);
+        if(l.key_len != key_len || memcmp(l.key, key, key_len) != 0) break;
         stored++;
     }
+records_counted:
     if(p->failed) return false;
     if(stored > rcount) return fail(p, 0, "%s: more records than Record Count", prefix);
+
+    uint8_t* dst = NULL;
+    if(stored > 0) {
+        if(!dfc_file_resize(p->c, f, stored * (size_t)rsize)) {
+            return fail_class(p, DfcTextCapacity, 0, "%s: records do not fit", prefix);
+        }
+        dst = dfc_file_data(p->c, f);
+        if(!dst) return fail_class(p, DfcTextCapacity, 0, "%s: no room for records", prefix);
+        for(size_t i = 0; i < stored; i++) {
+            snprintf(key, sizeof(key), "%s Record %02X", prefix, (unsigned)i);
+            Line l;
+            if(!lookup(p, key, &l, true)) return fail(p, 0, "%s: record vanished", prefix);
+            size_t n = 0;
+            if(!hex_count(p, &l, key, &n)) return false;
+            if(n != rsize) return fail(p, l.number, "%s: length is not Record Size", key);
+            hex_decode(&l, dst + i * (size_t)rsize, (size_t)rsize);
+        }
+    }
 
     snprintf(key, sizeof(key), "%s Record Complete", prefix);
     if(!req_bool(p, key, &f->contents_complete)) return false;
@@ -676,19 +747,6 @@ static bool parse_record_contents(P* p, const char* prefix, DfcFile* f) {
         return fail(p, 0, "%s: Record Complete is 1 but records are missing", prefix);
     }
 
-    if(stored > 0) {
-        if(!dfc_file_resize(p->c, f, stored * (size_t)rsize)) {
-            return fail_class(p, DfcTextCapacity, 0, "%s: records do not fit", prefix);
-        }
-        uint8_t* dst = dfc_file_data(p->c, f);
-        if(!dst) return fail_class(p, DfcTextCapacity, 0, "%s: no room for records", prefix);
-        for(size_t i = 0; i < stored; i++) {
-            snprintf(key, sizeof(key), "%s Record %02X", prefix, (unsigned)i);
-            Line l;
-            if(!lookup(p, key, &l, false)) return fail(p, 0, "%s: record vanished", prefix);
-            hex_decode(&l, dst + i * (size_t)rsize, (size_t)rsize);
-        }
-    }
     return true;
 }
 
@@ -941,7 +999,7 @@ static bool parse_applications(P* p) {
         }
 
         char selector[KEY_MAX];
-        snprintf(selector, sizeof(selector), "%s Key Set Count", prefix);
+        snprintf(selector, sizeof(selector), "%s Key Set Key Count", prefix);
         Line probe;
         // The key-set block replaces the ordinary key list.
         if(lookup(p, selector, &probe, false)) {
@@ -1190,8 +1248,13 @@ static bool parse_picc(P* p) {
     return true;
 }
 
-DfcTextStatus
-    dfc_text_parse(DfcCredential* credential, const char* text, size_t len, DfcTextError* detail) {
+// Fills `credential` in place. Like the binary decoder, it is only reached
+// through its public entry point, which owns the failure contract.
+static DfcTextStatus parse_credential(
+    DfcCredential* credential,
+    const char* text,
+    size_t len,
+    DfcTextError* detail) {
     if(detail) {
         detail->line = 0;
         detail->message[0] = '\0';
@@ -1250,7 +1313,9 @@ DfcTextStatus
             break;
         }
         if(!dfc_uid_length_is_valid(credential->uid_len)) {
-            fail(&p, 0, "UID: length shall be 4, 7, or 10");
+            Line next;
+            size_t line = peek_line(&p, &next) ? next.number : 0;
+            fail(&p, line, "UID: length shall be 4, 7, or 10");
             break;
         }
         if(!req_token(&p, "UID Provenance", PROVENANCE_NAMES, 3, &index)) break;
@@ -1292,14 +1357,32 @@ DfcTextStatus
                 if(was_seen(&p, number)) continue;
                 Line bad;
                 if(!split_line(&p, s, n, number, &bad)) break;
+                size_t prior_pos = 0;
+                size_t prior_number = 0;
+                const char* prior_s;
+                size_t prior_n;
+                while(raw_line(&p, &prior_pos, &prior_s, &prior_n)) {
+                    prior_number++;
+                    if(prior_number >= number) break;
+                    if(line_is_skipped(prior_s, prior_n) || !was_seen(&p, prior_number)) continue;
+                    Line prior;
+                    if(!split_line(&p, prior_s, prior_n, prior_number, &prior)) break;
+                    if(prior.key_len == bad.key_len &&
+                       memcmp(prior.key, bad.key, bad.key_len) == 0) {
+                        fail(&p, number, "duplicate key %.*s", (int)bad.key_len, bad.key);
+                        named = true;
+                        break;
+                    }
+                }
+                if(named) break;
                 char name[KEY_MAX];
                 size_t copy = bad.key_len < sizeof(name) ? bad.key_len : sizeof(name) - 1;
                 memcpy(name, bad.key, copy);
                 name[copy] = '\0';
-                fail(&p, number, "unrecognised key %s", name);
+                fail(&p, number, "unrecognised or out of order key %s", name);
                 named = true;
             }
-            if(!named) fail(&p, 0, "unrecognised keys are present");
+            if(!named) fail(&p, 0, "unrecognised or out of order keys are present");
             break;
         }
     } while(false);
@@ -1315,11 +1398,18 @@ DfcTextStatus
 
     if(p.failed) {
         if(detail) *detail = p.err;
-        dfc_credential_clear(credential);
         return p.status;
     }
     credential->dirty = false;
     return DfcTextOk;
+}
+
+DfcTextStatus
+    dfc_text_parse(DfcCredential* credential, const char* text, size_t len, DfcTextError* detail) {
+    DfcTextStatus status = parse_credential(credential, text, len, detail);
+    // One exit for every failure, argument and capacity errors included.
+    if(status != DfcTextOk && credential) dfc_credential_clear(credential);
+    return status;
 }
 
 // ------------------------------------------------------------------ writer ---
@@ -1334,12 +1424,17 @@ typedef struct {
 } W;
 
 static void w_raw(W* w, const char* s, size_t n) {
+    if(n > SIZE_MAX - w->len) {
+        w->overflow = true;
+        w->len = SIZE_MAX;
+        return;
+    }
     if(w->buf) {
-        if(w->len + n > w->cap) {
+        if(n > w->cap - DFC_MIN(w->len, w->cap)) {
             w->overflow = true;
-            return;
+        } else if(!w->overflow) {
+            memcpy(w->buf + w->len, s, n);
         }
-        memcpy(w->buf + w->len, s, n);
     }
     w->len += n;
 }
@@ -1790,20 +1885,15 @@ DfcTextStatus dfc_text_write(const DfcCredential* credential, char* out, size_t 
     if(!credential || !len) return DfcTextMalformed;
     if(!out && cap > 0) return DfcTextMalformed;
 
-    W probe = {NULL, 0, 0, false};
-    DfcTextStatus st = write_credential(&probe, credential);
-    if(st != DfcTextOk) return st;
-    // Report the size even when it does not fit, so a caller can size a buffer
-    // with cap 0 and then write for real.
-    *len = probe.len;
-    if(probe.len > cap) return DfcTextCapacity;
-
     W w = {out, cap, 0, false};
-    st = write_credential(&w, credential);
+    DfcTextStatus st = write_credential(&w, credential);
     if(st != DfcTextOk) return st;
-    if(w.overflow) return DfcTextCapacity;
-    if(w.len < cap) out[w.len] = '\0';
     *len = w.len;
+    if(w.overflow) {
+        if(out && cap) out[0] = '\0';
+        return DfcTextCapacity;
+    }
+    if(w.len < cap) out[w.len] = '\0';
     return DfcTextOk;
 }
 
@@ -1816,7 +1906,11 @@ DfcTextStatus dfc_credential_load(
         detail->line = 0;
         detail->message[0] = '\0';
     }
-    if(!credential || (!content && len > 0)) return DfcTextMalformed;
+    if(!credential) return DfcTextMalformed;
+    if(!content && len > 0) {
+        dfc_credential_clear(credential);
+        return DfcTextMalformed;
+    }
     if(dfc_credential_content_is_binary(content, len)) {
         DfcDerStatus st = dfc_der_decode(credential, content, len);
         if(st != DfcDerOk && detail) {

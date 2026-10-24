@@ -67,15 +67,24 @@
 #define DFC_CMD_READ_DATA                    0xBD
 #define DFC_CMD_WRITE_DATA                   0x3D
 #define DFC_CMD_WRITE_RECORD                 0x3B
+#define DFC_CMD_WRITE_RECORD_ISO             0x8B
 #define DFC_CMD_READ_RECORDS                 0xBB
-#define DFC_CMD_UPDATE_RECORD                0xDB
-#define DFC_CMD_UPDATE_RECORD_ISO            0xBA
-#define DFC_CMD_CLEAR_RECORD_FILE            0xEB
-#define DFC_CMD_PREPARE_PROXIMITY_CHECK      0xF0
-#define DFC_CMD_PROXIMITY_CHECK              0xF2
-#define DFC_CMD_VERIFY_PROXIMITY_CHECK       0xFD
-#define DFC_CMD_READ_SIGNATURE               0x3C
-#define DFC_CMD_SET_CONFIGURATION            0x5C
+#define DFC_CMD_READ_RECORDS_ISO             0xAB
+
+// Classify record variants without changing bytes authenticated on the wire.
+static inline uint8_t dfc_record_command_base(uint8_t command) {
+    if(command == DFC_CMD_READ_RECORDS_ISO) return DFC_CMD_READ_RECORDS;
+    if(command == DFC_CMD_WRITE_RECORD_ISO) return DFC_CMD_WRITE_RECORD;
+    return command;
+}
+#define DFC_CMD_UPDATE_RECORD           0xDB
+#define DFC_CMD_UPDATE_RECORD_ISO       0xBA
+#define DFC_CMD_CLEAR_RECORD_FILE       0xEB
+#define DFC_CMD_PREPARE_PROXIMITY_CHECK 0xF0
+#define DFC_CMD_PROXIMITY_CHECK         0xF2
+#define DFC_CMD_VERIFY_PROXIMITY_CHECK  0xFD
+#define DFC_CMD_READ_SIGNATURE          0x3C
+#define DFC_CMD_SET_CONFIGURATION       0x5C
 
 // ISO7816-4 framing: readers/drivers commonly probe with a standard SELECT (CLA=0x00,
 // INS=0xA4) before or instead of native framing, and some PC/SC paths pass native DESFire
@@ -109,6 +118,10 @@
 #define DFC_ISO7816_SW_INSTRUCTION_LO         0x00
 #define DFC_ISO7816_SW_WRONG_LE_HI            0x6C
 #define DFC_ISO7816_SW_WRONG_LE_LO            0x00
+#define DFC_ISO7816_SW_NO_DIAGNOSTIC_HI       0x6F
+#define DFC_ISO7816_SW_NO_DIAGNOSTIC_LO       0x00
+#define DFC_ISO7816_SW_EOF_BEFORE_LE_HI       0x62
+#define DFC_ISO7816_SW_EOF_BEFORE_LE_LO       0x82
 #define DFC_ISO7816_SELECT_PATH_FROM_MF       0x08
 #define DFC_ISO7816_SELECT_PATH_FROM_DF       0x09
 #define DFC_ISO7816_STATUS_WORD_LENGTH        2
@@ -242,16 +255,28 @@ extern const uint8_t DFC_ISO_AID[7];
 // builders, codecs, the FFI, and the emulator cannot drift apart.
 bool dfc_uid_length_is_valid(size_t length);
 bool dfc_iso_file_id_is_reserved(uint16_t value);
+bool dfc_communication_settings_is_valid(uint8_t value);
+bool dfc_access_rights_are_valid(uint16_t rights, size_t key_count);
+bool dfc_transaction_mac_access_rights_are_valid(uint16_t rights, size_t key_count);
+bool dfc_sdm_access_rights_are_valid(uint16_t rights, size_t key_count);
+bool dfc_transaction_mac_key_type_is_valid(uint8_t value);
 // Returns 16 or 24 for a valid key-set type, and zero for an invalid type.
 size_t dfc_key_set_type_length(uint8_t type);
 uint8_t dfc_key_type_for_set_type(uint8_t type);
 bool dfc_ct_equal(const uint8_t* left, const uint8_t* right, size_t length);
 void dfc_secure_wipe(void* buffer, size_t length);
+uint16_t dfc_crc16_iso14443_extend(uint16_t crc, const uint8_t* data, size_t length);
+uint16_t dfc_crc16_iso14443(const uint8_t* data, size_t length);
+uint32_t dfc_crc32_extend(uint32_t crc, const uint8_t* data, size_t length);
+uint32_t dfc_crc32(const uint8_t* data, size_t length);
 
 // File communication settings
 #define DFC_COMM_PLAIN      0x00
 #define DFC_COMM_MAC        0x01
 #define DFC_COMM_ENCIPHERED 0x03
+#define DFC_COMM_MODE_MASK  0x03
+
+#define DFC_TRANSACTION_MAC_KEY_TYPE_AES 0x02
 
 #define DFC_FILE_TYPE_STANDARD_DATA   0x00
 #define DFC_FILE_TYPE_BACKUP_DATA     0x01
@@ -334,9 +359,12 @@ void dfc_secure_wipe(void* buffer, size_t length);
 #ifndef DFC_PICC_ATS_MAX
 #define DFC_PICC_ATS_MAX 20
 #endif
-#define DFC_AES_KEY_LENGTH                          16
-#define DFC_AES_CMAC_LENGTH                         16
-#define DFC_WIRE_MAC_LENGTH                         8
+#define DFC_AES_KEY_LENGTH  16
+#define DFC_AES_CMAC_LENGTH 16
+#define DFC_WIRE_MAC_LENGTH 8
+void dfc_truncate_aes_wire_mac(
+    const uint8_t full[DFC_AES_CMAC_LENGTH],
+    uint8_t wire[DFC_WIRE_MAC_LENGTH]);
 #define DFC_VIRTUAL_CARD_CHALLENGE_LENGTH           DFC_AES_KEY_LENGTH
 #define DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH          DFC_AES_KEY_LENGTH
 #define DFC_VIRTUAL_CARD_CAPABILITY_LENGTH          2
@@ -476,14 +504,14 @@ bool dfc_wrap_native_response_as_iso7816(
 // Rotate an N-byte buffer left by one byte (used in the RndA/RndB challenge rotation).
 void dfc_rotate_left(uint8_t* buffer, size_t len);
 
-void dfc_worker_aes_cbc_decrypt(
+bool dfc_worker_aes_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[16],
     size_t length,
     const uint8_t* encrypted,
     uint8_t* clear);
-void dfc_worker_aes_cbc_encrypt(
+bool dfc_worker_aes_cbc_encrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[16],
@@ -491,14 +519,14 @@ void dfc_worker_aes_cbc_encrypt(
     const uint8_t* clear,
     uint8_t* encrypted);
 
-void dfc_worker_des_cbc_decrypt(
+bool dfc_worker_des_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[8],
     size_t length,
     const uint8_t* encrypted,
     uint8_t* clear);
-void dfc_worker_des_cbc_encrypt(
+bool dfc_worker_des_cbc_encrypt(
     const uint8_t* key,
     size_t key_len,
     uint8_t iv[8],

@@ -1,4 +1,20 @@
-use std::{env, path::PathBuf};
+use std::{env, fs, path::Path, path::PathBuf};
+
+fn rerun_for_tree(path: &Path) {
+    let mut entries: Vec<_> = fs::read_dir(path)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
+        .map(|entry| entry.expect("cannot read native source entry"))
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            rerun_for_tree(&path);
+        } else {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+}
 
 fn exactly_one<'a>(features: &[(&'a str, bool)], kind: &str) -> &'a str {
     let enabled: Vec<_> = features
@@ -38,6 +54,13 @@ fn main() {
         "profile",
     );
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("CMakeLists.txt").display()
+    );
+    for directory in ["src", "ffi", "port"] {
+        rerun_for_tree(&root.join(directory));
+    }
     let bridge_header = if role == "target" {
         "ffi/dfc_target_ffi.h"
     } else {

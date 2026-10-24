@@ -236,7 +236,6 @@ pub struct Snapshot(pub sys::DfcFfiSnapshot);
 #[cfg(not(feature = "role-target"))]
 struct RandomContext {
     source: Box<dyn FnMut(usize) -> Vec<u8> + Send>,
-    failed: bool,
 }
 
 #[cfg(not(feature = "role-target"))]
@@ -248,20 +247,20 @@ unsafe extern "C" fn random_callback(
     let context = unsafe { &mut *context.cast::<RandomContext>() };
     let generated =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (context.source)(len)));
-    if let Ok(bytes) = generated
-        && bytes.len() == len
-    {
-        unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
-        return 0;
+    if let Ok(bytes) = generated {
+        if bytes.len() == len {
+            unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
+            return 0;
+        }
     }
-    context.failed = true;
     -5
 }
 
 #[cfg(not(feature = "role-target"))]
 pub struct VirtualPicc {
     raw: NonNull<sys::DfcFfiPicc>,
-    random: Option<Box<RandomContext>>,
+    // Keeps the callback context alive for as long as native code may use it.
+    _random_context: Option<Box<RandomContext>>,
 }
 
 #[cfg(not(feature = "role-target"))]
@@ -277,7 +276,7 @@ impl VirtualPicc {
         })?;
         Ok(Self {
             raw: NonNull::new(raw).ok_or(Error::OutOfMemory)?,
-            random: None,
+            _random_context: None,
         })
     }
 
@@ -305,7 +304,7 @@ impl VirtualPicc {
         }
         Ok(Self {
             raw: NonNull::new(raw).ok_or(Error::OutOfMemory)?,
-            random: None,
+            _random_context: None,
         })
     }
 
@@ -318,7 +317,6 @@ impl VirtualPicc {
         let mut owned_credential = raw_credential;
         let mut context = Box::new(RandomContext {
             source: Box::new(random),
-            failed: false,
         });
         let mut raw = core::ptr::null_mut();
         let result = status(unsafe {
@@ -337,25 +335,14 @@ impl VirtualPicc {
         }
         Ok(Self {
             raw: NonNull::new(raw).ok_or(Error::OutOfMemory)?,
-            random: Some(context),
+            _random_context: Some(context),
         })
-    }
-
-    fn check_random(&mut self) -> Result<(), Error> {
-        if self.random.as_ref().is_some_and(|context| context.failed) {
-            if let Some(context) = &mut self.random {
-                context.failed = false;
-            }
-            return Err(Error::RandomSourceFailed);
-        }
-        Ok(())
     }
 
     pub fn activate(&mut self) -> Result<Activation, Error> {
         let mut value = MaybeUninit::uninit();
         let result =
             status(unsafe { sys::dfc_ffi_picc_activate(self.raw.as_ptr(), value.as_mut_ptr()) });
-        self.check_random()?;
         result?;
         Ok(Activation(unsafe { value.assume_init() }))
     }
@@ -386,7 +373,6 @@ impl VirtualPicc {
                 &mut len,
             )
         });
-        self.check_random()?;
         result?;
         response.truncate(len);
         Ok(response)
@@ -456,6 +442,120 @@ mod tests {
         assert_eq!(before.auth_mode, after.auth_mode);
         assert_eq!(before.ev2_active, after.ev2_active);
         assert_eq!(before.proximity_verified, after.proximity_verified);
+    }
+
+    #[test]
+    fn random_failure_is_reported_by_each_operation() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let mut picc = VirtualPicc::from_credential_with_random(credential, move |length| {
+            observed.fetch_add(1, Ordering::Relaxed);
+            vec![0; length.saturating_sub(1)]
+        })
+        .expect("PICC");
+        picc.activate().expect("activation");
+
+        for _ in 0..2 {
+            assert_eq!(
+                picc.exchange(&[0x90, 0x1A, 0, 0, 1, 0, 0]),
+                Err(Error::RandomSourceFailed)
+            );
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        picc.reset_protocol().expect("reset after random failure");
+        assert!(picc.exchange(&[0x90, 0x60, 0, 0, 0]).is_ok());
+    }
+
+    struct PiccTransport(VirtualPicc);
+
+    impl Transport for PiccTransport {
+        type Error = Error;
+        fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Error> {
+            self.0.exchange(command)
+        }
+    }
+
+    #[test]
+    fn reader_clear_header_is_never_narrowed_before_native_check() {
+        const NATIVE_MAX_CLEAR_HEADER: u32 = 10;
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
+        picc.activate().expect("activation");
+        let mut reader = Reader::new(PiccTransport(picc), Framing::Iso7816).expect("reader");
+        let version = Command {
+            instruction: 0x60,
+            data: Vec::new(),
+        };
+
+        assert_eq!(
+            reader
+                .exchange(&version, CommunicationMode::Plain, None)
+                .expect("derived")
+                .status,
+            0
+        );
+        assert_eq!(
+            reader
+                .exchange(
+                    &version,
+                    CommunicationMode::Plain,
+                    Some(NATIVE_MAX_CLEAR_HEADER),
+                )
+                .expect("maximum")
+                .status,
+            0
+        );
+        for bad in [
+            NATIVE_MAX_CLEAR_HEADER + 1,
+            i32::MAX as u32,
+            i32::MAX as u32 + 1,
+            u32::MAX,
+        ] {
+            assert!(matches!(
+                reader.exchange(&version, CommunicationMode::Plain, Some(bad)),
+                Err(ReaderError::Dfc(Error::InvalidArgument))
+            ));
+        }
+        assert_eq!(
+            reader
+                .exchange(&version, CommunicationMode::Plain, None)
+                .expect("session usable")
+                .status,
+            0
+        );
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn credential_index_above_u32_is_refused_not_wrapped() {
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-maximal.dfcb"
+        ))
+        .expect("fixture");
+        let wrapped = u32::MAX as usize + 1;
+        assert!(credential.application(0).is_ok());
+        assert!(credential.file(0).is_ok());
+        assert_eq!(
+            credential.application(wrapped).map(|_| ()),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(
+            credential.file(wrapped).map(|_| ()),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(credential.file_data(wrapped), Err(Error::InvalidArgument));
     }
 }
 pub use dfc_core_sys as raw;

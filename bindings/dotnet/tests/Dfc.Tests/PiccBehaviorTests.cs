@@ -1,15 +1,542 @@
 namespace Dfc.Tests;
 
 using System;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Dfc.Credentials;
 using Dfc.Emulation;
+using Dfc.Interop;
 using Dfc.Reader;
 using NUnit.Framework;
 
 [TestFixture]
 public sealed class PiccBehaviorTests
 {
+    private static int freeCalls;
+    private static nint freedPicc;
+    private static int clockCreatorCalls;
+
+    [Test]
+    public unsafe void Create_QueriesClockBeforeTakingNativeOwnership()
+    {
+        clockCreatorCalls = 0;
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () =>
+                DfcVirtualPicc.CreateForTesting(
+                    Fixtures.Credential(),
+                    new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty),
+                    new ThrowingTimeProvider(),
+                    new DfcVirtualPicc.CreationHooks(CountingPiccCreate)
+                )
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("injected clock failure"));
+            Assert.That(clockCreatorCalls, Is.Zero);
+        });
+    }
+
+    private static unsafe int CountingPiccCreate(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    )
+    {
+        Interlocked.Increment(ref clockCreatorCalls);
+        return -1;
+    }
+
+    private sealed class ThrowingTimeProvider : TimeProvider
+    {
+        public override long GetTimestamp() => throw new InvalidOperationException("injected clock failure");
+    }
+
+    [Test]
+    public void Create_ReleasesRandomSourceWhenNativeEntryPointThrows()
+    {
+        var random = CreateWithThrowingNativeEntryPoint();
+
+        CollectUntilDead(random);
+
+        Assert.That(random.IsAlive, Is.False);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static unsafe WeakReference CreateWithThrowingNativeEntryPoint()
+    {
+        var random = new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty);
+        var weak = new WeakReference(random);
+        var exception = Assert.Throws<EntryPointNotFoundException>(
+            () =>
+                DfcVirtualPicc.CreateForTesting(
+                    Fixtures.Credential(),
+                    random,
+                    null,
+                    new DfcVirtualPicc.CreationHooks(ThrowingPiccCreate)
+                )
+        );
+        Assert.That(exception!.Message, Is.EqualTo("injected missing native entry point"));
+        return weak;
+    }
+
+    private static unsafe int ThrowingPiccCreate(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    ) => throw new EntryPointNotFoundException("injected missing native entry point");
+
+    [Test]
+    public void Create_ReleasesNativeCardAndRandomSourceWhenManagedWrappingThrows()
+    {
+        freeCalls = 0;
+        freedPicc = 0;
+        var random = CreateWithThrowingManagedWrapper();
+
+        CollectUntilDead(random);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(random.IsAlive, Is.False);
+            Assert.That(freeCalls, Is.EqualTo(1));
+            Assert.That(freedPicc, Is.EqualTo((nint)0x58));
+        });
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static unsafe WeakReference CreateWithThrowingManagedWrapper()
+    {
+        var random = new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty);
+        var weak = new WeakReference(random);
+        var exception = Assert.Throws<InvalidOperationException>(
+            () =>
+                DfcVirtualPicc.CreateForTesting(
+                    Fixtures.Credential(),
+                    random,
+                    null,
+                    new DfcVirtualPicc.CreationHooks(
+                        SuccessfulPiccCreate,
+                        ThrowingManagedWrapper,
+                        TrackingPiccFree
+                    )
+                )
+        );
+        Assert.That(exception!.Message, Is.EqualTo("injected managed wrapping failure"));
+        return weak;
+    }
+
+    private static void ThrowingManagedWrapper(nint picc) =>
+        throw new InvalidOperationException("injected managed wrapping failure");
+
+    private static unsafe int SuccessfulPiccCreate(
+        nint credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output
+    )
+    {
+        *output = 0x58;
+        return 0;
+    }
+
+    private static void TrackingPiccFree(nint picc)
+    {
+        Interlocked.Increment(ref freeCalls);
+        freedPicc = picc;
+    }
+
+    private static void CollectUntilDead(WeakReference reference)
+    {
+        for (var i = 0; i < 10 && reference.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+    }
+
+    [Test]
+    public void Dispose_IsIdempotent_WithoutReleasingOtherCallbackRoots()
+    {
+        var picc = Fixtures.Picc(
+            Fixtures.Credential(),
+            new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty)
+        );
+        picc.Dispose();
+
+        var targets = new object[4096];
+        var roots = new GCHandle[targets.Length];
+        try
+        {
+            for (var i = 0; i < targets.Length; i++)
+            {
+                targets[i] = new object();
+                roots[i] = GCHandle.Alloc(targets[i]);
+            }
+
+            Assert.DoesNotThrow(picc.Dispose);
+            Assert.Multiple(() =>
+            {
+                for (var i = 0; i < targets.Length; i++)
+                {
+                    Assert.That(roots[i].Target, Is.SameAs(targets[i]), $"callback root {i}");
+                }
+            });
+        }
+        finally
+        {
+            foreach (var root in roots)
+            {
+                if (root.IsAllocated)
+                {
+                    root.Free();
+                }
+            }
+        }
+    }
+
+    [Test]
+    public void DisposedCalls_ReportThePublicTypeName()
+    {
+        var picc = Fixtures.Picc(Fixtures.Credential());
+        picc.Dispose();
+
+        (string Name, Action Call)[] calls =
+        [
+            (nameof(DfcVirtualPicc.Activate), () => _ = picc.Activate()),
+            (nameof(DfcVirtualPicc.Exchange), () => _ = picc.Exchange(ReadOnlySpan<byte>.Empty)),
+            (nameof(DfcVirtualPicc.ExchangeFrame), () => _ = picc.ExchangeFrame(ReadOnlySpan<byte>.Empty)),
+            (
+                nameof(DfcVirtualPicc.TransmitAsync),
+                () =>
+                    _ = picc
+                        .TransmitAsync(ReadOnlyMemory<byte>.Empty, CancellationToken.None)
+                        .AsTask()
+                        .GetAwaiter()
+                        .GetResult()
+            ),
+            (nameof(DfcVirtualPicc.FieldOff), picc.FieldOff),
+            (nameof(DfcVirtualPicc.ResetProtocol), picc.ResetProtocol),
+            (nameof(DfcVirtualPicc.AdvanceTime), () => picc.AdvanceTime(TimeSpan.Zero)),
+            (nameof(DfcVirtualPicc.Snapshot), () => _ = picc.Snapshot()),
+            (nameof(DfcVirtualPicc.IsDirty), () => _ = picc.IsDirty),
+            (nameof(DfcVirtualPicc.ExportCredential), () => _ = picc.ExportCredential()),
+            (nameof(DfcVirtualPicc.MarkPersisted), picc.MarkPersisted),
+        ];
+
+        Assert.Multiple(() =>
+        {
+            foreach (var (name, call) in calls)
+            {
+                var exception = Assert.Throws<ObjectDisposedException>(() => call(), name);
+                Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)), name);
+            }
+        });
+    }
+
+    [Test]
+    public void AdvanceTime_RefusesValuesThatDoNotFitTheNativeDelta()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        picc.AdvanceTime(TimeSpan.FromMilliseconds(uint.MaxValue));
+        var before = picc.Snapshot();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            picc.AdvanceTime(TimeSpan.FromMilliseconds(uint.MaxValue) + TimeSpan.FromTicks(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => picc.AdvanceTime(TimeSpan.MaxValue));
+
+        var after = picc.Snapshot();
+        Assert.Multiple(() =>
+        {
+            Assert.That(after.Selection, Is.EqualTo(before.Selection));
+            Assert.That(after.SelectedAid, Is.EqualTo(before.SelectedAid));
+            Assert.That(after.Dirty, Is.EqualTo(before.Dirty));
+            Assert.That(after.Authentication, Is.EqualTo(before.Authentication));
+            Assert.That(after.AuthenticatedKeyNo, Is.EqualTo(before.AuthenticatedKeyNo));
+            Assert.That(after.Ev2Session, Is.EqualTo(before.Ev2Session));
+            Assert.That(after.VirtualCardSelected, Is.EqualTo(before.VirtualCardSelected));
+            Assert.That(after.ProximityVerified, Is.EqualTo(before.ProximityVerified));
+        });
+    }
+
+    [TestCase(PiccStatusOperation.FieldOff)]
+    [TestCase(PiccStatusOperation.ResetProtocol)]
+    [TestCase(PiccStatusOperation.AdvanceTime)]
+    [TestCase(PiccStatusOperation.Snapshot)]
+    [TestCase(PiccStatusOperation.MarkPersisted)]
+    public unsafe void StateOperations_PropagateNativeFailuresAtomicallyAndRemainReusable(
+        PiccStatusOperation operation
+    )
+    {
+        var fault = new PiccStatusFault(operation, Native.InvalidArgument);
+        var operations = new PiccOperations(
+            raw => fault.Take(PiccStatusOperation.FieldOff) ?? Native.dfc_ffi_picc_field_off(raw),
+            raw => fault.Take(PiccStatusOperation.ResetProtocol) ?? Native.dfc_ffi_picc_reset_protocol(raw),
+            (raw, elapsed) =>
+                fault.Take(PiccStatusOperation.AdvanceTime)
+                ?? Native.dfc_ffi_picc_advance_time(raw, elapsed),
+            (raw, snapshot) =>
+                fault.Take(PiccStatusOperation.Snapshot)
+                ?? Native.dfc_ffi_picc_snapshot(raw, snapshot),
+            raw => fault.Take(PiccStatusOperation.MarkPersisted) ?? Native.dfc_ffi_picc_mark_persisted(raw)
+        );
+        using var picc = Fixtures.Ok(
+            DfcVirtualPicc.CreateWithOperationsForTesting(Fixtures.Credential(), operations)
+        );
+        Fixtures.Ok(picc.Activate());
+        var before = picc.Snapshot();
+        fault.Arm();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => InvokeStatusOperation(picc, operation));
+        var after = picc.Snapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Does.Contain(operation.ToString()));
+            Assert.That(exception.Message, Does.Contain("status -1"));
+            AssertSnapshot(after, before);
+            Assert.DoesNotThrow(() => InvokeStatusOperation(picc, operation));
+            Assert.DoesNotThrow(() => _ = picc.Snapshot());
+        });
+    }
+
+    private static void InvokeStatusOperation(DfcVirtualPicc picc, PiccStatusOperation operation)
+    {
+        switch (operation)
+        {
+            case PiccStatusOperation.FieldOff:
+                picc.FieldOff();
+                break;
+            case PiccStatusOperation.ResetProtocol:
+                picc.ResetProtocol();
+                break;
+            case PiccStatusOperation.AdvanceTime:
+                picc.AdvanceTime(TimeSpan.FromMilliseconds(1));
+                break;
+            case PiccStatusOperation.Snapshot:
+                _ = picc.Snapshot();
+                break;
+            case PiccStatusOperation.MarkPersisted:
+                picc.MarkPersisted();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation), operation, null);
+        }
+    }
+
+    private static void AssertSnapshot(DfcPiccSnapshot actual, DfcPiccSnapshot expected)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(actual.Selection, Is.EqualTo(expected.Selection));
+            Assert.That(actual.SelectedAid, Is.EqualTo(expected.SelectedAid));
+            Assert.That(actual.Dirty, Is.EqualTo(expected.Dirty));
+            Assert.That(actual.Authentication, Is.EqualTo(expected.Authentication));
+            Assert.That(actual.AuthenticatedKeyNo, Is.EqualTo(expected.AuthenticatedKeyNo));
+            Assert.That(actual.Ev2Session, Is.EqualTo(expected.Ev2Session));
+            Assert.That(actual.VirtualCardSelected, Is.EqualTo(expected.VirtualCardSelected));
+            Assert.That(actual.ProximityVerified, Is.EqualTo(expected.ProximityVerified));
+        });
+    }
+
+    public enum PiccStatusOperation
+    {
+        FieldOff,
+        ResetProtocol,
+        AdvanceTime,
+        Snapshot,
+        MarkPersisted,
+    }
+
+    private sealed class PiccStatusFault(PiccStatusOperation target, int status)
+    {
+        private bool pending;
+
+        public void Arm() => pending = true;
+
+        public int? Take(PiccStatusOperation operation)
+        {
+            if (!pending || operation != target)
+            {
+                return null;
+            }
+
+            pending = false;
+            return status;
+        }
+    }
+
+    [Test]
+    public async Task ClockFollowing_SaturatesElapsedTimeBeyondTheNativeDelta()
+    {
+        var clock = new ManualTimeProvider();
+        var credential = FreeFileCredential(
+            DfcCommunicationMode.Plain,
+            DfcFileType.BackupData,
+            4,
+            DfcGeneration.Ev3
+        );
+        var timedApplication = credential.Applications[0] with
+        {
+            CapabilityData = [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+        };
+        using var picc = Fixtures.Ok(DfcVirtualPicc.Create(
+            credential with { Applications = [timedApplication] },
+            clock: clock
+        ));
+        Fixtures.Ok(picc.Activate());
+        using var reader = new DfcReader(picc);
+        await Fixtures.SelectAsync(reader, Hex("030201"));
+        Fixtures.Ok(await reader.WriteDataAsync(1, 0, Hex("01020304")));
+        var pendingCredential = picc.ExportCredential();
+        var pending = (DfcFileContents.Data)pendingCredential.Applications[0].Files[0].Contents;
+
+        clock.Advance((long)uint.MaxValue + 1000);
+        var expired = picc.Exchange(Hex("9060000000"));
+        var rolledBackCredential = picc.ExportCredential();
+        var rolledBack = (DfcFileContents.Data)rolledBackCredential.Applications[0].Files[0].Contents;
+        Assert.Multiple(() =>
+        {
+            Assert.That(expired.IsFailure, Is.True);
+            Assert.That(expired.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.NoCard));
+            Assert.That(picc.Snapshot().Selection, Is.EqualTo(DfcSelection.Picc));
+            Assert.That(pending.Known, Is.EqualTo(Hex("01020304")));
+            Assert.That(pending.TransactionPending, Is.True);
+            Assert.That(rolledBack.Known, Is.EqualTo(new byte[4]));
+            Assert.That(rolledBack.TransactionPending, Is.False);
+        });
+
+        Fixtures.Ok(picc.Activate());
+        await Fixtures.SelectAsync(reader, Hex("030201"));
+        var after = Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.ReadData(1, 0, 0)));
+
+        Assert.That(after.Data, Is.EqualTo(new byte[4]));
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long timestamp;
+
+        public override long TimestampFrequency => 1000;
+
+        public override long GetTimestamp() => timestamp;
+
+        public void Advance(long milliseconds) => timestamp += milliseconds;
+    }
+
+    [Test]
+    public async Task Dispose_WaitsForInFlightNativeCallback()
+    {
+        var random = new BlockingRandomSource();
+        var picc = Fixtures.Picc(Fixtures.Credential(), random);
+        Fixtures.Ok(picc.Activate());
+
+        var exchange = Task.Run(() => picc.Exchange(Hex("901A0000010000")));
+        Assert.That(random.Entered.Wait(TimeSpan.FromSeconds(5)), Is.True);
+
+        using var disposeStarted = new ManualResetEventSlim();
+        var dispose = Task.Factory.StartNew(
+            () =>
+            {
+                disposeStarted.Set();
+                picc.Dispose();
+            },
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default
+        );
+        Assert.That(disposeStarted.Wait(TimeSpan.FromSeconds(5)), Is.True);
+
+        var disposedDuringCallback = dispose.Wait(TimeSpan.FromMilliseconds(250));
+        random.Continue.Set();
+        await Task.WhenAll(exchange, dispose);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(disposedDuringCallback, Is.False);
+            Assert.DoesNotThrow(picc.Dispose);
+            var exception = Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+            Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
+        });
+    }
+
+    [Test]
+    public async Task ConcurrentCallAndDispose_UseThePublicTypeNameWhenDisposeWins()
+    {
+        for (var iteration = 0; iteration < 64; iteration++)
+        {
+            var picc = Fixtures.Picc(Fixtures.Credential());
+            using var start = new ManualResetEventSlim();
+            ObjectDisposedException? observed = null;
+            var call = Task.Run(() =>
+            {
+                start.Wait();
+                try
+                {
+                    _ = picc.Snapshot();
+                }
+                catch (ObjectDisposedException exception)
+                {
+                    observed = exception;
+                }
+            });
+            var dispose = Task.Run(() =>
+            {
+                start.Wait();
+                picc.Dispose();
+            });
+
+            start.Set();
+            await Task.WhenAll(call, dispose);
+
+            if (observed is not null)
+            {
+                Assert.That(observed.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
+            }
+            var after = Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+            Assert.That(after!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
+        }
+    }
+
+    [Test]
+    public void Finalization_ReleasesTheRandomCallbackRoot()
+    {
+        var random = CreateAbandonedPicc();
+
+        for (var i = 0; i < 10 && random.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        Assert.That(random.IsAlive, Is.False);
+    }
+
+    [Test]
+    public void Dispose_FromRandomCallback_DefersNativeReleaseUntilTheExchangeCompletes()
+    {
+        var random = new DisposingRandomSource();
+        var picc = Fixtures.Picc(Fixtures.Credential(), random);
+        random.Attach(picc);
+        Fixtures.Ok(picc.Activate());
+
+        var response = Fixtures.Ok(picc.Exchange(Hex("901A0000010000")));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response[^2..], Is.EqualTo(new byte[] { 0x91, 0xAF }));
+            var exception = Assert.Throws<ObjectDisposedException>(() => picc.Snapshot());
+            Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcVirtualPicc)));
+        });
+    }
+
     [Test]
     public void RandomExhaustion_AbortsWithoutChangingState()
     {
@@ -26,13 +553,85 @@ public sealed class PiccBehaviorTests
         Assert.Multiple(() =>
         {
             Assert.That(failed.IsFailure, Is.True);
+            Assert.That(failed.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.RandomSource));
             Assert.That(before.Selection, Is.EqualTo(after.Selection));
             Assert.That(before.SelectedAid, Is.EqualTo(after.SelectedAid));
             Assert.That(before.Authentication, Is.EqualTo(after.Authentication));
             Assert.That(before.Ev2Session, Is.EqualTo(after.Ev2Session));
             Assert.That(before.ProximityVerified, Is.EqualTo(after.ProximityVerified));
         });
+
+        picc.ResetProtocol();
+        Assert.That(Fixtures.Ok(picc.Exchange(Hex("9060000000"))).Length, Is.GreaterThan(2));
     }
+
+    [Test]
+    public void ScriptedRandomSource_ShortRequestConsumesNothing()
+    {
+        var source = new DfcScriptedRandomSource(new byte[] { 0x11, 0x22 });
+        Assert.Throws<InvalidOperationException>(() => source.Fill(new byte[3]));
+        Assert.That(source.Remaining, Is.EqualTo(2));
+        source.Append(new byte[] { 0x33 });
+        var exact = new byte[2];
+        source.Fill(exact);
+        var later = new byte[1];
+        source.Fill(later);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exact, Is.EqualTo(new byte[] { 0x11, 0x22 }));
+            Assert.That(later, Is.EqualTo(new byte[] { 0x33 }));
+            Assert.That(source.Remaining, Is.Zero);
+        });
+    }
+
+    [Test]
+    public void ScriptedRandomSource_ClearDiscardsUnreadBytes()
+    {
+        var source = new DfcScriptedRandomSource(new byte[] { 0x11, 0x22, 0x33 });
+        var storage = ScriptedRandomBuffer(source);
+        source.Fill(new byte[1]);
+        Assert.That(source.Remaining, Is.EqualTo(2));
+
+        source.Clear();
+
+        Assert.That(source.Remaining, Is.Zero);
+        Assert.That(storage, Is.EqualTo(new byte[3]), "clear must wipe unread bytes");
+        source.Append(new byte[] { 0xA5, 0x5A });
+        var replacement = new byte[2];
+        source.Fill(replacement);
+        Assert.That(replacement, Is.EqualTo(new byte[] { 0xA5, 0x5A }));
+    }
+
+    [Test]
+    public void ScriptedRandomSource_WipesConsumedCompactedAndRetiredStorage()
+    {
+        var source = new DfcScriptedRandomSource(Enumerable.Range(1, 16).Select(value => (byte)value).ToArray());
+        var original = ScriptedRandomBuffer(source);
+
+        source.Fill(new byte[4]);
+        Assert.That(original[..4], Is.EqualTo(new byte[4]), "consumed bytes");
+        Assert.That(original[4..], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value)));
+
+        source.Append(new byte[] { 0xA5 });
+        Assert.That(original[..13], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value).Append((byte)0xA5)));
+        Assert.That(original[13..], Is.EqualTo(new byte[3]), "vacated compaction bytes");
+
+        source.Append(new byte[20]);
+        Assert.That(ScriptedRandomBuffer(source), Is.Not.SameAs(original));
+        Assert.That(original, Is.EqualTo(new byte[16]), "retired allocation");
+
+        var replay = new byte[33];
+        source.Fill(replay);
+        Assert.That(replay[..13], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value).Append((byte)0xA5)));
+        Assert.That(replay[13..], Is.EqualTo(new byte[20]));
+        Assert.That(source.Remaining, Is.Zero);
+    }
+
+    private static byte[] ScriptedRandomBuffer(DfcScriptedRandomSource source) =>
+        (byte[])typeof(DfcScriptedRandomSource)
+            .GetField("buffer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(source)!;
 
     [Test]
     public void GetVersion_UsesThreeNativeResponseFrames()
@@ -148,7 +747,16 @@ public sealed class PiccBehaviorTests
         DfcFileType type = DfcFileType.StandardData,
         uint size = 8)
     {
-        var credential = Fixtures.Credential(DfcGeneration.Ev1);
+        return Fixtures.Picc(FreeFileCredential(mode, type, size));
+    }
+
+    private static DfcCredential FreeFileCredential(
+        DfcCommunicationMode mode,
+        DfcFileType type = DfcFileType.StandardData,
+        uint size = 8,
+        DfcGeneration generation = DfcGeneration.Ev1)
+    {
+        var credential = Fixtures.Credential(generation);
         var application = new DfcApplication(
             [0x03, 0x02, 0x01],
             0x0F,
@@ -158,8 +766,47 @@ public sealed class PiccBehaviorTests
             [new DfcFile(1, type, (byte)mode, 0xEEEE,
                 new DfcFileContents.Data(size, new byte[size], true))]
         );
-        return Fixtures.Picc(credential with { Applications = [application] });
+        return credential with { Applications = [application] };
     }
 
     private static byte[] Hex(string value) => Convert.FromHexString(value);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CreateAbandonedPicc()
+    {
+        var random = new DfcScriptedRandomSource(ReadOnlyMemory<byte>.Empty);
+        var weak = new WeakReference(random);
+        _ = Fixtures.Picc(Fixtures.Credential(), random);
+        return weak;
+    }
+
+    private sealed class BlockingRandomSource : IDfcRandomSource
+    {
+        public ManualResetEventSlim Entered { get; } = new();
+
+        public ManualResetEventSlim Continue { get; } = new();
+
+        public void Fill(Span<byte> destination)
+        {
+            Entered.Set();
+            if (!Continue.Wait(TimeSpan.FromSeconds(5)))
+            {
+                throw new TimeoutException("The test did not release the random callback.");
+            }
+            destination.Fill(0x5A);
+        }
+    }
+
+    private sealed class DisposingRandomSource : IDfcRandomSource
+    {
+        private DfcVirtualPicc? picc;
+
+        public void Attach(DfcVirtualPicc value) => picc = value;
+
+        public void Fill(Span<byte> destination)
+        {
+            Interlocked.Exchange(ref picc, null)?.Dispose();
+            destination.Fill(0x5A);
+        }
+    }
 }

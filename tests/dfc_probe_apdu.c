@@ -50,10 +50,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("credential: UID ");
-    for(size_t i = 0; i < credential.uid_len; i++) printf("%02X", credential.uid[i]);
-    printf(", %u app(s), %u file(s)\n",
-           (unsigned)credential.num_apps,
-           (unsigned)credential.num_files);
+    for(size_t i = 0; i < credential.uid_len; i++)
+        printf("%02X", credential.uid[i]);
+    printf(
+        ", %u app(s), %u file(s)\n",
+        (unsigned)credential.num_apps,
+        (unsigned)credential.num_files);
 
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
     DfcVirtualPiccActivation activation;
@@ -62,10 +64,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("activation: UID ");
-    for(size_t i = 0; i < activation.uid_len; i++) printf("%02X", activation.uid[i]);
-    printf(", ATQA %02X%02X, SAK %02X, ATS ",
-           activation.atqa[0], activation.atqa[1], activation.sak);
-    for(size_t i = 0; i < activation.ats_len; i++) printf("%02X", activation.ats[i]);
+    for(size_t i = 0; i < activation.uid_len; i++)
+        printf("%02X", activation.uid[i]);
+    printf(
+        ", ATQA %02X%02X, SAK %02X, ATS ", activation.atqa[0], activation.atqa[1], activation.sak);
+    for(size_t i = 0; i < activation.ats_len; i++)
+        printf("%02X", activation.ats[i]);
     printf("\n\n");
 
     for(int a = 2; a < argc; a++) {
@@ -82,7 +86,8 @@ int main(int argc, char** argv) {
         printf("%-30s -> status %d, %2u octets", argv[a], (int)rc, (unsigned)response_len);
         if(response_len) {
             printf(": ");
-            for(size_t i = 0; i < response_len; i++) printf("%02X", response[i]);
+            for(size_t i = 0; i < response_len; i++)
+                printf("%02X", response[i]);
         } else {
             printf("  <-- SILENT");
         }

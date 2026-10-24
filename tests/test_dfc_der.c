@@ -288,6 +288,8 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     munit_assert_int(dfc_der_encode(&src, good, sizeof(good), &good_len), ==, DfcDerOk);
 
     DfcCredential dst;
+    static DfcCredential empty_credential;
+    dfc_credential_clear(&empty_credential);
     memset(&dst, 0, sizeof(dst));
 
     // Wrong outer tag.
@@ -304,6 +306,32 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     memcpy(trailing, good, good_len);
     trailing[good_len] = 0x00;
     munit_assert_int(dfc_der_decode(&dst, trailing, good_len + 1), ==, DfcDerMalformed);
+
+    static const uint8_t file_prefix[] = {
+        0x80, 0x01, 0x01, 0x81, 0x01, 0x00, 0x82, 0x01, 0x00, 0x83, 0x02, 0xEE, 0xEE};
+    const uint8_t* encoded_file = NULL;
+    for(size_t i = 0; i + sizeof(file_prefix) <= good_len; i++) {
+        if(memcmp(good + i, file_prefix, sizeof(file_prefix)) == 0) {
+            encoded_file = good + i;
+            break;
+        }
+    }
+    munit_assert_not_null(encoded_file);
+    size_t file_offset = (size_t)(encoded_file - good);
+
+    uint8_t bad_comm[DFC_DER_MAX_SIZE];
+    memcpy(bad_comm, good, good_len);
+    bad_comm[file_offset + 8] = 0x02;
+    memset(&dst, 0xA5, sizeof(dst));
+    munit_assert_int(dfc_der_decode(&dst, bad_comm, good_len), ==, DfcDerMalformed);
+    munit_assert_memory_equal(sizeof(dst), &dst, &empty_credential);
+
+    uint8_t bad_rights[DFC_DER_MAX_SIZE];
+    memcpy(bad_rights, good, good_len);
+    bad_rights[file_offset + 11] = 0x2E;
+    memset(&dst, 0xA5, sizeof(dst));
+    munit_assert_int(dfc_der_decode(&dst, bad_rights, good_len), ==, DfcDerMalformed);
+    munit_assert_memory_equal(sizeof(dst), &dst, &empty_credential);
 
     // Version 6 is later than this implementation, so unsupported rather than malformed.
     uint8_t v6[DFC_DER_MAX_SIZE];
@@ -343,9 +371,10 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     DfcFile* f = dfc_credential_create_file(&tmac, 0, 0x05);
     munit_assert_not_null(f);
     f->type = 0x05;
+    f->access_rights = 0xEFEF;
     f->transaction_counter = 9;
     memcpy(f->transaction_mac, "\x01\x23\x45\x67\x89\xAB\xCD\xEF", 8);
-    f->transaction_mac_key_type = 2;
+    f->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
     f->transaction_mac_key_version = 3;
     for(size_t i = 0; i < sizeof(f->transaction_mac_key); i++) {
         f->transaction_mac_key[i] = (uint8_t)(0xB0 + i);
@@ -360,7 +389,7 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     munit_assert_uint8(g->type, ==, 0x05);
     munit_assert_uint32(g->transaction_counter, ==, 9);
     munit_assert_memory_equal(8, g->transaction_mac, f->transaction_mac);
-    munit_assert_uint8(g->transaction_mac_key_type, ==, 2);
+    munit_assert_uint8(g->transaction_mac_key_type, ==, DFC_TRANSACTION_MAC_KEY_TYPE_AES);
     munit_assert_uint8(g->transaction_mac_key_version, ==, 3);
     munit_assert_memory_equal(
         sizeof(g->transaction_mac_key), g->transaction_mac_key, f->transaction_mac_key);

@@ -21,7 +21,7 @@ profile-full-ev3 = ["dfc-core-sys/profile-full-ev3"]
 profile-minimal-ev3 = ["dfc-core-sys/profile-minimal-ev3"]
 
 [dependencies]
-dfc-core-sys = { path = "../../..", version = "1.2.1", default-features = false }
+dfc-core-sys = { path = "../../..", version = "2.0.0", default-features = false }
 
 [lints]
 workspace = true

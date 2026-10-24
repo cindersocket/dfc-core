@@ -88,7 +88,7 @@ static const char TMAC[] =
     "Application 00 File 00 Number: 1F\n"
     "Application 00 File 00 Type: Transaction MAC\n"
     "Application 00 File 00 Communication Settings: 03\n"
-    "Application 00 File 00 Access Rights: 10 00\n"
+    "Application 00 File 00 Access Rights: 0F 00\n"
     "Application 00 File 00 Transaction Counter: 9\n"
     "Application 00 File 00 Transaction MAC: 01 23 45 67 89 AB CD EF\n"
     "Application 00 File 00 Transaction Key Type: 2\n"
@@ -111,7 +111,7 @@ static MunitResult test_transaction_mac_round_trip(const MunitParameter params[]
     const DfcFile* f = &c.files[0];
     munit_assert_uint8(f->type, ==, 0x05);
     munit_assert_uint32(f->transaction_counter, ==, 9);
-    munit_assert_uint8(f->transaction_mac_key_type, ==, 2);
+    munit_assert_uint8(f->transaction_mac_key_type, ==, DFC_TRANSACTION_MAC_KEY_TYPE_AES);
     munit_assert_uint8(f->transaction_mac_key_version, ==, 3);
     munit_assert_memory_equal(8, f->transaction_mac, "\x01\x23\x45\x67\x89\xAB\xCD\xEF");
 
@@ -129,6 +129,19 @@ static MunitResult test_transaction_mac_round_trip(const MunitParameter params[]
     munit_assert_int(dfc_der_decode(&back, der, der_len), ==, DfcDerOk);
     munit_assert_int(dfc_text_write(&back, out, sizeof(out), &out_len), ==, DfcTextOk);
     assert_written_v6(out);
+
+    char invalid_key_type[sizeof(TMAC)];
+    memcpy(invalid_key_type, TMAC, sizeof(TMAC));
+    char* key_type = strstr(invalid_key_type, "Transaction Key Type: 2");
+    munit_assert_not_null(key_type);
+    key_type[strlen("Transaction Key Type: ")] = '3';
+    static DfcCredential rejected;
+    static DfcCredential empty;
+    memset(&rejected, 0xA5, sizeof(rejected));
+    dfc_credential_clear(&empty);
+    munit_assert_int(
+        dfc_text_parse(&rejected, invalid_key_type, len, &detail), ==, DfcTextMalformed);
+    munit_assert_memory_equal(sizeof(rejected), &rejected, &empty);
     return MUNIT_OK;
 }
 
@@ -274,6 +287,21 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
         ==,
         DfcTextMalformed);
     munit_logf(MUNIT_LOG_INFO, "reserved fid: line %u: %s", (unsigned)detail.line, detail.message);
+
+    munit_assert_int(
+        mutate(
+            "Application 00 File 00 Communication Settings: 00",
+            "Application 00 File 00 Communication Settings: 02",
+            &detail),
+        ==,
+        DfcTextMalformed);
+    munit_assert_int(
+        mutate(
+            "Application 00 File 00 Access Rights: EE EE",
+            "Application 00 File 00 Access Rights: 2E EE",
+            &detail),
+        ==,
+        DfcTextMalformed);
 
     // Lower-case hex is not the canonical lexical form.
     munit_assert_int(mutate("UID: 04 22", "UID: 04 2a", &detail), ==, DfcTextMalformed);

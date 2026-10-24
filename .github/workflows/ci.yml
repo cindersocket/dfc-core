@@ -2,7 +2,12 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 # Run both crypto backends, plain and under sanitizers.
 jobs:
@@ -18,8 +23,82 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Check every binding language
         run: ./scripts/check-format.sh
+      - name: Test C formatting scope
+        run: python3 tests/test_check_c_format.py
+      - name: Test decoder registry check
+        run: python3 tests/test_check_decoder_registry.py
+      - name: Test documentation link checker
+        run: python3 tests/test_check_docs.py
+      - name: Test stack-usage checker
+        run: python3 tests/test_check_stack_usage.py
+      - name: Test CI unit workflow policy
+        run: python3 tests/test_ci_unit_workflow.py
+      - name: Test Android minification contract
+        run: python3 tests/test_android_minification.py
+      - name: Verify the Rust publication archive
+        run: ./scripts/check-cargo-package.sh
+      - name: Test version checker
+        run: python3 tests/test_check_version.py
+      - name: Test checksum helper
+        run: python3 tests/test_checksums.py
+      - name: Test source archive gate
+        run: python3 tests/test_release_artifacts.py
+      - name: Test release procedure
+        run: python3 tests/test_release_process.py
       - name: Check documentation links
         run: python3 scripts/check-docs.py
+      - name: Check version metadata
+        run: python3 scripts/check-version.py
+
+  source-archives:
+    name: Source archive (${{ matrix.entry_point }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        entry_point: [native, android, dotnet, python, java, rust]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libmbedtls-dev
+      - name: Fetch tiny-crypto-c
+        uses: actions/checkout@v4
+        with:
+          repository: mistial-dev/tiny-crypto-c
+          ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
+          path: dependencies/tiny-crypto-c
+      - name: Build and inspect source archives
+        run: |
+          version=2.0.0
+          mkdir -p dist
+          git archive --format=tar.gz --prefix="dfc-core-$version/" \
+            -o "dist/dfc-core-$version.tar.gz" HEAD
+          git archive --format=zip --prefix="dfc-core-$version/" \
+            -o "dist/dfc-core-$version.zip" HEAD
+          python3 scripts/checksums.py create --output dist/SHA256SUMS \
+            "dist/dfc-core-$version.tar.gz" "dist/dfc-core-$version.zip"
+          python3 scripts/checksums.py check dist/SHA256SUMS
+          python3 scripts/check-release-artifacts.py inspect \
+            --version "$version" --tar "dist/dfc-core-$version.tar.gz" \
+            --zip "dist/dfc-core-$version.zip"
+      - name: Smoke-build the source entry point from both archives
+        run: |
+          version=2.0.0
+          python3 scripts/check-release-artifacts.py smoke \
+            --version "$version" --tar "dist/dfc-core-$version.tar.gz" \
+            --zip "dist/dfc-core-$version.zip" \
+            --entry-point "${{ matrix.entry_point }}" \
+            --tiny-crypto-dir "$PWD/dependencies/tiny-crypto-c"
 
   fuzz:
     name: Credential invariant fuzzing
@@ -41,32 +120,90 @@ jobs:
           path: build-fuzz/artifacts
           if-no-files-found: ignore
 
-  unit:
-    name: Unit suite (${{ matrix.backend }}${{ matrix.sanitize && format(', {0}', matrix.sanitize) || '' }})
+  cmake-configuration:
+    name: CMake build configuration
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { backend: mbedtls, sanitize: "", cc: gcc }
-          - { backend: mbedtls, sanitize: "address,undefined", cc: gcc }
-          - { backend: tiny, sanitize: "", cc: gcc }
-          - { backend: tiny, sanitize: "address,undefined", cc: gcc }
-          - { backend: tiny, sanitize: "memory", cc: clang }
-          - { backend: tiny, sanitize: "", cc: gcc, release: "1" }
     steps:
       - uses: actions/checkout@v4
-      - name: Install the toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential clang libclang-rt-18-dev libmbedtls-dev
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
       - name: Fetch tiny-crypto-c
         uses: actions/checkout@v4
         with:
           repository: mistial-dev/tiny-crypto-c
           ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
           path: dependencies/tiny-crypto-c
-      - run: make -C tests test CRYPTO_BACKEND=${{ matrix.backend }} TINY_CRYPTO_DIR=../dependencies/tiny-crypto-c CC=${{ matrix.cc }} SANITIZE=${{ matrix.sanitize }} RELEASE=${{ matrix.release }}
+      - name: Verify position-independent code selection
+        run: TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" python3 scripts/check-cmake-pic.py
+
+  embedded-footprint:
+    name: Cortex-M4 footprint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
+        with:
+          release: "13.3.Rel1"
+      - name: Fetch tiny-crypto-c
+        uses: actions/checkout@v4
+        with:
+          repository: mistial-dev/tiny-crypto-c
+          ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
+          path: dependencies/tiny-crypto-c
+      - name: Check the full EV3 target footprint
+        run: TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" ./scripts/check-embedded-footprint.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cortex-m4-footprint
+          path: build-embedded-footprint/report.txt
+
+  unit:
+    name: Unit suite (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: "mbedTLS GCC", backend: mbedtls, sanitize: "", cc: gcc, release: "", packages: "libmbedtls-dev" }
+          - { label: "mbedTLS GCC ASan+UBSan", backend: mbedtls, sanitize: "address,undefined", cc: gcc, release: "", packages: "libmbedtls-dev" }
+          - { label: "tiny GCC", backend: tiny, sanitize: "", cc: gcc, release: "", packages: "" }
+          - { label: "tiny GCC ASan+UBSan", backend: tiny, sanitize: "address,undefined", cc: gcc, release: "", packages: "" }
+          - { label: "tiny, memory", backend: tiny, sanitize: "memory", cc: clang, release: "", packages: "clang libclang-rt-18-dev" }
+          - { label: "tiny GCC Release", backend: tiny, sanitize: "", cc: gcc, release: "1", packages: "" }
+    steps:
+      - uses: actions/checkout@v4
+        timeout-minutes: 5
+      - name: Install required packages
+        if: matrix.packages != ''
+        timeout-minutes: 5
+        run: |
+          sudo timeout 180s apt-get \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 \
+            -o DPkg::Lock::Timeout=60 \
+            update
+          sudo timeout 180s apt-get \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 \
+            -o DPkg::Lock::Timeout=60 \
+            install -y --no-install-recommends ${{ matrix.packages }}
+      - name: Fetch tiny-crypto-c
+        if: matrix.backend == 'tiny'
+        uses: actions/checkout@v4
+        timeout-minutes: 5
+        with:
+          repository: mistial-dev/tiny-crypto-c
+          ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
+          path: dependencies/tiny-crypto-c
+      - name: Run unit suite
+        timeout-minutes: 20
+        run: make -C tests test CRYPTO_BACKEND=${{ matrix.backend }} TINY_CRYPTO_DIR=../dependencies/tiny-crypto-c CC=${{ matrix.cc }} SANITIZE=${{ matrix.sanitize }} RELEASE=${{ matrix.release }}
 
   # The shared library for every platform the .NET package ships.
   native:
@@ -160,11 +297,16 @@ jobs:
           javac --release 17 -d build-jni/java \
             bindings/java/src/main/java/com/cindersocket/dfc/*.java \
             tests/java/DfcJniSmokeTest.java tests/java/DfcJniReplayRandomTest.java \
+            tests/java/DfcReaderHeaderBoundsTest.java tests/java/DfcJniNarrowingTest.java \
             examples/java/DfcTransceiveExample.java
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
             examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniReplayRandomTest \
             examples/credentials/v6-minimal.dfc
+          java -Djava.library.path=build-jni -cp build-jni/java \
+            com.cindersocket.dfc.DfcReaderHeaderBoundsTest examples/credentials/v6-minimal.dfc
+          java -Djava.library.path=build-jni -cp build-jni/java \
+            com.cindersocket.dfc.DfcJniNarrowingTest examples/credentials/v6-minimal.dfc
           java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
             examples/credentials/v6-minimal.dfc
 
@@ -177,15 +319,22 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Build four-ABI AAR, sample, and lint
+      - name: Build four-ABI AAR, minified sample, and lint
         working-directory: bindings/android
-        run: ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleDebug :dfc:lintRelease
+        run: ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease :dfc:lintRelease
+      - name: Run minified native-exception smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          script: cd bindings/android && ./gradlew --no-daemon :sample:connectedReleaseAndroidTest
       - uses: actions/upload-artifact@v4
         with:
           name: dfc-android
           path: |
             bindings/android/dfc/build/outputs/aar/dfc-release.aar
-            examples/android/build/outputs/apk/debug/sample-debug.apk
+            examples/android/build/outputs/apk/release/sample-release.apk
 
   python:
     name: Python binding and example
@@ -229,6 +378,23 @@ jobs:
           cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- examples/credentials/v6-minimal.dfcb
       - name: Compile the no-std target bridge
         run: |
+          cargo check --manifest-path bindings/rust/dfc-core/Cargo.toml \
+            --target thumbv7em-none-eabihf --no-default-features \
+            --features bundled,role-target,profile-full-ev3
+
+  rust-msrv:
+    name: Rust 1.85 minimum version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: thumbv7em-none-eabihf
+      - name: Install the ARM C toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Check the workspace at the declared MSRV
+        run: |
+          cargo check --workspace --all-targets
           cargo check --manifest-path bindings/rust/dfc-core/Cargo.toml \
             --target thumbv7em-none-eabihf --no-default-features \
             --features bundled,role-target,profile-full-ev3

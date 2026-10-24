@@ -1,4 +1,5 @@
-// libFuzzer property target for accepted credential inputs.
+// libFuzzer property target for credential inputs: an accepted input round-trips
+// through both encodings, and a rejected one leaves the empty credential.
 
 #include "dfc_credential.h"
 #include "dfc_der.h"
@@ -24,7 +25,17 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     static char text[DFC_TEXT_MAX_SIZE];
     static char text_again[DFC_TEXT_MAX_SIZE];
     DfcTextError detail = {0};
-    if(dfc_credential_load(&source, data, size, &detail) != DfcTextOk) return 0;
+    // Inputs that do not load are the larger share of what a fuzzer produces, and
+    // each is a chance to find a decoder that fails with a partly filled
+    // credential. The destination starts poisoned, so one that gives up without
+    // touching it is caught too.
+    memset(&source, 0xA5, sizeof(source));
+    if(dfc_credential_load(&source, data, size, &detail) != DfcTextOk) {
+        static DfcCredential empty;
+        dfc_credential_clear(&empty);
+        require(memcmp(&source, &empty, sizeof(source)) == 0);
+        return 0;
+    }
 
     require(dfc_credential_validate_model(&source) == DfcModelOk);
     dfc_credential_copy_model(&copy, &source);

@@ -2,6 +2,8 @@ use crate::{Error, ensure_abi, output, status};
 use core::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 use dfc_core_sys as sys;
 
+const INITIAL_OUTPUT_CAPACITY: usize = 64;
+
 pub trait Transport {
     type Error;
     fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error>;
@@ -49,6 +51,7 @@ pub struct ReaderState(pub sys::DfcFfiReaderState);
 #[derive(Debug)]
 pub enum ReaderError<E> {
     Dfc(Error),
+    Card(u8),
     Transport(E),
 }
 
@@ -56,6 +59,7 @@ impl<E: core::fmt::Display> core::fmt::Display for ReaderError<E> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Dfc(error) => error.fmt(formatter),
+            Self::Card(status) => write!(formatter, "card returned status {status:#04x}"),
             Self::Transport(error) => write!(formatter, "transport failed: {error}"),
         }
     }
@@ -69,6 +73,20 @@ pub struct Reader<T> {
     session: NonNull<sys::DfcFfiReaderSession>,
     exchange: NonNull<sys::DfcFfiReaderExchange>,
     _not_sync: PhantomData<core::cell::Cell<()>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReaderStepStatus {
+    Complete,
+    Pending,
+}
+
+pub(crate) fn reader_step_status(value: i32) -> Result<ReaderStepStatus, Error> {
+    if value == sys::DFC_FFI_READER_PENDING as i32 {
+        return Ok(ReaderStepStatus::Pending);
+    }
+    status(value)?;
+    Ok(ReaderStepStatus::Complete)
 }
 
 unsafe impl<T: Send> Send for Reader<T> {}
@@ -115,12 +133,24 @@ impl<T: Transport> Reader<T> {
         &mut self.transport
     }
 
+    /// Exchange one command.
+    ///
+    /// `clear_header` of `None` derives the clear head of an encrypted field from
+    /// the instruction. `Some(n)` is a head length no larger than the core's
+    /// `DFC_READER_MAX_CLEAR_HEADER_LENGTH`; the native core refuses a larger
+    /// value, and a value that does not fit the native `int32_t` is refused
+    /// before the call, both as [`Error::InvalidArgument`]. The session stays
+    /// usable after a refusal.
     pub fn exchange(
         &mut self,
         command: &Command,
         mode: CommunicationMode,
         clear_header: Option<u32>,
     ) -> Result<Response, ReaderError<T::Error>> {
+        let header_len = match clear_header {
+            None => -1,
+            Some(n) => i32::try_from(n).map_err(|_| ReaderError::Dfc(Error::InvalidArgument))?,
+        };
         status(unsafe {
             sys::dfc_ffi_reader_exchange_begin(
                 self.exchange.as_ptr(),
@@ -130,7 +160,7 @@ impl<T: Transport> Reader<T> {
                 command.data.as_ptr(),
                 command.data.len(),
                 mode as u8,
-                clear_header.map_or(-1, |n| n as i32),
+                header_len,
             )
         })
         .map_err(ReaderError::Dfc)?;
@@ -364,23 +394,34 @@ impl<T: Transport> Reader<T> {
     fn run(&mut self) -> Result<Response, ReaderError<T::Error>> {
         let mut incoming = Vec::new();
         loop {
-            let mut outgoing = vec![0; 1024];
-            let mut len = 0;
-            let result = unsafe {
-                sys::dfc_ffi_reader_step(
-                    self.exchange.as_ptr(),
-                    incoming.as_ptr(),
-                    incoming.len(),
-                    outgoing.as_mut_ptr(),
-                    outgoing.len(),
-                    &mut len,
-                )
+            let mut outgoing = vec![0; INITIAL_OUTPUT_CAPACITY];
+            let (result, len) = loop {
+                let mut len = 0;
+                let result = unsafe {
+                    sys::dfc_ffi_reader_step(
+                        self.exchange.as_ptr(),
+                        incoming.as_ptr(),
+                        incoming.len(),
+                        outgoing.as_mut_ptr(),
+                        outgoing.len(),
+                        &mut len,
+                    )
+                };
+                if result != sys::DFC_FFI_READER_BUFFER_TOO_SMALL as i32 {
+                    break (result, len);
+                }
+                let capacity = outgoing
+                    .len()
+                    .checked_mul(2)
+                    .ok_or(ReaderError::Dfc(Error::BufferTooSmall))?;
+                outgoing.resize(capacity, 0);
             };
-            if result < 0 {
-                return Err(ReaderError::Dfc(crate::status(result).unwrap_err()));
-            }
             outgoing.truncate(len);
-            if result == 0 {
+            if result == sys::DFC_FFI_READER_CARD_ERROR as i32 {
+                let status = unsafe { sys::dfc_ffi_reader_result_status(self.exchange.as_ptr()) };
+                return Err(ReaderError::Card(status));
+            }
+            if reader_step_status(result).map_err(ReaderError::Dfc)? == ReaderStepStatus::Complete {
                 let data = output(|out, cap, len| unsafe {
                     sys::dfc_ffi_reader_result_data(self.exchange.as_ptr(), out, cap, len)
                 })
@@ -405,5 +446,35 @@ impl<T> Drop for Reader<T> {
             sys::dfc_ffi_reader_exchange_free(self.exchange.as_ptr());
             sys::dfc_ffi_reader_session_free(self.session.as_ptr());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn step_status_maps_the_complete_abi_family() {
+        assert_eq!(
+            reader_step_status(sys::DFC_FFI_READER_OK as i32),
+            Ok(ReaderStepStatus::Complete)
+        );
+        assert_eq!(
+            reader_step_status(sys::DFC_FFI_READER_PENDING as i32),
+            Ok(ReaderStepStatus::Pending)
+        );
+        for terminal in [
+            sys::DFC_FFI_READER_INVALID,
+            sys::DFC_FFI_READER_PROTOCOL_ERROR,
+            sys::DFC_FFI_READER_INTEGRITY_ERROR,
+            sys::DFC_FFI_READER_CARD_ERROR,
+            sys::DFC_FFI_READER_UNSUPPORTED,
+        ] {
+            assert_eq!(
+                reader_step_status(terminal as i32),
+                Err(Error::Native(terminal as i32))
+            );
+        }
+        assert_eq!(reader_step_status(-5), Err(Error::RandomSourceFailed));
     }
 }

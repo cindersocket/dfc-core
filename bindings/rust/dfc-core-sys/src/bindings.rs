@@ -6,6 +6,16 @@ pub const DFC_FFI_INVALID_ARGUMENT: i32 = -1;
 pub const DFC_FFI_BUFFER_TOO_SMALL: i32 = -2;
 pub const DFC_FFI_OUT_OF_MEMORY: i32 = -3;
 pub const DFC_FFI_UNSUPPORTED: i32 = -4;
+pub const DFC_FFI_RANDOM_FAILED: i32 = -5;
+pub const DFC_FFI_READER_OK: u32 = 0;
+pub const DFC_FFI_READER_PENDING: u32 = 1;
+pub const DFC_FFI_READER_INVALID: u32 = 2;
+pub const DFC_FFI_READER_BUFFER_TOO_SMALL: u32 = 3;
+pub const DFC_FFI_READER_PROTOCOL_ERROR: u32 = 4;
+pub const DFC_FFI_READER_INTEGRITY_ERROR: u32 = 5;
+pub const DFC_FFI_READER_CARD_ERROR: u32 = 6;
+pub const DFC_FFI_READER_UNSUPPORTED: u32 = 7;
+pub const DFC_FFI_PICC_BUFFER_TOO_SMALL: u32 = 3;
 pub const DFC_FFI_MESSAGE_MAX: u32 = 96;
 pub const DFC_FFI_OWNER_PICC: i32 = -1;
 #[repr(C)]
@@ -69,6 +79,9 @@ unsafe extern "C" {
     pub fn dfc_ffi_abi_version() -> u32;
 }
 unsafe extern "C" {
+    pub fn dfc_ffi_layout_fingerprint() -> u64;
+}
+unsafe extern "C" {
     pub fn dfc_ffi_random_fill(out: *mut u8, len: usize) -> i32;
 }
 unsafe extern "C" {
@@ -98,7 +111,7 @@ unsafe extern "C" {
     pub fn dfc_ffi_struct_sizes(out: *mut DfcFfiStructSizes);
 }
 pub type DfcFfiRandomCallback = ::core::option::Option<
-        unsafe extern "C" fn(context: *mut ::core::ffi::c_void, buffer: *mut u8, len: usize) -> i32,
+    unsafe extern "C" fn(context: *mut ::core::ffi::c_void, buffer: *mut u8, len: usize) -> i32,
 >;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -483,6 +496,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn dfc_ffi_picc_activate(picc: *mut DfcFfiPicc, out: *mut DfcFfiActivation) -> i32;
+}
+unsafe extern "C" {
+    pub fn dfc_ffi_picc_response_capacity() -> usize;
 }
 unsafe extern "C" {
     pub fn dfc_ffi_picc_exchange(

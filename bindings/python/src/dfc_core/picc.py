@@ -3,11 +3,13 @@ from __future__ import annotations
 import ctypes as C
 import threading
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any, Self
 
 from . import _native as N
 from .credential import Credential
+from .errors import RandomSourceError
 from .models import Activation, Snapshot
 
 
@@ -18,6 +20,9 @@ class VirtualPicc:
         self, credential: Credential, random: Callable[[int], bytes] | None = None
     ) -> None:
         self._lock = threading.RLock()
+        self._lifetime_lock = threading.Lock()
+        self._closed = False
+        self._active_calls = 0
         self._callback_error: BaseException | None = None
         self._callback = N.RANDOM_CALLBACK(self._random_callback) if random else None
         self._random = random
@@ -60,17 +65,41 @@ class VirtualPicc:
             return -5
 
     def _open(self) -> N.Handle:
-        if not self._finalizer.alive:
-            raise RuntimeError("virtual PICC is closed")
-        return self._handle
+        with self._lifetime_lock:
+            if self._closed:
+                raise RuntimeError("virtual PICC is closed")
+            return N.Handle(self._handle.value)
+
+    @contextmanager
+    def _lease(self) -> Iterator[N.Handle]:
+        with self._lifetime_lock:
+            if self._closed:
+                raise RuntimeError("virtual PICC is closed")
+            self._active_calls += 1
+            handle = N.Handle(self._handle.value)
+        try:
+            yield handle
+        finally:
+            finalize = False
+            with self._lifetime_lock:
+                self._active_calls -= 1
+                finalize = self._closed and self._active_calls == 0
+            if finalize:
+                self._finalizer()
 
     def _check_callback(self) -> None:
         if self._callback_error is not None:
             error, self._callback_error = self._callback_error, None
-            raise RuntimeError("virtual PICC random source failed") from error
+            raise RandomSourceError(N.RANDOM_FAILED, "virtual PICC random source failed") from error
 
     def close(self) -> None:
-        with self._lock:
+        with self._lifetime_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._handle = N.Handle()
+            finalize = self._active_calls == 0
+        if finalize:
             self._finalizer()
 
     def __enter__(self) -> Self:
@@ -81,9 +110,9 @@ class VirtualPicc:
         self.close()
 
     def activate(self) -> Activation:
-        with self._lock:
+        with self._lock, self._lease() as handle:
             value = N.Activation()
-            status = N.library().dfc_ffi_picc_activate(self._open(), C.byref(value))
+            status = N.library().dfc_ffi_picc_activate(handle, C.byref(value))
             self._check_callback()
             N.raise_status(status)
             return Activation(
@@ -96,12 +125,12 @@ class VirtualPicc:
             )
 
     def _exchange(self, name: str, content: bytes) -> bytes:
-        with self._lock:
+        with self._lock, self._lease() as handle:
             _raw, pointer = N.byte_pointer(content)
             output = (C.c_uint8 * 4096)()
             length = C.c_size_t()
             status = getattr(N.library(), f"dfc_ffi_picc_{name}")(
-                self._open(), pointer, len(content), output, len(output), C.byref(length)
+                handle, pointer, len(content), output, len(output), C.byref(length)
             )
             self._check_callback()
             N.raise_status(status)
@@ -118,8 +147,8 @@ class VirtualPicc:
         return self._exchange("frame_exchange", frame)
 
     def _simple(self, name: str, *args: int) -> None:
-        with self._lock:
-            N.raise_status(getattr(N.library(), f"dfc_ffi_picc_{name}")(self._open(), *args))
+        with self._lock, self._lease() as handle:
+            N.raise_status(getattr(N.library(), f"dfc_ffi_picc_{name}")(handle, *args))
 
     def field_off(self) -> None:
         self._simple("field_off")
@@ -128,15 +157,15 @@ class VirtualPicc:
         self._simple("reset_protocol")
 
     def advance_time(self, milliseconds: int) -> None:
-        self._simple("advance_time", milliseconds)
+        self._simple("advance_time", N.unsigned(milliseconds, 32, "milliseconds"))
 
     def mark_persisted(self) -> None:
         self._simple("mark_persisted")
 
     def snapshot(self) -> Snapshot:
-        with self._lock:
+        with self._lock, self._lease() as handle:
             s = N.Snapshot()
-            N.raise_status(N.library().dfc_ffi_picc_snapshot(self._open(), C.byref(s)))
+            N.raise_status(N.library().dfc_ffi_picc_snapshot(handle, C.byref(s)))
             return Snapshot(
                 s.selected,
                 s.selected_application_index,
@@ -155,7 +184,7 @@ class VirtualPicc:
             )
 
     def export(self) -> Credential:
-        with self._lock:
+        with self._lock, self._lease() as handle:
             out = N.Handle()
-            N.raise_status(N.library().dfc_ffi_picc_export(self._open(), C.byref(out)))
+            N.raise_status(N.library().dfc_ffi_picc_export(handle, C.byref(out)))
             return Credential(out)

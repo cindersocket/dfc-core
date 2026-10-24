@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes as C
+import operator
 import os
 import sys
 from importlib.resources import files
@@ -396,7 +397,7 @@ def _declare(lib: C.CDLL) -> None:
         lib.dfc_ffi_layout_fingerprint.restype = C.c_uint64
     lib.dfc_ffi_struct_sizes.argtypes = [C.POINTER(StructSizes)]
     lib.dfc_ffi_capabilities.argtypes = [C.POINTER(Capabilities)]
-    for name in ("credential_free", "picc_free", "reader_session_free", "reader_exchange_free"):
+    for name in ("credential_free", "picc_free"):
         getattr(lib, f"dfc_ffi_{name}").argtypes = [Handle]
     # Pointer-heavy calls use explicit signatures where ctypes conversion matters.
     lib.dfc_ffi_credential_parse_text.argtypes = [
@@ -450,9 +451,105 @@ def _declare(lib: C.CDLL) -> None:
             C.POINTER(C.c_size_t),
         ]
     lib.dfc_ffi_picc_export.argtypes = [Handle, C.POINTER(Handle)]
+    lib.dfc_ffi_picc_advance_time.argtypes = [Handle, C.c_uint32]
     lib.dfc_ffi_reader_session_new.argtypes = [C.POINTER(Handle)]
-    lib.dfc_ffi_reader_exchange_new.argtypes = [C.POINTER(Handle)]
+    lib.dfc_ffi_reader_session_new.restype = C.c_int32
+    lib.dfc_ffi_reader_session_free.argtypes = [Handle]
+    lib.dfc_ffi_reader_session_free.restype = None
+    lib.dfc_ffi_reader_session_clear.argtypes = [Handle]
+    lib.dfc_ffi_reader_session_clear.restype = None
     lib.dfc_ffi_reader_session_state.argtypes = [Handle, C.POINTER(ReaderState)]
+    lib.dfc_ffi_reader_session_state.restype = C.c_int32
+    lib.dfc_ffi_reader_exchange_new.argtypes = [C.POINTER(Handle)]
+    lib.dfc_ffi_reader_exchange_new.restype = C.c_int32
+    lib.dfc_ffi_reader_exchange_free.argtypes = [Handle]
+    lib.dfc_ffi_reader_exchange_free.restype = None
+    lib.dfc_ffi_reader_authenticate_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_reader_authenticate_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_authenticate_iso7816_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+        P8,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_reader_authenticate_iso7816_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_authenticate_ev2_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        P8,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_reader_authenticate_ev2_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_exchange_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+        C.c_int32,
+    ]
+    lib.dfc_ffi_reader_exchange_begin.restype = C.c_int32
+    for name in ("write_data", "write_record"):
+        function = getattr(lib, f"dfc_ffi_reader_{name}_begin")
+        function.argtypes = [
+            Handle,
+            Handle,
+            C.c_uint32,
+            C.c_uint8,
+            C.c_uint32,
+            P8,
+            C.c_size_t,
+            C.c_uint8,
+        ]
+        function.restype = C.c_int32
+    lib.dfc_ffi_reader_update_record_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        C.c_uint32,
+        C.c_uint32,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+    ]
+    lib.dfc_ffi_reader_update_record_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_create_delegated_application_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        P8,
+        C.c_size_t,
+        P8,
+        P8,
+        P8,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+    ]
+    lib.dfc_ffi_reader_create_delegated_application_begin.restype = C.c_int32
     lib.dfc_ffi_reader_step.argtypes = [
         Handle,
         P8,
@@ -461,9 +558,36 @@ def _declare(lib: C.CDLL) -> None:
         C.c_size_t,
         C.POINTER(C.c_size_t),
     ]
+    lib.dfc_ffi_reader_step.restype = C.c_int32
     lib.dfc_ffi_reader_result_data.argtypes = [Handle, P8, C.c_size_t, C.POINTER(C.c_size_t)]
+    lib.dfc_ffi_reader_result_data.restype = C.c_int32
     lib.dfc_ffi_reader_result_status.argtypes = [Handle]
     lib.dfc_ffi_reader_result_status.restype = C.c_uint8
+    lib.dfc_ffi_reader_change_key_cryptogram.argtypes = [
+        Handle,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        P8,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.POINTER(C.c_size_t),
+    ]
+    lib.dfc_ffi_reader_change_key_cryptogram.restype = C.c_int32
+    lib.dfc_ffi_reader_change_key_ev2_data.argtypes = [
+        Handle,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        P8,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.POINTER(C.c_size_t),
+    ]
+    lib.dfc_ffi_reader_change_key_ev2_data.restype = C.c_int32
 
 
 _loaded: C.CDLL | None = None
@@ -515,6 +639,40 @@ def variable_output(call: object, *args: object) -> bytes:
     status = call(*args, out, size.value, C.byref(size))  # type: ignore[operator]
     raise_status(status)
     return bytes(out[: size.value])
+
+
+def _integer(value: int, name: str) -> int:
+    from .errors import InvalidArgumentError
+
+    try:
+        return operator.index(value)
+    except TypeError as error:
+        raise InvalidArgumentError(-1, f"{name} must be an integer") from error
+
+
+def unsigned(value: int, bits: int, name: str) -> int:
+    """Return ``value`` unchanged if it fits an unsigned ``bits``-wide native parameter.
+
+    ctypes truncates silently, so ``comm_mode=256`` would reach the core as 0 (plain).
+    A value that does not fit is refused as ``InvalidArgumentError`` instead.
+    """
+    from .errors import InvalidArgumentError
+
+    number = _integer(value, name)
+    if not 0 <= number < 1 << bits:
+        raise InvalidArgumentError(-1, f"{name} does not fit an unsigned {bits}-bit integer")
+    return number
+
+
+def signed(value: int, bits: int, name: str) -> int:
+    """Return ``value`` unchanged if it fits a signed ``bits``-wide native parameter."""
+    from .errors import InvalidArgumentError
+
+    number = _integer(value, name)
+    limit = 1 << (bits - 1)
+    if not -limit <= number < limit:
+        raise InvalidArgumentError(-1, f"{name} does not fit a signed {bits}-bit integer")
+    return number
 
 
 def raise_status(status: int) -> None:
