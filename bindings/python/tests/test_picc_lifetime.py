@@ -43,9 +43,11 @@ def test_model_wipes_partial_picc_output_on_failure(monkeypatch: pytest.MonkeyPa
         return -1
 
     monkeypatch.setattr(library, "dfc_ffi_credential_get_picc", fail)
-    with Credential.decode(FIXTURE.read_bytes()) as credential:
-        with pytest.raises(InvalidArgumentError):
-            credential.model()
+    with (
+        Credential.decode(FIXTURE.read_bytes()) as credential,
+        pytest.raises(InvalidArgumentError),
+    ):
+        credential.model()
     assert retained and not any(retained[0].proximity_key)
 
 
@@ -61,9 +63,11 @@ def test_model_wipes_partial_file_output_on_failure(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(library, "dfc_ffi_credential_file_count", lambda _handle: 1)
     monkeypatch.setattr(library, "dfc_ffi_credential_get_file", fail)
-    with Credential.decode(FIXTURE.read_bytes()) as credential:
-        with pytest.raises(InvalidArgumentError):
-            credential.model()
+    with (
+        Credential.decode(FIXTURE.read_bytes()) as credential,
+        pytest.raises(InvalidArgumentError),
+    ):
+        credential.model()
     assert retained and not any(retained[0].transaction_mac_key)
 
 
