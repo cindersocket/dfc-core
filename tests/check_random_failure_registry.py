@@ -44,20 +44,14 @@ def main() -> None:
     missing = sites - REGISTRY.keys()
     stale = REGISTRY.keys() - sites
     test_source = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((root / "tests").glob("test_*.c"))
+        path.read_text(encoding="utf-8") for path in sorted((root / "tests").glob("test_*.c"))
     )
-    missing_tests = sorted(
-        {test for test in REGISTRY.values() if test not in test_source}
-    )
+    missing_tests = sorted({test for test in REGISTRY.values() if test not in test_source})
     if missing or stale or missing_tests:
         details = [
-            f"unregistered random draw: {path}: {argument}"
-            for path, argument in sorted(missing)
+            f"unregistered random draw: {path}: {argument}" for path, argument in sorted(missing)
         ]
-        details += [
-            f"stale random draw: {path}: {argument}" for path, argument in sorted(stale)
-        ]
+        details += [f"stale random draw: {path}: {argument}" for path, argument in sorted(stale)]
         details += [f"missing random-failure test: {test}" for test in missing_tests]
         raise SystemExit("\n".join(details))
 
