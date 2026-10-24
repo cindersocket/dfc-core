@@ -99,9 +99,8 @@ static void assert_conditions_not_satisfied(const uint8_t* response, size_t resp
     munit_assert_memory_equal(
         2,
         response,
-        ((uint8_t[]){
-            DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_HI,
-            DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_LO}));
+        ((uint8_t[]){DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_HI,
+                     DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_LO}));
 }
 
 #if DFC_ENABLE_TRANSACTION_MAC
@@ -219,10 +218,9 @@ static MunitResult
             munit_assert_size(response_len, ==, returned[i] + 2);
             bool reports_short_eof = generation == DfcGenerationEv1 && short_eof[i];
             const uint8_t* expected_status =
-                reports_short_eof ?
-                    ((uint8_t[]){
-                        DFC_ISO7816_SW_EOF_BEFORE_LE_HI, DFC_ISO7816_SW_EOF_BEFORE_LE_LO}) :
-                    ((uint8_t[]){DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO});
+                reports_short_eof ? ((uint8_t[]){DFC_ISO7816_SW_EOF_BEFORE_LE_HI,
+                                                 DFC_ISO7816_SW_EOF_BEFORE_LE_LO}) :
+                                    ((uint8_t[]){DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO});
             munit_assert_memory_equal(2, response + returned[i], expected_status);
             dfc_virtual_picc_session_free(session);
         }

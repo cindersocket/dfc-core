@@ -383,8 +383,7 @@ size_t dfc_secure_messaging_generate_ev1_response(
     uint8_t* out,
     size_t out_capacity) {
     if(plain_len > SIZE_MAX - DFC_WIRE_MAC_LENGTH ||
-       !output_fits(out, out_capacity, plain_len + DFC_WIRE_MAC_LENGTH) ||
-       (plain_len && !plain))
+       !output_fits(out, out_capacity, plain_len + DFC_WIRE_MAC_LENGTH) || (plain_len && !plain))
         return 0;
     uint8_t mac[DFC_WIRE_MAC_LENGTH];
     if(!dfc_secure_messaging_generate_ev1_response_mac(sm, status, plain, plain_len, mac)) {
@@ -730,8 +729,7 @@ size_t dfc_secure_messaging_wrap(
 
     if(comm_mode == DFC_COMM_MAC) {
         size_t mac_len = mac_len_for_cipher(sm->cipher);
-        if(plain_len > SIZE_MAX - mac_len ||
-           !output_fits(out, out_capacity, plain_len + mac_len))
+        if(plain_len > SIZE_MAX - mac_len || !output_fits(out, out_capacity, plain_len + mac_len))
             return 0;
         size_t prefix_len = legacy ? 0 : header_len;
         DfcMacSegment segments[] = {
@@ -835,8 +833,7 @@ size_t dfc_secure_messaging_generate_response_with_length_marker(
 
     if(comm_mode == DFC_COMM_MAC) {
         size_t mac_len = mac_len_for_cipher(sm->cipher);
-        if(plain_len > SIZE_MAX - mac_len ||
-           !output_fits(out, out_capacity, plain_len + mac_len))
+        if(plain_len > SIZE_MAX - mac_len || !output_fits(out, out_capacity, plain_len + mac_len))
             return 0;
         // Mirrors dfc_secure_messaging_unwrap: EV1 covers the status byte, legacy
         // covers the payload alone.
