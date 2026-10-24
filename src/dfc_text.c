@@ -464,8 +464,20 @@ static bool
     opt_uint(P* p, const char* key, uint32_t lo, uint32_t hi, uint32_t* out, bool* present) {
     *present = false;
     Line l;
-    if(!lookup(p, key, &l, false)) return !p->failed;
-    if(!req_uint(p, key, lo, hi, out)) return false;
+    if(!lookup(p, key, &l, true)) return !p->failed;
+    int64_t value = 0;
+    if(!parse_decimal(p, &l, key, false, &value)) return false;
+    if((uint64_t)value < lo || (uint64_t)value > hi) {
+        return fail(
+            p,
+            l.number,
+            "%s: %lu outside %lu..%lu",
+            key,
+            (unsigned long)value,
+            (unsigned long)lo,
+            (unsigned long)hi);
+    }
+    *out = (uint32_t)value;
     *present = true;
     return true;
 }
@@ -1346,12 +1358,17 @@ typedef struct {
 } W;
 
 static void w_raw(W* w, const char* s, size_t n) {
+    if(n > SIZE_MAX - w->len) {
+        w->overflow = true;
+        w->len = SIZE_MAX;
+        return;
+    }
     if(w->buf) {
-        if(w->len + n > w->cap) {
+        if(n > w->cap - DFC_MIN(w->len, w->cap)) {
             w->overflow = true;
-            return;
+        } else if(!w->overflow) {
+            memcpy(w->buf + w->len, s, n);
         }
-        memcpy(w->buf + w->len, s, n);
     }
     w->len += n;
 }
@@ -1802,20 +1819,15 @@ DfcTextStatus dfc_text_write(const DfcCredential* credential, char* out, size_t 
     if(!credential || !len) return DfcTextMalformed;
     if(!out && cap > 0) return DfcTextMalformed;
 
-    W probe = {NULL, 0, 0, false};
-    DfcTextStatus st = write_credential(&probe, credential);
-    if(st != DfcTextOk) return st;
-    // Report the size even when it does not fit, so a caller can size a buffer
-    // with cap 0 and then write for real.
-    *len = probe.len;
-    if(probe.len > cap) return DfcTextCapacity;
-
     W w = {out, cap, 0, false};
-    st = write_credential(&w, credential);
+    DfcTextStatus st = write_credential(&w, credential);
     if(st != DfcTextOk) return st;
-    if(w.overflow) return DfcTextCapacity;
-    if(w.len < cap) out[w.len] = '\0';
     *len = w.len;
+    if(w.overflow) {
+        if(out && cap) out[0] = '\0';
+        return DfcTextCapacity;
+    }
+    if(w.len < cap) out[w.len] = '\0';
     return DfcTextOk;
 }
 
