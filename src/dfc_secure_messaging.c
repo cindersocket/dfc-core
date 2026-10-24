@@ -165,10 +165,7 @@ static bool compute_mac_segments(
             memset(mac_out, 0, DFC_WIRE_MAC_LENGTH);
             return false;
         }
-        // DESFire truncates the AES CMAC to every other byte, taking bytes 1,3,5,...,15.
-        for(size_t i = 0; i < 8; i++) {
-            mac_out[i] = full_mac[(i * 2) + 1];
-        }
+        dfc_truncate_aes_wire_mac(full_mac, mac_out);
         dfc_secure_wipe(full_mac, sizeof(full_mac));
         return true;
     }

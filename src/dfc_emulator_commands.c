@@ -1652,10 +1652,7 @@ static bool proximity_wire_mac(
 
     uint8_t full_mac[DFC_AES_CMAC_LENGTH] = {0};
     bool ok = aes_cmac((uint8_t*)key, DFC_AES_KEY_LENGTH, input, input_len, full_mac);
-    if(ok) {
-        for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-            output[i] = full_mac[i * 2 + 1];
-    }
+    if(ok) dfc_truncate_aes_wire_mac(full_mac, output);
     dfc_secure_wipe(input, sizeof(input));
     dfc_secure_wipe(full_mac, sizeof(full_mac));
     return ok;
@@ -3192,8 +3189,7 @@ static bool transaction_mac_calculate(
             emulator->transaction_input_len,
             full_mac);
     if(ok) {
-        for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-            mac[i] = full_mac[(i * 2) + 1];
+        dfc_truncate_aes_wire_mac(full_mac, mac);
     } else {
         memset(mac, 0, DFC_WIRE_MAC_LENGTH);
     }
@@ -4174,8 +4170,7 @@ static bool render_sdm_read_in_place(DfcEmulator* emulator, DfcFile* file) {
                    file->sdm_mac_offset - file->sdm_mac_input_offset,
                    full_mac))
                 goto cleanup;
-            for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-                wire_mac[i] = full_mac[(i * 2) + 1];
+            dfc_truncate_aes_wire_mac(full_mac, wire_mac);
             sdm_write_ascii_hex(
                 emulator->sdm_read_cache + file->sdm_mac_offset, wire_mac, sizeof(wire_mac));
         }
@@ -4250,8 +4245,7 @@ static bool render_sdm_read_in_place(DfcEmulator* emulator, DfcFile* file) {
                file->sdm_mac_offset - file->sdm_mac_input_offset,
                full_mac))
             goto cleanup;
-        for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-            wire_mac[i] = full_mac[(i * 2) + 1];
+        dfc_truncate_aes_wire_mac(full_mac, wire_mac);
         sdm_write_ascii_hex(
             emulator->sdm_read_cache + file->sdm_mac_offset, wire_mac, sizeof(wire_mac));
     }

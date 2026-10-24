@@ -1930,8 +1930,7 @@ static bool wire_mac_8(const uint8_t key[16], const uint8_t* input, size_t len, 
         dfc_secure_wipe(full, sizeof(full));
         return false;
     }
-    for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-        out[i] = full[i * 2 + 1];
+    dfc_truncate_aes_wire_mac(full, out);
     dfc_secure_wipe(full, sizeof(full));
     return true;
 }

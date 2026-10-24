@@ -352,6 +352,9 @@ uint32_t dfc_crc32(const uint8_t* data, size_t length);
 #define DFC_AES_KEY_LENGTH                          16
 #define DFC_AES_CMAC_LENGTH                         16
 #define DFC_WIRE_MAC_LENGTH                         8
+void dfc_truncate_aes_wire_mac(
+    const uint8_t full[DFC_AES_CMAC_LENGTH],
+    uint8_t wire[DFC_WIRE_MAC_LENGTH]);
 #define DFC_VIRTUAL_CARD_CHALLENGE_LENGTH           DFC_AES_KEY_LENGTH
 #define DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH          DFC_AES_KEY_LENGTH
 #define DFC_VIRTUAL_CARD_CAPABILITY_LENGTH          2

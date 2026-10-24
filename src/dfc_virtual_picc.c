@@ -669,8 +669,7 @@ static DfcVirtualPiccStatus handle_virtual_card_external_authenticate(
         emulator->virtual_card_selected = false;
         return DfcVirtualPiccStatusProtocolError;
     }
-    for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-        wire_mac[i] = full_mac[(i * 2) + 1];
+    dfc_truncate_aes_wire_mac(full_mac, wire_mac);
     emulator->virtual_card_selected =
         emulator->virtual_card_selection_pending &&
         dfc_ct_equal(

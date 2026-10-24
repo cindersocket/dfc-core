@@ -30,6 +30,13 @@ bool dfc_ct_equal(const uint8_t* left, const uint8_t* right, size_t length) {
     return difference == 0;
 }
 
+void dfc_truncate_aes_wire_mac(
+    const uint8_t full[DFC_AES_CMAC_LENGTH],
+    uint8_t wire[DFC_WIRE_MAC_LENGTH]) {
+    for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
+        wire[i] = full[i * 2 + 1];
+}
+
 void dfc_secure_wipe(void* buffer, size_t length) {
     volatile uint8_t* bytes = buffer;
     while(length--)

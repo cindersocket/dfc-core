@@ -78,8 +78,7 @@ bool dfc_ev2_wire_mac(
         dfc_secure_wipe(full, sizeof(full));
         return false;
     }
-    for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-        output[i] = full[i * 2 + 1];
+    dfc_truncate_aes_wire_mac(full, output);
     dfc_secure_wipe(full, sizeof(full));
     return true;
 }
@@ -123,8 +122,7 @@ bool dfc_ev2_mac(
         dfc_secure_wipe(prefix, sizeof(prefix));
         return false;
     }
-    for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
-        output[i] = full[i * 2 + 1];
+    dfc_truncate_aes_wire_mac(full, output);
     dfc_secure_wipe(full, sizeof(full));
     dfc_secure_wipe(prefix, sizeof(prefix));
     return true;
