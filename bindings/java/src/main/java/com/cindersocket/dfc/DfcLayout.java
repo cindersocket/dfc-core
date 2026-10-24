@@ -27,6 +27,7 @@ final class DfcLayout {
   static final long DFC_FFI_AUTH_LEGACY = 10L;
   static final long DFC_FFI_AUTH_ISO = 26L;
   static final long DFC_FFI_AUTH_AES = 170L;
+  static final long DFC_FFI_AUTH_EV2 = 113L;
   static final long DFC_FFI_ISO_AUTH_TDEA2 = 2L;
   static final long DFC_FFI_ISO_AUTH_TDEA3 = 4L;
   static final long DFC_FFI_ISO_AUTH_AES = 9L;

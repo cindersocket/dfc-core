@@ -129,6 +129,11 @@ fn ensure_abi() -> Result<(), Error> {
             actual,
         });
     }
+    let native_fingerprint = unsafe { sys::dfc_ffi_layout_fingerprint() };
+    if let Err(error) = require_layout_fingerprint(native_fingerprint) {
+        ABI_STATE.store(3, Ordering::Release);
+        return Err(error);
+    }
     let mut native = MaybeUninit::<sys::DfcFfiStructSizes>::uninit();
     unsafe { sys::dfc_ffi_struct_sizes(native.as_mut_ptr()) };
     let native = unsafe { native.assume_init() };
@@ -148,15 +153,11 @@ fn ensure_abi() -> Result<(), Error> {
         .iter()
         .any(|(native, rust)| *native as usize != *rust)
     {
-        ABI_STATE.store(2, Ordering::Release);
-        return Err(Error::AbiMismatch {
-            expected: sys::DFC_FFI_ABI_VERSION,
-            actual,
-        });
-    }
-    if let Err(error) = require_layout_fingerprint(unsafe { sys::dfc_ffi_layout_fingerprint() }) {
         ABI_STATE.store(3, Ordering::Release);
-        return Err(error);
+        return Err(Error::LayoutMismatch {
+            expected: layout::expected_layout_fingerprint(),
+            actual: native_fingerprint,
+        });
     }
     ABI_STATE.store(1, Ordering::Release);
     Ok(())

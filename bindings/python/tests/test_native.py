@@ -508,6 +508,9 @@ def test_transport_callback_rejects_every_reader_native_call(
 def test_abi_sizes_and_field_fingerprint() -> None:
     library = _native.library()
     assert capabilities().abi_version == _native.ABI_VERSION
+    assert [name for name, _type in _native.StructSizes._fields_] == [
+        name for name, _type_name in _native.LAYOUT_SIZE_FIELDS
+    ]
     assert library.dfc_ffi_layout_fingerprint() == _native.layout_fingerprint()
 
 

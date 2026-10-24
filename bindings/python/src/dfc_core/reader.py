@@ -213,7 +213,7 @@ class Reader:
         key_number = N.unsigned(key_no, 8, "key_no")
         framing = self._native_framing()
         challenge = bytearray(
-            random_a or secrets.token_bytes(16 if cipher == 0xAA or len(key) == 24 else 8)
+            random_a or secrets.token_bytes(16 if cipher_id == N.AUTH_AES or len(key) == 24 else 8)
         )
         keybuf, keyptr = N.byte_pointer(key)
         randbuf, randptr = N.byte_pointer(challenge)
@@ -282,7 +282,7 @@ class Reader:
     ) -> Response:
         key_ref = N.unsigned(key_reference, 8, "key_reference")
         algorithm_id = N.unsigned(algorithm, 8, "algorithm")
-        length = 8 if algorithm == 0x02 else 16
+        length = 8 if algorithm_id == N.ISO_AUTH_TDEA2 else 16
         first = bytearray(random_first or secrets.token_bytes(length))
         second = bytearray(random_second or secrets.token_bytes(length))
         if len(first) != length or len(second) != length:

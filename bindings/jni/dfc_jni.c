@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "dfc_ffi.h"
+#include "dfc_ffi_layout.h"
 #include "dfc_jni_queue.h"
 
 #define JNI_PICC_RESPONSE_INITIAL 256u
@@ -213,30 +214,6 @@ static void reader_clear_pending(JniReader* wrapper) {
     wrapper->pending_data_len = 0;
 }
 
-static uint64_t layout_hash_word(uint64_t hash, uint64_t value) {
-    for(size_t i = 0; i < sizeof(value); i++) {
-        hash ^= (uint8_t)(value >> (i * 8));
-        hash *= UINT64_C(1099511628211);
-    }
-    return hash;
-}
-
-static uint64_t expected_layout_fingerprint(void) {
-    uint64_t hash = UINT64_C(14695981039346656037);
-    static const uint64_t words[] = {
-#define DFC_FFI_LAYOUT_CONSTANT(name)     (uint64_t)(int64_t)(name),
-#define DFC_FFI_LAYOUT_SIZE(type)         sizeof(type),
-#define DFC_FFI_LAYOUT_FIELD(type, field) offsetof(type, field),
-#include "dfc_ffi_layout.inc"
-#undef DFC_FFI_LAYOUT_FIELD
-#undef DFC_FFI_LAYOUT_SIZE
-#undef DFC_FFI_LAYOUT_CONSTANT
-    };
-    for(size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
-        hash = layout_hash_word(hash, words[i]);
-    return hash;
-}
-
 JNIEXPORT jint JNICALL Java_com_cindersocket_dfc_DfcNative_abiVersion(JNIEnv* env, jclass type) {
     (void)env;
     (void)type;
@@ -254,7 +231,7 @@ JNIEXPORT jlong JNICALL
     Java_com_cindersocket_dfc_DfcNative_expectedLayoutFingerprint(JNIEnv* env, jclass type) {
     (void)env;
     (void)type;
-    return (jlong)expected_layout_fingerprint();
+    return (jlong)dfc_ffi_expected_layout_fingerprint();
 }
 
 JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_capabilities(JNIEnv* env, jclass type) {

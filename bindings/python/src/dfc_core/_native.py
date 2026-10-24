@@ -8,6 +8,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from ._layout import CONSTANTS as LAYOUT_CONSTANTS
+from ._layout import SIZE_FIELDS as LAYOUT_SIZE_FIELDS
 from ._layout import STRUCTS as LAYOUT_STRUCTS
 from ._layout import VALUES as LAYOUT_VALUES
 
@@ -23,6 +24,8 @@ OK, INVALID_ARGUMENT, BUFFER_TOO_SMALL, OUT_OF_MEMORY, UNSUPPORTED, RANDOM_FAILE
 OWNER_PICC = LAYOUT_VALUES["DFC_FFI_OWNER_PICC"]
 PICC_BUFFER_TOO_SMALL = LAYOUT_VALUES["DFC_FFI_PICC_BUFFER_TOO_SMALL"]
 MESSAGE_MAX = LAYOUT_VALUES["DFC_FFI_MESSAGE_MAX"]
+AUTH_AES = LAYOUT_VALUES["DFC_FFI_AUTH_AES"]
+ISO_AUTH_TDEA2 = LAYOUT_VALUES["DFC_FFI_ISO_AUTH_TDEA2"]
 Handle = C.c_void_p
 P8 = C.POINTER(C.c_uint8)
 
@@ -74,21 +77,7 @@ class Capabilities(C.Structure):
 
 
 class StructSizes(C.Structure):
-    _fields_ = [
-        (name, C.c_uint32)
-        for name in [
-            "capabilities",
-            "error",
-            "card",
-            "picc",
-            "application",
-            "file",
-            "key",
-            "activation",
-            "snapshot",
-            "reader_state",
-        ]
-    ]
+    _fields_ = [(name, C.c_uint32) for name, _type_name in LAYOUT_SIZE_FIELDS]
 
 
 class Error(C.Structure):
@@ -318,18 +307,6 @@ class ReaderState(C.Structure):
     ]
 
 
-STRUCTS = (
-    Capabilities,
-    Error,
-    Card,
-    PiccSettings,
-    Application,
-    File,
-    Key,
-    Activation,
-    Snapshot,
-    ReaderState,
-)
 RANDOM_CALLBACK = C.CFUNCTYPE(C.c_int32, C.c_void_p, P8, C.c_size_t)
 
 
@@ -603,8 +580,8 @@ def library() -> C.CDLL:
                 raise ImportError(f"dfc ABI {lib.dfc_ffi_abi_version()} is not {ABI_VERSION}")
             actual = StructSizes()
             lib.dfc_ffi_struct_sizes(C.byref(actual))
-            expected = [C.sizeof(t) for t in STRUCTS]
-            got = [getattr(actual, n) for n, _ in StructSizes._fields_]
+            expected = [C.sizeof(globals()[type_name]) for _field, type_name in LAYOUT_SIZE_FIELDS]
+            got = [getattr(actual, field) for field, _type_name in LAYOUT_SIZE_FIELDS]
             if got != expected:
                 raise ImportError(f"dfc structure layout mismatch: native {got}, Python {expected}")
             require_layout_fingerprint(lib.dfc_ffi_layout_fingerprint())

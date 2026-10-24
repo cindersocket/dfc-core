@@ -24,6 +24,7 @@ pub(crate) const DFC_FFI_COMM_ENCIPHERED: i64 = 3;
 pub(crate) const DFC_FFI_AUTH_LEGACY: i64 = 10;
 pub(crate) const DFC_FFI_AUTH_ISO: i64 = 26;
 pub(crate) const DFC_FFI_AUTH_AES: i64 = 170;
+pub(crate) const DFC_FFI_AUTH_EV2: i64 = 113;
 pub(crate) const DFC_FFI_ISO_AUTH_TDEA2: i64 = 2;
 pub(crate) const DFC_FFI_ISO_AUTH_TDEA3: i64 = 4;
 pub(crate) const DFC_FFI_ISO_AUTH_AES: i64 = 9;
@@ -67,6 +68,7 @@ pub(crate) fn expected_layout_fingerprint() -> u64 {
     hash = word(hash, 10i64 as u64);
     hash = word(hash, 26i64 as u64);
     hash = word(hash, 170i64 as u64);
+    hash = word(hash, 113i64 as u64);
     hash = word(hash, 2i64 as u64);
     hash = word(hash, 4i64 as u64);
     hash = word(hash, 9i64 as u64);

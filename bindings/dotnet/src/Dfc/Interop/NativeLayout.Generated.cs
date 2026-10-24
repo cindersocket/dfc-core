@@ -29,6 +29,7 @@ internal static unsafe partial class Native
     internal const long DFC_FFI_AUTH_LEGACY = 10;
     internal const long DFC_FFI_AUTH_ISO = 26;
     internal const long DFC_FFI_AUTH_AES = 170;
+    internal const long DFC_FFI_AUTH_EV2 = 113;
     internal const long DFC_FFI_ISO_AUTH_TDEA2 = 2;
     internal const long DFC_FFI_ISO_AUTH_TDEA3 = 4;
     internal const long DFC_FFI_ISO_AUTH_AES = 9;
@@ -62,6 +63,7 @@ internal static unsafe partial class Native
         hash = LayoutWord(hash, unchecked((ulong)10L));
         hash = LayoutWord(hash, unchecked((ulong)26L));
         hash = LayoutWord(hash, unchecked((ulong)170L));
+        hash = LayoutWord(hash, unchecked((ulong)113L));
         hash = LayoutWord(hash, unchecked((ulong)2L));
         hash = LayoutWord(hash, unchecked((ulong)4L));
         hash = LayoutWord(hash, unchecked((ulong)9L));

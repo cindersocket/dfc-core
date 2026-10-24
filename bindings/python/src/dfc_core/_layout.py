@@ -26,6 +26,7 @@ CONSTANTS = (
     ('DFC_FFI_AUTH_LEGACY', 10),
     ('DFC_FFI_AUTH_ISO', 26),
     ('DFC_FFI_AUTH_AES', 170),
+    ('DFC_FFI_AUTH_EV2', 113),
     ('DFC_FFI_ISO_AUTH_TDEA2', 2),
     ('DFC_FFI_ISO_AUTH_TDEA3', 4),
     ('DFC_FFI_ISO_AUTH_AES', 9),
@@ -46,6 +47,19 @@ STRUCTS = (
     ('Activation', ('uid_len', 'ats_len', 'atqa_len', 'protocol_len', 'rf_detail_len', 'uid', 'ats', 'atqa', 'sak', 'protocol', 'rf_detail')),
     ('Snapshot', ('selected', 'selected_application_index', 'ev2_command_counter', 'selected_aid', 'dirty', 'auth_mode', 'auth_key_no', 'ev2_active', 'ev2_key_no', 'ev2_transaction_identifier', 'ev2_encryption_key', 'ev2_mac_key', 'virtual_card_selected', 'proximity_verified')),
     ('ReaderState', ('ev2_command_counter', 'auth_mode', 'key_no', 'ev2_transaction_identifier', 'ev2_card_capabilities', 'ev2_reader_capabilities')),
+)
+
+SIZE_FIELDS = (
+    ('capabilities', 'Capabilities'),
+    ('error', 'Error'),
+    ('card', 'Card'),
+    ('picc', 'PiccSettings'),
+    ('application', 'Application'),
+    ('file', 'File'),
+    ('key', 'Key'),
+    ('activation', 'Activation'),
+    ('snapshot', 'Snapshot'),
+    ('reader_state', 'ReaderState'),
 )
 
 VALUES = dict(CONSTANTS)

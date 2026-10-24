@@ -446,7 +446,8 @@ jobs:
           cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- examples/credentials/v6-minimal.dfcb
           DFC_LIB_DIR="$PWD/mismatch" LD_LIBRARY_PATH="$PWD/mismatch" \
             DFC_EXPECT_LAYOUT_MISMATCH=1 cargo test -p dfc-core \
-            --no-default-features --features system,role-simulator,profile-full-ev3 \
+            --no-default-features \
+            --features system,role-simulator,profile-full-ev3,layout-mismatch-test \
             --test layout_mismatch
       - name: Compile the no-std target bridge
         run: |

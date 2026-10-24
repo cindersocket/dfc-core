@@ -64,6 +64,7 @@ extern "C" {
 #define DFC_FFI_AUTH_LEGACY            0x0A
 #define DFC_FFI_AUTH_ISO               0x1A
 #define DFC_FFI_AUTH_AES               0xAA
+#define DFC_FFI_AUTH_EV2               0x71
 #define DFC_FFI_ISO_AUTH_TDEA2         0x02
 #define DFC_FFI_ISO_AUTH_TDEA3         0x04
 #define DFC_FFI_ISO_AUTH_AES           0x09

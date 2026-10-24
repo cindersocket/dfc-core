@@ -36,7 +36,7 @@ public enum DfcSessionKind
     Aes = (int)Native.DFC_FFI_AUTH_AES,
 
     /// <summary>EV2 secure messaging.</summary>
-    Ev2 = 0x71,
+    Ev2 = (int)Native.DFC_FFI_AUTH_EV2,
 }
 
 /// <summary>The key algorithm for standard ISO 7816 mutual authentication.</summary>
