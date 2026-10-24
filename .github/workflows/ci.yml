@@ -33,6 +33,8 @@ jobs:
         run: python3 tests/test_check_stack_usage.py
       - name: Test CI unit workflow policy
         run: python3 tests/test_ci_unit_workflow.py
+      - name: Test Android minification contract
+        run: python3 tests/test_android_minification.py
       - name: Verify the Rust publication archive
         run: ./scripts/check-cargo-package.sh
       - name: Test version checker
@@ -317,15 +319,22 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Build four-ABI AAR, sample, and lint
+      - name: Build four-ABI AAR, minified sample, and lint
         working-directory: bindings/android
-        run: ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleDebug :dfc:lintRelease
+        run: ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease :dfc:lintRelease
+      - name: Run minified native-exception smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          script: cd bindings/android && ./gradlew --no-daemon :sample:connectedReleaseAndroidTest
       - uses: actions/upload-artifact@v4
         with:
           name: dfc-android
           path: |
             bindings/android/dfc/build/outputs/aar/dfc-release.aar
-            examples/android/build/outputs/apk/debug/sample-debug.apk
+            examples/android/build/outputs/apk/release/sample-release.apk
 
   python:
     name: Python binding and example
