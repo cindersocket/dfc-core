@@ -486,8 +486,8 @@ mod tests {
     #[test]
     fn random_failure_is_reported_by_each_operation() {
         use std::sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         };
 
         let credential = Credential::decode(include_bytes!(
