@@ -78,4 +78,6 @@ java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
 ```
 
 The native library must be discoverable through `java.library.path` or the
-platform loader. JNI rejects an incompatible DFC ABI before using its layouts.
+platform loader. JNI compares its generated layout fingerprint with the core
+before constructing a handle. Java and Android initialization fails clearly if
+any shared field or binding-visible numeric constant differs.

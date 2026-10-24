@@ -69,4 +69,5 @@ dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj \
 
 Set `DfcNativeDirectory` if the native build is elsewhere. Published packages
 place the library under `runtimes/<RID>/native`; local builds copy it beside the
-test or example assembly.
+test or example assembly. The assembly verifies the complete generated native
+layout fingerprint before constructing a handle.

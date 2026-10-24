@@ -3,11 +3,13 @@ package com.cindersocket.dfc;
 final class DfcNative {
   static {
     System.loadLibrary("dfc_jni");
-    if (abiVersion() != 4)
-      throw new UnsatisfiedLinkError("dfc JNI ABI mismatch: " + abiVersion());
+    DfcCompatibility.requireCompatible(
+        abiVersion(), layoutFingerprint(), expectedLayoutFingerprint());
   }
   private DfcNative() {}
   static native int abiVersion();
+  static native long layoutFingerprint();
+  static native long expectedLayoutFingerprint();
   static native long capabilities();
   static native byte[] credentialParse(byte[] text) throws DfcException;
   static native byte[] credentialLoad(byte[] content) throws DfcException;

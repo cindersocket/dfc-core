@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ctypes as C
+import os
+import subprocess
 import sys
 import threading
 from collections.abc import Callable
@@ -506,6 +508,32 @@ def test_abi_sizes_and_field_fingerprint() -> None:
     library = _native.library()
     assert capabilities().abi_version == _native.ABI_VERSION
     assert library.dfc_ffi_layout_fingerprint() == _native.layout_fingerprint()
+
+
+def test_mismatched_native_layout_is_rejected_before_handles() -> None:
+    with pytest.raises(ImportError, match="native layout fingerprint mismatch"):
+        _native.require_layout_fingerprint(_native.layout_fingerprint() ^ 1)
+
+
+def test_mismatched_native_library_fails_before_handle_creation() -> None:
+    library = os.environ.get("DFC_MISMATCH_LIBRARY_PATH")
+    if not library:
+        pytest.skip("mismatched native test library was not built")
+    environment = os.environ.copy()
+    environment["DFC_LIBRARY_PATH"] = library
+    process = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from dfc_core import Credential; Credential.decode(b'')",
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert process.returncode != 0
+    assert "native layout fingerprint mismatch" in process.stderr
 
 
 def test_codec_picc_and_reader_lifecycle() -> None:

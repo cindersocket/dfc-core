@@ -12,16 +12,16 @@ pub trait Transport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Framing {
-    Iso7816 = 0,
-    Native = 1,
+    Iso7816 = crate::layout::DFC_FFI_READER_FRAMING_ISO7816 as u32,
+    Native = crate::layout::DFC_FFI_READER_FRAMING_NATIVE as u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CommunicationMode {
-    Plain = 0,
-    Mac = 1,
-    Enciphered = 3,
+    Plain = crate::layout::DFC_FFI_COMM_PLAIN as u8,
+    Mac = crate::layout::DFC_FFI_COMM_MAC as u8,
+    Enciphered = crate::layout::DFC_FFI_COMM_ENCIPHERED as u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -13,6 +13,8 @@ pub use target::{
 #[cfg(not(feature = "role-target"))]
 mod credential;
 #[cfg(not(feature = "role-target"))]
+mod layout;
+#[cfg(not(feature = "role-target"))]
 mod reader;
 
 #[cfg(not(feature = "role-target"))]
@@ -35,73 +37,6 @@ pub use reader::{
 #[cfg(not(feature = "role-target"))]
 static ABI_STATE: AtomicU8 = AtomicU8::new(0);
 
-#[cfg(not(feature = "role-target"))]
-fn layout_fingerprint() -> u64 {
-    fn word(mut hash: u64, value: u64) -> u64 {
-        for byte in value.to_le_bytes() {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(1_099_511_628_211);
-        }
-        hash
-    }
-    macro_rules! size {
-        ($hash:expr, $ty:ty) => {
-            word($hash, size_of::<$ty>() as u64)
-        };
-    }
-    macro_rules! field {
-        ($hash:expr, $ty:ty, $field:ident) => {
-            word($hash, core::mem::offset_of!($ty, $field) as u64)
-        };
-    }
-    let mut hash = 14_695_981_039_346_656_037;
-    hash = word(hash, u64::from(sys::DFC_FFI_ABI_VERSION));
-    hash = size!(hash, sys::DfcFfiCapabilities);
-    hash = field!(hash, sys::DfcFfiCapabilities, generation_ev1);
-    hash = field!(hash, sys::DfcFfiCapabilities, max_applications);
-    hash = field!(hash, sys::DfcFfiCapabilities, key_pool_size);
-    hash = size!(hash, sys::DfcFfiError);
-    hash = field!(hash, sys::DfcFfiError, line);
-    hash = field!(hash, sys::DfcFfiError, message);
-    hash = size!(hash, sys::DfcFfiCard);
-    hash = field!(hash, sys::DfcFfiCard, uid);
-    hash = field!(hash, sys::DfcFfiCard, hardware_version);
-    hash = field!(hash, sys::DfcFfiCard, static_signature);
-    hash = size!(hash, sys::DfcFfiPiccSettings);
-    hash = field!(hash, sys::DfcFfiPiccSettings, ats);
-    hash = field!(hash, sys::DfcFfiPiccSettings, ev2_capabilities);
-    hash = field!(hash, sys::DfcFfiPiccSettings, virtual_card_installation_id);
-    hash = field!(hash, sys::DfcFfiPiccSettings, dam_auth_key);
-    hash = field!(hash, sys::DfcFfiPiccSettings, preferred_auth_command);
-    hash = size!(hash, sys::DfcFfiApplication);
-    hash = field!(hash, sys::DfcFfiApplication, aid);
-    hash = field!(hash, sys::DfcFfiApplication, key_set_versions);
-    hash = field!(hash, sys::DfcFfiApplication, capability_data);
-    hash = field!(hash, sys::DfcFfiApplication, preferred_auth_command);
-    hash = size!(hash, sys::DfcFfiFile);
-    hash = field!(hash, sys::DfcFfiFile, access_rights);
-    hash = field!(hash, sys::DfcFfiFile, number);
-    hash = field!(hash, sys::DfcFfiFile, transaction_mac_key);
-    hash = field!(hash, sys::DfcFfiFile, previous_reader_id);
-    hash = size!(hash, sys::DfcFfiKey);
-    hash = field!(hash, sys::DfcFfiKey, value);
-    hash = field!(hash, sys::DfcFfiKey, version);
-    hash = size!(hash, sys::DfcFfiActivation);
-    hash = field!(hash, sys::DfcFfiActivation, uid);
-    hash = field!(hash, sys::DfcFfiActivation, protocol);
-    hash = field!(hash, sys::DfcFfiActivation, rf_detail);
-    hash = size!(hash, sys::DfcFfiSnapshot);
-    hash = field!(hash, sys::DfcFfiSnapshot, selected_aid);
-    hash = field!(hash, sys::DfcFfiSnapshot, ev2_transaction_identifier);
-    hash = field!(hash, sys::DfcFfiSnapshot, ev2_mac_key);
-    hash = field!(hash, sys::DfcFfiSnapshot, proximity_verified);
-    hash = size!(hash, sys::DfcFfiReaderState);
-    hash = field!(hash, sys::DfcFfiReaderState, auth_mode);
-    hash = field!(hash, sys::DfcFfiReaderState, ev2_transaction_identifier);
-    hash = field!(hash, sys::DfcFfiReaderState, ev2_reader_capabilities);
-    hash
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(not(feature = "role-target"))]
 pub enum Error {
@@ -111,6 +46,7 @@ pub enum Error {
     Unsupported,
     RandomSourceFailed,
     AbiMismatch { expected: u32, actual: u32 },
+    LayoutMismatch { expected: u64, actual: u64 },
     Native(i32),
 }
 
@@ -126,6 +62,10 @@ impl fmt::Display for Error {
             Self::AbiMismatch { expected, actual } => {
                 write!(f, "dfc ABI mismatch: expected {expected}, found {actual}")
             }
+            Self::LayoutMismatch { expected, actual } => write!(
+                f,
+                "dfc native layout fingerprint mismatch: expected {expected:#018x}, found {actual:#018x}"
+            ),
             Self::Native(status) => write!(f, "dfc operation failed with status {status}"),
         }
     }
@@ -153,6 +93,15 @@ fn picc_retry_capacity(initial: usize, reported: usize) -> Option<usize> {
 }
 
 #[cfg(not(feature = "role-target"))]
+fn require_layout_fingerprint(actual: u64) -> Result<(), Error> {
+    let expected = layout::expected_layout_fingerprint();
+    if actual != expected {
+        return Err(Error::LayoutMismatch { expected, actual });
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "role-target"))]
 fn ensure_abi() -> Result<(), Error> {
     match ABI_STATE.load(Ordering::Acquire) {
         1 => return Ok(()),
@@ -160,6 +109,13 @@ fn ensure_abi() -> Result<(), Error> {
             let actual = unsafe { sys::dfc_ffi_abi_version() };
             return Err(Error::AbiMismatch {
                 expected: sys::DFC_FFI_ABI_VERSION,
+                actual,
+            });
+        }
+        3 => {
+            let actual = unsafe { sys::dfc_ffi_layout_fingerprint() };
+            return Err(Error::LayoutMismatch {
+                expected: layout::expected_layout_fingerprint(),
                 actual,
             });
         }
@@ -198,12 +154,9 @@ fn ensure_abi() -> Result<(), Error> {
             actual,
         });
     }
-    if unsafe { sys::dfc_ffi_layout_fingerprint() } != layout_fingerprint() {
-        ABI_STATE.store(2, Ordering::Release);
-        return Err(Error::AbiMismatch {
-            expected: sys::DFC_FFI_ABI_VERSION,
-            actual,
-        });
+    if let Err(error) = require_layout_fingerprint(unsafe { sys::dfc_ffi_layout_fingerprint() }) {
+        ABI_STATE.store(3, Ordering::Release);
+        return Err(error);
     }
     ABI_STATE.store(1, Ordering::Release);
     Ok(())
@@ -460,6 +413,18 @@ mod tests {
         assert_eq!(capabilities.0.abi_version, sys::DFC_FFI_ABI_VERSION);
         assert_ne!(capabilities.0.emulator, 0);
         assert_ne!(capabilities.0.reader, 0);
+    }
+
+    #[test]
+    fn mismatched_native_layout_is_rejected_before_handles() {
+        let expected = layout::expected_layout_fingerprint();
+        assert_eq!(
+            require_layout_fingerprint(expected ^ 1),
+            Err(Error::LayoutMismatch {
+                expected,
+                actual: expected ^ 1,
+            })
+        );
     }
 
     #[test]

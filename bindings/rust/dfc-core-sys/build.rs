@@ -53,6 +53,8 @@ fn main() {
         ],
         "profile",
     );
+    #[cfg(not(feature = "bundled"))]
+    let _ = profile;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     println!(
         "cargo:rerun-if-changed={}",
@@ -72,32 +74,35 @@ fn main() {
     );
 
     if bundled {
-        let mut config = cmake::Config::new(&root);
-        config
-            .define("DFC_ROLE", role)
-            .define("DFC_PROFILE", profile)
-            .define("DFC_CRYPTO", "tiny")
-            .define("DFC_BUILD_SHARED", "OFF")
-            .define(
-                "DFC_BUILD_STATIC_FFI",
-                if role == "target" { "OFF" } else { "ON" },
-            )
-            .define(
-                "DFC_BUILD_RUST_TARGET_BRIDGE",
-                if role == "target" { "ON" } else { "OFF" },
-            )
-            .define("DFC_BUILD_TESTS", "OFF");
-        if role == "target" {
-            config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
+        #[cfg(feature = "bundled")]
+        {
+            let mut config = cmake::Config::new(&root);
+            config
+                .define("DFC_ROLE", role)
+                .define("DFC_PROFILE", profile)
+                .define("DFC_CRYPTO", "tiny")
+                .define("DFC_BUILD_SHARED", "OFF")
+                .define(
+                    "DFC_BUILD_STATIC_FFI",
+                    if role == "target" { "OFF" } else { "ON" },
+                )
+                .define(
+                    "DFC_BUILD_RUST_TARGET_BRIDGE",
+                    if role == "target" { "ON" } else { "OFF" },
+                )
+                .define("DFC_BUILD_TESTS", "OFF");
+            if role == "target" {
+                config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
+            }
+            if let Ok(path) = env::var("DFC_TINY_CRYPTO_DIR") {
+                config.define("DFC_TINY_CRYPTO_DIR", path);
+            }
+            let destination = config.build();
+            println!(
+                "cargo:rustc-link-search=native={}",
+                destination.join("lib").display()
+            );
         }
-        if let Ok(path) = env::var("DFC_TINY_CRYPTO_DIR") {
-            config.define("DFC_TINY_CRYPTO_DIR", path);
-        }
-        let destination = config.build();
-        println!(
-            "cargo:rustc-link-search=native={}",
-            destination.join("lib").display()
-        );
     } else if let Ok(path) = env::var("DFC_LIB_DIR") {
         println!("cargo:rustc-link-search=native={path}");
     }

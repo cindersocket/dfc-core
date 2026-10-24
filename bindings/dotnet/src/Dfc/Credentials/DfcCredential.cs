@@ -2,6 +2,7 @@ namespace Dfc.Credentials;
 
 using System;
 using System.Collections.Generic;
+using Dfc.Interop;
 
 /// <summary>Card generation a credential describes.</summary>
 public enum DfcGeneration
@@ -33,13 +34,13 @@ public enum DfcUidProvenance
 public enum DfcAuthenticationMode : byte
 {
     /// <summary>D40 DES authentication.</summary>
-    D40 = 0x0A,
+    D40 = (byte)Native.DFC_FFI_AUTH_LEGACY,
 
     /// <summary>ISO authentication with DES, 2K3DES or 3K3DES.</summary>
-    Iso = 0x1A,
+    Iso = (byte)Native.DFC_FFI_AUTH_ISO,
 
     /// <summary>AES authentication.</summary>
-    Aes = 0xAA,
+    Aes = (byte)Native.DFC_FFI_AUTH_AES,
 }
 
 /// <summary>Authentication commands a card or application accepts.</summary>
@@ -66,13 +67,13 @@ public enum DfcAuthenticationCommands : byte
 public enum DfcCommunicationMode : byte
 {
     /// <summary>In the clear.</summary>
-    Plain = 0x00,
+    Plain = (byte)Native.DFC_FFI_COMM_PLAIN,
 
     /// <summary>MACed.</summary>
-    Mac = 0x01,
+    Mac = (byte)Native.DFC_FFI_COMM_MAC,
 
     /// <summary>Encrypted.</summary>
-    Full = 0x03,
+    Full = (byte)Native.DFC_FFI_COMM_ENCIPHERED,
 }
 
 /// <summary>One key slot.</summary>

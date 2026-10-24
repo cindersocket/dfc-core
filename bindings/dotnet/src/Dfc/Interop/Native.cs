@@ -8,15 +8,15 @@ using System.Runtime.InteropServices;
 internal static unsafe partial class Native
 {
     internal const string Library = "libdfc";
-    internal const uint AbiVersion = 4;
+    internal const uint AbiVersion = (uint)DFC_FFI_ABI_VERSION;
 
-    internal const int InvalidArgument = -1;
-    internal const int BufferTooSmall = -2;
-    internal const int OutOfMemory = -3;
-    internal const int Unsupported = -4;
-    internal const int RandomFailed = -5;
-    internal const int PiccBufferTooSmall = 3;
-    internal const int OwnerPicc = -1;
+    internal const int InvalidArgument = (int)DFC_FFI_INVALID_ARGUMENT;
+    internal const int BufferTooSmall = (int)DFC_FFI_BUFFER_TOO_SMALL;
+    internal const int OutOfMemory = (int)DFC_FFI_OUT_OF_MEMORY;
+    internal const int Unsupported = (int)DFC_FFI_UNSUPPORTED;
+    internal const int RandomFailed = (int)DFC_FFI_RANDOM_FAILED;
+    internal const int PiccBufferTooSmall = (int)DFC_FFI_PICC_BUFFER_TOO_SMALL;
+    internal const int OwnerPicc = (int)DFC_FFI_OWNER_PICC;
 
     private static readonly Lazy<bool> Checked = new(CheckAbi);
 
@@ -30,12 +30,8 @@ internal static unsafe partial class Native
     private static bool CheckAbi()
     {
         var version = dfc_ffi_abi_version();
-        if (version != AbiVersion)
-        {
-            throw new InvalidOperationException(
-                $"The native DFC library speaks interface version {version}; this assembly needs {AbiVersion}."
-            );
-        }
+        var fingerprint = dfc_ffi_layout_fingerprint();
+        RequireCompatible(version, fingerprint);
 
         NativeStructSizes sizes;
         dfc_ffi_struct_sizes(&sizes);
@@ -52,6 +48,23 @@ internal static unsafe partial class Native
         return true;
     }
 
+    internal static void RequireCompatible(uint version, ulong fingerprint)
+    {
+        if (version != AbiVersion)
+        {
+            throw new InvalidOperationException(
+                $"The native DFC library speaks interface version {version}; this assembly needs {AbiVersion}."
+            );
+        }
+        var expected = ExpectedLayoutFingerprint();
+        if (fingerprint != expected)
+        {
+            throw new InvalidOperationException(
+                $"The native DFC layout fingerprint is 0x{fingerprint:x16}; this assembly expects 0x{expected:x16}."
+            );
+        }
+    }
+
     private static void Require(uint native, int managed, string name)
     {
         if (native != managed)
@@ -66,6 +79,9 @@ internal static unsafe partial class Native
 
     [LibraryImport(Library)]
     internal static partial uint dfc_ffi_abi_version();
+
+    [LibraryImport(Library)]
+    internal static partial ulong dfc_ffi_layout_fingerprint();
 
     [LibraryImport(Library)]
     internal static partial int dfc_ffi_random_fill(byte* output, nuint length);

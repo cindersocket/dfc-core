@@ -6,6 +6,8 @@
 - Preserve JNI exception delivery in minified Android consumers (#141).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
   target builds, with ABI-layout checks and caller-owned target storage.
+- Use ABI 5 to verify the complete generated native layout and semantic-constant
+  fingerprint before hosted bindings construct handles (#138).
 - Add runnable transceive examples for .NET, Java, Android, Python, and Rust.
 - Make semantic application-selection helpers consistently accept the
   human-readable application identifier order in every binding.
@@ -80,7 +82,7 @@
 - Wipe reader command storage at terminal exits and consume copied FFI response
   buffers promptly (#123).
 - Standardize replay-random exhaustion across the hosted bindings.
-- Make random providers fallible in ABI 4 and fail random-dependent operations
+- Make random providers fallible in ABI 5 and fail random-dependent operations
   atomically, with consistent error propagation through every binding.
 - Propagate every native virtual-PICC status through the .NET binding (#139).
 - Verify SDM random-padding failures leave counters, cached renders, and card

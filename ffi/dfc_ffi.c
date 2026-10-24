@@ -40,6 +40,24 @@ ASSERT_READER_STATUS(DFC_FFI_READER_INTEGRITY_ERROR, DfcReaderIntegrityError);
 ASSERT_READER_STATUS(DFC_FFI_READER_CARD_ERROR, DfcReaderCardError);
 ASSERT_READER_STATUS(DFC_FFI_READER_UNSUPPORTED, DfcReaderUnsupported);
 #undef ASSERT_READER_STATUS
+_Static_assert(
+    DFC_FFI_READER_FRAMING_ISO7816 == DfcReaderFramingIso7816 &&
+        DFC_FFI_READER_FRAMING_NATIVE == DfcReaderFramingNative,
+    "FFI reader framing value drifted");
+_Static_assert(
+    DFC_FFI_COMM_PLAIN == DFC_COMM_PLAIN && DFC_FFI_COMM_MAC == DFC_COMM_MAC &&
+        DFC_FFI_COMM_ENCIPHERED == DFC_COMM_ENCIPHERED,
+    "FFI communication mode drifted");
+_Static_assert(
+    DFC_FFI_AUTH_LEGACY == DFC_CMD_AUTHENTICATE_LEGACY &&
+        DFC_FFI_AUTH_ISO == DFC_CMD_AUTHENTICATE_ISO &&
+        DFC_FFI_AUTH_AES == DFC_CMD_AUTHENTICATE_AES,
+    "FFI authentication command drifted");
+_Static_assert(
+    DFC_FFI_ISO_AUTH_TDEA2 == DFC_ISO7816_AUTH_ALGORITHM_2TDEA &&
+        DFC_FFI_ISO_AUTH_TDEA3 == DFC_ISO7816_AUTH_ALGORITHM_3TDEA &&
+        DFC_FFI_ISO_AUTH_AES == DFC_ISO7816_AUTH_ALGORITHM_AES,
+    "FFI ISO authentication algorithm drifted");
 #endif
 
 struct DfcFfiCredential {
@@ -89,7 +107,7 @@ uint32_t dfc_ffi_abi_version(void) {
     return DFC_FFI_ABI_VERSION;
 }
 
-static uint64_t layout_hash_word(uint64_t hash, size_t value) {
+static uint64_t layout_hash_word(uint64_t hash, uint64_t value) {
     for(size_t i = 0; i < sizeof(value); i++) {
         hash ^= (uint8_t)(value >> (i * 8));
         hash *= UINT64_C(1099511628211);
@@ -97,60 +115,24 @@ static uint64_t layout_hash_word(uint64_t hash, size_t value) {
     return hash;
 }
 
-#define HASH_SIZE(hash, type)         layout_hash_word((hash), sizeof(type))
-#define HASH_FIELD(hash, type, field) layout_hash_word((hash), offsetof(type, field))
-
 uint64_t dfc_ffi_layout_fingerprint(void) {
     uint64_t hash = UINT64_C(14695981039346656037);
-    hash = layout_hash_word(hash, DFC_FFI_ABI_VERSION);
-    hash = HASH_SIZE(hash, DfcFfiCapabilities);
-    hash = HASH_FIELD(hash, DfcFfiCapabilities, generation_ev1);
-    hash = HASH_FIELD(hash, DfcFfiCapabilities, max_applications);
-    hash = HASH_FIELD(hash, DfcFfiCapabilities, key_pool_size);
-    hash = HASH_SIZE(hash, DfcFfiError);
-    hash = HASH_FIELD(hash, DfcFfiError, line);
-    hash = HASH_FIELD(hash, DfcFfiError, message);
-    hash = HASH_SIZE(hash, DfcFfiCard);
-    hash = HASH_FIELD(hash, DfcFfiCard, uid);
-    hash = HASH_FIELD(hash, DfcFfiCard, hardware_version);
-    hash = HASH_FIELD(hash, DfcFfiCard, static_signature);
-    hash = HASH_SIZE(hash, DfcFfiPiccSettings);
-    hash = HASH_FIELD(hash, DfcFfiPiccSettings, ats);
-    hash = HASH_FIELD(hash, DfcFfiPiccSettings, ev2_capabilities);
-    hash = HASH_FIELD(hash, DfcFfiPiccSettings, virtual_card_installation_id);
-    hash = HASH_FIELD(hash, DfcFfiPiccSettings, dam_auth_key);
-    hash = HASH_FIELD(hash, DfcFfiPiccSettings, preferred_auth_command);
-    hash = HASH_SIZE(hash, DfcFfiApplication);
-    hash = HASH_FIELD(hash, DfcFfiApplication, aid);
-    hash = HASH_FIELD(hash, DfcFfiApplication, key_set_versions);
-    hash = HASH_FIELD(hash, DfcFfiApplication, capability_data);
-    hash = HASH_FIELD(hash, DfcFfiApplication, preferred_auth_command);
-    hash = HASH_SIZE(hash, DfcFfiFile);
-    hash = HASH_FIELD(hash, DfcFfiFile, access_rights);
-    hash = HASH_FIELD(hash, DfcFfiFile, number);
-    hash = HASH_FIELD(hash, DfcFfiFile, transaction_mac_key);
-    hash = HASH_FIELD(hash, DfcFfiFile, previous_reader_id);
-    hash = HASH_SIZE(hash, DfcFfiKey);
-    hash = HASH_FIELD(hash, DfcFfiKey, value);
-    hash = HASH_FIELD(hash, DfcFfiKey, version);
-    hash = HASH_SIZE(hash, DfcFfiActivation);
-    hash = HASH_FIELD(hash, DfcFfiActivation, uid);
-    hash = HASH_FIELD(hash, DfcFfiActivation, protocol);
-    hash = HASH_FIELD(hash, DfcFfiActivation, rf_detail);
-    hash = HASH_SIZE(hash, DfcFfiSnapshot);
-    hash = HASH_FIELD(hash, DfcFfiSnapshot, selected_aid);
-    hash = HASH_FIELD(hash, DfcFfiSnapshot, ev2_transaction_identifier);
-    hash = HASH_FIELD(hash, DfcFfiSnapshot, ev2_mac_key);
-    hash = HASH_FIELD(hash, DfcFfiSnapshot, proximity_verified);
-    hash = HASH_SIZE(hash, DfcFfiReaderState);
-    hash = HASH_FIELD(hash, DfcFfiReaderState, auth_mode);
-    hash = HASH_FIELD(hash, DfcFfiReaderState, ev2_transaction_identifier);
-    hash = HASH_FIELD(hash, DfcFfiReaderState, ev2_reader_capabilities);
+    static const uint64_t words[] = {
+#define DFC_FFI_LAYOUT_CONSTANT(name)     (uint64_t)(int64_t)(name),
+#define DFC_FFI_LAYOUT_SIZE(type)         sizeof(type),
+#define DFC_FFI_LAYOUT_FIELD(type, field) offsetof(type, field),
+#include "dfc_ffi_layout.inc"
+#undef DFC_FFI_LAYOUT_FIELD
+#undef DFC_FFI_LAYOUT_SIZE
+#undef DFC_FFI_LAYOUT_CONSTANT
+    };
+    for(size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++)
+        hash = layout_hash_word(hash, words[i]);
+#if defined(DFC_FFI_TEST_LAYOUT_FINGERPRINT_XOR)
+    hash ^= (uint64_t)DFC_FFI_TEST_LAYOUT_FINGERPRINT_XOR;
+#endif
     return hash;
 }
-
-#undef HASH_FIELD
-#undef HASH_SIZE
 
 int32_t dfc_ffi_random_fill(uint8_t* out, size_t len) {
     if(len > 0 && !out) return DFC_FFI_INVALID_ARGUMENT;

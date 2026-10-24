@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 // Raised whenever a struct below or a function's meaning changes.
-#define DFC_FFI_ABI_VERSION 4
+#define DFC_FFI_ABI_VERSION 5
 
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
@@ -54,6 +54,19 @@ extern "C" {
 
 // Largest explicit clear-header length accepted by reader exchange calls.
 #define DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH 10
+
+// Numeric values passed through reader binding APIs.
+#define DFC_FFI_READER_FRAMING_ISO7816 0
+#define DFC_FFI_READER_FRAMING_NATIVE  1
+#define DFC_FFI_COMM_PLAIN             0x00
+#define DFC_FFI_COMM_MAC               0x01
+#define DFC_FFI_COMM_ENCIPHERED        0x03
+#define DFC_FFI_AUTH_LEGACY            0x0A
+#define DFC_FFI_AUTH_ISO               0x1A
+#define DFC_FFI_AUTH_AES               0xAA
+#define DFC_FFI_ISO_AUTH_TDEA2         0x02
+#define DFC_FFI_ISO_AUTH_TDEA3         0x04
+#define DFC_FFI_ISO_AUTH_AES           0x09
 
 // Virtual-PICC family status returned when an exchange response does not fit.
 #define DFC_FFI_PICC_BUFFER_TOO_SMALL 3
@@ -106,8 +119,9 @@ typedef struct {
 } DfcFfiCapabilities;
 
 DFC_FFI_EXPORT uint32_t dfc_ffi_abi_version(void);
-// Hash of structure sizes and field offsets used by foreign runtimes. Unlike
-// size checks alone, this changes when equal-sized fields are reordered.
+// Hash of every public structure size, every field offset, and every numeric
+// DFC_FFI_* constant. Each input is encoded as a little-endian 64-bit word;
+// pointer-width and other ABI-derived size or offset differences are reflected.
 DFC_FFI_EXPORT uint64_t dfc_ffi_layout_fingerprint(void);
 // Uses the platform generator directly, even while a scripted PICC callback is active.
 DFC_FFI_EXPORT int32_t dfc_ffi_random_fill(uint8_t* out, size_t len);
@@ -133,7 +147,7 @@ typedef struct {
 
 DFC_FFI_EXPORT void dfc_ffi_struct_sizes(DfcFfiStructSizes* out);
 
-// ABI 4 random source a virtual PICC draws from. Return DFC_FFI_OK only after
+// ABI 5 random source a virtual PICC draws from. Return DFC_FFI_OK only after
 // filling all `len` octets. Any other value aborts the operation without
 // committing card state, and the FFI reports DFC_FFI_RANDOM_FAILED (-5).
 // When a PICC has no callback, the operating system generator is used.

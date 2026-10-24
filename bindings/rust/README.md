@@ -97,8 +97,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The safe crate checks the native ABI version, structure sizes, and layout
-fingerprint before creating hosted handles. Random callbacks are contained at
+The safe crate checks the native ABI version, structure sizes, and complete
+generated layout fingerprint before creating hosted handles. Random callbacks are contained at
 the FFI boundary: they must return exactly the requested byte count, and panic
 or length mismatch is reported after native control returns.
 

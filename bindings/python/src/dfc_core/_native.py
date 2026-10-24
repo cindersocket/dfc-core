@@ -7,18 +7,22 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
-ABI_VERSION = 4
+from ._layout import CONSTANTS as LAYOUT_CONSTANTS
+from ._layout import STRUCTS as LAYOUT_STRUCTS
+from ._layout import VALUES as LAYOUT_VALUES
+
+ABI_VERSION = LAYOUT_VALUES["DFC_FFI_ABI_VERSION"]
 OK, INVALID_ARGUMENT, BUFFER_TOO_SMALL, OUT_OF_MEMORY, UNSUPPORTED, RANDOM_FAILED = (
-    0,
-    -1,
-    -2,
-    -3,
-    -4,
-    -5,
+    LAYOUT_VALUES["DFC_FFI_OK"],
+    LAYOUT_VALUES["DFC_FFI_INVALID_ARGUMENT"],
+    LAYOUT_VALUES["DFC_FFI_BUFFER_TOO_SMALL"],
+    LAYOUT_VALUES["DFC_FFI_OUT_OF_MEMORY"],
+    LAYOUT_VALUES["DFC_FFI_UNSUPPORTED"],
+    LAYOUT_VALUES["DFC_FFI_RANDOM_FAILED"],
 )
-OWNER_PICC = -1
-PICC_BUFFER_TOO_SMALL = 3
-MESSAGE_MAX = 96
+OWNER_PICC = LAYOUT_VALUES["DFC_FFI_OWNER_PICC"]
+PICC_BUFFER_TOO_SMALL = LAYOUT_VALUES["DFC_FFI_PICC_BUFFER_TOO_SMALL"]
+MESSAGE_MAX = LAYOUT_VALUES["DFC_FFI_MESSAGE_MAX"]
 Handle = C.c_void_p
 P8 = C.POINTER(C.c_uint8)
 
@@ -328,47 +332,33 @@ RANDOM_CALLBACK = C.CFUNCTYPE(C.c_int32, C.c_void_p, P8, C.c_size_t)
 
 
 def layout_fingerprint() -> int:
-    """Mirror dfc_ffi_layout_fingerprint using the active ctypes ABI."""
+    """Hash the complete generated FFI contract using the active ctypes ABI."""
     value = 14695981039346656037
     mask = (1 << 64) - 1
 
     def word(number: int) -> None:
         nonlocal value
-        for shift in range(0, C.sizeof(C.c_size_t) * 8, 8):
+        for shift in range(0, 64, 8):
             value ^= (number >> shift) & 0xFF
             value = (value * 1099511628211) & mask
 
-    word(ABI_VERSION)
-    entries = (
-        (Capabilities, "generation_ev1", "max_applications", "key_pool_size"),
-        (Error, "line", "message"),
-        (Card, "uid", "hardware_version", "static_signature"),
-        (
-            PiccSettings,
-            "ats",
-            "ev2_capabilities",
-            "virtual_card_installation_id",
-            "dam_auth_key",
-            "preferred_auth_command",
-        ),
-        (Application, "aid", "key_set_versions", "capability_data", "preferred_auth_command"),
-        (File, "access_rights", "number", "transaction_mac_key", "previous_reader_id"),
-        (Key, "value", "version"),
-        (Activation, "uid", "protocol", "rf_detail"),
-        (
-            Snapshot,
-            "selected_aid",
-            "ev2_transaction_identifier",
-            "ev2_mac_key",
-            "proximity_verified",
-        ),
-        (ReaderState, "auth_mode", "ev2_transaction_identifier", "ev2_reader_capabilities"),
-    )
-    for structure, *fields in entries:
+    for _name, number in LAYOUT_CONSTANTS:
+        word(number & mask)
+    for structure_name, fields in LAYOUT_STRUCTS:
+        structure = globals()[structure_name]
         word(C.sizeof(structure))
         for field in fields:
             word(getattr(structure, field).offset)
     return value
+
+
+def require_layout_fingerprint(actual: int) -> None:
+    expected = layout_fingerprint()
+    if actual != expected:
+        raise ImportError(
+            "dfc native layout fingerprint mismatch: "
+            f"native {actual:#018x}, Python {expected:#018x}"
+        )
 
 
 def _library_candidates() -> list[Path | str]:
@@ -394,8 +384,10 @@ def _library_candidates() -> list[Path | str]:
 
 def _declare(lib: C.CDLL) -> None:
     lib.dfc_ffi_abi_version.restype = C.c_uint32
-    if hasattr(lib, "dfc_ffi_layout_fingerprint"):
+    try:
         lib.dfc_ffi_layout_fingerprint.restype = C.c_uint64
+    except AttributeError as error:
+        raise ImportError("dfc native library has no layout fingerprint") from error
     lib.dfc_ffi_struct_sizes.argtypes = [C.POINTER(StructSizes)]
     lib.dfc_ffi_capabilities.argtypes = [C.POINTER(Capabilities)]
     for name in ("credential_free", "picc_free"):
@@ -613,11 +605,7 @@ def library() -> C.CDLL:
             got = [getattr(actual, n) for n, _ in StructSizes._fields_]
             if got != expected:
                 raise ImportError(f"dfc structure layout mismatch: native {got}, Python {expected}")
-            if (
-                hasattr(lib, "dfc_ffi_layout_fingerprint")
-                and lib.dfc_ffi_layout_fingerprint() != layout_fingerprint()
-            ):
-                raise ImportError("dfc structure field layout fingerprint mismatch")
+            require_layout_fingerprint(lib.dfc_ffi_layout_fingerprint())
             _loaded = lib
             return lib
         except (OSError, ImportError) as exc:

@@ -8,11 +8,18 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Blocking reader-side secure messaging over a caller-provided transport. */
 public final class DfcReader implements AutoCloseable {
-  public enum Framing { ISO_7816, NATIVE }
+  public enum Framing {
+    ISO_7816((int) DfcLayout.DFC_FFI_READER_FRAMING_ISO7816),
+    NATIVE((int) DfcLayout.DFC_FFI_READER_FRAMING_NATIVE);
+    private final int nativeValue;
+    Framing(int nativeValue) {
+      this.nativeValue = nativeValue;
+    }
+  }
   public enum Communication {
-    PLAIN(0x00),
-    MAC(0x01),
-    ENCIPHERED(0x03);
+    PLAIN((int) DfcLayout.DFC_FFI_COMM_PLAIN),
+    MAC((int) DfcLayout.DFC_FFI_COMM_MAC),
+    ENCIPHERED((int) DfcLayout.DFC_FFI_COMM_ENCIPHERED);
     private final int nativeValue;
 
     Communication(int nativeValue) {
@@ -20,18 +27,18 @@ public final class DfcReader implements AutoCloseable {
     }
   }
   public enum Cipher {
-    LEGACY(0x0a),
-    ISO(0x1a),
-    AES(0xaa);
+    LEGACY((int) DfcLayout.DFC_FFI_AUTH_LEGACY),
+    ISO((int) DfcLayout.DFC_FFI_AUTH_ISO),
+    AES((int) DfcLayout.DFC_FFI_AUTH_AES);
     final int nativeValue;
     Cipher(int nativeValue) {
       this.nativeValue = nativeValue;
     }
   }
   public enum Iso7816Algorithm {
-    TDEA2(0x02, 8),
-    TDEA3(0x04, 16),
-    AES(0x09, 16);
+    TDEA2((int) DfcLayout.DFC_FFI_ISO_AUTH_TDEA2, 8),
+    TDEA3((int) DfcLayout.DFC_FFI_ISO_AUTH_TDEA3, 16),
+    AES((int) DfcLayout.DFC_FFI_ISO_AUTH_AES, 16);
     final int nativeValue;
     final int randomLength;
     Iso7816Algorithm(int nativeValue, int randomLength) {
@@ -103,7 +110,7 @@ public final class DfcReader implements AutoCloseable {
       Communication communication, int encryptedHeaderLength) throws DfcException, IOException {
     Objects.requireNonNull(command, "command");
     long handle = state.require();
-    DfcNative.readerBegin(handle, framing.ordinal(), command.instruction(), command.data(),
+    DfcNative.readerBegin(handle, framing.nativeValue, command.instruction(), command.data(),
         communication.nativeValue, encryptedHeaderLength);
     return complete(handle);
   }
@@ -129,7 +136,7 @@ public final class DfcReader implements AutoCloseable {
       throw new IllegalArgumentException("authentication parameters");
     long handle = state.require();
     DfcNative.readerAuthenticate(
-        handle, framing.ordinal(), cipher.nativeValue, keyNumber, key, randomA);
+        handle, framing.nativeValue, cipher.nativeValue, keyNumber, key, randomA);
     complete(handle);
   }
   private static int challengeLength(Cipher cipher, int keyLength) {
@@ -197,7 +204,7 @@ public final class DfcReader implements AutoCloseable {
     long handle = state.require();
     try {
       DfcNative.readerAuthenticateEv2(
-          handle, framing.ordinal(), first, keyNumber, key, randomA, capabilities);
+          handle, framing.nativeValue, first, keyNumber, key, randomA, capabilities);
       complete(handle);
     } finally {
       if (!replay)

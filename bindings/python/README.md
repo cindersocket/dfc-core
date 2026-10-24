@@ -23,8 +23,9 @@ export DFC_LIBRARY_PATH="$PWD/build/libdfc.dylib"  # macOS
 ```
 
 Production wheels include their matching native library under `dfc_core/lib/`.
-Loading stops immediately when the ABI version or a shared structure layout does
-not match, avoiding calls through an incompatible library.
+Loading stops before constructing a native handle when the ABI version or the
+complete generated layout fingerprint does not match. The fingerprint covers
+all shared fields and binding-visible numeric constants.
 
 ## Run a complete exchange
 

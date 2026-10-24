@@ -5,6 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 
 ./scripts/check-c-format.sh
+python3 scripts/generate-ffi-layout.py --check
 git ls-files -z 'bindings/java/**/*.java' 'bindings/android/**/*.java' \
     'examples/java/*.java' 'examples/java/**/*.java' 'examples/android/**/*.java' \
     | xargs -0 uvx --from clang-format==21.1.7 clang-format --dry-run --Werror
@@ -16,6 +17,7 @@ dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --verify-no-changes
     ../../scripts/check-version.py ../../scripts/check-release-artifacts.py \
     ../../scripts/checksums.py \
     ../../scripts/release-notes.py \
+    ../../scripts/generate-ffi-layout.py \
     ../../tests/test_check_c_format.py ../../tests/test_check_docs.py \
     ../../tests/check_decoder_registry.py ../../tests/test_check_decoder_registry.py \
     ../../tests/check_random_failure_registry.py \
@@ -30,6 +32,7 @@ dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --verify-no-changes
     ../../scripts/check-version.py ../../scripts/check-release-artifacts.py \
     ../../scripts/checksums.py \
     ../../scripts/release-notes.py \
+    ../../scripts/generate-ffi-layout.py \
     ../../tests/test_check_c_format.py ../../tests/test_check_docs.py \
     ../../tests/check_decoder_registry.py ../../tests/test_check_decoder_registry.py \
     ../../tests/check_random_failure_registry.py \

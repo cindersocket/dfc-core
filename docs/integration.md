@@ -175,9 +175,12 @@ library is suitable when an app only uses the reader.
 
 The interface uses fixed layouts and opaque handles only, so a binding does not
 depend on the features or pool sizes a library was built with.
-`dfc_ffi_capabilities` reports both, and `dfc_ffi_struct_sizes` lets a binding
-check its declarations against the library it loaded. Hosted bindings also
-check `dfc_ffi_layout_fingerprint`, which covers field offsets as well as sizes.
+`dfc_ffi_capabilities` reports both. Before constructing a handle, every hosted
+binding requires the ABI version and `dfc_ffi_layout_fingerprint` to match. The
+fingerprint covers every public struct size and field offset, plus the numeric
+constants bindings pass across the interface. `scripts/generate-ffi-layout.py`
+keeps each language's expected layout registry synchronized with
+`ffi/dfc_ffi.h`; the test and formatting gates reject stale generated files.
 
 The Rust target bridge is separate from the hosted flat interface. Rust owns
 the exact-size credential and wrapper allocations reported by the bridge; the
