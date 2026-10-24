@@ -142,6 +142,9 @@ public sealed record DfcPicc(
     /// <summary>Whether anticollision presents a random UID.</summary>
     public bool RandomId { get; init; }
 
+    /// <summary>Whether random IDs use the legacy 0x80 prefix.</summary>
+    public bool RandomIdLegacy { get; init; }
+
     /// <summary>Whether FormatPICC is refused.</summary>
     public bool FormatDisabled { get; init; }
 
@@ -221,6 +224,9 @@ public sealed record DfcApplication(
 
     /// <summary>Delegated-application state.</summary>
     public DfcDelegation? Delegation { get; init; }
+
+    /// <summary>Whether formatting this delegated application is permanently disabled.</summary>
+    public bool DelegatedFormatDisabled { get; init; }
 }
 
 /// <summary>Everything one credential file describes.</summary>

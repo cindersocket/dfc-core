@@ -91,6 +91,7 @@ internal unsafe struct NativePicc
     public byte KeySettings2;
     public byte AuthCommand;
     public byte RandomId;
+    public byte RandomIdLegacy;
     public byte FormatDisabled;
     public byte AtsLen;
     public fixed byte Ats[20];
@@ -155,6 +156,7 @@ internal unsafe struct NativeApplication
     public fixed byte CapabilityData[10];
     public byte Delegated;
     public byte DelegatedSlotVersion;
+    public byte DelegatedFormatDisabled;
     public byte HasAuthCommands;
     public byte AuthCommands;
     public byte HasPreferredAuthCommand;

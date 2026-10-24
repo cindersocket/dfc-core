@@ -334,7 +334,7 @@ static void check_rejected_card_and_picc_updates(void) {
 
     DfcFfiPiccSettings valid;
     CHECK(dfc_ffi_credential_get_picc(credential, &valid) == DFC_FFI_OK);
-    DfcFfiPiccSettings invalid[5];
+    DfcFfiPiccSettings invalid[6];
     for(size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++)
         invalid[i] = valid;
     invalid[0].ats_len = (uint8_t)(DFC_PICC_ATS_MAX + 1);
@@ -347,6 +347,8 @@ static void check_rejected_card_and_picc_updates(void) {
     invalid[4].virtual_card_configured = 1;
     invalid[4].virtual_card_installation_id_len = 1;
     invalid[4].virtual_card_uid_len = 5;
+    invalid[5].random_id = 0;
+    invalid[5].random_id_legacy = 1;
 
     for(size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         before = capture_credential_state(credential);
@@ -633,6 +635,31 @@ static DfcFfiCredential* rebuild(const DfcFfiCredential* source) {
     return built;
 }
 
+static void check_delegated_format_ffi_round_trip(void) {
+    DfcFfiCredential* source = parse_test_credential();
+    if(!source) return;
+    DfcApplication* native = &source->model.apps[0];
+    native->delegated = true;
+    native->delegated_slot_number = 1;
+    native->delegated_slot_version = 1;
+    native->delegated_quota_limit = 64;
+    native->delegated_free_blocks = 40;
+    native->delegated_format_disabled = true;
+
+    DfcFfiApplication exported;
+    CHECK(dfc_ffi_credential_get_application(source, 0, &exported) == DFC_FFI_OK);
+    CHECK(exported.delegated_format_disabled == 1);
+
+    DfcFfiCredential* copied = rebuild(source);
+    DfcFfiApplication imported;
+    CHECK(dfc_ffi_credential_get_application(copied, 0, &imported) == DFC_FFI_OK);
+    CHECK(imported.delegated_format_disabled == 1);
+    check_encoded_round_trip(copied);
+
+    dfc_ffi_credential_free(copied);
+    dfc_ffi_credential_free(source);
+}
+
 // Drive one reader exchange against the PICC until it completes.
 static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
     uint8_t tx[300];
@@ -729,6 +756,7 @@ int main(void) {
     check_failed_reader_result_is_retired();
     check_rejected_file_creation_is_atomic();
     check_pool_resize_boundaries();
+    check_delegated_format_ffi_round_trip();
 
     CHECK(dfc_ffi_abi_version() == DFC_FFI_ABI_VERSION);
     CHECK(dfc_ffi_layout_fingerprint() != 0);

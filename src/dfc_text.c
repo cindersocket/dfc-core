@@ -883,6 +883,8 @@ static bool parse_delegated(P* p, const char* prefix, DfcApplication* app) {
     if(!req_uint(p, key, 0, 0xFFFFu, &quota)) return false;
     snprintf(key, sizeof(key), "%s Delegated Free Blocks", prefix);
     if(!req_uint(p, key, 0, 0xFFFFu, &free_blocks)) return false;
+    snprintf(key, sizeof(key), "%s Delegated Format Disabled", prefix);
+    if(!opt_bool(p, key, &app->delegated_format_disabled)) return false;
     if(free_blocks > quota) {
         return fail(p, 0, "%s Delegated Free Blocks: exceeds the quota", prefix);
     }
@@ -1242,6 +1244,10 @@ static bool parse_picc(P* p) {
     }
     if(!parse_keys(p, "PICC", c->picc_key_settings_2, NULL)) return false;
     if(!opt_bool(p, "PICC Random ID", &c->picc_random_id)) return false;
+    if(!opt_bool(p, "PICC Random ID Legacy Prefix", &c->picc_random_id_legacy)) return false;
+    if(c->picc_random_id_legacy && !c->picc_random_id) {
+        return fail(p, 0, "PICC Random ID Legacy Prefix requires PICC Random ID");
+    }
     if(!opt_bool(p, "PICC Format Disabled", &c->picc_format_disabled)) return false;
 
     bool present = false;
@@ -1754,6 +1760,7 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
         w, "PICC", c, NULL, c->picc_num_keys, dfc_credential_stored_key_length(c->picc_key_len));
     // Canonical omission: these carry their default (rule 5).
     if(c->picc_random_id) w_line_bool(w, "PICC Random ID", true);
+    if(c->picc_random_id_legacy) w_line_bool(w, "PICC Random ID Legacy Prefix", true);
     if(c->picc_format_disabled) w_line_bool(w, "PICC Format Disabled", true);
     if(c->picc_ats_len > 0) w_line_hex(w, "PICC ATS", c->picc_ats, c->picc_ats_len);
     if(c->picc_has_sak) w_line_hex(w, "PICC SAK", &c->picc_sak, 1);
@@ -1890,6 +1897,10 @@ static DfcTextStatus write_credential(W* w, const DfcCredential* c) {
             w_line_uint(w, key, a->delegated_quota_limit);
             snprintf(key, sizeof(key), "%s Delegated Free Blocks", prefix);
             w_line_uint(w, key, a->delegated_free_blocks);
+            if(a->delegated_format_disabled) {
+                snprintf(key, sizeof(key), "%s Delegated Format Disabled", prefix);
+                w_line_bool(w, key, true);
+            }
         }
 #endif
         if(a->has_sm_disable) {

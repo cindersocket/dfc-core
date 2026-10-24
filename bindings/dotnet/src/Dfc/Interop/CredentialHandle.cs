@@ -138,6 +138,7 @@ internal static unsafe class CredentialMarshaller
             SupportedAuthenticationCommands = p.HasAuthCommands != 0 ? (DfcAuthenticationCommands)p.AuthCommands : null,
             PreferredAuthenticationCommand = p.HasPreferredAuthCommand != 0 ? (DfcAuthenticationCommands)p.PreferredAuthCommand : null,
             RandomId = p.RandomId != 0,
+            RandomIdLegacy = p.RandomIdLegacy != 0,
             FormatDisabled = p.FormatDisabled != 0,
             Ats = p.AtsLen > 0 ? Copy(p.Ats, p.AtsLen) : null,
             Sak = p.HasSak != 0 ? p.Sak : null,
@@ -212,6 +213,7 @@ internal static unsafe class CredentialMarshaller
                 a.Delegated != 0
                     ? new DfcDelegation(a.DelegatedSlotNumber, a.DelegatedSlotVersion, a.DelegatedQuotaLimit, a.DelegatedFreeBlocks)
                     : null,
+            DelegatedFormatDisabled = a.DelegatedFormatDisabled != 0,
         };
     }
 
@@ -477,6 +479,7 @@ internal static unsafe class CredentialMarshaller
             p.PreferredAuthCommand = (byte)preferred;
         }
         p.RandomId = Flag(picc.RandomId);
+        p.RandomIdLegacy = Flag(picc.RandomIdLegacy);
         p.FormatDisabled = Flag(picc.FormatDisabled);
         var ok = true;
         if (picc.Ats is { } ats)
@@ -623,6 +626,7 @@ internal static unsafe class CredentialMarshaller
             a.DelegatedSlotVersion = delegation.SlotVersion;
             a.DelegatedQuotaLimit = delegation.QuotaLimit;
             a.DelegatedFreeBlocks = delegation.FreeBlocks;
+            a.DelegatedFormatDisabled = Flag(app.DelegatedFormatDisabled);
         }
 
         return ok ? a : new DfcError(DfcErrorClass.Malformed, "application capability data is ten octets");

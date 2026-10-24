@@ -122,6 +122,7 @@ class PiccSettings(C.Structure):
                 "key_settings_2",
                 "auth_command",
                 "random_id",
+                "random_id_legacy",
                 "format_disabled",
                 "ats_len",
             ]
@@ -192,6 +193,7 @@ class Application(C.Structure):
             for n in [
                 "delegated",
                 "delegated_slot_version",
+                "delegated_format_disabled",
                 "has_auth_commands",
                 "auth_commands",
                 "has_preferred_auth_command",

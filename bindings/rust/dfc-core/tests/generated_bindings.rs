@@ -1,7 +1,9 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
 fn is_reader_status(name: &str) -> bool {
-    name.starts_with("DFC_FFI_READER_") && name != "DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH"
+    name.starts_with("DFC_FFI_READER_")
+        && !name.starts_with("DFC_FFI_READER_FRAMING_")
+        && name != "DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH"
 }
 
 fn parse_header(path: &Path) -> BTreeMap<String, u32> {

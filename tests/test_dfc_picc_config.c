@@ -256,7 +256,7 @@ static MunitResult test_format_disabled_refuses(const MunitParameter params[], v
         DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 2);
     munit_assert_uint8(response[0], ==, 0x91);
-    munit_assert_uint8(response[1], ==, DFC_STATUS_AUTHENTICATION_ERR);
+    munit_assert_uint8(response[1], ==, DFC_STATUS_ILLEGAL_COMMAND_CODE);
     munit_assert_size(credential.num_apps, ==, 1);
     munit_assert_size(credential.num_files, ==, 1);
     munit_assert_false(credential.dirty);

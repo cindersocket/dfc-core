@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 // Raised whenever a struct below or a function's meaning changes.
-#define DFC_FFI_ABI_VERSION 5
+#define DFC_FFI_ABI_VERSION 6
 
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
@@ -184,6 +184,7 @@ typedef struct {
     uint8_t key_settings_2;
     uint8_t auth_command;
     uint8_t random_id;
+    uint8_t random_id_legacy;
     uint8_t format_disabled;
     uint8_t ats_len;
     uint8_t ats[20];
@@ -247,6 +248,7 @@ typedef struct {
     uint8_t capability_data[10];
     uint8_t delegated;
     uint8_t delegated_slot_version;
+    uint8_t delegated_format_disabled;
     uint8_t has_auth_commands;
     uint8_t auth_commands;
     uint8_t has_preferred_auth_command;

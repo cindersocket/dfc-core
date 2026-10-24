@@ -62,6 +62,97 @@ static DfcFile* add_data_file(
     return f;
 }
 
+static void downgrade_v6_auth_fields(uint8_t* encoded, size_t length, uint8_t version) {
+    bool changed_version = false;
+    bool changed_picc_auth = false;
+    bool changed_app_auth = false;
+    for(size_t i = 0; i + 2 < length; i++) {
+        if(!changed_version && encoded[i] == 0x80 && encoded[i + 1] == 0x01 &&
+           encoded[i + 2] == DFC_FORMAT_VERSION) {
+            encoded[i + 2] = version;
+            changed_version = true;
+        } else if(
+            !changed_picc_auth && encoded[i] == 0x82 && encoded[i + 1] == 0x01 &&
+            encoded[i + 2] == (DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE)) {
+            encoded[i + 2] = 0;
+            changed_picc_auth = true;
+        } else if(
+            !changed_app_auth && encoded[i] == 0x85 && encoded[i + 1] == 0x01 &&
+            encoded[i + 2] == DFC_AUTH_COMMAND_AES) {
+            encoded[i + 2] = 2;
+            changed_app_auth = true;
+        }
+    }
+    munit_assert_true(changed_version);
+    munit_assert_true(changed_picc_auth);
+    munit_assert_true(changed_app_auth);
+}
+
+static MunitResult test_v6_configuration_fields(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential src = {0};
+    build_basic(&src);
+    src.picc_random_id_legacy = true;
+    uint8_t encoded[DFC_DER_MAX_SIZE];
+    size_t length = 0;
+    munit_assert_int(dfc_der_encode(&src, encoded, sizeof(encoded), &length), ==, DfcDerOk);
+    static const uint8_t legacy_prefix[] = {0x90, 0x01, 0xFF};
+    bool found_legacy_prefix = false;
+    for(size_t i = 0; i + sizeof(legacy_prefix) <= length; i++) {
+        if(memcmp(encoded + i, legacy_prefix, sizeof(legacy_prefix)) == 0) {
+            found_legacy_prefix = true;
+            break;
+        }
+    }
+    munit_assert_true(found_legacy_prefix);
+
+    // Tag 16 has a one-octet identifier. Its high-tag-number spelling is
+    // non-canonical and must not be accepted as a different field.
+    static const uint8_t noncanonical_tag[] = {0x9F, 0x10};
+    bool found_noncanonical_tag = false;
+    for(size_t i = 0; i + sizeof(noncanonical_tag) <= length; i++) {
+        if(memcmp(encoded + i, noncanonical_tag, sizeof(noncanonical_tag)) == 0) {
+            found_noncanonical_tag = true;
+            break;
+        }
+    }
+    munit_assert_false(found_noncanonical_tag);
+
+    DfcCredential decoded = {0};
+    munit_assert_int(dfc_der_decode(&decoded, encoded, length), ==, DfcDerOk);
+    munit_assert_true(decoded.picc_random_id);
+    munit_assert_true(decoded.picc_random_id_legacy);
+    uint8_t old_version[DFC_DER_MAX_SIZE];
+    memcpy(old_version, encoded, length);
+    downgrade_v6_auth_fields(old_version, length, 5);
+    munit_assert_int(dfc_der_decode(&decoded, old_version, length), ==, DfcDerMalformed);
+
+    src.picc_random_id = false;
+    munit_assert_int(dfc_der_validate_model(&src), ==, DfcDerMalformed);
+
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+    build_basic(&src);
+    src.card.generation = DfcGenerationEv2;
+    src.apps[0].has_auth_commands = true;
+    src.apps[0].auth_commands = DFC_AUTH_COMMAND_AES;
+    src.apps[0].delegated = true;
+    src.apps[0].delegated_slot_number = 7;
+    src.apps[0].delegated_slot_version = 1;
+    src.apps[0].delegated_quota_limit = 32;
+    src.apps[0].delegated_free_blocks = 16;
+    src.apps[0].delegated_format_disabled = true;
+    munit_assert_int(dfc_der_encode(&src, encoded, sizeof(encoded), &length), ==, DfcDerOk);
+    memset(&decoded, 0, sizeof(decoded));
+    munit_assert_int(dfc_der_decode(&decoded, encoded, length), ==, DfcDerOk);
+    munit_assert_true(decoded.apps[0].delegated_format_disabled);
+    memcpy(old_version, encoded, length);
+    downgrade_v6_auth_fields(old_version, length, 5);
+    munit_assert_int(dfc_der_decode(&decoded, old_version, length), ==, DfcDerMalformed);
+#endif
+    return MUNIT_OK;
+}
+
 static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -645,6 +736,12 @@ static MunitResult test_padded_length(const MunitParameter params[], void* data)
 static MunitTest tests[] = {
     {"/padded-length", test_padded_length, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/round-trip", test_round_trip, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/v6-configuration-fields",
+     test_v6_configuration_fields,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/version-override-round-trip",
      test_version_override_round_trip,
      NULL,

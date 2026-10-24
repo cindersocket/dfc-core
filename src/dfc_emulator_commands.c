@@ -848,21 +848,79 @@ static void handle_get_card_uid(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     dfc_secure_wipe(response, sizeof(response));
 }
 
-static void handle_format_picc(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
-    if(!require_picc_authentication(emulator, tx_buffer)) return;
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+static uint16_t delegated_application_overhead_blocks(uint8_t num_keys, size_t key_length);
 
-    if(emulator->credential->picc_format_disabled) {
-        // Format disabled in the PICC configuration: the operation is not
-        // permitted even for the authenticated master, so it answers with the
-        // same status this command already uses to refuse one, and the
-        // credential is left alone.
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+static void format_selected_application(DfcEmulator* emulator) {
+    DfcCredential* credential = emulator->credential;
+    size_t app_index = emulator->selected_app_index;
+
+    // Delete backwards because releasing a file compacts both descriptor and
+    // data pools. The application record and its key pool slice stay intact.
+    for(size_t i = credential->num_files; i > 0; i--) {
+        DfcFile* file = &credential->files[i - 1];
+        if(file->app_index == app_index) {
+            (void)dfc_credential_delete_file(credential, app_index, file->number);
+        }
+    }
+}
+#endif
+
+static void
+    handle_format_picc(DfcEmulator* emulator, size_t command_length, DfcByteBuf* tx_buffer) {
+    if(command_length != 1) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+        return;
+    }
+    if(emulator->selected_application == DfcEmulatorSelectedApplicationApp) {
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        DfcApplication* app = dfc_emulator_current_app(emulator);
+        if(!app || !app->delegated) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+        if(!is_authenticated_as_master(emulator)) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+            return;
+        }
+        if(app->delegated_format_disabled) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+
+        // Restore pending transactional writes while file offsets still match
+        // the snapshot. Formatting can then compact storage safely.
+        (void)dfc_emulator_abort_transaction(emulator);
+        format_selected_application(emulator);
+        uint16_t overhead =
+            delegated_application_overhead_blocks((uint8_t)app->num_keys, app->key_len);
+        app->delegated_free_blocks =
+            app->delegated_quota_limit >= overhead ? app->delegated_quota_limit - overhead : 0;
+        dfc_credential_mark_dirty(emulator->credential);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+#else
+        // Application-scoped formatting is unavailable without delegated
+        // application support; ordinary applications always reject it.
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+#endif
         return;
     }
 
+    if(emulator->selected_application != DfcEmulatorSelectedApplicationPicc) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+
+    if(!require_picc_authentication(emulator, tx_buffer)) return;
+    if(emulator->credential->picc_format_disabled) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
+        return;
+    }
+
+    (void)dfc_emulator_abort_transaction(emulator);
     dfc_credential_format_picc(emulator->credential);
     dfc_credential_mark_dirty(emulator->credential);
-    dfc_emulator_reset_session(emulator);
+    dfc_emulator_retire_authentication(emulator);
     emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
     emulator->selected_app_index = 0;
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
@@ -4119,18 +4177,130 @@ static void handle_get_delegated_info(
 }
 #endif
 
-#if DFC_ENABLE_TRANSACTION_TIMER
 static void handle_set_configuration(
     DfcEmulator* emulator,
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer) {
-    if(buffer_len != DFC_SET_CONFIGURATION_CAPABILITY_COMMAND_LENGTH) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+    uint8_t option = buffer_len > DFC_SET_CONFIGURATION_OPTION_OFFSET ?
+                         buffer[DFC_SET_CONFIGURATION_OPTION_OFFSET] :
+                         0;
+    if(option == DFC_CONFIGURATION_CARD_OR_APPLICATION) {
+        if(!is_authenticated_as_master(emulator)) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+            return;
+        }
+        uint8_t clear[DFC_SM_MAX_CIPHER_BLOCK_SIZE] = {0};
+        size_t clear_len = unwrap_write_payload(
+            emulator, buffer, buffer_len, 1, DFC_COMM_ENCIPHERED, clear, sizeof(clear));
+        if(clear_len == SIZE_MAX) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return;
+        }
+        if(clear_len != 1) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+            return;
+        }
+        uint8_t configuration = clear[0];
+        dfc_secure_wipe(clear, sizeof(clear));
+        if(emulator->selected_application == DfcEmulatorSelectedApplicationPicc) {
+            uint8_t reserved = emulator->credential->card.generation == DfcGenerationEv1 ?
+                                   DFC_CONFIGURATION_EV1_PICC_RESERVED_MASK :
+                                   DFC_CONFIGURATION_PICC_RESERVED_MASK;
+            if((configuration & reserved) != 0 ||
+               ((configuration & DFC_CONFIGURATION_LEGACY_RANDOM_ID) != 0 &&
+                (configuration & DFC_CONFIGURATION_RANDOM_ID) == 0)) {
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+                return;
+            }
+            if((configuration & DFC_CONFIGURATION_PROXIMITY_MANDATORY) != 0) {
+#if DFC_ENABLE_PROXIMITY_CHECK && DFC_ENABLE_VIRTUAL_CARD
+                if(!emulator->credential->picc_has_proximity_key) {
+                    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+                    return;
+                }
+#else
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+                return;
+#endif
+            }
+            if((configuration & DFC_CONFIGURATION_AUTHENTICATION_MANDATORY) != 0) {
+#if DFC_ENABLE_VIRTUAL_CARD
+                if(!emulator->credential->virtual_card_configured) {
+                    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+                    return;
+                }
+#else
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+                return;
+#endif
+            }
+            bool changed = false;
+            if((configuration & DFC_CONFIGURATION_DISABLE_FORMAT) != 0 &&
+               !emulator->credential->picc_format_disabled) {
+                emulator->credential->picc_format_disabled = true;
+                changed = true;
+            }
+            if((configuration & DFC_CONFIGURATION_RANDOM_ID) != 0) {
+                bool legacy = (configuration & DFC_CONFIGURATION_LEGACY_RANDOM_ID) != 0;
+                if(!emulator->credential->picc_random_id ||
+                   emulator->credential->picc_random_id_legacy != legacy) {
+                    emulator->credential->picc_random_id = true;
+                    emulator->credential->picc_random_id_legacy = legacy;
+                    changed = true;
+                }
+            }
+#if DFC_ENABLE_VIRTUAL_CARD
+            if((configuration & DFC_CONFIGURATION_PROXIMITY_MANDATORY) != 0 &&
+               !emulator->credential->virtual_card_proximity_mandatory) {
+                emulator->credential->virtual_card_proximity_mandatory = true;
+                changed = true;
+            }
+            if((configuration & DFC_CONFIGURATION_AUTHENTICATION_MANDATORY) != 0 &&
+               !emulator->credential->virtual_card_authentication_mandatory) {
+                emulator->credential->virtual_card_authentication_mandatory = true;
+                changed = true;
+            }
+#endif
+            if(changed) dfc_credential_mark_dirty(emulator->credential);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+            return;
+        }
+        if(emulator->selected_application != DfcEmulatorSelectedApplicationApp) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+        DfcApplication* app = dfc_emulator_current_app(emulator);
+        if(!app || (configuration & DFC_CONFIGURATION_APPLICATION_RESERVED_MASK) != 0) {
+            dfc_bytebuf_append_byte(
+                tx_buffer, app ? DFC_STATUS_PARAMETER_ERROR : DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        if(!app->delegated) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+        if((configuration & DFC_CONFIGURATION_DISABLE_FORMAT) != 0) {
+            app->delegated_format_disabled = true;
+            dfc_credential_mark_dirty(emulator->credential);
+        }
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+#else
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+#endif
         return;
     }
-    if(buffer[DFC_SET_CONFIGURATION_OPTION_OFFSET] != DFC_CONFIGURATION_APPLICATION_CAPABILITIES) {
+#if DFC_ENABLE_TRANSACTION_TIMER
+    if(option != DFC_CONFIGURATION_APPLICATION_CAPABILITIES) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        return;
+    }
+    if(buffer_len != DFC_SET_CONFIGURATION_CAPABILITY_COMMAND_LENGTH) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
     if(!emulator->ev2_session_active ||
@@ -4149,8 +4319,10 @@ static void handle_set_configuration(
         DFC_APPLICATION_CAPABILITY_DATA_LENGTH);
     app->has_capability_data = true;
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-}
+#else
+    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
 #endif
+}
 
 static void clear_selected_app_pending_values(DfcEmulator* emulator) {
     for(size_t i = 0; i < emulator->credential->num_files; i++) {
@@ -5449,6 +5621,7 @@ static bool dispatch_native_command(
     // ChangeKey and ChangeFileSettings (Full cryptograms), plus WriteData /
     // Credit / Debit / LimitedCredit (MAC-on-wire or Full decrypt).
     bool defer_ev1_cmd_cmac = cmd == DFC_CMD_CHANGE_KEY || cmd == DFC_CMD_CHANGE_KEY_SETTINGS ||
+                              cmd == DFC_CMD_SET_CONFIGURATION ||
                               cmd == DFC_CMD_CHANGE_FILE_SETTINGS ||
                               dfc_secure_messaging_ev1_transmits_command_mac(cmd);
 #if DFC_ENABLE_PROXIMITY_CHECK
@@ -5588,7 +5761,7 @@ static bool dispatch_native_command(
         handle_delete_application(emulator, buffer, tx_buffer);
         return true;
     case DFC_CMD_FORMAT_PICC:
-        handle_format_picc(emulator, tx_buffer);
+        handle_format_picc(emulator, buffer_len, tx_buffer);
         return true;
     case DFC_CMD_GET_ISO_FILE_IDS:
         if(!require_selected_application(emulator, tx_buffer)) return true;
@@ -5726,14 +5899,10 @@ static bool dispatch_native_command(
         if(buffer_len < 2) return false;
         handle_authenticate_step1(emulator, cmd, buffer, tx_buffer);
         return true;
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
     case DFC_CMD_SET_CONFIGURATION:
-#if DFC_ENABLE_TRANSACTION_TIMER
         handle_set_configuration(emulator, buffer, buffer_len, tx_buffer);
-#else
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-#endif
         return true;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
     case DFC_CMD_AUTHENTICATE_EV2_FIRST:
     case DFC_CMD_AUTHENTICATE_EV2_NON_FIRST: {
         uint8_t auth_candidate_iv[DFC_SM_MAX_CIPHER_BLOCK_SIZE];

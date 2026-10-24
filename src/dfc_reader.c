@@ -93,10 +93,14 @@ void dfc_reader_session_init(DfcReaderSession* session) {
     if(!session) return;
     dfc_secure_wipe(session, sizeof(*session));
     session->sm.pcd = true;
+    session->selected_application_is_picc = true;
 }
 
 void dfc_reader_session_clear(DfcReaderSession* session) {
+    if(!session) return;
+    bool selected_application_is_picc = session->selected_application_is_picc;
     dfc_reader_session_init(session);
+    session->selected_application_is_picc = selected_application_is_picc;
 }
 
 bool dfc_reader_session_is_authenticated(const DfcReaderSession* session) {
@@ -114,7 +118,9 @@ static void open_legacy_session(
     uint8_t key_no,
     const uint8_t* session_key,
     size_t session_key_len) {
+    bool selected_application_is_picc = session->selected_application_is_picc;
     dfc_reader_session_init(session);
+    session->selected_application_is_picc = selected_application_is_picc;
     session->auth_mode = cipher;
     session->key_no = key_no;
     session->sm.cipher = cipher;
@@ -915,7 +921,9 @@ static DfcReaderStatus step_authenticate_ev2(
         dfc_secure_wipe(iv, sizeof(iv));
         return fail_auth(ex, DfcReaderIntegrityError);
     }
+    bool selected_application_is_picc = session->selected_application_is_picc;
     dfc_reader_session_init(session);
+    session->selected_application_is_picc = selected_application_is_picc;
     session->auth_mode = DFC_READER_AUTH_EV2;
     session->key_no = ex->auth_key_no;
     memcpy(session->ev2_transaction_identifier, transaction, sizeof(transaction));
@@ -1035,8 +1043,9 @@ static bool invalidates_session(const DfcReaderSession* session, const DfcComman
     switch(command->ins) {
     case DFC_CMD_SELECT_APPLICATION:
     case DFC_CMD_DELETE_APPLICATION:
-    case DFC_CMD_FORMAT_PICC:
         return true;
+    case DFC_CMD_FORMAT_PICC:
+        return session->selected_application_is_picc;
     case DFC_CMD_CHANGE_KEY:
         return command->data_len > 0 && (command->data[0] & 0x3F) == (session->key_no & 0x3F);
     case DFC_CMD_CHANGE_KEY_EV2:
@@ -1142,6 +1151,11 @@ static DfcReaderStatus prepare_wrapped_file_write(
 static DfcReaderStatus
     prepare_legacy(DfcReaderExchange* ex, const DfcCommand* command, size_t header_len) {
     uint8_t ins = command->ins;
+    if(ins == DFC_CMD_SET_CONFIGURATION) {
+        if(ex->comm_mode != DFC_COMM_ENCIPHERED) return DfcReaderInvalid;
+        return prepare_wrapped_file_write(
+            ex, command, DFC_COMM_ENCIPHERED, SET_CONFIGURATION_HEADER);
+    }
     bool file_write = is_file_command(ins) && !is_file_read(ins);
     if(file_write && ex->comm_mode != DFC_COMM_PLAIN) {
         return prepare_wrapped_file_write(ex, command, ex->comm_mode, header_len);
@@ -1166,6 +1180,12 @@ static DfcReaderStatus
     if(command->data_len > sizeof(ex->frame)) return DfcReaderInvalid;
     ex->response_plan = ins == DFC_CMD_GET_VERSION ? PlanEv1CmacPerFrame : PlanEv1Cmac;
     uint8_t full[16];
+
+    if(ins == DFC_CMD_SET_CONFIGURATION) {
+        if(ex->comm_mode != DFC_COMM_ENCIPHERED) return DfcReaderInvalid;
+        return prepare_wrapped_file_write(
+            ex, command, DFC_COMM_ENCIPHERED, SET_CONFIGURATION_HEADER);
+    }
 
     if(ins == DFC_CMD_CHANGE_KEY) {
         // Clear key number, then a cryptogram already chained from the session
@@ -1369,6 +1389,9 @@ static DfcReaderStatus reader_exchange_begin(
     exchange->comm_mode = options->comm_mode;
     exchange->requires_response_data = command_requires_response_data(command);
     exchange->invalidates_session = invalidates_session(session, command);
+    exchange->selects_picc = command->ins == DFC_CMD_SELECT_APPLICATION &&
+                             command->data_len == 3 && command->data[0] == 0 &&
+                             command->data[1] == 0 && command->data[2] == 0;
     size_t header_len = options->has_header_len ? options->header_len :
                                                   file_header_length(command->ins);
 
@@ -1581,6 +1604,9 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
     if(status != DFC_STATUS_OK && !ex->special_success) return card_error(ex);
     if(ex->invalidates_session) {
         dfc_reader_session_clear(session);
+        if(ex->ins == DFC_CMD_SELECT_APPLICATION) {
+            session->selected_application_is_picc = ex->selects_picc;
+        }
         return finish_command(ex, DfcReaderOk);
     }
 

@@ -37,6 +37,7 @@ def test_picc_retry_capacity_accepts_raised_native_capacity() -> None:
 from dfc_core import reader as reader_module
 
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
+MAXIMAL_TEXT_FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-maximal.dfc"
 
 
 CLOSED_READER_CALLS: list[tuple[str, Callable[[Reader], object]]] = [
@@ -508,6 +509,33 @@ def test_abi_sizes_and_field_fingerprint() -> None:
     library = _native.library()
     assert capabilities().abi_version == _native.ABI_VERSION
     assert library.dfc_ffi_layout_fingerprint() == _native.layout_fingerprint()
+
+
+def test_delegated_format_setting_round_trips_through_public_model() -> None:
+    text = MAXIMAL_TEXT_FIXTURE.read_text().replace(
+        "Application 00 Delegated Free Blocks: 40\n",
+        "Application 00 Delegated Free Blocks: 40\nApplication 00 Delegated Format Disabled: 1\n",
+    )
+    with Credential.parse(text) as credential:
+        assert credential.model().applications[0].delegated_format_disabled
+        assert "Application 00 Delegated Format Disabled: 1\n" in credential.to_text()
+        encoded = credential.encode()
+    with Credential.decode(encoded) as decoded:
+        assert decoded.model().applications[0].delegated_format_disabled
+
+
+def test_legacy_random_id_prefix_round_trips_through_public_model() -> None:
+    text = MAXIMAL_TEXT_FIXTURE.read_text().replace(
+        "PICC Random ID: 1\n",
+        "PICC Random ID: 1\nPICC Random ID Legacy Prefix: 1\n",
+    )
+    with Credential.parse(text) as credential:
+        assert credential.model().picc.random_id
+        assert credential.model().picc.random_id_legacy
+        assert "PICC Random ID Legacy Prefix: 1\n" in credential.to_text()
+        encoded = credential.encode()
+    with Credential.decode(encoded) as decoded:
+        assert decoded.model().picc.random_id_legacy
 
 
 def test_mismatched_native_layout_is_rejected_before_handles() -> None:

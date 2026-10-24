@@ -128,6 +128,7 @@ class Credential:
                         capability_data=bytes(a.capability_data) if a.has_capability_data else None,
                         delegated=bool(a.delegated),
                         delegated_slot_version=a.delegated_slot_version,
+                        delegated_format_disabled=bool(a.delegated_format_disabled),
                         auth_commands=a.auth_commands if a.has_auth_commands else None,
                         preferred_auth_command=a.preferred_auth_command
                         if a.has_preferred_auth_command
@@ -211,6 +212,7 @@ class Credential:
                     picc.key_settings_2,
                     picc.auth_command,
                     bool(picc.random_id),
+                    bool(picc.random_id_legacy),
                     bool(picc.format_disabled),
                     _take(picc.ats, picc.ats_len),
                     picc.sak if picc.has_sak else None,

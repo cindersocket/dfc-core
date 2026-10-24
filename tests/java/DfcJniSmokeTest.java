@@ -23,7 +23,7 @@ public final class DfcJniSmokeTest {
     credential.validate();
     DfcCredential reparsed = DfcCredentialCodec.parse(credential.writeText());
     check(credential.equals(reparsed), "credential text round-trip");
-    check(DfcLibrary.abiVersion() == 5, "ABI version");
+    check(DfcLibrary.abiVersion() == 6, "ABI version");
     check(DfcLibrary.capabilities() != 0, "capabilities");
     check(Arrays.equals(DfcCommand.selectApplication(new byte[] {(byte) 0xd3, 0x49, 0x4f}).data(),
               new byte[] {0x4f, 0x49, (byte) 0xd3}),
@@ -57,6 +57,24 @@ public final class DfcJniSmokeTest {
 
     DfcCredential ev2Credential =
         DfcCredentialCodec.load(Files.readAllBytes(Path.of(arguments[1])));
+    String delegatedFormatText =
+        ev2Credential.writeText().replace("Application 00 Delegated Free Blocks: 40\n",
+            "Application 00 Delegated Free Blocks: 40\n"
+                + "Application 00 Delegated Format Disabled: 1\n");
+    DfcCredential delegatedFormat = DfcCredentialCodec.parse(delegatedFormatText);
+    check(delegatedFormat.writeText().contains("Application 00 Delegated Format Disabled: 1\n"),
+        "delegated format setting text round-trip");
+    check(DfcCredentialCodec.decode(delegatedFormat.encode()).equals(delegatedFormat),
+        "delegated format setting binary round-trip");
+    String legacyRandomIdText = credential.writeText().replace("PICC Key 00 Version: 00\n",
+        "PICC Key 00 Version: 00\n"
+            + "PICC Random ID: 1\n"
+            + "PICC Random ID Legacy Prefix: 1\n");
+    DfcCredential legacyRandomId = DfcCredentialCodec.parse(legacyRandomIdText);
+    check(legacyRandomId.writeText().contains("PICC Random ID Legacy Prefix: 1\n"),
+        "legacy random ID prefix text round-trip");
+    check(DfcCredentialCodec.decode(legacyRandomId.encode()).equals(legacyRandomId),
+        "legacy random ID prefix binary round-trip");
     byte[] ev2Key = new byte[16];
     for (int index = 0; index < ev2Key.length; index++) ev2Key[index] = (byte) index;
     try (DfcVirtualPicc picc = DfcVirtualPicc.createForReplay(ev2Credential, new byte[64]);

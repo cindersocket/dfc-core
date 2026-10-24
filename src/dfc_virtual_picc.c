@@ -772,7 +772,8 @@ bool dfc_virtual_picc_anticollision(
     if(credential->picc_random_id) {
         // A fresh identifier per activation. The stored UID stays where it is and
         // is reachable only through GetCardUID under an authenticated session.
-        activation->uid[0] = DFC_RANDOM_UID_FIRST_BYTE;
+        activation->uid[0] = credential->picc_random_id_legacy ? DFC_LEGACY_RANDOM_UID_FIRST_BYTE :
+                                                                 DFC_RANDOM_UID_FIRST_BYTE;
         memcpy(activation->uid + 1, random_uid_tail, sizeof(random_uid_tail));
         activation->uid_len = DFC_RANDOM_UID_LEN;
     } else {

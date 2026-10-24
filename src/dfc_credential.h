@@ -167,6 +167,8 @@ typedef struct {
     uint16_t delegated_free_blocks;
     uint8_t delegated_slot_version;
     bool delegated;
+    // One-way application setting controlled by SetConfiguration option 00.
+    bool delegated_format_disabled;
 #endif
     uint8_t aid[3];
     uint8_t iso_aid[16];
@@ -268,6 +270,8 @@ typedef struct {
 
     // PICC configuration reachable through SetConfiguration.
     bool picc_random_id;
+    // Selects the legacy 0x80 prefix instead of the ISO-compatible 0x08 prefix.
+    bool picc_random_id_legacy;
     bool picc_format_disabled;
     uint8_t picc_ats[DFC_PICC_ATS_MAX];
     bool picc_has_sak;

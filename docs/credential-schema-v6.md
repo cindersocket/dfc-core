@@ -83,6 +83,11 @@ placement. A reader rejects recognized fields placed outside this order.
 | `AD`? | `PICC Virtual Card ...` | Virtual card container |
 | `AE`? | `PICC DAM ...` | DAM container |
 | `8F`? | `PICC Preferred Authentication Command` | `U`, one mask bit, added in v6 |
+| `90`? | `PICC Random ID Legacy Prefix` | `B`, emitted only when true, added in v6 |
+
+`PICC Random ID Legacy Prefix` selects the `0x80` prefix; its default is the
+ISO-compatible `0x08` prefix. The field is malformed unless `PICC Random ID`
+is also true. Versions 4 and 5 reject the field when present.
 
 Authentication mask bits are `D40=01`, `ISO=02`, `AES=04`, `EV2First=08`,
 `EV2NonFirst=10`, `ISO7816=20`. Text lists enabled names in that order,
@@ -144,8 +149,16 @@ text `D40`/`ISO`/`AES`), `83` Initialized (`B`), and `A4` Keys (`30` Key +).
 Text also gives each set a `Key Count`. Set zero is initialized and active.
 
 Delegated container `AA` has `80` Slot Number (`U`), `81` Slot Version
-(`X(1)`), `82` Quota Limit (`U`), and `83` Free Blocks (`U`). Its text prefix
-is `Application NN Delegated`.
+(`X(1)`), `82` Quota Limit (`U`), `83` Free Blocks (`U`), and optional `84`
+Format Disabled (`B`, DEFAULT FALSE). Its text prefix is `Application NN
+Delegated`, except the final field is `Application NN Delegated Format
+Disabled`. The format-disabled field was added in v6; versions 4 and 5 reject
+it when present.
+
+PICC and delegated format-disable settings are persistent one-way settings:
+the command interface may change false to true but cannot clear them. Random
+ID enablement is also one-way. When enabling random ID, the caller may select
+either supported prefix without changing unrelated PICC configuration.
 
 ## Files
 

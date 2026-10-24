@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 internal static unsafe partial class Native
 {
-    internal const long DFC_FFI_ABI_VERSION = 5;
+    internal const long DFC_FFI_ABI_VERSION = 6;
     internal const long DFC_FFI_OK = 0;
     internal const long DFC_FFI_INVALID_ARGUMENT = -1;
     internal const long DFC_FFI_BUFFER_TOO_SMALL = -2;
@@ -38,7 +38,7 @@ internal static unsafe partial class Native
     internal static ulong ExpectedLayoutFingerprint()
     {
         var hash = 14_695_981_039_346_656_037UL;
-        hash = LayoutWord(hash, unchecked((ulong)5L));
+        hash = LayoutWord(hash, unchecked((ulong)6L));
         hash = LayoutWord(hash, unchecked((ulong)0L));
         hash = LayoutWord(hash, unchecked((ulong)-1L));
         hash = LayoutWord(hash, unchecked((ulong)-2L));
@@ -136,6 +136,7 @@ internal static unsafe partial class Native
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativePicc>(nameof(NativePicc.KeySettings2)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativePicc>(nameof(NativePicc.AuthCommand)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativePicc>(nameof(NativePicc.RandomId)));
+        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativePicc>(nameof(NativePicc.RandomIdLegacy)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativePicc>(nameof(NativePicc.FormatDisabled)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativePicc>(nameof(NativePicc.AtsLen)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativePicc>(nameof(NativePicc.Ats)));
@@ -196,6 +197,7 @@ internal static unsafe partial class Native
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeApplication>(nameof(NativeApplication.CapabilityData)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeApplication>(nameof(NativeApplication.Delegated)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeApplication>(nameof(NativeApplication.DelegatedSlotVersion)));
+        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeApplication>(nameof(NativeApplication.DelegatedFormatDisabled)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeApplication>(nameof(NativeApplication.HasAuthCommands)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeApplication>(nameof(NativeApplication.AuthCommands)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeApplication>(nameof(NativeApplication.HasPreferredAuthCommand)));

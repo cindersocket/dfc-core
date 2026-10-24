@@ -72,6 +72,37 @@ public sealed class CredentialCodecTests
     }
 
     [Test]
+    public void DelegatedFormatSetting_RoundTripsThroughNativeLayout()
+    {
+        var application = Fixtures.Credential().Applications[0] with
+        {
+            Delegation = new DfcDelegation(1, 1, 64, 40),
+            DelegatedFormatDisabled = true,
+        };
+        var source = Fixtures.Credential() with { Applications = [application] };
+
+        var encoded = Fixtures.Ok(DfcCredentialCodec.Encode(source));
+        var decoded = Fixtures.Ok(DfcCredentialCodec.Decode(encoded));
+
+        Assert.That(decoded.Applications.Single().DelegatedFormatDisabled, Is.True);
+    }
+
+    [Test]
+    public void LegacyRandomIdPrefix_RoundTripsThroughNativeLayout()
+    {
+        var source = Fixtures.Credential() with
+        {
+            Picc = Fixtures.Credential().Picc with { RandomId = true, RandomIdLegacy = true },
+        };
+
+        var encoded = Fixtures.Ok(DfcCredentialCodec.Encode(source));
+        var decoded = Fixtures.Ok(DfcCredentialCodec.Decode(encoded));
+
+        Assert.That(decoded.Picc.RandomId, Is.True);
+        Assert.That(decoded.Picc.RandomIdLegacy, Is.True);
+    }
+
+    [Test]
     public void BuiltRecords_EncodeLikeParsedOnes()
     {
         var credential = Fixtures.Credential();

@@ -83,14 +83,15 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_model \
 	test_dfc_teardown \
 	test_dfc_examples \
-	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture \
+	test_dfc_blank_card test_dfc_picc_config test_dfc_format_picc \
+	test_dfc_format_configuration test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
 	test_dfc_iso_file_access \
 	test_dfc_ev1_response_policy \
 	test_dfc_iso_chained_records_secure test_dfc_iso_response_lifetime \
 	test_dfc_effective_comm test_dfc_reader_header_bounds test_dfc_decode_failure_atomicity
 
-READER_LINK_TESTS := test_dfc_reader test_dfc_reader_header_bounds
+READER_LINK_TESTS := test_dfc_reader test_dfc_reader_header_bounds test_dfc_format_configuration
 
 FAULT_TEST := test_cmac_failures
 SECURE_MESSAGING_FAULT_TEST := test_secure_messaging_failures
@@ -98,6 +99,7 @@ EV2_RESPONSE_FAULT_TEST := test_dfc_ev2_response_atomicity
 KEY_SET_WIPE_TEST := test_dfc_roll_key_set_wipe
 REDUCED_PROFILE_TEST := test_dfc_ffi_reduced_profile
 REDUCED_READER_TEST := test_dfc_reader_reduced_command
+REDUCED_FORMAT_TEST := test_dfc_format_picc_reduced
 
 TESTS += test_dfc_ev2_capabilities test_dfc_static_signature
 
@@ -123,7 +125,7 @@ FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
 .PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds \
 	codecs-disabled-link check-constant-time-auth check-teardown-wipes check-jni-wipes \
-	check-decoder-registry check-random-failure-registry fuzz clean
+	check-decoder-registry check-random-failure-registry check-ffi-layout-registry fuzz clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
 # cannot pass by omitting the translation unit it should have exercised.
@@ -165,10 +167,13 @@ test_dfc_ffi_reduced_profile: test_dfc_ffi_reduced_profile.c $(CORE_SRC) \
 test_dfc_reader_reduced_command: test_dfc_reader_reduced_command.c $(COMMON)
 	$(CC) $(CFLAGS) -DDFC_READER_MAX_COMMAND=16 -o $@ $^ $(LDFLAGS)
 
+test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpers.c $(COMMON)
+	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV1 -o $@ $^ $(LDFLAGS)
+
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-decoder-registry check-random-failure-registry $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-decoder-registry check-random-failure-registry check-ffi-layout-registry $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
@@ -176,6 +181,7 @@ test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-decode
 	./$(KEY_SET_WIPE_TEST)
 	./$(REDUCED_PROFILE_TEST)
 	./$(REDUCED_READER_TEST)
+	./$(REDUCED_FORMAT_TEST)
 
 check-constant-time-auth:
 	python3 check_constant_time_auth.py
@@ -191,6 +197,9 @@ check-decoder-registry:
 
 check-random-failure-registry:
 	python3 check_random_failure_registry.py
+
+check-ffi-layout-registry:
+	python3 ../scripts/generate-ffi-layout.py --check
 
 test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
 	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV2 -o $@ $^ $(LDFLAGS)

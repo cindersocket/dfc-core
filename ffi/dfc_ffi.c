@@ -361,6 +361,7 @@ int32_t dfc_ffi_credential_get_picc(const DfcFfiCredential* credential, DfcFfiPi
     out->has_preferred_auth_command = c->picc_has_preferred_auth_command;
     out->preferred_auth_command = c->picc_preferred_auth_command;
     out->random_id = c->picc_random_id;
+    out->random_id_legacy = c->picc_random_id_legacy;
     out->format_disabled = c->picc_format_disabled;
     out->ats_len = (uint8_t)c->picc_ats_len;
     memcpy(out->ats, c->picc_ats, c->picc_ats_len);
@@ -465,6 +466,7 @@ int32_t dfc_ffi_credential_get_application(
     out->delegated_slot_version = a->delegated_slot_version;
     out->delegated_quota_limit = a->delegated_quota_limit;
     out->delegated_free_blocks = a->delegated_free_blocks;
+    out->delegated_format_disabled = a->delegated_format_disabled;
 #endif
     return DfcDerOk;
 }
@@ -655,7 +657,7 @@ int32_t dfc_ffi_credential_set_card(DfcFfiCredential* credential, const DfcFfiCa
 
 int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPiccSettings* p) {
     if(!credential || !p || p->ats_len > DFC_PICC_ATS_MAX || p->num_keys > DFC_MAX_KEYS ||
-       p->key_len > DFC_MAX_KEY_LEN) {
+       p->key_len > DFC_MAX_KEY_LEN || (p->random_id_legacy && !p->random_id)) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
 #if !DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -690,6 +692,7 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
     c->picc_has_preferred_auth_command = p->has_preferred_auth_command != 0;
     c->picc_preferred_auth_command = p->preferred_auth_command;
     c->picc_random_id = p->random_id != 0;
+    c->picc_random_id_legacy = p->random_id_legacy != 0;
     c->picc_format_disabled = p->format_disabled != 0;
     c->picc_ats_len = p->ats_len;
     memcpy(c->picc_ats, p->ats, p->ats_len);
@@ -870,6 +873,7 @@ int32_t dfc_ffi_credential_add_application(
         app->delegated_slot_version = a->delegated_slot_version;
         app->delegated_quota_limit = a->delegated_quota_limit;
         app->delegated_free_blocks = a->delegated_free_blocks;
+        app->delegated_format_disabled = a->delegated_format_disabled != 0;
 #endif
     }
     if(index) *index = (uint32_t)c->num_apps;

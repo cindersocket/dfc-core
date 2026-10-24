@@ -82,6 +82,8 @@ typedef struct {
     // DFC_READER_AUTH_EV2.
     uint8_t auth_mode;
     uint8_t key_no;
+    // SelectApplication updates the scope even though it retires authentication.
+    bool selected_application_is_picc;
     // Legacy and EV1 session key and chaining IV. `pcd` is always set.
     DfcSecureMessaging sm;
     uint8_t ev2_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
@@ -133,6 +135,7 @@ typedef struct {
     uint8_t response_plan;
     uint8_t status;
     bool invalidates_session;
+    bool selects_picc;
     bool special_success;
     bool requires_response_data;
 

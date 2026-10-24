@@ -53,6 +53,7 @@ class PiccSettings:
     key_settings_2: int = 0
     auth_command: int = 0
     random_id: bool = False
+    random_id_legacy: bool = False
     format_disabled: bool = False
     ats: bytes = b""
     sak: int | None = None
@@ -100,6 +101,7 @@ class Application:
     capability_data: bytes | None = None
     delegated: bool = False
     delegated_slot_version: int = 0
+    delegated_format_disabled: bool = False
     auth_commands: int | None = None
     preferred_auth_command: int | None = None
     sm_disable: int | None = None

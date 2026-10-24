@@ -276,6 +276,9 @@ static void assert_emulator_ev2_retired(const DfcEmulator* emulator) {
 static void assert_reader_session_retired(const DfcReaderSession* reader) {
     DfcReaderSession clear;
     dfc_reader_session_init(&clear);
+    // Retirement clears authentication state without changing which scope the
+    // next command addresses.
+    clear.selected_application_is_picc = reader->selected_application_is_picc;
     munit_assert_memory_equal(sizeof(clear), reader, &clear);
 }
 

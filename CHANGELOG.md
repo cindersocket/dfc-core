@@ -6,8 +6,10 @@
 - Preserve JNI exception delivery in minified Android consumers (#141).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
   target builds, with ABI-layout checks and caller-owned target storage.
-- Use ABI 5 to verify the complete generated native layout and semantic-constant
+- Use ABI 6 to verify the complete generated native layout and semantic-constant
   fingerprint before hosted bindings construct handles (#138).
+- Support separately disabling PICC and delegated-application formatting, with
+  protected configuration commands and scoped delegated formatting (#130).
 - Add runnable transceive examples for .NET, Java, Android, Python, and Rust.
 - Make semantic application-selection helpers consistently accept the
   human-readable application identifier order in every binding.
