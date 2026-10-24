@@ -26,7 +26,9 @@ for file in $staged; do
             uv run --project bindings/python --frozen --extra test ruff format "$file"
             ;;
         *.rs)
-            rustfmt --edition 2021 "$file"
+            # A crate root normally makes rustfmt recurse into every module.
+            # Keep the hook scoped to the file that is actually staged.
+            rustfmt --edition 2024 --config skip_children=true "$file"
             ;;
         bindings/dotnet/*.cs|bindings/dotnet/**/*.cs)
             dotnet format bindings/dotnet/Dfc.sln --include "$file"
