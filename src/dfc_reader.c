@@ -957,9 +957,11 @@ static bool response_is_always_full(uint8_t ins) {
 
 static bool command_requires_response_data(const DfcCommand* command) {
     if(command->ins == DFC_CMD_GET_VALUE || response_is_always_full(command->ins)) return true;
-    if((command->ins == DFC_CMD_READ_DATA || command->ins == DFC_CMD_READ_RECORDS ||
-        command->ins == DFC_CMD_READ_RECORDS_ISO) &&
-       command->data_len >= FILE_HEADER_LENGTH) {
+    // A zero ReadRecords count means "all records", so every successful
+    // record read has data. An empty record file reports an error instead.
+    if(command->ins == DFC_CMD_READ_RECORDS || command->ins == DFC_CMD_READ_RECORDS_ISO)
+        return true;
+    if(command->ins == DFC_CMD_READ_DATA && command->data_len >= FILE_HEADER_LENGTH) {
         return command->data[4] != 0 || command->data[5] != 0 || command->data[6] != 0;
     }
     return false;

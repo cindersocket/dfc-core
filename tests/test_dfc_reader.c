@@ -2165,19 +2165,16 @@ static MunitResult test_d40_session(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
-static DfcReaderStatus finish_d40_mac_response(
+static DfcReaderStatus finish_d40_mac_command_response(
     Link* link,
-    uint32_t requested_length,
+    const DfcCommand* command,
     const uint8_t* response_data,
     size_t response_data_len,
     size_t* clear_len) {
-    DfcCommand command;
     DfcReaderExchange exchange;
     DfcReaderOptions options = {.comm_mode = DFC_COMM_MAC};
     munit_assert_int(
-        dfc_command_read_data(&command, FileMac, 0, requested_length), ==, DfcCommandOk);
-    munit_assert_int(
-        dfc_reader_exchange_begin(&exchange, &link->session, link->framing, &command, &options),
+        dfc_reader_exchange_begin(&exchange, &link->session, link->framing, command, &options),
         ==,
         DfcReaderOk);
     uint8_t request[DFC_COMMAND_MAX_APDU];
@@ -2197,6 +2194,19 @@ static DfcReaderStatus finish_d40_mac_response(
         &exchange, response, response_data_len + 2, request, sizeof(request), &ignored);
     (void)dfc_reader_result_data(&exchange, clear_len);
     return status;
+}
+
+static DfcReaderStatus finish_d40_mac_response(
+    Link* link,
+    uint32_t requested_length,
+    const uint8_t* response_data,
+    size_t response_data_len,
+    size_t* clear_len) {
+    DfcCommand command;
+    munit_assert_int(
+        dfc_command_read_data(&command, FileMac, 0, requested_length), ==, DfcCommandOk);
+    return finish_d40_mac_command_response(
+        link, &command, response_data, response_data_len, clear_len);
 }
 
 static size_t generate_d40_mac_response(
@@ -2317,6 +2327,57 @@ static MunitResult
             ==,
             DfcReaderIntegrityError);
         munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
+        link_close(&link);
+    }
+    return MUNIT_OK;
+}
+
+static MunitResult test_d40_reader_rejects_empty_read_all_records_response(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+
+    enum {
+        RecordFile = 0x0E
+    };
+    const uint8_t empty_mac[DFC_SM_LEGACY_MAC_LENGTH] = {0};
+    const bool iso_chaining_cases[] = {false, true};
+    for(size_t i = 0; i < sizeof(iso_chaining_cases) / sizeof(iso_chaining_cases[0]); i++) {
+        Link link;
+        link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+        select_app(&link, AID_D40);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+
+        DfcCommand command;
+        munit_assert_int(
+            dfc_command_read_records(&command, RecordFile, 0, 0, iso_chaining_cases[i]),
+            ==,
+            DfcCommandOk);
+        size_t clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_command_response(
+                &link, &command, empty_mac, sizeof(empty_mac), &clear_len),
+            ==,
+            DfcReaderProtocolError);
+        munit_assert_size(clear_len, ==, 0);
+        munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
+
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+        const uint8_t record[] = {0x11, 0x22, 0x33, 0x44};
+        uint8_t response[sizeof(record) + DFC_SM_LEGACY_MAC_LENGTH];
+        size_t response_len =
+            generate_d40_mac_response(&link, record, sizeof(record), response, sizeof(response));
+        munit_assert_size(response_len, ==, sizeof(response));
+        clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_command_response(&link, &command, response, response_len, &clear_len),
+            ==,
+            DfcReaderOk);
+        munit_assert_size(clear_len, ==, sizeof(record));
+        munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
         link_close(&link);
     }
     return MUNIT_OK;
@@ -4141,6 +4202,12 @@ static MunitTest tests[] = {
     {"/d40-session", test_d40_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/d40-reader-rejects-empty-mac-response",
      test_d40_reader_rejects_empty_mac_response,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/d40-reader-rejects-empty-read-all-records-response",
+     test_d40_reader_rejects_empty_read_all_records_response,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
