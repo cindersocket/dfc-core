@@ -90,8 +90,6 @@ void dfc_emulator_select_application(
     size_t app_index);
 
 uint32_t dfc_emulator_read_uint24_le(const uint8_t* data);
-uint16_t dfc_emulator_crc16_iso14443(const uint8_t* data, size_t len);
-uint32_t dfc_emulator_crc32(const uint8_t* data, size_t len);
 bool dfc_emulator_d40_receive_plain(
     const uint8_t* key,
     size_t key_len,

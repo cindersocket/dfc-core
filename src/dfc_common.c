@@ -36,6 +36,34 @@ void dfc_secure_wipe(void* buffer, size_t length) {
         *bytes++ = 0;
 }
 
+uint16_t dfc_crc16_iso14443_extend(uint16_t crc, const uint8_t* data, size_t length) {
+    for(size_t i = 0; i < length; i++) {
+        uint8_t byte = data[i] ^ (crc & 0xFF);
+        byte ^= byte << 4;
+        crc = (crc >> 8) ^ ((uint16_t)byte << 8) ^ ((uint16_t)byte << 3) ^ ((uint16_t)byte >> 4);
+    }
+    return crc;
+}
+
+uint16_t dfc_crc16_iso14443(const uint8_t* data, size_t length) {
+    return dfc_crc16_iso14443_extend(0x6363, data, length);
+}
+
+uint32_t dfc_crc32_extend(uint32_t crc, const uint8_t* data, size_t length) {
+    for(size_t i = 0; i < length; i++) {
+        crc ^= data[i];
+        for(size_t bit = 0; bit < 8; bit++) {
+            uint32_t mask = 0u - (crc & 1u);
+            crc = (crc >> 1) ^ (0xEDB88320u & mask);
+        }
+    }
+    return crc;
+}
+
+uint32_t dfc_crc32(const uint8_t* data, size_t length) {
+    return dfc_crc32_extend(0xFFFFFFFFu, data, length);
+}
+
 #include <stdio.h>
 
 const uint8_t DFC_ISO_AID[7] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x00};

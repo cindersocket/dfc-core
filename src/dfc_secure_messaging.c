@@ -60,30 +60,6 @@ bool dfc_secure_messaging_applies_ev1(DfcSecureMessaging* sm, uint8_t cmd) {
            cmd != DFC_CMD_AUTHENTICATE_AES && cmd != DFC_CMD_ADDITIONAL_FRAME;
 }
 
-static uint16_t crc16_iso14443_extend(uint16_t crc, const uint8_t* data, size_t len) {
-    for(size_t i = 0; i < len; i++) {
-        uint8_t byte = data[i] ^ (crc & 0xFF);
-        byte ^= byte << 4;
-        crc = (crc >> 8) ^ ((uint16_t)byte << 8) ^ ((uint16_t)byte << 3) ^ ((uint16_t)byte >> 4);
-    }
-    return crc;
-}
-
-static uint16_t crc16_iso14443(const uint8_t* data, size_t len) {
-    return crc16_iso14443_extend(0x6363, data, len);
-}
-
-static uint32_t crc32_dfc_extend(uint32_t crc, const uint8_t* data, size_t len) {
-    for(size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for(size_t bit = 0; bit < 8; bit++) {
-            uint32_t mask = 0 - (crc & 1);
-            crc = (crc >> 1) ^ (0xEDB88320 & mask);
-        }
-    }
-    return crc;
-}
-
 // Every candidate at or after this boundary has a valid zero or 0x80/zero
 // padding tail. Earlier candidates cannot verify, so do not recompute their CRCs.
 static size_t first_padded_clear_length(const uint8_t* data, size_t len, size_t crc_len) {
@@ -547,12 +523,12 @@ static size_t enciphered_encode(
 
     uint32_t crc;
     if(sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        crc = crc16_iso14443(plain, plain_len);
+        crc = dfc_crc16_iso14443(plain, plain_len);
     } else {
         crc = 0xFFFFFFFF;
-        crc = crc32_dfc_extend(crc, crc_prefix, crc_prefix_len);
-        crc = crc32_dfc_extend(crc, plain, plain_len);
-        crc = crc32_dfc_extend(crc, crc_suffix, crc_suffix_len);
+        crc = dfc_crc32_extend(crc, crc_prefix, crc_prefix_len);
+        crc = dfc_crc32_extend(crc, plain, plain_len);
+        crc = dfc_crc32_extend(crc, crc_suffix, crc_suffix_len);
     }
 
     // The public API permits in-place operation. Compute the checksum before
@@ -648,7 +624,7 @@ static size_t enciphered_decode(
         // Where the payload ends is not on the wire, so try each boundary whose
         // tail is padding and keep the first whose CRC16 agrees. Accepting a
         // boundary without checking the CRC would admit any ciphertext at all.
-        uint16_t expected_crc = crc16_iso14443_extend(0x6363, out, first_candidate);
+        uint16_t expected_crc = dfc_crc16_iso14443_extend(0x6363, out, first_candidate);
         for(size_t candidate = first_candidate; candidate + crc_len <= wrapped_len; candidate++) {
             size_t crc_offset = candidate;
             uint16_t actual_crc = (uint16_t)out[crc_offset] |
@@ -657,17 +633,17 @@ static size_t enciphered_decode(
                 data_len = candidate;
                 break;
             }
-            expected_crc = crc16_iso14443_extend(expected_crc, &out[candidate], 1);
+            expected_crc = dfc_crc16_iso14443_extend(expected_crc, &out[candidate], 1);
         }
         if(data_len == SIZE_MAX) goto failure;
     } else {
         uint32_t running_crc = 0xFFFFFFFF;
-        running_crc = crc32_dfc_extend(running_crc, crc_prefix, crc_prefix_len);
-        running_crc = crc32_dfc_extend(running_crc, out, first_candidate);
+        running_crc = dfc_crc32_extend(running_crc, crc_prefix, crc_prefix_len);
+        running_crc = dfc_crc32_extend(running_crc, out, first_candidate);
         for(size_t clear_len = first_candidate; clear_len <= wrapped_len - crc_len; clear_len++) {
             size_t crc_offset = clear_len;
             uint32_t expected_crc = running_crc;
-            expected_crc = crc32_dfc_extend(expected_crc, crc_suffix, crc_suffix_len);
+            expected_crc = dfc_crc32_extend(expected_crc, crc_suffix, crc_suffix_len);
 
             uint32_t actual_crc =
                 (uint32_t)out[crc_offset] | ((uint32_t)out[crc_offset + 1] << 8) |
@@ -676,7 +652,7 @@ static size_t enciphered_decode(
                 data_len = clear_len;
                 break;
             }
-            running_crc = crc32_dfc_extend(running_crc, &out[clear_len], 1);
+            running_crc = dfc_crc32_extend(running_crc, &out[clear_len], 1);
         }
         if(data_len == SIZE_MAX) goto failure;
     }

@@ -15,16 +15,6 @@ uint32_t dfc_emulator_read_uint24_le(const uint8_t* data) {
 #endif
 }
 
-uint16_t dfc_emulator_crc16_iso14443(const uint8_t* data, size_t len) {
-    uint16_t crc = 0x6363;
-    for(size_t i = 0; i < len; i++) {
-        uint8_t byte = data[i] ^ (crc & 0xFF);
-        byte ^= byte << 4;
-        crc = (crc >> 8) ^ ((uint16_t)byte << 8) ^ ((uint16_t)byte << 3) ^ ((uint16_t)byte >> 4);
-    }
-    return crc;
-}
-
 bool dfc_emulator_d40_receive_plain(
     const uint8_t* key,
     size_t key_len,
@@ -63,18 +53,6 @@ uint8_t dfc_emulator_des_key_version(const uint8_t* key) {
         version |= (key[i] & 0x01) << (7 - i);
     }
     return version;
-}
-
-uint32_t dfc_emulator_crc32(const uint8_t* data, size_t len) {
-    uint32_t crc = 0xFFFFFFFFu;
-    for(size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for(size_t bit = 0; bit < 8; bit++) {
-            uint32_t mask = 0u - (crc & 1u);
-            crc = (crc >> 1) ^ (0xEDB88320u & mask);
-        }
-    }
-    return crc;
 }
 
 #endif // DFC_ENABLE_EMULATOR

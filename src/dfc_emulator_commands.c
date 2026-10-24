@@ -14,8 +14,8 @@
 #define emulator_key                 dfc_emulator_key
 #define emulator_key_version         dfc_emulator_key_version
 #define read_uint24_le               dfc_emulator_read_uint24_le
-#define crc16_iso14443               dfc_emulator_crc16_iso14443
-#define crc32_dfc                    dfc_emulator_crc32
+#define crc16_iso14443               dfc_crc16_iso14443
+#define crc32_dfc                    dfc_crc32
 #define d40_receive_plain            dfc_emulator_d40_receive_plain
 #define des_key_version              dfc_emulator_des_key_version
 

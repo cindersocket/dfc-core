@@ -258,6 +258,10 @@ size_t dfc_key_set_type_length(uint8_t type);
 uint8_t dfc_key_type_for_set_type(uint8_t type);
 bool dfc_ct_equal(const uint8_t* left, const uint8_t* right, size_t length);
 void dfc_secure_wipe(void* buffer, size_t length);
+uint16_t dfc_crc16_iso14443_extend(uint16_t crc, const uint8_t* data, size_t length);
+uint16_t dfc_crc16_iso14443(const uint8_t* data, size_t length);
+uint32_t dfc_crc32_extend(uint32_t crc, const uint8_t* data, size_t length);
+uint32_t dfc_crc32(const uint8_t* data, size_t length);
 
 // File communication settings
 #define DFC_COMM_PLAIN      0x00
