@@ -83,7 +83,7 @@ def main() -> None:
             emulator_crypto.index("uint8_t dfc_emulator_des_key_version(")
         ],
         "reader D40 send": reader[
-            reader.index("static bool\n    d40_send(") : reader.index("static uint16_t crc16(")
+            reader.index("static bool\n    d40_send(") : reader.index("static void put_le32(")
         ],
     }
     for name, helper in d40_helpers.items():
