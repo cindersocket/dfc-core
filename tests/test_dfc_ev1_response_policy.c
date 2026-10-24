@@ -52,6 +52,58 @@ static void expect_protected_response(
     if(expected_len) munit_assert_int(memcmp(clear, expected, expected_len), ==, 0);
 }
 
+static void expect_full_command_protected_response(
+    DfcVirtualPiccSession* session,
+    DfcSecureMessaging* oracle,
+    uint8_t instruction,
+    const uint8_t* header,
+    size_t header_len,
+    const uint8_t* plain,
+    size_t plain_len) {
+    uint8_t crc_header[1 + DFC_READER_MAX_CLEAR_HEADER_LENGTH];
+    munit_assert_size(header_len, <=, DFC_READER_MAX_CLEAR_HEADER_LENGTH);
+    crc_header[0] = instruction;
+    memcpy(crc_header + 1, header, header_len);
+
+    uint8_t wrapped[64];
+    size_t wrapped_len = dfc_secure_messaging_wrap(
+        oracle,
+        DFC_COMM_ENCIPHERED,
+        crc_header,
+        1 + header_len,
+        plain,
+        plain_len,
+        wrapped,
+        sizeof(wrapped));
+    munit_assert_size(wrapped_len, >, 0);
+    munit_assert_size(header_len + wrapped_len, <=, UINT8_MAX);
+
+    uint8_t command[6 + sizeof(wrapped)];
+    command[0] = DFC_ISO7816_CLA_WRAPPER;
+    command[1] = instruction;
+    command[2] = 0;
+    command[3] = 0;
+    command[4] = (uint8_t)(header_len + wrapped_len);
+    memcpy(command + 5, header, header_len);
+    memcpy(command + 5 + header_len, wrapped, wrapped_len);
+    command[5 + header_len + wrapped_len] = 0;
+
+    uint8_t response[128];
+    size_t response_len = 0;
+    exchange(
+        session, command, 6 + header_len + wrapped_len, response, sizeof(response), &response_len);
+    munit_assert_size(response_len, >=, DFC_WIRE_MAC_LENGTH + 2);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
+
+    uint8_t clear[128];
+    size_t clear_len = dfc_secure_messaging_unwrap_ev1_response(
+        oracle, DFC_STATUS_OK, response, response_len - 2, clear, sizeof(clear));
+    munit_assert_size(clear_len, ==, 0);
+    dfc_secure_wipe(wrapped, sizeof(wrapped));
+    dfc_secure_wipe(clear, sizeof(clear));
+}
+
 static void expect_plain_special_response(
     DfcVirtualPiccSession* session,
     DfcSecureMessaging* oracle,
@@ -238,8 +290,16 @@ static MunitResult test_dispatcher_protects_every_ev1_success_response(
     DfcApplication* app = NULL;
     DfcVirtualPiccSession* session = open_authenticated_application(&credential, &oracle, &app);
 
-    const uint8_t change_settings[] = {
-        0x90, DFC_CMD_CHANGE_FILE_SETTINGS, 0x00, 0x00, 0x04, 0x0F, 0x00, 0xEE, 0xEE, 0x00};
+    const uint8_t change_settings_header[] = {0x0F};
+    const uint8_t change_settings_data[] = {DFC_COMM_PLAIN, 0xEE, 0xEE};
+    expect_full_command_protected_response(
+        session,
+        oracle,
+        DFC_CMD_CHANGE_FILE_SETTINGS,
+        change_settings_header,
+        sizeof(change_settings_header),
+        change_settings_data,
+        sizeof(change_settings_data));
     const uint8_t create_linear[] = {
         0x90,
         DFC_CMD_CREATE_LINEAR_RECORD_FILE,
@@ -279,7 +339,6 @@ static MunitResult test_dispatcher_protects_every_ev1_success_response(
 
     uint8_t expected_version[] = {app->key_versions[0]};
     const ProtectedCommandCase cases[] = {
-        {"ChangeFileSettings", change_settings, sizeof(change_settings), NULL, 0},
         {"CreateLinearRecordFile", create_linear, sizeof(create_linear), NULL, 0},
         {"CreateCyclicRecordFile", create_cyclic, sizeof(create_cyclic), NULL, 0},
         {"GetKeyVersion",
