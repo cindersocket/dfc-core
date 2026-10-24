@@ -332,7 +332,9 @@ bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
     bool changed = false;
 #if DFC_ENABLE_TRANSACTION_MAC
     if(emulator->transaction_input_len > 0) {
-        dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+        size_t used =
+            DFC_MIN(emulator->transaction_input_len, sizeof(emulator->transaction_input));
+        dfc_secure_wipe(emulator->transaction_input, used);
         emulator->transaction_input_len = 0;
         changed = true;
     }
@@ -402,6 +404,11 @@ void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
 }
 
 void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
+    size_t pending_chain_len =
+        DFC_MIN(emulator->pending_chain_len, sizeof(emulator->pending_chain));
+    size_t pending_chunk_count = DFC_MIN(
+        (size_t)emulator->pending_chain_chunk_count,
+        sizeof(emulator->pending_chain_chunks) / sizeof(emulator->pending_chain_chunks[0]));
     emulator->awaiting_step2 = false;
     dfc_emulator_clear_iso_authentication(emulator);
     clear_native_authentication(emulator);
@@ -416,8 +423,12 @@ void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
     emulator->pending_chain_last = 0;
     emulator->pending_chain_chunk_count = 0;
     emulator->pending_chain_chunk_index = 0;
-    dfc_secure_wipe(emulator->pending_chain, sizeof(emulator->pending_chain));
-    dfc_secure_wipe(emulator->pending_chain_chunks, sizeof(emulator->pending_chain_chunks));
+    if(pending_chain_len > 0) dfc_secure_wipe(emulator->pending_chain, pending_chain_len);
+    if(pending_chunk_count > 0) {
+        dfc_secure_wipe(
+            emulator->pending_chain_chunks,
+            pending_chunk_count * sizeof(emulator->pending_chain_chunks[0]));
+    }
     dfc_emulator_discard_command_chain(emulator);
     emulator->df_names_pending = false;
     emulator->df_names_next = 0;
@@ -469,8 +480,6 @@ void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
     emulator->sdm_read_cache_len = 0;
     dfc_secure_wipe(emulator->sdm_read_cache, sizeof(emulator->sdm_read_cache));
 #endif
-    dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
-    dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
 }
 
 void dfc_emulator_reset_session(DfcEmulator* emulator) {

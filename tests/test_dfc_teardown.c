@@ -560,6 +560,20 @@ static MunitResult
     emulator->command_chain_len = command_length;
     emulator->command_chain_expected = command_length;
     memset(emulator->command_chain, 0xA5, command_length);
+    memset(emulator->pending_chain, 0xB4, sizeof(emulator->pending_chain));
+    memset(emulator->pending_chain_chunks, 0x4B, sizeof(emulator->pending_chain_chunks));
+    emulator->pending_chain_len = 37;
+    emulator->pending_chain_chunk_count = 3;
+#if DFC_ENABLE_SDM
+    emulator->sdm_read_cache_valid = true;
+    emulator->sdm_read_cache_file_number = 7;
+    emulator->sdm_read_cache_len = sizeof(emulator->sdm_read_cache);
+    memset(emulator->sdm_read_cache, 0xE8, sizeof(emulator->sdm_read_cache));
+#endif
+#if DFC_ENABLE_TRANSACTION_MAC
+    emulator->transaction_input_len = 17;
+    memset(emulator->transaction_input, 0xF9, sizeof(emulator->transaction_input));
+#endif
 
     FreeAudit audit = {
         .regions = {{emulator->command_chain, command_length, false, false}},
@@ -580,14 +594,12 @@ static MunitResult
         sizeof(emulator->enc_rnd_b),
         emulator->enc_rnd_b,
         ((uint8_t[sizeof(emulator->enc_rnd_b)]){0}));
-    munit_assert_memory_equal(
-        sizeof(emulator->pending_chain),
-        emulator->pending_chain,
-        ((uint8_t[sizeof(emulator->pending_chain)]){0}));
-    munit_assert_memory_equal(
-        sizeof(emulator->pending_chain_chunks),
-        emulator->pending_chain_chunks,
-        ((uint8_t[sizeof(emulator->pending_chain_chunks)]){0}));
+    for(size_t index = 0; index < sizeof(emulator->pending_chain); index++) {
+        munit_assert_uint8(emulator->pending_chain[index], ==, index < 37 ? 0 : 0xB4);
+    }
+    for(size_t index = 0; index < sizeof(emulator->pending_chain_chunks); index++) {
+        munit_assert_uint8(emulator->pending_chain_chunks[index], ==, index < 3 ? 0 : 0x4B);
+    }
 #if DFC_ENABLE_PROXIMITY_CHECK
     munit_assert_memory_equal(
         sizeof(emulator->proximity_random),
@@ -613,10 +625,9 @@ static MunitResult
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
     munit_assert_size(emulator->transaction_input_len, ==, 0);
-    munit_assert_memory_equal(
-        sizeof(emulator->transaction_input),
-        emulator->transaction_input,
-        ((uint8_t[sizeof(emulator->transaction_input)]){0}));
+    for(size_t index = 0; index < sizeof(emulator->transaction_input); index++) {
+        munit_assert_uint8(emulator->transaction_input[index], ==, index < 17 ? 0 : 0xF9);
+    }
 #endif
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     munit_assert_false(emulator->ev2_authentication_pending);
