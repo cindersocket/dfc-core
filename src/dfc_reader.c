@@ -31,9 +31,9 @@ enum {
     PlanPlain = 0,
     // EV1: one CMAC over the whole reassembled answer and its final status.
     PlanEv1Cmac,
-    // EV1 GetVersion: each frame is secured on its own, and each continuation
-    // advances the IV.
-    PlanEv1CmacPerFrame,
+    // EV1 GetVersion: intermediate responses are plain. Each continuation
+    // advances the IV, and the terminal response carries the only CMAC.
+    PlanEv1GetVersion,
     // EV1 Full read: the answer is enciphered with its status-bound CRC32 and
     // carries no CMAC.
     PlanEv1Decrypt,
@@ -1178,7 +1178,7 @@ static DfcReaderStatus
                                                                           DfcReaderInvalid;
     }
     if(command->data_len > sizeof(ex->frame)) return DfcReaderInvalid;
-    ex->response_plan = ins == DFC_CMD_GET_VERSION ? PlanEv1CmacPerFrame : PlanEv1Cmac;
+    ex->response_plan = ins == DFC_CMD_GET_VERSION ? PlanEv1GetVersion : PlanEv1Cmac;
     uint8_t full[16];
 
     if(ins == DFC_CMD_SET_CONFIGURATION) {
@@ -1620,7 +1620,7 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
         return finish_command(ex, DfcReaderOk);
 #endif
     case PlanEv1Cmac:
-    case PlanEv1CmacPerFrame:
+    case PlanEv1GetVersion:
         return finish_command(ex, verify_ev1_frame(ex, 0, status));
     case PlanEv1Decrypt:
     case PlanD40Decrypt:
@@ -1790,18 +1790,18 @@ static DfcReaderStatus step_command(
     }
     ex->status = status;
 
-    if(ex->response_plan == PlanEv1CmacPerFrame) {
-        // Each GetVersion frame stands on its own: check it as it arrives, and
-        // continue the chain with an additional frame that advances the IV.
+    if(ex->response_plan == PlanEv1GetVersion) {
+        // Keep intermediate payloads, advance the IV with each continuation,
+        // and authenticate only the terminal response.
         size_t frame_start = ex->data_len;
         if(!append_data(ex, data, data_len)) {
             dfc_reader_session_clear(ex->session);
             return finish_command(ex, DfcReaderProtocolError);
         }
         if(status != DFC_STATUS_OK && status != DFC_CMD_ADDITIONAL_FRAME) return card_error(ex);
-        DfcReaderStatus st = verify_ev1_frame(ex, frame_start, status);
-        if(st != DfcReaderOk) return finish_command(ex, st);
-        if(status == DFC_STATUS_OK) return finish_command(ex, DfcReaderOk);
+        if(status == DFC_STATUS_OK) {
+            return finish_command(ex, verify_ev1_frame(ex, frame_start, status));
+        }
         uint8_t full[16];
         if(!ev1_command_cmac(ex->session, DFC_CMD_ADDITIONAL_FRAME, NULL, 0, full)) {
             dfc_reader_session_clear(ex->session);

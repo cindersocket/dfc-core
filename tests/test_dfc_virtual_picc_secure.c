@@ -612,8 +612,9 @@ static MunitResult test_read_data_type_error_aborts_pending_transaction(
     return MUNIT_OK;
 }
 
-static MunitResult
-    test_get_version_frames_use_ev1_response_mac(const MunitParameter params[], void* user_data) {
+static MunitResult test_get_version_terminal_frame_uses_ev1_response_mac(
+    const MunitParameter params[],
+    void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
@@ -648,7 +649,8 @@ static MunitResult
             DfcVirtualPiccStatusOk);
         uint8_t status = i == 2 ? DFC_STATUS_OK : DFC_CMD_ADDITIONAL_FRAME;
         size_t plain_len = i == 2 ? 14 : 7;
-        munit_assert_size(response_len, ==, plain_len + 10);
+        size_t mac_len = i == 2 ? DFC_WIRE_MAC_LENGTH : 0;
+        munit_assert_size(response_len, ==, plain_len + mac_len + 2);
         munit_assert_uint8(response[response_len - 2], ==, 0x91);
         munit_assert_uint8(response[response_len - 1], ==, status);
         uint8_t previous_iv[sizeof(reader->iv)];
@@ -656,10 +658,12 @@ static MunitResult
         dfc_secure_messaging_update_ev1_command(
             reader, i == 0 ? DFC_CMD_GET_VERSION : DFC_CMD_ADDITIONAL_FRAME, NULL, 0);
         munit_assert_memory_not_equal(sizeof(previous_iv), previous_iv, reader->iv);
-        size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
-            reader, status, response, response_len - 2, recovered, sizeof(recovered));
-        munit_assert_size(recovered_len, ==, plain_len);
-        if(i == 2) munit_assert_memory_equal(7, recovered, credential.uid);
+        if(i == 2) {
+            size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
+                reader, status, response, response_len - 2, recovered, sizeof(recovered));
+            munit_assert_size(recovered_len, ==, plain_len);
+            munit_assert_memory_equal(7, recovered, credential.uid);
+        }
     }
 
     dfc_secure_messaging_free(reader);
@@ -841,8 +845,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/get-version-frames-use-ev1-response-mac",
-     test_get_version_frames_use_ev1_response_mac,
+    {"/get-version-terminal-frame-uses-ev1-response-mac",
+     test_get_version_terminal_frame_uses_ev1_response_mac,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

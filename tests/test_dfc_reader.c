@@ -2352,16 +2352,31 @@ static MunitResult test_get_version_under_session(const MunitParameter params[],
     munit_assert_size(plain_len, <=, sizeof(expected));
     memcpy(expected, plain, plain_len);
 
-    select_app(&link, AID_AES);
-    munit_assert_int(
-        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, 16), ==, DfcReaderOk);
-    munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
-    size_t secured_len = 0;
-    const uint8_t* secured = dfc_reader_result_data(&ex, &secured_len);
-    munit_assert_size(secured_len, ==, plain_len);
-    munit_assert_memory_equal(plain_len, secured, expected);
-    // The session is still in step after the chain.
-    read_file(&link, FileMac, DFC_COMM_MAC, 0, 8);
+    const struct {
+        const uint8_t* aid;
+        uint8_t auth_command;
+        const uint8_t* key;
+        size_t key_len;
+    } cases[] = {
+        {AID_D40, DFC_CMD_AUTHENTICATE_ISO, DES_KEY_0, 8},
+        {AID_ISO, DFC_CMD_AUTHENTICATE_ISO, TDES_KEY_0, sizeof(TDES_KEY_0)},
+        {AID_3K, DFC_CMD_AUTHENTICATE_ISO, TDES3_KEY_0, sizeof(TDES3_KEY_0)},
+        {AID_AES, DFC_CMD_AUTHENTICATE_AES, AES_KEY_0, sizeof(AES_KEY_0)},
+    };
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        select_app(&link, cases[i].aid);
+        munit_assert_int(
+            authenticate(&link, cases[i].auth_command, 0, cases[i].key, cases[i].key_len),
+            ==,
+            DfcReaderOk);
+        munit_assert_int(link_send(&link, &command, DFC_COMM_PLAIN, &ex), ==, DfcReaderOk);
+        size_t secured_len = 0;
+        const uint8_t* secured = dfc_reader_result_data(&ex, &secured_len);
+        munit_assert_size(secured_len, ==, plain_len);
+        munit_assert_memory_equal(plain_len, secured, expected);
+        // A protected command after the chain proves both sides kept the same IV.
+        read_file(&link, FileMac, DFC_COMM_MAC, 0, 8);
+    }
     link_close(&link);
     return MUNIT_OK;
 }
