@@ -5,11 +5,6 @@
 
 #define TAG "AESCMAC"
 
-static const uint8_t zeroes[] =
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-static const uint8_t Rb[] =
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x87};
-
 static void aes_cmac_wipe(void* value, size_t length) {
     volatile uint8_t* p = value;
     while(length--)
@@ -41,19 +36,19 @@ static void aes_cmac_xor(const uint8_t* a, const uint8_t* b, uint8_t* x, size_t 
 static bool
     aes_cmac_generateSubkeys(DfcCryptoAesBlock* cipher, uint8_t* subkey1, uint8_t* subkey2) {
     uint8_t l[BLOCK_SIZE] = {0};
-    if(!dfc_crypto_aes_block_encrypt(cipher, zeroes, l)) {
+    if(!dfc_crypto_aes_block_encrypt(cipher, l, l)) {
         aes_cmac_wipe(l, sizeof(l));
         return false;
     }
 
     aes_cmac_bitShiftLeft(l, subkey1, BLOCK_SIZE);
     if(l[0] & 0x80) {
-        aes_cmac_xor(subkey1, Rb, subkey1, BLOCK_SIZE);
+        subkey1[BLOCK_SIZE - 1] ^= 0x87;
     }
 
     aes_cmac_bitShiftLeft(subkey1, subkey2, BLOCK_SIZE);
     if(subkey1[0] & 0x80) {
-        aes_cmac_xor(subkey2, Rb, subkey2, BLOCK_SIZE);
+        subkey2[BLOCK_SIZE - 1] ^= 0x87;
     }
 
     aes_cmac_wipe(l, sizeof(l));
@@ -111,11 +106,17 @@ bool aes_cmac_segments_with_iv(
         const uint8_t* data = segments[segment_index].data;
         size_t remaining = segments[segment_index].length;
         while(remaining) {
+            if(pending_len == 0 && remaining > BLOCK_SIZE) {
+                aes_cmac_xor(x, data, y, BLOCK_SIZE);
+                if(!dfc_crypto_aes_block_encrypt(&cipher, y, x)) goto cleanup;
+                data += BLOCK_SIZE;
+                remaining -= BLOCK_SIZE;
+                continue;
+            }
             if(pending_len == BLOCK_SIZE) {
                 aes_cmac_xor(x, pending, y, BLOCK_SIZE);
                 if(!dfc_crypto_aes_block_encrypt(&cipher, y, x)) goto cleanup;
                 pending_len = 0;
-                memset(pending, 0, sizeof(pending));
             }
             size_t take = BLOCK_SIZE - pending_len;
             if(take > remaining) take = remaining;
@@ -128,6 +129,7 @@ bool aes_cmac_segments_with_iv(
     if(total_len && pending_len == BLOCK_SIZE) {
         aes_cmac_xor(pending, subkey1, pending, BLOCK_SIZE);
     } else {
+        memset(pending + pending_len, 0, BLOCK_SIZE - pending_len);
         aes_cmac_padBlock(pending, pending_len);
         aes_cmac_xor(pending, subkey2, pending, BLOCK_SIZE);
     }
