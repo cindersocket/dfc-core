@@ -227,7 +227,8 @@ static MunitResult
     test_d40_change_key_rejects_nonzero_tail(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
-    static const size_t key_lengths[] = {8, 16, 24};
+    // D40 authentication is defined only for the DES/2K3DES key family.
+    static const size_t key_lengths[] = {8, 16};
     const uint8_t wire_aid[] = {0x03, 0x02, 0x01};
     const uint8_t select_app[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0x03, 0x02, 0x01, 0x00};
 
@@ -246,10 +247,7 @@ static MunitResult
                     DFC_DESFIRE_UID_LEN);
                 credential.uid_len = DFC_DESFIRE_UID_LEN;
                 DfcApplication* app = dfc_credential_create_application_desfire_order(
-                    &credential,
-                    wire_aid,
-                    0x0F,
-                    (key_len == 24 ? DFC_KEY_TYPE_3K3DES : DFC_KEY_TYPE_DES_2K3DES) | 2);
+                    &credential, wire_aid, 0x0F, DFC_KEY_TYPE_DES_2K3DES | 2);
                 munit_assert_not_null(app);
                 app->auth_command = DFC_CMD_AUTHENTICATE_LEGACY;
                 app->has_auth_commands = true;
@@ -279,26 +277,16 @@ static MunitResult
                 uint8_t zero_key[DFC_MAX_KEY_LEN] = {0};
                 uint8_t session_key[DFC_MAX_KEY_LEN];
                 size_t session_key_len = 0;
-                if(key_len == 24) {
-                    session->emulator->secure_messaging = dfc_secure_messaging_alloc(
-                        DFC_CMD_AUTHENTICATE_LEGACY, zero_key, key_len, NULL);
-                    munit_assert_not_null(session->emulator->secure_messaging);
-                    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_LEGACY;
-                    session->emulator->auth_key_no = 0;
-                    memcpy(session_key, zero_key, key_len);
-                    session_key_len = key_len;
-                } else {
-                    authenticate_legacy_key0(
-                        session,
-                        zero_key,
-                        key_len,
-                        response,
-                        sizeof(response),
-                        &response_len,
-                        session_key,
-                        &session_key_len,
-                        DFC_STATUS_OK);
-                }
+                authenticate_legacy_key0(
+                    session,
+                    zero_key,
+                    key_len,
+                    response,
+                    sizeof(response),
+                    &response_len,
+                    session_key,
+                    &session_key_len,
+                    DFC_STATUS_OK);
 
                 uint8_t new_key[DFC_MAX_KEY_LEN];
                 for(size_t i = 0; i < key_len; i++)
