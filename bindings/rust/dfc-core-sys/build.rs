@@ -54,7 +54,10 @@ fn main() {
         "profile",
     );
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    println!("cargo:rerun-if-changed={}", root.join("CMakeLists.txt").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("CMakeLists.txt").display()
+    );
     for directory in ["src", "ffi", "port"] {
         rerun_for_tree(&root.join(directory));
     }
@@ -63,7 +66,10 @@ fn main() {
     } else {
         "ffi/dfc_ffi.h"
     };
-    println!("cargo:rerun-if-changed={}", root.join(bridge_header).display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join(bridge_header).display()
+    );
 
     if bundled {
         let mut config = cmake::Config::new(&root);
