@@ -8,6 +8,7 @@ from . import _native
 from .credential import Credential
 from .errors import (
     BufferTooSmallError,
+    CardError,
     CredentialError,
     DfcError,
     DfcMemoryError,
@@ -77,6 +78,7 @@ __all__ = [
     "BuildRole",
     "Capabilities",
     "Card",
+    "CardError",
     "Command",
     "Credential",
     "CredentialError",

@@ -37,6 +37,34 @@ fn terminal_status_does_not_retransmit() {
     assert_eq!(reader.transport_mut().calls, 1);
 }
 
+struct RejectingTransport {
+    command_len: usize,
+}
+
+impl Transport for RejectingTransport {
+    type Error = &'static str;
+
+    fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.command_len = command.len();
+        Ok(vec![0x91, 0x1c])
+    }
+}
+
+#[test]
+fn card_status_survives_a_grown_command_buffer() {
+    let mut reader =
+        Reader::new(RejectingTransport { command_len: 0 }, Framing::Iso7816).expect("reader");
+    let command = Command {
+        instruction: 0x3d,
+        data: vec![0; 200],
+    };
+
+    let result = reader.exchange(&command, CommunicationMode::Plain, None);
+
+    assert!(matches!(result, Err(ReaderError::Card(0x1c))), "{result:?}");
+    assert!(reader.transport_mut().command_len > 64);
+}
+
 struct CorruptD40MacTransport {
     picc: VirtualPicc,
     calls: usize,

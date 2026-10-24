@@ -37,6 +37,12 @@ class ProtocolError(DfcError):
     pass
 
 
+class CardError(ProtocolError):
+    def __init__(self, status: int, card_status: int) -> None:
+        self.card_status = card_status
+        super().__init__(status, f"card returned status 0x{card_status:02X}")
+
+
 def exception_for_status(status: int) -> DfcError:
     return {
         -1: InvalidArgumentError,

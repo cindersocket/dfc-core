@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 from dfc_core import (
+    CardError,
     Command,
     Credential,
     InvalidArgumentError,
@@ -263,6 +264,24 @@ def test_reader_authenticate_reaches_the_native_begin_function() -> None:
 
             assert response.status == 0
             assert reader.state.auth_mode == 0x1A
+
+
+def test_reader_preserves_card_status_after_growing_command_buffer() -> None:
+    class RejectingTransport:
+        def __init__(self) -> None:
+            self.command = b""
+
+        def transceive(self, command: bytes) -> bytes:
+            self.command = command
+            return bytes((0x91, 0x1C))
+
+    transport = RejectingTransport()
+    with Reader(transport) as reader:
+        with pytest.raises(CardError) as caught:
+            reader.exchange(Command(0x3D, bytes(200)))
+
+    assert caught.value.card_status == 0x1C
+    assert len(transport.command) > 64
 
 
 @pytest.mark.parametrize(

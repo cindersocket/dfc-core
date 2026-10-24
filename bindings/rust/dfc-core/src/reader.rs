@@ -2,6 +2,8 @@ use crate::{Error, ensure_abi, output, status};
 use core::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 use dfc_core_sys as sys;
 
+const INITIAL_OUTPUT_CAPACITY: usize = 64;
+
 pub trait Transport {
     type Error;
     fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error>;
@@ -49,6 +51,7 @@ pub struct ReaderState(pub sys::DfcFfiReaderState);
 #[derive(Debug)]
 pub enum ReaderError<E> {
     Dfc(Error),
+    Card(u8),
     Transport(E),
 }
 
@@ -56,6 +59,7 @@ impl<E: core::fmt::Display> core::fmt::Display for ReaderError<E> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Dfc(error) => error.fmt(formatter),
+            Self::Card(status) => write!(formatter, "card returned status {status:#04x}"),
             Self::Transport(error) => write!(formatter, "transport failed: {error}"),
         }
     }
@@ -390,19 +394,33 @@ impl<T: Transport> Reader<T> {
     fn run(&mut self) -> Result<Response, ReaderError<T::Error>> {
         let mut incoming = Vec::new();
         loop {
-            let mut outgoing = vec![0; 1024];
-            let mut len = 0;
-            let result = unsafe {
-                sys::dfc_ffi_reader_step(
-                    self.exchange.as_ptr(),
-                    incoming.as_ptr(),
-                    incoming.len(),
-                    outgoing.as_mut_ptr(),
-                    outgoing.len(),
-                    &mut len,
-                )
+            let mut outgoing = vec![0; INITIAL_OUTPUT_CAPACITY];
+            let (result, len) = loop {
+                let mut len = 0;
+                let result = unsafe {
+                    sys::dfc_ffi_reader_step(
+                        self.exchange.as_ptr(),
+                        incoming.as_ptr(),
+                        incoming.len(),
+                        outgoing.as_mut_ptr(),
+                        outgoing.len(),
+                        &mut len,
+                    )
+                };
+                if result != sys::DFC_FFI_READER_BUFFER_TOO_SMALL as i32 {
+                    break (result, len);
+                }
+                let capacity = outgoing
+                    .len()
+                    .checked_mul(2)
+                    .ok_or(ReaderError::Dfc(Error::BufferTooSmall))?;
+                outgoing.resize(capacity, 0);
             };
             outgoing.truncate(len);
+            if result == sys::DFC_FFI_READER_CARD_ERROR as i32 {
+                let status = unsafe { sys::dfc_ffi_reader_result_status(self.exchange.as_ptr()) };
+                return Err(ReaderError::Card(status));
+            }
             if reader_step_status(result).map_err(ReaderError::Dfc)? == ReaderStepStatus::Complete {
                 let data = output(|out, cap, len| unsafe {
                     sys::dfc_ffi_reader_result_data(self.exchange.as_ptr(), out, cap, len)
@@ -447,7 +465,6 @@ mod tests {
         );
         for terminal in [
             sys::DFC_FFI_READER_INVALID,
-            sys::DFC_FFI_READER_BUFFER_TOO_SMALL,
             sys::DFC_FFI_READER_PROTOCOL_ERROR,
             sys::DFC_FFI_READER_INTEGRITY_ERROR,
             sys::DFC_FFI_READER_CARD_ERROR,
@@ -458,5 +475,6 @@ mod tests {
                 Err(Error::Native(terminal as i32))
             );
         }
+        assert_eq!(reader_step_status(-5), Err(Error::RandomSourceFailed));
     }
 }

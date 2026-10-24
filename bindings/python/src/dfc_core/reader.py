@@ -8,9 +8,13 @@ from dataclasses import dataclass
 from typing import Self
 
 from . import _native as N
+from .errors import CardError
 from .models import ReaderState, Response, Transport
 
 PENDING = 1
+BUFFER_TOO_SMALL = 3
+CARD_ERROR = 6
+INITIAL_OUTPUT_CAPACITY = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,11 +150,16 @@ class Reader:
             answer = b""
             while True:
                 _raw, pointer = N.byte_pointer(answer)
-                capacity, length = 1024, C.c_size_t()
+                capacity, length = INITIAL_OUTPUT_CAPACITY, C.c_size_t()
                 out = (C.c_uint8 * capacity)()
-                status = N.library().dfc_ffi_reader_step(
-                    self._exchange, pointer, len(answer), out, capacity, C.byref(length)
-                )
+                while True:
+                    status = N.library().dfc_ffi_reader_step(
+                        self._exchange, pointer, len(answer), out, capacity, C.byref(length)
+                    )
+                    if status != BUFFER_TOO_SMALL:
+                        break
+                    capacity *= 2
+                    out = (C.c_uint8 * capacity)()
                 if status == PENDING:
                     try:
                         self._in_transport_callback = True
@@ -164,6 +173,10 @@ class Reader:
                         raise
                     self._open()
                     continue
+                if status == CARD_ERROR:
+                    raise CardError(
+                        status, N.library().dfc_ffi_reader_result_status(self._exchange)
+                    )
                 N.raise_status(status)
                 data = N.variable_output(N.library().dfc_ffi_reader_result_data, self._exchange)
                 return Response(N.library().dfc_ffi_reader_result_status(self._exchange), data)

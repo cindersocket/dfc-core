@@ -15,8 +15,9 @@
 - Bound encrypted clear-header lengths before reader state changes and cover the
   full byte-sized input domain across authenticated session families (#116).
 - Validate binding integers before narrowing them to native field widths (#117).
-- Stop Rust reader exchanges on terminal native statuses and expose the stable
-  reader-status values to generated bindings (#136).
+- Stop Rust reader exchanges on terminal native statuses, preserve card status
+  in Python and Rust, retry capacity failures, and verify generated reader
+  statuses against the C header (#136).
 - Make every credential decoder leave an empty, securely wiped credential after
   any failure, and enforce decoder coverage with a registry check and fuzz
   invariant (#115).
