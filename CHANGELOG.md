@@ -35,8 +35,8 @@
   bytes, replay buffers, and secret scratch storage.
 - Make reader, native, ISO, ISO-DEP, EV1, and EV2 retries state-atomic across
   authentication, response-capacity, chaining, and transport failures.
-- Preserve the transaction identifier and command counter when EV2 NonFirst
-  authentication changes the active key (#118).
+- Preserve the transaction identifier and establish a fresh command counter
+  when EV2 NonFirst authentication changes the active key (#118).
 - Distinguish authenticated empty D40 responses from authentication failure,
   and reject missing, truncated, or incorrect response MACs (#119).
 - Report required JNI response lengths, wipe invalidated ISO-DEP responses,

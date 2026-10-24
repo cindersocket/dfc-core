@@ -3335,14 +3335,13 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
 
     uint8_t transaction[4];
     memcpy(transaction, link.session.ev2_transaction_identifier, sizeof(transaction));
-    uint16_t command_counter = link.session.ev2_command_counter;
-    munit_assert_uint16(command_counter, >, 2);
+    munit_assert_uint16(link.session.ev2_command_counter, >, 2);
     // Key 1 opens a session but the files name key 0, so the refusal retires
     // the session.
     munit_assert_int(authenticate_ev2(&link, false, 1, AES_KEY_1), ==, DfcReaderOk);
     munit_assert_memory_equal(
         sizeof(transaction), link.session.ev2_transaction_identifier, transaction);
-    munit_assert_uint16(link.session.ev2_command_counter, ==, command_counter);
+    munit_assert_uint16(link.session.ev2_command_counter, ==, 0);
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 16), ==, DfcCommandOk);
@@ -3355,12 +3354,34 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
     size_t wire_len = 0;
     munit_assert_int(
         dfc_reader_step(&ex, NULL, 0, wire, sizeof(wire), &wire_len), ==, DfcReaderPending);
-    const uint8_t expected_wire[] = {
-        0x90, 0xBD, 0x00, 0x00, 0x0F, 0x02, 0x00, 0x00, 0x00, 0x10, 0x00,
-        0x00, 0x5D, 0xDE, 0x2D, 0xB9, 0x89, 0xD7, 0x50, 0x59, 0x00,
+    const uint8_t expected_header[] = {
+        0x90,
+        0xBD,
+        0x00,
+        0x00,
+        0x0F,
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x10,
+        0x00,
+        0x00,
     };
-    munit_assert_size(wire_len, ==, sizeof(expected_wire));
-    munit_assert_memory_equal(sizeof(expected_wire), wire, expected_wire);
+    munit_assert_size(wire_len, ==, sizeof(expected_header) + DFC_WIRE_MAC_LENGTH + 1);
+    munit_assert_memory_equal(sizeof(expected_header), wire, expected_header);
+    uint8_t expected_mac[DFC_WIRE_MAC_LENGTH];
+    munit_assert_true(dfc_ev2_mac(
+        link.session.ev2_mac_key,
+        DFC_CMD_READ_DATA,
+        0,
+        link.session.ev2_transaction_identifier,
+        wire + 5,
+        7,
+        NULL,
+        0,
+        expected_mac));
+    munit_assert_memory_equal(sizeof(expected_mac), wire + sizeof(expected_header), expected_mac);
 
     munit_assert_int(link_send(&link, &command, DFC_COMM_MAC, &ex), ==, DfcReaderCardError);
     munit_assert_uint8(dfc_reader_result_status(&ex), ==, DFC_STATUS_AUTHENTICATION_ERR);

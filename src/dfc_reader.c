@@ -881,7 +881,6 @@ static DfcReaderStatus step_authenticate_ev2(
     }
 
     DfcReaderSession* session = ex->session;
-    uint16_t command_counter = ex->auth_first ? 0 : session->ev2_command_counter;
     uint8_t transaction[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
     uint8_t card_caps[DFC_EV2_CAPABILITY_LENGTH];
     uint8_t reader_caps[DFC_EV2_CAPABILITY_LENGTH];
@@ -920,7 +919,7 @@ static DfcReaderStatus step_authenticate_ev2(
     session->auth_mode = DFC_READER_AUTH_EV2;
     session->key_no = ex->auth_key_no;
     memcpy(session->ev2_transaction_identifier, transaction, sizeof(transaction));
-    session->ev2_command_counter = command_counter;
+    session->ev2_command_counter = 0;
     memcpy(session->ev2_encryption_key, encryption_key, sizeof(encryption_key));
     memcpy(session->ev2_mac_key, mac_key, sizeof(mac_key));
     memcpy(session->ev2_card_capabilities, card_caps, sizeof(card_caps));
