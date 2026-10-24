@@ -1124,7 +1124,13 @@ static MunitResult
     emulator->selected_app_index = 0;
     before = credential;
     uint8_t command[1 + 5 + DFC_AES_KEY_LENGTH + 1] = {
-        DFC_CMD_CREATE_TRANSACTION_MAC_FILE, file_number};
+        DFC_CMD_CREATE_TRANSACTION_MAC_FILE,
+        file_number,
+        DFC_COMM_PLAIN,
+        0xEE,
+        0xEF,
+        DFC_TRANSACTION_MAC_KEY_TYPE_AES,
+    };
     uint8_t response[64];
     for(size_t attempt = 0; attempt < 2; attempt++) {
         size_t response_len =
