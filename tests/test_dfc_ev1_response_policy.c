@@ -674,7 +674,7 @@ static void expect_plain_status(
     uint8_t response[32];
     size_t response_len = 0;
     exchange(session, command, command_len, response, sizeof(response), &response_len);
-    munit_assert_size(response_len, >=, 2);
+    munit_assert_size(response_len, ==, 2);
     munit_assert_uint8(response[response_len - 2], ==, 0x91);
     munit_assert_uint8(response[response_len - 1], ==, status);
 }
