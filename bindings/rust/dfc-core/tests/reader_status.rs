@@ -78,7 +78,12 @@ impl Transport for CorruptD40MacTransport {
     fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.calls += 1;
         let mut response = self.picc.exchange(command)?;
-        let is_read = command.first() == Some(&0xbd) || command.get(1) == Some(&0xbd);
+        let instruction = command
+            .first()
+            .copied()
+            .filter(|byte| *byte != 0x90)
+            .or_else(|| command.get(1).copied());
+        let is_read = matches!(instruction, Some(0xbd | 0xbb | 0xab));
         if is_read {
             if self.forge_empty {
                 response = vec![0, 0, 0, 0, 0x91, 0];
@@ -183,4 +188,47 @@ fn d40_empty_mac_forge_is_terminal_and_retires_session() {
     );
     assert_eq!(reader.transport_mut().calls, calls + 1);
     assert_eq!(reader.state().expect("retired state").0.auth_mode, 0);
+}
+
+fn assert_d40_read_all_records_empty_mac_is_terminal(instruction: u8) {
+    let mut reader = d40_reader(true);
+    reader
+        .exchange(
+            &Command {
+                instruction: 0xc1,
+                data: vec![2, 1, 0xee, 0xee, 4, 0, 0, 2, 0, 0],
+            },
+            CommunicationMode::Plain,
+            None,
+        )
+        .expect("create MAC-mode record file");
+    let calls = reader.transport_mut().calls;
+
+    let result = reader.exchange(
+        &Command {
+            instruction,
+            data: vec![2, 0, 0, 0, 0, 0, 0],
+        },
+        CommunicationMode::Mac,
+        None,
+    );
+
+    assert_eq!(reader.transport_mut().forged, 1);
+    assert!(
+        matches!(
+            result,
+            Err(ReaderError::Dfc(Error::Native(status)))
+                if status == raw::DFC_FFI_READER_PROTOCOL_ERROR as i32
+        ),
+        "instruction {instruction:#04x}: {result:?}"
+    );
+    assert_eq!(reader.transport_mut().calls, calls + 1);
+    assert_eq!(reader.state().expect("retired state").0.auth_mode, 0);
+}
+
+#[test]
+fn d40_read_all_records_empty_mac_forge_is_terminal_and_retires_session() {
+    for instruction in [0xbb, 0xab] {
+        assert_d40_read_all_records_empty_mac_is_terminal(instruction);
+    }
 }
