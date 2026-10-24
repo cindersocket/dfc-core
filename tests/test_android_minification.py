@@ -28,7 +28,12 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
         self.assertNotIn("isDebuggable = true", sample_build)
         self.assertIn('testBuildType = "release"', sample_build)
         self.assertIn('DfcCredentialCodec.parse("not a credential")', smoke_test)
-        self.assertIn(":sample:connectedReleaseAndroidTest", workflow)
+        self.assertIn(
+            "script: bindings/android/gradlew --no-daemon -p bindings/android "
+            ":sample:connectedReleaseAndroidTest :dfc:connectedMismatchAndroidTest",
+            workflow,
+        )
+        self.assertNotIn("cd bindings/android\n", workflow)
 
 
 if __name__ == "__main__":

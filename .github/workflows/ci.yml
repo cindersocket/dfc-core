@@ -384,10 +384,7 @@ jobs:
           api-level: 35
           arch: x86_64
           disable-animations: true
-          script: |
-            cd bindings/android
-            ./gradlew --no-daemon :sample:connectedReleaseAndroidTest \
-              :dfc:connectedMismatchAndroidTest
+          script: bindings/android/gradlew --no-daemon -p bindings/android :sample:connectedReleaseAndroidTest :dfc:connectedMismatchAndroidTest
       - uses: actions/upload-artifact@v4
         with:
           name: dfc-android
