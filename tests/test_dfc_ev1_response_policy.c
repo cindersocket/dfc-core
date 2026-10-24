@@ -675,8 +675,8 @@ static void expect_plain_status(
     size_t response_len = 0;
     exchange(session, command, command_len, response, sizeof(response), &response_len);
     munit_assert_size(response_len, ==, 2);
-    munit_assert_uint8(response[response_len - 2], ==, 0x91);
-    munit_assert_uint8(response[response_len - 1], ==, status);
+    munit_assert_uint8(response[0], ==, 0x91);
+    munit_assert_uint8(response[1], ==, status);
 }
 
 static MunitResult test_session_retirement_precedes_response_policy(
