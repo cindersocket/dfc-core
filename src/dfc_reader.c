@@ -270,14 +270,26 @@ static DfcReaderStatus emit(
     uint8_t* out,
     size_t cap,
     size_t* out_len) {
-    DfcCommand command;
-    if(dfc_command_encode_raw(&command, ins, data, len) != DfcCommandOk) {
+    if(!out || !out_len || (!data && len) || len > DFC_COMMAND_MAX_DATA)
         return DfcReaderBufferTooSmall;
+    size_t needed = ex->framing == DfcReaderFramingIso7816 ?
+                        (len ? len + DFC_COMMAND_APDU_OVERHEAD : 5) :
+                        len + 1;
+    if(needed > cap) return DfcReaderBufferTooSmall;
+    if(ex->framing == DfcReaderFramingIso7816) {
+        if(len) memmove(out + 5, data, len);
+        out[0] = DFC_ISO7816_CLA_WRAPPER;
+        out[1] = ins;
+        out[2] = 0;
+        out[3] = 0;
+        out[4] = (uint8_t)len;
+        if(len) out[5 + len] = 0;
+    } else {
+        if(len) memmove(out + 1, data, len);
+        out[0] = ins;
     }
-    DfcCommandStatus st = ex->framing == DfcReaderFramingIso7816 ?
-                              dfc_command_to_apdu(&command, out, cap, out_len) :
-                              dfc_command_to_frame(&command, out, cap, out_len);
-    return st == DfcCommandOk ? DfcReaderPending : DfcReaderBufferTooSmall;
+    *out_len = needed;
+    return DfcReaderPending;
 }
 
 static size_t emit_required_capacity(const DfcReaderExchange* exchange, size_t data_len) {
