@@ -69,6 +69,7 @@
 - Standardize replay-random exhaustion across the hosted bindings.
 - Make random providers fallible in ABI 4 and fail random-dependent operations
   atomically, with consistent error propagation through every binding.
+- Propagate every native virtual-PICC status through the .NET binding (#139).
 - Verify SDM random-padding failures leave counters, cached renders, and card
   sessions unchanged across native and ISO reads (#134).
 - Make credential factory and blank initialization, and virtual-card

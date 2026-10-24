@@ -74,13 +74,20 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     );
 
     private readonly PiccHandle handle;
+    private readonly PiccOperations operations;
     private readonly TimeProvider? clock;
     private long lastTimestamp;
     private readonly Lock gate = new();
 
-    private DfcVirtualPicc(PiccHandle handle, TimeProvider? clock, long lastTimestamp)
+    private DfcVirtualPicc(
+        PiccHandle handle,
+        PiccOperations operations,
+        TimeProvider? clock,
+        long lastTimestamp
+    )
     {
         this.handle = handle;
+        this.operations = operations;
         this.clock = clock;
         this.lastTimestamp = lastTimestamp;
     }
@@ -94,20 +101,26 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         DfcCredential credential,
         IDfcRandomSource? random = null,
         TimeProvider? clock = null
-    ) => CreateCore(credential, random, clock, null);
+    ) => CreateCore(credential, random, clock, null, null);
 
     internal static Result<DfcVirtualPicc, DfcError> CreateForTesting(
         DfcCredential credential,
         IDfcRandomSource? random,
         TimeProvider? clock,
         CreationHooks hooks
-    ) => CreateCore(credential, random, clock, hooks);
+    ) => CreateCore(credential, random, clock, hooks, null);
+
+    internal static Result<DfcVirtualPicc, DfcError> CreateWithOperationsForTesting(
+        DfcCredential credential,
+        PiccOperations operations
+    ) => CreateCore(credential, null, null, null, operations);
 
     private static Result<DfcVirtualPicc, DfcError> CreateCore(
         DfcCredential credential,
         IDfcRandomSource? random,
         TimeProvider? clock,
-        CreationHooks? hooks
+        CreationHooks? hooks,
+        PiccOperations? operations
     )
     {
         var written = CredentialMarshaller.Write(credential);
@@ -165,7 +178,12 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
             pendingHandle = new PiccHandle(picc, root);
             picc = 0;
             root = default;
-            var card = new DfcVirtualPicc(pendingHandle, clock, initialTimestamp);
+            var card = new DfcVirtualPicc(
+                pendingHandle,
+                operations ?? PiccOperations.Default,
+                clock,
+                initialTimestamp
+            );
             pendingHandle = null;
             return card;
         }
@@ -254,7 +272,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         lock (gate)
         {
             using var lease = new PiccHandleLease(handle);
-            _ = Native.dfc_ffi_picc_field_off(lease.Raw);
+            operations.FieldOff(lease.Raw);
         }
     }
 
@@ -264,7 +282,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         lock (gate)
         {
             using var lease = new PiccHandleLease(handle);
-            _ = Native.dfc_ffi_picc_reset_protocol(lease.Raw);
+            operations.ResetProtocol(lease.Raw);
         }
     }
 
@@ -278,7 +296,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         lock (gate)
         {
             using var lease = new PiccHandleLease(handle);
-            _ = Native.dfc_ffi_picc_advance_time(lease.Raw, milliseconds);
+            operations.AdvanceTime(lease.Raw, milliseconds);
         }
     }
 
@@ -289,7 +307,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         lock (gate)
         {
             using var lease = new PiccHandleLease(handle);
-            _ = Native.dfc_ffi_picc_snapshot(lease.Raw, &s);
+            s = operations.Snapshot(lease.Raw);
         }
 
         DfcEv2SessionSnapshot? ev2 = s.Ev2Active != 0
@@ -336,7 +354,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
         lock (gate)
         {
             using var lease = new PiccHandleLease(handle);
-            _ = Native.dfc_ffi_picc_mark_persisted(lease.Raw);
+            operations.MarkPersisted(lease.Raw);
         }
     }
 
@@ -404,12 +422,12 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
 
         var now = clock.GetTimestamp();
         var elapsed = clock.GetElapsedTime(lastTimestamp, now);
-        lastTimestamp = now;
         if (elapsed > TimeSpan.Zero)
         {
             // Once the native transaction timer expires, additional elapsed time has no effect.
-            _ = Native.dfc_ffi_picc_advance_time(raw, NativeMilliseconds(elapsed, saturate: true));
+            operations.AdvanceTime(raw, NativeMilliseconds(elapsed, saturate: true));
         }
+        lastTimestamp = now;
     }
 
     private static uint NativeMilliseconds(TimeSpan elapsed, bool saturate)

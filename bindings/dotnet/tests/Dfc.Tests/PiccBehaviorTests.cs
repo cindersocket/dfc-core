@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dfc.Credentials;
 using Dfc.Emulation;
+using Dfc.Interop;
 using Dfc.Reader;
 using NUnit.Framework;
 
@@ -262,6 +263,113 @@ public sealed class PiccBehaviorTests
             Assert.That(after.VirtualCardSelected, Is.EqualTo(before.VirtualCardSelected));
             Assert.That(after.ProximityVerified, Is.EqualTo(before.ProximityVerified));
         });
+    }
+
+    [TestCase(PiccStatusOperation.FieldOff)]
+    [TestCase(PiccStatusOperation.ResetProtocol)]
+    [TestCase(PiccStatusOperation.AdvanceTime)]
+    [TestCase(PiccStatusOperation.Snapshot)]
+    [TestCase(PiccStatusOperation.MarkPersisted)]
+    public unsafe void StateOperations_PropagateNativeFailuresAtomicallyAndRemainReusable(
+        PiccStatusOperation operation
+    )
+    {
+        var fault = new PiccStatusFault(operation, Native.InvalidArgument);
+        var operations = new PiccOperations(
+            raw => fault.Take(PiccStatusOperation.FieldOff) ?? Native.dfc_ffi_picc_field_off(raw),
+            raw => fault.Take(PiccStatusOperation.ResetProtocol) ?? Native.dfc_ffi_picc_reset_protocol(raw),
+            (raw, elapsed) =>
+                fault.Take(PiccStatusOperation.AdvanceTime)
+                ?? Native.dfc_ffi_picc_advance_time(raw, elapsed),
+            (raw, snapshot) =>
+                fault.Take(PiccStatusOperation.Snapshot)
+                ?? Native.dfc_ffi_picc_snapshot(raw, snapshot),
+            raw => fault.Take(PiccStatusOperation.MarkPersisted) ?? Native.dfc_ffi_picc_mark_persisted(raw)
+        );
+        using var picc = Fixtures.Ok(
+            DfcVirtualPicc.CreateWithOperationsForTesting(Fixtures.Credential(), operations)
+        );
+        Fixtures.Ok(picc.Activate());
+        var before = picc.Snapshot();
+        fault.Arm();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => InvokeStatusOperation(picc, operation));
+        var after = picc.Snapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Does.Contain(operation.ToString()));
+            Assert.That(exception.Message, Does.Contain("status -1"));
+            AssertSnapshot(after, before);
+            Assert.DoesNotThrow(() => InvokeStatusOperation(picc, operation));
+            Assert.DoesNotThrow(() => _ = picc.Snapshot());
+        });
+    }
+
+    private static void InvokeStatusOperation(DfcVirtualPicc picc, PiccStatusOperation operation)
+    {
+        switch (operation)
+        {
+            case PiccStatusOperation.FieldOff:
+                picc.FieldOff();
+                break;
+            case PiccStatusOperation.ResetProtocol:
+                picc.ResetProtocol();
+                break;
+            case PiccStatusOperation.AdvanceTime:
+                picc.AdvanceTime(TimeSpan.FromMilliseconds(1));
+                break;
+            case PiccStatusOperation.Snapshot:
+                _ = picc.Snapshot();
+                break;
+            case PiccStatusOperation.MarkPersisted:
+                picc.MarkPersisted();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation), operation, null);
+        }
+    }
+
+    private static void AssertSnapshot(DfcPiccSnapshot actual, DfcPiccSnapshot expected)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(actual.Selection, Is.EqualTo(expected.Selection));
+            Assert.That(actual.SelectedAid, Is.EqualTo(expected.SelectedAid));
+            Assert.That(actual.Dirty, Is.EqualTo(expected.Dirty));
+            Assert.That(actual.Authentication, Is.EqualTo(expected.Authentication));
+            Assert.That(actual.AuthenticatedKeyNo, Is.EqualTo(expected.AuthenticatedKeyNo));
+            Assert.That(actual.Ev2Session, Is.EqualTo(expected.Ev2Session));
+            Assert.That(actual.VirtualCardSelected, Is.EqualTo(expected.VirtualCardSelected));
+            Assert.That(actual.ProximityVerified, Is.EqualTo(expected.ProximityVerified));
+        });
+    }
+
+    public enum PiccStatusOperation
+    {
+        FieldOff,
+        ResetProtocol,
+        AdvanceTime,
+        Snapshot,
+        MarkPersisted,
+    }
+
+    private sealed class PiccStatusFault(PiccStatusOperation target, int status)
+    {
+        private bool pending;
+
+        public void Arm() => pending = true;
+
+        public int? Take(PiccStatusOperation operation)
+        {
+            if (!pending || operation != target)
+            {
+                return null;
+            }
+
+            pending = false;
+            return status;
+        }
     }
 
     [Test]
