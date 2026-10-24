@@ -15,6 +15,7 @@ internal static unsafe partial class Native
     internal const int OutOfMemory = -3;
     internal const int Unsupported = -4;
     internal const int RandomFailed = -5;
+    internal const int PiccBufferTooSmall = 3;
     internal const int OwnerPicc = -1;
 
     private static readonly Lazy<bool> Checked = new(CheckAbi);
@@ -28,7 +29,7 @@ internal static unsafe partial class Native
 
     private static bool CheckAbi()
     {
-        uint version = dfc_ffi_abi_version();
+        var version = dfc_ffi_abi_version();
         if (version != AbiVersion)
         {
             throw new InvalidOperationException(
@@ -167,6 +168,9 @@ internal static unsafe partial class Native
 
     [LibraryImport(Library)]
     internal static partial int dfc_ffi_picc_activate(nint picc, NativeActivation* output);
+
+    [LibraryImport(Library)]
+    internal static partial nuint dfc_ffi_picc_response_capacity();
 
     [LibraryImport(Library)]
     internal static partial int dfc_ffi_picc_exchange(nint picc, byte* command, nuint commandLength, byte* response, nuint responseCapacity, nuint* responseLength);

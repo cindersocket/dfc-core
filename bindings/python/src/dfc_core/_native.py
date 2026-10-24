@@ -17,6 +17,7 @@ OK, INVALID_ARGUMENT, BUFFER_TOO_SMALL, OUT_OF_MEMORY, UNSUPPORTED, RANDOM_FAILE
     -5,
 )
 OWNER_PICC = -1
+PICC_BUFFER_TOO_SMALL = 3
 MESSAGE_MAX = 96
 Handle = C.c_void_p
 P8 = C.POINTER(C.c_uint8)
@@ -450,6 +451,8 @@ def _declare(lib: C.CDLL) -> None:
             C.c_size_t,
             C.POINTER(C.c_size_t),
         ]
+    lib.dfc_ffi_picc_response_capacity.argtypes = []
+    lib.dfc_ffi_picc_response_capacity.restype = C.c_size_t
     lib.dfc_ffi_picc_export.argtypes = [Handle, C.POINTER(Handle)]
     lib.dfc_ffi_picc_advance_time.argtypes = [Handle, C.c_uint32]
     lib.dfc_ffi_reader_session_new.argtypes = [C.POINTER(Handle)]

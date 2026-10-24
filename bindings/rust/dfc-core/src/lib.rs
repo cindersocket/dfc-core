@@ -148,6 +148,11 @@ fn status(value: i32) -> Result<(), Error> {
 }
 
 #[cfg(not(feature = "role-target"))]
+fn picc_retry_capacity(initial: usize, reported: usize) -> Option<usize> {
+    (reported > initial && reported <= isize::MAX as usize).then_some(reported)
+}
+
+#[cfg(not(feature = "role-target"))]
 fn ensure_abi() -> Result<(), Error> {
     match ABI_STATE.load(Ordering::Acquire) {
         1 => return Ok(()),
@@ -356,14 +361,15 @@ impl VirtualPicc {
     }
 
     fn exchange_inner(&mut self, input: &[u8], frame: bool) -> Result<Vec<u8>, Error> {
-        let mut response = vec![0; 8192];
+        const INITIAL_RESPONSE_CAPACITY: usize = 256;
+        let mut response = vec![0; INITIAL_RESPONSE_CAPACITY];
         let mut len = 0;
         let call = if frame {
             sys::dfc_ffi_picc_frame_exchange
         } else {
             sys::dfc_ffi_picc_exchange
         };
-        let result = status(unsafe {
+        let mut result = unsafe {
             call(
                 self.raw.as_ptr(),
                 input.as_ptr(),
@@ -372,8 +378,32 @@ impl VirtualPicc {
                 response.len(),
                 &mut len,
             )
-        });
-        result?;
+        };
+        if result == sys::DFC_FFI_PICC_BUFFER_TOO_SMALL as i32 {
+            let capacity = unsafe { sys::dfc_ffi_picc_response_capacity() };
+            let Some(capacity) = picc_retry_capacity(response.len(), capacity) else {
+                return Err(Error::Native(result));
+            };
+            response
+                .try_reserve_exact(capacity - response.len())
+                .map_err(|_| Error::OutOfMemory)?;
+            response.resize(capacity, 0);
+            len = 0;
+            result = unsafe {
+                call(
+                    self.raw.as_ptr(),
+                    input.as_ptr(),
+                    input.len(),
+                    response.as_mut_ptr(),
+                    response.len(),
+                    &mut len,
+                )
+            };
+        }
+        status(result)?;
+        if len > response.len() {
+            return Err(Error::InvalidArgument);
+        }
         response.truncate(len);
         Ok(response)
     }
@@ -416,6 +446,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn picc_retry_capacity_is_larger_and_representable() {
+        assert_eq!(picc_retry_capacity(256, 257), Some(257));
+        assert_eq!(picc_retry_capacity(256, 8193), Some(8193));
+        assert_eq!(picc_retry_capacity(256, 0), None);
+        assert_eq!(picc_retry_capacity(256, 256), None);
+        assert_eq!(picc_retry_capacity(256, usize::MAX), None);
+    }
+
+    #[test]
     fn native_layout_and_capabilities_are_compatible() {
         let capabilities = Capabilities::get().expect("compatible native ABI");
         assert_eq!(capabilities.0.abi_version, sys::DFC_FFI_ABI_VERSION);
@@ -447,8 +486,8 @@ mod tests {
     #[test]
     fn random_failure_is_reported_by_each_operation() {
         use std::sync::{
-            Arc,
             atomic::{AtomicUsize, Ordering},
+            Arc,
         };
 
         let credential = Credential::decode(include_bytes!(

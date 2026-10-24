@@ -509,6 +509,12 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccExchange(
         wrapper, input_bytes, input_len, frame, response, response_capacity, &response_len);
     if(status == DFC_FFI_PICC_BUFFER_TOO_SMALL) {
         response_capacity = dfc_ffi_picc_response_capacity();
+        if(response_capacity <= sizeof(initial_response) || response_capacity > INT_MAX) {
+            secure_free(input_bytes, input_len);
+            dfc_ffi_secure_zero(initial_response, sizeof(initial_response));
+            throw_dfc(env, status, 0, 0, "invalid virtual PICC response capacity");
+            return NULL;
+        }
         response = malloc(response_capacity);
         if(response == NULL) {
             secure_free(input_bytes, input_len);
@@ -528,6 +534,15 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccExchange(
             secure_free(response, response_capacity);
         }
         throw_dfc(env, status, 0, 0, "virtual PICC exchange failed");
+        return NULL;
+    }
+    if(response_len > response_capacity) {
+        if(response == initial_response) {
+            dfc_ffi_secure_zero(initial_response, sizeof(initial_response));
+        } else {
+            secure_free(response, response_capacity);
+        }
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "invalid virtual PICC response length");
         return NULL;
     }
     jbyteArray result = make_array(env, response, response_len);

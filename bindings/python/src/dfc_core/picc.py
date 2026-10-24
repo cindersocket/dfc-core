@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes as C
+import sys
 import threading
 import weakref
 from collections.abc import Callable, Iterator
@@ -11,6 +12,13 @@ from . import _native as N
 from .credential import Credential
 from .errors import RandomSourceError
 from .models import Activation, Snapshot
+
+_INITIAL_RESPONSE_CAPACITY = 256
+
+
+def _retry_capacity(reported: int) -> int | None:
+    """Accept one native capacity only when it can grow the initial buffer safely."""
+    return reported if _INITIAL_RESPONSE_CAPACITY < reported <= sys.maxsize else None
 
 
 class VirtualPicc:
@@ -127,13 +135,30 @@ class VirtualPicc:
     def _exchange(self, name: str, content: bytes) -> bytes:
         with self._lock, self._lease() as handle:
             _raw, pointer = N.byte_pointer(content)
-            output = (C.c_uint8 * 4096)()
+            initial_capacity = _INITIAL_RESPONSE_CAPACITY
+            output = (C.c_uint8 * initial_capacity)()
             length = C.c_size_t()
-            status = getattr(N.library(), f"dfc_ffi_picc_{name}")(
-                handle, pointer, len(content), output, len(output), C.byref(length)
-            )
+            library = N.library()
+            call = getattr(library, f"dfc_ffi_picc_{name}")
+            status = call(handle, pointer, len(content), output, len(output), C.byref(length))
             self._check_callback()
+            if status == N.PICC_BUFFER_TOO_SMALL:
+                capacity = _retry_capacity(library.dfc_ffi_picc_response_capacity())
+                # A retry is useful only when the native contract reports a larger,
+                # representable buffer. One retry keeps stale libraries bounded.
+                if capacity is None:
+                    N.raise_status(status)
+                    raise AssertionError("buffer-too-small status unexpectedly accepted")
+                try:
+                    output = (C.c_uint8 * capacity)()
+                except (MemoryError, OverflowError):
+                    N.raise_status(N.OUT_OF_MEMORY)
+                length.value = 0
+                status = call(handle, pointer, len(content), output, len(output), C.byref(length))
+                self._check_callback()
             N.raise_status(status)
+            if length.value > len(output):
+                N.raise_status(N.INVALID_ARGUMENT)
             return bytes(output[: length.value])
 
     def exchange(self, command: bytes) -> bytes:

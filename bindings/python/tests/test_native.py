@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes as C
+import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -19,6 +20,18 @@ from dfc_core import (
     _native,
     capabilities,
 )
+from dfc_core.picc import _retry_capacity
+
+
+@pytest.mark.parametrize("reported", [0, 255, 256, sys.maxsize + 1])
+def test_picc_retry_capacity_rejects_stale_or_unrepresentable_values(reported: int) -> None:
+    assert _retry_capacity(reported) is None
+
+
+def test_picc_retry_capacity_accepts_raised_native_capacity() -> None:
+    assert _retry_capacity(8193) == 8193
+
+
 from dfc_core import reader as reader_module
 
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"

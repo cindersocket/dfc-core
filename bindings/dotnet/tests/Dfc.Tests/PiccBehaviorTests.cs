@@ -54,7 +54,10 @@ public sealed class PiccBehaviorTests
 
     private sealed class ThrowingTimeProvider : TimeProvider
     {
-        public override long GetTimestamp() => throw new InvalidOperationException("injected clock failure");
+        public override long GetTimestamp()
+        {
+            throw new InvalidOperationException("injected clock failure");
+        }
     }
 
     [Test]
@@ -90,7 +93,10 @@ public sealed class PiccBehaviorTests
         delegate* unmanaged<nint, byte*, nuint, int> random,
         nint context,
         nint* output
-    ) => throw new EntryPointNotFoundException("injected missing native entry point");
+    )
+    {
+        throw new EntryPointNotFoundException("injected missing native entry point");
+    }
 
     [Test]
     public void Create_ReleasesNativeCardAndRandomSourceWhenManagedWrappingThrows()
@@ -131,8 +137,10 @@ public sealed class PiccBehaviorTests
         return weak;
     }
 
-    private static void ThrowingManagedWrapper(nint picc) =>
+    private static void ThrowingManagedWrapper(nint picc)
+    {
         throw new InvalidOperationException("injected managed wrapping failure");
+    }
 
     private static unsafe int SuccessfulPiccCreate(
         nint credential,
@@ -210,8 +218,8 @@ public sealed class PiccBehaviorTests
         (string Name, Action Call)[] calls =
         [
             (nameof(DfcVirtualPicc.Activate), () => _ = picc.Activate()),
-            (nameof(DfcVirtualPicc.Exchange), () => _ = picc.Exchange(ReadOnlySpan<byte>.Empty)),
-            (nameof(DfcVirtualPicc.ExchangeFrame), () => _ = picc.ExchangeFrame(ReadOnlySpan<byte>.Empty)),
+            (nameof(DfcVirtualPicc.Exchange), () => _ = picc.Exchange([])),
+            (nameof(DfcVirtualPicc.ExchangeFrame), () => _ = picc.ExchangeFrame([])),
             (
                 nameof(DfcVirtualPicc.TransmitAsync),
                 () =>
@@ -306,6 +314,159 @@ public sealed class PiccBehaviorTests
         });
     }
 
+    [Test]
+    public unsafe void Exchange_RetriesOnceWithNativeResponseCapacity()
+    {
+        var calls = 0;
+        var operations = new PiccOperations(
+            Native.dfc_ffi_picc_field_off,
+            Native.dfc_ffi_picc_reset_protocol,
+            Native.dfc_ffi_picc_advance_time,
+            Native.dfc_ffi_picc_snapshot,
+            Native.dfc_ffi_picc_mark_persisted,
+            exchange: (_, _, _, output, capacity, length) =>
+            {
+                calls++;
+                if (calls == 1)
+                {
+                    Assert.That(capacity, Is.EqualTo((nuint)256));
+                    return Native.PiccBufferTooSmall;
+                }
+                Assert.That(capacity, Is.EqualTo((nuint)513));
+                output[0] = 0x91;
+                output[1] = 0x00;
+                *length = 2;
+                return 0;
+            },
+            responseCapacity: () => 513
+        );
+        using var picc = Fixtures.Ok(
+            DfcVirtualPicc.CreateWithOperationsForTesting(Fixtures.Credential(), operations)
+        );
+
+        var result = Fixtures.Ok(picc.Exchange([0x60]));
+
+        Assert.That(result, Is.EqualTo(new byte[] { 0x91, 0x00 }));
+        Assert.That(calls, Is.EqualTo(2));
+    }
+
+    [TestCase(256, 1)]
+    [TestCase(257, 2)]
+    public unsafe void Exchange_HandlesExactFitAndOneByteShort(int responseLength, int expectedCalls)
+    {
+        var calls = 0;
+        var operations = new PiccOperations(
+            Native.dfc_ffi_picc_field_off,
+            Native.dfc_ffi_picc_reset_protocol,
+            Native.dfc_ffi_picc_advance_time,
+            Native.dfc_ffi_picc_snapshot,
+            Native.dfc_ffi_picc_mark_persisted,
+            exchange: (_, _, _, output, capacity, length) =>
+            {
+                calls++;
+                if (capacity < (nuint)responseLength)
+                {
+                    return Native.PiccBufferTooSmall;
+                }
+                new Span<byte>(output, responseLength).Fill(0xA5);
+                *length = (nuint)responseLength;
+                return 0;
+            },
+            responseCapacity: () => (nuint)responseLength
+        );
+        using var picc = Fixtures.Ok(
+            DfcVirtualPicc.CreateWithOperationsForTesting(Fixtures.Credential(), operations)
+        );
+
+        var response = Fixtures.Ok(picc.Exchange([0x60]));
+
+        Assert.That(response, Has.Length.EqualTo(responseLength));
+        Assert.That(response, Is.All.EqualTo(0xA5));
+        Assert.That(calls, Is.EqualTo(expectedCalls));
+    }
+
+    [TestCase(0)]
+    [TestCase(256)]
+    public unsafe void Exchange_RejectsNonGrowingCapacityWithoutRetry(int reportedCapacity)
+    {
+        var calls = 0;
+        var operations = new PiccOperations(
+            Native.dfc_ffi_picc_field_off,
+            Native.dfc_ffi_picc_reset_protocol,
+            Native.dfc_ffi_picc_advance_time,
+            Native.dfc_ffi_picc_snapshot,
+            Native.dfc_ffi_picc_mark_persisted,
+            exchange: (_, _, _, _, _, _) =>
+            {
+                calls++;
+                return Native.PiccBufferTooSmall;
+            },
+            responseCapacity: () => (nuint)reportedCapacity
+        );
+        using var picc = Fixtures.Ok(
+            DfcVirtualPicc.CreateWithOperationsForTesting(Fixtures.Credential(), operations)
+        );
+
+        var result = picc.Exchange([0x60]);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(calls, Is.EqualTo(1));
+    }
+
+    [Test]
+    public unsafe void Exchange_RejectsCapacityThatManagedArraysCannotRepresent()
+    {
+        var calls = 0;
+        var operations = new PiccOperations(
+            Native.dfc_ffi_picc_field_off,
+            Native.dfc_ffi_picc_reset_protocol,
+            Native.dfc_ffi_picc_advance_time,
+            Native.dfc_ffi_picc_snapshot,
+            Native.dfc_ffi_picc_mark_persisted,
+            exchange: (_, _, _, _, _, _) =>
+            {
+                calls++;
+                return Native.PiccBufferTooSmall;
+            },
+            responseCapacity: () => (nuint)int.MaxValue + 1
+        );
+        using var picc = Fixtures.Ok(
+            DfcVirtualPicc.CreateWithOperationsForTesting(Fixtures.Credential(), operations)
+        );
+
+        var result = picc.Exchange([0x60]);
+
+        Assert.That(result.IsFailure, Is.True);
+        Assert.That(calls, Is.EqualTo(1));
+    }
+
+    [Test]
+    public unsafe void Exchange_StopsAfterOneCapacityRetry()
+    {
+        var calls = 0;
+        var operations = new PiccOperations(
+            Native.dfc_ffi_picc_field_off,
+            Native.dfc_ffi_picc_reset_protocol,
+            Native.dfc_ffi_picc_advance_time,
+            Native.dfc_ffi_picc_snapshot,
+            Native.dfc_ffi_picc_mark_persisted,
+            exchange: (_, _, _, _, _, _) =>
+            {
+                calls++;
+                return Native.PiccBufferTooSmall;
+            },
+            responseCapacity: () => 513
+        );
+        using var picc = Fixtures.Ok(
+            DfcVirtualPicc.CreateWithOperationsForTesting(Fixtures.Credential(), operations)
+        );
+
+        var failure = picc.Exchange([0x60]);
+
+        Assert.That(failure.IsFailure, Is.True);
+        Assert.That(calls, Is.EqualTo(2));
+    }
+
     private static void InvokeStatusOperation(DfcVirtualPicc picc, PiccStatusOperation operation)
     {
         switch (operation)
@@ -358,16 +519,19 @@ public sealed class PiccBehaviorTests
     {
         private bool pending;
 
-        public void Arm() => pending = true;
+        public void Arm()
+        {
+            this.pending = true;
+        }
 
         public int? Take(PiccStatusOperation operation)
         {
-            if (!pending || operation != target)
+            if (!this.pending || operation != target)
             {
                 return null;
             }
 
-            pending = false;
+            this.pending = false;
             return status;
         }
     }
@@ -425,9 +589,15 @@ public sealed class PiccBehaviorTests
 
         public override long TimestampFrequency => 1000;
 
-        public override long GetTimestamp() => timestamp;
+        public override long GetTimestamp()
+        {
+            return this.timestamp;
+        }
 
-        public void Advance(long milliseconds) => timestamp += milliseconds;
+        public void Advance(long milliseconds)
+        {
+            this.timestamp += milliseconds;
+        }
     }
 
     [Test]
@@ -571,7 +741,7 @@ public sealed class PiccBehaviorTests
         var source = new DfcScriptedRandomSource(new byte[] { 0x11, 0x22 });
         Assert.Throws<InvalidOperationException>(() => source.Fill(new byte[3]));
         Assert.That(source.Remaining, Is.EqualTo(2));
-        source.Append(new byte[] { 0x33 });
+        source.Append([0x33]);
         var exact = new byte[2];
         source.Fill(exact);
         var later = new byte[1];
@@ -580,7 +750,7 @@ public sealed class PiccBehaviorTests
         Assert.Multiple(() =>
         {
             Assert.That(exact, Is.EqualTo(new byte[] { 0x11, 0x22 }));
-            Assert.That(later, Is.EqualTo(new byte[] { 0x33 }));
+            Assert.That(later, Is.EqualTo("3"u8.ToArray()));
             Assert.That(source.Remaining, Is.Zero);
         });
     }
@@ -597,7 +767,7 @@ public sealed class PiccBehaviorTests
 
         Assert.That(source.Remaining, Is.Zero);
         Assert.That(storage, Is.EqualTo(new byte[3]), "clear must wipe unread bytes");
-        source.Append(new byte[] { 0xA5, 0x5A });
+        source.Append([0xA5, 0x5A]);
         var replacement = new byte[2];
         source.Fill(replacement);
         Assert.That(replacement, Is.EqualTo(new byte[] { 0xA5, 0x5A }));
@@ -613,7 +783,7 @@ public sealed class PiccBehaviorTests
         Assert.That(original[..4], Is.EqualTo(new byte[4]), "consumed bytes");
         Assert.That(original[4..], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value)));
 
-        source.Append(new byte[] { 0xA5 });
+        source.Append([0xA5]);
         Assert.That(original[..13], Is.EqualTo(Enumerable.Range(5, 12).Select(value => (byte)value).Append((byte)0xA5)));
         Assert.That(original[13..], Is.EqualTo(new byte[3]), "vacated compaction bytes");
 
@@ -628,10 +798,12 @@ public sealed class PiccBehaviorTests
         Assert.That(source.Remaining, Is.Zero);
     }
 
-    private static byte[] ScriptedRandomBuffer(DfcScriptedRandomSource source) =>
-        (byte[])typeof(DfcScriptedRandomSource)
+    private static byte[] ScriptedRandomBuffer(DfcScriptedRandomSource source)
+    {
+        return (byte[])typeof(DfcScriptedRandomSource)
             .GetField("buffer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .GetValue(source)!;
+    }
 
     [Test]
     public void GetVersion_UsesThreeNativeResponseFrames()
@@ -769,7 +941,10 @@ public sealed class PiccBehaviorTests
         return credential with { Applications = [application] };
     }
 
-    private static byte[] Hex(string value) => Convert.FromHexString(value);
+    private static byte[] Hex(string value)
+    {
+        return Convert.FromHexString(value);
+    }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference CreateAbandonedPicc()
@@ -788,8 +963,8 @@ public sealed class PiccBehaviorTests
 
         public void Fill(Span<byte> destination)
         {
-            Entered.Set();
-            if (!Continue.Wait(TimeSpan.FromSeconds(5)))
+            this.Entered.Set();
+            if (!this.Continue.Wait(TimeSpan.FromSeconds(5)))
             {
                 throw new TimeoutException("The test did not release the random callback.");
             }
@@ -801,11 +976,14 @@ public sealed class PiccBehaviorTests
     {
         private DfcVirtualPicc? picc;
 
-        public void Attach(DfcVirtualPicc value) => picc = value;
+        public void Attach(DfcVirtualPicc value)
+        {
+            this.picc = value;
+        }
 
         public void Fill(Span<byte> destination)
         {
-            Interlocked.Exchange(ref picc, null)?.Dispose();
+            Interlocked.Exchange(ref this.picc, null)?.Dispose();
             destination.Fill(0x5A);
         }
     }
