@@ -1139,18 +1139,27 @@ static MunitResult
     emulator->selected_application = DfcEmulatorSelectedApplicationApp;
     emulator->selected_app_index = 0;
     before = credential;
-    uint8_t command[1 + 5 + DFC_AES_KEY_LENGTH + 1] = {
-        DFC_CMD_CREATE_TRANSACTION_MAC_FILE,
-        file_number,
-        DFC_COMM_PLAIN,
-        0xEE,
-        0xEF,
-        DFC_TRANSACTION_MAC_KEY_TYPE_AES,
+    DfcCommand encoded_command;
+    DfcCommandTransactionMacFile transaction_file = {
+        .file_no = file_number,
+        .comm_settings = DFC_COMM_PLAIN,
+        .access_rights = 0xEFEE,
+        .key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES,
     };
+    munit_assert_int(
+        dfc_command_create_transaction_mac_file(&encoded_command, &transaction_file),
+        ==,
+        DfcCommandOk);
+    uint8_t command[DFC_COMMAND_MAX_APDU];
+    size_t command_len = 0;
+    munit_assert_int(
+        dfc_command_to_frame(&encoded_command, command, sizeof(command), &command_len),
+        ==,
+        DfcCommandOk);
     uint8_t response[64];
     for(size_t attempt = 0; attempt < 2; attempt++) {
         size_t response_len =
-            fault_emulator_command(emulator, command, sizeof(command), response, true);
+            fault_emulator_command(emulator, command, command_len, response, true);
         munit_assert_size(response_len, ==, 1);
         munit_assert_uint8(response[0], ==, DFC_STATUS_OUT_OF_EEPROM);
         munit_assert_memory_equal(sizeof(before), &before, &credential);
