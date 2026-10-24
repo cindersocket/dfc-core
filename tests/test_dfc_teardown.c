@@ -792,6 +792,66 @@ static MunitResult test_d40_block_cleanup_paths(const MunitParameter params[], v
     return MUNIT_OK;
 }
 
+static void assert_reader_command_transients_wiped(const DfcReaderExchange* exchange) {
+    munit_assert_memory_equal(
+        sizeof(exchange->frame), exchange->frame, ((uint8_t[sizeof(exchange->frame)]){0}));
+    munit_assert_size(exchange->frame_len, ==, 0);
+    munit_assert_size(exchange->frame_offset, ==, 0);
+    munit_assert_size(exchange->first_frame_len, ==, 0);
+    munit_assert_size(exchange->command_frame_len, ==, 0);
+    munit_assert_memory_equal(
+        sizeof(exchange->stream), &exchange->stream, ((uint8_t[sizeof(exchange->stream)]){0}));
+}
+
+static void assert_reader_command_terminal_cleanup(bool malformed_response) {
+    static const uint8_t secret_command_data[] = {0xA1, 0xB2, 0xC3, 0xD4};
+    DfcReaderSession session;
+    dfc_reader_session_init(&session);
+    DfcReaderExchange exchange;
+    DfcCommand command;
+    munit_assert_int(
+        dfc_command_encode_raw(
+            &command, DFC_CMD_CHANGE_KEY, secret_command_data, sizeof(secret_command_data)),
+        ==,
+        DfcCommandOk);
+    munit_assert_int(
+        dfc_reader_exchange_begin(&exchange, &session, DfcReaderFramingNative, &command, NULL),
+        ==,
+        DfcReaderOk);
+    munit_assert_memory_equal(sizeof(secret_command_data), exchange.frame, secret_command_data);
+
+    uint8_t frame[16] = {0};
+    size_t frame_len = 0;
+    munit_assert_int(
+        dfc_reader_step(&exchange, NULL, 0, frame, 0, &frame_len), ==, DfcReaderBufferTooSmall);
+    munit_assert_memory_equal(sizeof(secret_command_data), exchange.frame, secret_command_data);
+    munit_assert_int(
+        dfc_reader_step(&exchange, NULL, 0, frame, sizeof(frame), &frame_len),
+        ==,
+        DfcReaderPending);
+
+    const uint8_t valid_response[] = {DFC_STATUS_OK};
+    const uint8_t malformed[] = {DFC_STATUS_OK, 0xA5};
+    const uint8_t* response = malformed_response ? malformed : valid_response;
+    size_t response_len = malformed_response ? 0 : sizeof(valid_response);
+    DfcReaderStatus expected = malformed_response ? DfcReaderProtocolError : DfcReaderOk;
+    munit_assert_int(
+        dfc_reader_step(&exchange, response, response_len, frame, sizeof(frame), &frame_len),
+        ==,
+        expected);
+    assert_reader_command_transients_wiped(&exchange);
+}
+
+static MunitResult test_reader_command_transients_wiped_on_terminal_paths(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    assert_reader_command_terminal_cleanup(false);
+    assert_reader_command_terminal_cleanup(true);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
     {"/reader-auth-transients-and-family-commit",
      test_reader_authentication_transients_and_family_commit,
@@ -825,6 +885,12 @@ static MunitTest tests[] = {
      NULL},
     {"/d40-block-cleanup-paths",
      test_d40_block_cleanup_paths,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/reader-command-terminal-cleanup",
+     test_reader_command_transients_wiped_on_terminal_paths,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

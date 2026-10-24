@@ -591,8 +591,10 @@ DFC_FFI_EXPORT int32_t dfc_ffi_reader_step(
     size_t out_cap,
     size_t* out_len);
 DFC_FFI_EXPORT uint8_t dfc_ffi_reader_result_status(const DfcFfiReaderExchange* exchange);
+// Querying with `out == NULL` preserves the result. A successful copy transfers
+// the bytes to caller-owned storage and clears the exchange's result buffer.
 DFC_FFI_EXPORT int32_t dfc_ffi_reader_result_data(
-    const DfcFfiReaderExchange* exchange,
+    DfcFfiReaderExchange* exchange,
     uint8_t* out,
     size_t cap,
     size_t* len);

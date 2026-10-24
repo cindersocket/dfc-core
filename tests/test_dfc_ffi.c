@@ -692,10 +692,41 @@ static void check_reader_header_length_bound(void) {
     dfc_ffi_reader_session_free(session);
 }
 
+static void check_failed_reader_result_is_retired(void) {
+    DfcFfiReaderSession* session = NULL;
+    DfcFfiReaderExchange* exchange = NULL;
+    CHECK(dfc_ffi_reader_session_new(&session) == DFC_FFI_OK);
+    CHECK(dfc_ffi_reader_exchange_new(&exchange) == DFC_FFI_OK);
+    if(!session || !exchange) goto cleanup;
+
+    CHECK(
+        dfc_ffi_reader_exchange_begin(
+            exchange, session, DfcReaderFramingNative, DFC_CMD_GET_VERSION, NULL, 0, 0, -1) ==
+        DfcReaderOk);
+    uint8_t frame[16] = {0};
+    size_t frame_len = 0;
+    CHECK(
+        dfc_ffi_reader_step(exchange, NULL, 0, frame, sizeof(frame), &frame_len) ==
+        DfcReaderPending);
+    const uint8_t malformed_error[] = {DFC_STATUS_PERMISSION_DENIED, 0xA5, 0xB6};
+    CHECK(
+        dfc_ffi_reader_step(
+            exchange, malformed_error, sizeof(malformed_error), frame, sizeof(frame), &frame_len) ==
+        DfcReaderProtocolError);
+    size_t result_len = SIZE_MAX;
+    CHECK(dfc_ffi_reader_result_data(exchange, NULL, 0, &result_len) == DFC_FFI_OK);
+    CHECK(result_len == 0);
+
+cleanup:
+    dfc_ffi_reader_exchange_free(exchange);
+    dfc_ffi_reader_session_free(session);
+}
+
 int main(void) {
     check_rejected_card_and_picc_updates();
     check_application_creation_rollback();
     check_reader_header_length_bound();
+    check_failed_reader_result_is_retired();
     check_rejected_file_creation_is_atomic();
     check_pool_resize_boundaries();
 
@@ -1146,10 +1177,15 @@ int main(void) {
     CHECK(run(picc, exchange) == 0);
     uint8_t data[32];
     size_t data_len = 0;
+    CHECK(dfc_ffi_reader_result_data(exchange, NULL, 0, &data_len) == 0);
+    CHECK(data_len == 16);
     CHECK(dfc_ffi_reader_result_data(exchange, data, sizeof(data), &data_len) == 0);
     CHECK(data_len == 16);
     for(size_t i = 0; i < data_len; i++)
         CHECK(data[i] == i);
+    data_len = SIZE_MAX;
+    CHECK(dfc_ffi_reader_result_data(exchange, NULL, 0, &data_len) == 0);
+    CHECK(data_len == 0);
 
     DfcFfiSnapshot snapshot;
     CHECK(dfc_ffi_picc_snapshot(picc, &snapshot) == 0);

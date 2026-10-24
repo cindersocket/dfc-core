@@ -73,6 +73,8 @@
   calls.
 - Use constant-time authentication-secret comparisons and expand teardown and
   JNI secret-wipe verification.
+- Wipe reader command storage at terminal exits and consume copied FFI response
+  buffers promptly (#123).
 - Standardize replay-random exhaustion across the hosted bindings.
 - Make random providers fallible in ABI 4 and fail random-dependent operations
   atomically, with consistent error propagation through every binding.

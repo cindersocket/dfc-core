@@ -1480,18 +1480,21 @@ int32_t dfc_ffi_reader_exchange_begin(
        header_len > DFC_READER_MAX_CLEAR_HEADER_LENGTH) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
-    DfcCommand command;
-    if(dfc_command_encode_raw(&command, ins, data, data_len) != DfcCommandOk) {
-        return DfcReaderInvalid;
-    }
+    DfcCommand command = {0};
+    DfcReaderStatus status = DfcReaderInvalid;
+    if(dfc_command_encode_raw(&command, ins, data, data_len) != DfcCommandOk) goto cleanup;
     DfcReaderOptions options = {0};
     options.comm_mode = comm_mode;
     if(header_len >= 0) {
         options.has_header_len = true;
         options.header_len = (uint8_t)header_len;
     }
-    return dfc_reader_exchange_begin(
+    status = dfc_reader_exchange_begin(
         &exchange->exchange, &session->session, (DfcReaderFraming)framing, &command, &options);
+cleanup:
+    // The reader owns its prepared frame; the FFI stack copy must not retain command data.
+    dfc_secure_wipe(&command, sizeof(command));
+    return status;
 }
 
 int32_t dfc_ffi_reader_write_data_begin(
@@ -1618,7 +1621,13 @@ int32_t dfc_ffi_reader_step(
     size_t out_cap,
     size_t* out_len) {
     if(!exchange) return DFC_FFI_INVALID_ARGUMENT;
-    return dfc_reader_step(&exchange->exchange, response, response_len, out, out_cap, out_len);
+    DfcReaderStatus status =
+        dfc_reader_step(&exchange->exchange, response, response_len, out, out_cap, out_len);
+    if(status != DfcReaderOk && status != DfcReaderPending && status != DfcReaderBufferTooSmall) {
+        dfc_secure_wipe(exchange->exchange.data, sizeof(exchange->exchange.data));
+        exchange->exchange.data_len = 0;
+    }
+    return status;
 }
 
 uint8_t dfc_ffi_reader_result_status(const DfcFfiReaderExchange* exchange) {
@@ -1626,7 +1635,7 @@ uint8_t dfc_ffi_reader_result_status(const DfcFfiReaderExchange* exchange) {
 }
 
 int32_t dfc_ffi_reader_result_data(
-    const DfcFfiReaderExchange* exchange,
+    DfcFfiReaderExchange* exchange,
     uint8_t* out,
     size_t cap,
     size_t* len) {
@@ -1637,6 +1646,9 @@ int32_t dfc_ffi_reader_result_data(
     if(!out) return DfcReaderOk;
     if(data_len > cap) return DFC_FFI_BUFFER_TOO_SMALL;
     if(data_len) memcpy(out, data, data_len);
+    // A successful copy transfers the response to caller-owned storage.
+    dfc_secure_wipe(exchange->exchange.data, sizeof(exchange->exchange.data));
+    exchange->exchange.data_len = 0;
     return DfcReaderOk;
 }
 
@@ -1677,15 +1689,17 @@ int32_t dfc_ffi_reader_change_key_ev2_data(
     size_t* out_len) {
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     if(!session || !out || !out_len) return DFC_FFI_INVALID_ARGUMENT;
-    DfcCommand command;
+    DfcCommand command = {0};
     DfcReaderStatus st = dfc_reader_change_key_ev2_command(
         &session->session, key_set_no, key_no, new_key, current_key, new_version, &command);
-    if(st != DfcReaderOk) return st;
-    if(command.data_len > out_cap) return DFC_FFI_BUFFER_TOO_SMALL;
-    memcpy(out, command.data, command.data_len);
-    *out_len = command.data_len;
+    if(st == DfcReaderOk && command.data_len > out_cap) {
+        st = DFC_FFI_BUFFER_TOO_SMALL;
+    } else if(st == DfcReaderOk) {
+        memcpy(out, command.data, command.data_len);
+        *out_len = command.data_len;
+    }
     dfc_secure_wipe(&command, sizeof(command));
-    return DfcReaderOk;
+    return st;
 #else
     DFC_UNUSED(session);
     DFC_UNUSED(key_set_no);

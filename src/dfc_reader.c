@@ -1070,9 +1070,16 @@ static bool set_frame(
     return true;
 }
 
-static DfcReaderStatus fail_prepared_command(DfcReaderExchange* exchange, DfcReaderStatus status) {
+static void clear_command_transients(DfcReaderExchange* exchange) {
     dfc_secure_wipe(exchange->frame, sizeof(exchange->frame));
     exchange->frame_len = 0;
+    exchange->frame_offset = 0;
+    exchange->first_frame_len = 0;
+    exchange->command_frame_len = 0;
+}
+
+static DfcReaderStatus fail_prepared_command(DfcReaderExchange* exchange, DfcReaderStatus status) {
+    clear_command_transients(exchange);
     return status;
 }
 
@@ -1370,7 +1377,11 @@ static DfcReaderStatus reader_exchange_begin(
         st = DfcReaderUnsupported;
 #endif
     }
-    if(st != DfcReaderOk) exchange->phase = PhaseDone;
+    if(st != DfcReaderOk) {
+        clear_command_transients(exchange);
+        memset(&exchange->stream, 0, sizeof(exchange->stream));
+        exchange->phase = PhaseDone;
+    }
     if(st == DfcReaderOk && session->auth_mode != DFC_READER_AUTH_EV2 &&
        uses_native_command_chaining(command->ins) &&
        exchange->frame_len > DFC_EV1_MAX_FRAME_PAYLOAD) {
@@ -1398,7 +1409,7 @@ static DfcReaderStatus begin_stream_chunk(
     size_t chunk = remaining > DFC_READER_STREAM_CHUNK ? DFC_READER_STREAM_CHUNK : remaining;
     uint32_t offset = stream->base_offset + (uint32_t)stream->offset;
     const uint8_t* data = chunk ? stream->data + stream->offset : NULL;
-    DfcCommand command;
+    DfcCommand command = {0};
     DfcCommandStatus encoded;
     switch(stream->kind) {
     case StreamWriteData:
@@ -1413,12 +1424,17 @@ static DfcReaderStatus begin_stream_chunk(
             &command, stream->file_number, stream->record_number, offset, data, chunk, false);
         break;
     default:
-        return DfcReaderInvalid;
+        encoded = DfcCommandInvalid;
+        break;
     }
-    if(encoded != DfcCommandOk) return DfcReaderInvalid;
-    DfcReaderOptions options = {.comm_mode = stream->comm_mode};
-    DfcReaderStatus status =
-        reader_exchange_begin(exchange, session, framing, &command, &options, stream->offset != 0);
+    DfcReaderStatus status = DfcReaderInvalid;
+    if(encoded == DfcCommandOk) {
+        DfcReaderOptions options = {.comm_mode = stream->comm_mode};
+        status = reader_exchange_begin(
+            exchange, session, framing, &command, &options, stream->offset != 0);
+    }
+    // Stream chunks can carry new key material, so the stack copy ends here.
+    dfc_secure_wipe(&command, sizeof(command));
     if(status == DfcReaderOk) {
         exchange->stream = *stream;
         exchange->stream.offset += chunk;
@@ -1526,6 +1542,8 @@ DfcReaderStatus dfc_reader_update_record_begin(
 }
 
 static DfcReaderStatus finish_command(DfcReaderExchange* ex, DfcReaderStatus status) {
+    // The assembled command is no longer retryable once a terminal result exists.
+    clear_command_transients(ex);
     ex->phase = PhaseDone;
     return status;
 }
@@ -1806,9 +1824,12 @@ DfcReaderStatus dfc_reader_step(
             step_command(exchange, response, response_len, out, out_cap, out_len);
         if(status != DfcReaderOk || exchange->stream.kind == StreamNone ||
            exchange->stream.offset >= exchange->stream.length) {
+            if(status != DfcReaderPending && status != DfcReaderBufferTooSmall)
+                memset(&exchange->stream, 0, sizeof(exchange->stream));
             return status;
         }
         DfcReaderStream stream = exchange->stream;
+        memset(&exchange->stream, 0, sizeof(exchange->stream));
         status = begin_stream_chunk(exchange, exchange->session, exchange->framing, &stream);
         if(status != DfcReaderOk) return status;
         return step_command(exchange, NULL, 0, out, out_cap, out_len);
@@ -1995,8 +2016,9 @@ DfcReaderStatus dfc_reader_create_delegated_application_begin(
        session->auth_mode != DFC_READER_AUTH_EV2) {
         return DfcReaderInvalid;
     }
-    DfcCommand header;
+    DfcCommand header = {0};
     if(dfc_command_create_delegated_application(&header, app) != DfcCommandOk) {
+        dfc_secure_wipe(&header, sizeof(header));
         return DfcReaderInvalid;
     }
 
@@ -2056,6 +2078,7 @@ DfcReaderStatus dfc_reader_create_delegated_application_begin(
     result = set_frame(exchange, body, body_len, mac, sizeof(mac)) ? DfcReaderOk :
                                                                      DfcReaderInvalid;
 cleanup:
+    dfc_secure_wipe(&header, sizeof(header));
     dfc_secure_wipe(key_data, sizeof(key_data));
     dfc_secure_wipe(iv, sizeof(iv));
     dfc_secure_wipe(dam_input, sizeof(dam_input));
