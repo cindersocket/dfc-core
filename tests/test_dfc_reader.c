@@ -1902,6 +1902,7 @@ static MunitResult
     static Link link;
     uint8_t response[64];
     size_t response_len = 0;
+    const uint16_t ACCESS_FREE = 0xEEEE;
 
     // A native mutation whose response does not fit is executed once. Retrying
     // the same APDU retrieves that response instead of executing it again.
@@ -1935,7 +1936,7 @@ static MunitResult
     DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, FilePlain);
     munit_assert_not_null(file);
     // This capacity-retry check exercises the mutation path without authentication.
-    file->access_rights = 0xEEEE;
+    file->access_rights = ACCESS_FREE;
     link.picc->iso_file_selected = true;
     link.picc->iso_file_index = (size_t)(file - link.credential.files);
     uint8_t original[2];
@@ -1980,7 +1981,7 @@ static MunitResult
     select_app(&link, AID_AES);
     file = dfc_credential_find_file_in_app(&link.credential, 0, FileLong);
     munit_assert_not_null(file);
-    file->access_rights = 0xEEEE;
+    file->access_rights = ACCESS_FREE;
     file->sdm_enabled = true;
     file->sdm_has_picc_data_offset = true;
     file->sdm_picc_data_offset = 0;
@@ -2001,6 +2002,8 @@ static MunitResult
         DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00, 0x10, 0x00};
     const uint8_t read_binary_bad_range[] = {
         DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, LONG_FILE_SIZE + 1, 0x01};
+    const uint8_t read_binary_at_end[] = {
+        DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, LONG_FILE_SIZE, 0x01};
 
     const struct {
         const uint8_t* command;
@@ -2033,8 +2036,37 @@ static MunitResult
         munit_assert_memory_equal(
             sizeof(cache_before), link.picc->emulator->sdm_read_cache, cache_before);
         munit_assert_int(link.credential.dirty, ==, dirty_before);
+        if(rejected_reads[i].command == read_binary_bad_range) {
+            munit_assert_size(response_len, ==, DFC_ISO7816_STATUS_WORD_LENGTH);
+            munit_assert_memory_equal(
+                response_len,
+                response,
+                ((uint8_t[]){DFC_ISO7816_SW_WRONG_PARAMETERS_HI,
+                             DFC_ISO7816_SW_WRONG_PARAMETERS_LO}));
+        }
     }
 
+    // The end offset is valid and returns an empty body. A successful SDM read
+    // still renders the file and commits its read counter.
+    response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            read_binary_at_end,
+            sizeof(read_binary_at_end),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, DFC_ISO7816_STATUS_WORD_LENGTH);
+    munit_assert_memory_equal(
+        response_len, response, ((uint8_t[]){DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO}));
+    munit_assert_uint32(file->sdm_read_counter, ==, counter_before + 1);
+    munit_assert_true(link.picc->emulator->sdm_read_cache_valid);
+
+    // Free read access keeps this ISO response plain, so its length is the
+    // requested body plus the status word, without a secure-messaging MAC.
     response_len = 0;
     munit_assert_int(
         dfc_virtual_picc_iso_dep_exchange(
@@ -3342,6 +3374,7 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
     munit_assert_memory_equal(
         sizeof(transaction), link.session.ev2_transaction_identifier, transaction);
     munit_assert_uint16(link.session.ev2_command_counter, ==, 0);
+    munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 0);
     DfcCommand command;
     DfcReaderExchange ex;
     munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 16), ==, DfcCommandOk);
@@ -3354,34 +3387,12 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
     size_t wire_len = 0;
     munit_assert_int(
         dfc_reader_step(&ex, NULL, 0, wire, sizeof(wire), &wire_len), ==, DfcReaderPending);
-    const uint8_t expected_header[] = {
-        0x90,
-        0xBD,
-        0x00,
-        0x00,
-        0x0F,
-        0x02,
-        0x00,
-        0x00,
-        0x00,
-        0x10,
-        0x00,
-        0x00,
+    const uint8_t expected_frame[] = {
+        0x90, 0xBD, 0x00, 0x00, 0x0F, 0x02, 0x00, 0x00, 0x00, 0x10, 0x00,
+        0x00, 0xA7, 0xA4, 0x8E, 0x18, 0x18, 0xB1, 0xA2, 0xC5, 0x00,
     };
-    munit_assert_size(wire_len, ==, sizeof(expected_header) + DFC_WIRE_MAC_LENGTH + 1);
-    munit_assert_memory_equal(sizeof(expected_header), wire, expected_header);
-    uint8_t expected_mac[DFC_WIRE_MAC_LENGTH];
-    munit_assert_true(dfc_ev2_mac(
-        link.session.ev2_mac_key,
-        DFC_CMD_READ_DATA,
-        0,
-        link.session.ev2_transaction_identifier,
-        wire + 5,
-        7,
-        NULL,
-        0,
-        expected_mac));
-    munit_assert_memory_equal(sizeof(expected_mac), wire + sizeof(expected_header), expected_mac);
+    munit_assert_size(wire_len, ==, sizeof(expected_frame));
+    munit_assert_memory_equal(sizeof(expected_frame), wire, expected_frame);
 
     munit_assert_int(link_send(&link, &command, DFC_COMM_MAC, &ex), ==, DfcReaderCardError);
     munit_assert_uint8(dfc_reader_result_status(&ex), ==, DFC_STATUS_AUTHENTICATION_ERR);

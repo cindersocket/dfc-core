@@ -286,14 +286,22 @@ public sealed class PiccBehaviorTests
         using var reader = new DfcReader(picc);
         await Fixtures.SelectAsync(reader, Hex("030201"));
         Fixtures.Ok(await reader.WriteDataAsync(1, 0, Hex("01020304")));
+        var pendingCredential = picc.ExportCredential();
+        var pending = (DfcFileContents.Data)pendingCredential.Applications[0].Files[0].Contents;
 
         clock.Advance((long)uint.MaxValue + 1000);
         var expired = picc.Exchange(Hex("9060000000"));
+        var rolledBackCredential = picc.ExportCredential();
+        var rolledBack = (DfcFileContents.Data)rolledBackCredential.Applications[0].Files[0].Contents;
         Assert.Multiple(() =>
         {
             Assert.That(expired.IsFailure, Is.True);
             Assert.That(expired.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.NoCard));
             Assert.That(picc.Snapshot().Selection, Is.EqualTo(DfcSelection.Picc));
+            Assert.That(pending.Known, Is.EqualTo(Hex("01020304")));
+            Assert.That(pending.TransactionPending, Is.True);
+            Assert.That(rolledBack.Known, Is.EqualTo(new byte[4]));
+            Assert.That(rolledBack.TransactionPending, Is.False);
         });
 
         Fixtures.Ok(picc.Activate());
