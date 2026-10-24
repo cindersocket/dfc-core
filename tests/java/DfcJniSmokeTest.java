@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.util.Arrays;
 
 public final class DfcJniSmokeTest {
+  private static final int LIMITED_CREDIT_VALUE_ABI = 8;
+
   private static void check(boolean condition, String message) {
     if (!condition)
       throw new AssertionError(message);
@@ -24,6 +26,8 @@ public final class DfcJniSmokeTest {
     DfcCredential reparsed = DfcCredentialCodec.parse(credential.writeText());
     check(credential.equals(reparsed), "credential text round-trip");
     check(DfcLibrary.abiVersion() == DfcLibrary.requiredAbiVersion(), "ABI version");
+    check(DfcLibrary.requiredAbiVersion() == LIMITED_CREDIT_VALUE_ABI,
+        "limited credit value ABI version");
     check(DfcLibrary.capabilities() != 0, "capabilities");
     check(Arrays.equals(DfcCommand.selectApplication(new byte[] {(byte) 0xd3, 0x49, 0x4f}).data(),
               new byte[] {0x4f, 0x49, (byte) 0xd3}),
@@ -66,6 +70,15 @@ public final class DfcJniSmokeTest {
         "delegated format setting text round-trip");
     check(DfcCredentialCodec.decode(delegatedFormat.encode()).equals(delegatedFormat),
         "delegated format setting binary round-trip");
+    String limitedCreditText =
+        ev2Credential.writeText().replace("Application 00 File 02 Limited Credit: 01\n",
+            "Application 00 File 02 Limited Credit: 01\n"
+                + "Application 00 File 02 Limited Credit Value: 37\n");
+    DfcCredential limitedCredit = DfcCredentialCodec.parse(limitedCreditText);
+    check(limitedCredit.writeText().contains("Application 00 File 02 Limited Credit Value: 37\n"),
+        "limited credit value text round-trip");
+    check(DfcCredentialCodec.decode(limitedCredit.encode()).equals(limitedCredit),
+        "limited credit value binary round-trip");
     String legacyRandomIdText = credential.writeText().replace("PICC Key 00 Version: 00\n",
         "PICC Key 00 Version: 00\n"
             + "PICC Random ID: 1\n"

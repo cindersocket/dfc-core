@@ -175,6 +175,7 @@ internal unsafe struct NativeFile
     public int ValueLowerLimit;
     public int ValueUpperLimit;
     public int Value;
+    public int LimitedCreditValue;
     public int ValuePendingDelta;
     public uint RecordSize;
     public uint MaxRecords;

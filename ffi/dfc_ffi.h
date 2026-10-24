@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 // Raised whenever a struct below or a function's meaning changes.
-#define DFC_FFI_ABI_VERSION 7
+#define DFC_FFI_ABI_VERSION 8
 
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
@@ -270,6 +270,7 @@ typedef struct {
     int32_t value_lower_limit;
     int32_t value_upper_limit;
     int32_t value;
+    int32_t limited_credit_value;
     int32_t value_pending_delta;
     uint32_t record_size;
     uint32_t max_records;

@@ -482,6 +482,7 @@ int32_t dfc_ffi_credential_get_file(
         out->value_lower_limit = f->value_lower_limit;
         out->value_upper_limit = f->value_upper_limit;
         out->value = f->value;
+        out->limited_credit_value = f->limited_credit_value;
         out->limited_credit = f->limited_credit;
         out->value_pending = f->value_pending;
         out->value_pending_delta = f->value_pending_delta;
@@ -903,7 +904,9 @@ int32_t dfc_ffi_credential_add_file(
        (f->type == DFC_FILE_TYPE_TRANSACTION_MAC ?
             !dfc_transaction_mac_access_rights_are_valid(f->access_rights, key_count) :
             !dfc_access_rights_are_valid(f->access_rights, key_count)) ||
-       (f->type == DFC_FILE_TYPE_VALUE && f->limited_credit > 3)) {
+       (f->type == DFC_FILE_TYPE_VALUE &&
+        (f->limited_credit > 3 || f->limited_credit_value < 0 ||
+         ((f->limited_credit & 1) == 0 && f->limited_credit_value != 0)))) {
         return DfcDerMalformed;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
@@ -944,6 +947,7 @@ int32_t dfc_ffi_credential_add_file(
         file->value_lower_limit = f->value_lower_limit;
         file->value_upper_limit = f->value_upper_limit;
         file->value = f->value;
+        file->limited_credit_value = f->limited_credit_value;
         file->limited_credit = f->limited_credit;
         file->value_pending = f->value_pending != 0;
         file->value_pending_delta = f->value_pending_delta;

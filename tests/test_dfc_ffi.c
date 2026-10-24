@@ -430,6 +430,20 @@ static void check_rejected_file_creation_is_atomic(void) {
     check_credential_state_unchanged(credential, &before);
     free_credential_state(&before);
 
+    invalid = plain_file(0, DFC_EV1_MAX_FILE_NUMBER);
+    invalid.type = DFC_FILE_TYPE_VALUE;
+    invalid.value_lower_limit = 0;
+    invalid.value_upper_limit = 100;
+    invalid.value = 50;
+    invalid.limited_credit = 0;
+    invalid.limited_credit_value = 1;
+    index = UINT32_C(0xA5A5A5A5);
+    before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_add_file(credential, &invalid, &index) == DfcDerMalformed);
+    CHECK(index == UINT32_C(0xA5A5A5A5));
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
 #if DFC_ENABLE_TRANSACTION_MAC
     invalid = plain_file(0, DFC_EV1_MAX_FILE_NUMBER);
     invalid.type = DFC_FILE_TYPE_TRANSACTION_MAC;
@@ -677,6 +691,27 @@ static void check_delegated_format_ffi_round_trip(void) {
     dfc_ffi_credential_free(source);
 }
 
+static void check_limited_credit_value_ffi_round_trip(void) {
+    DfcFfiCredential* source = parse_test_credential();
+    if(!source) return;
+    DfcFile* native = &source->model.files[1];
+    native->limited_credit = 1;
+    native->limited_credit_value = 37;
+
+    DfcFfiFile exported;
+    CHECK(dfc_ffi_credential_get_file(source, 1, &exported) == DFC_FFI_OK);
+    CHECK(exported.limited_credit_value == 37);
+
+    DfcFfiCredential* copied = rebuild(source);
+    DfcFfiFile imported;
+    CHECK(dfc_ffi_credential_get_file(copied, 1, &imported) == DFC_FFI_OK);
+    CHECK(imported.limited_credit_value == 37);
+    check_encoded_round_trip(copied);
+
+    dfc_ffi_credential_free(copied);
+    dfc_ffi_credential_free(source);
+}
+
 // Drive one reader exchange against the PICC until it completes.
 static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
     uint8_t tx[300];
@@ -774,6 +809,7 @@ int main(void) {
     check_rejected_file_creation_is_atomic();
     check_pool_resize_boundaries();
     check_delegated_format_ffi_round_trip();
+    check_limited_credit_value_ffi_round_trip();
 
     CHECK(dfc_ffi_abi_version() == DFC_FFI_ABI_VERSION);
     CHECK(dfc_ffi_layout_fingerprint() != 0);

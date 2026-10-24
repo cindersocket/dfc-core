@@ -250,7 +250,13 @@ internal static unsafe class CredentialMarshaller
             {
                 TransactionPending = f.TransactionPending != 0,
             },
-            FileTypeValue => new DfcFileContents.Value(f.ValueLowerLimit, f.ValueUpperLimit, f.Value, f.LimitedCredit)
+            FileTypeValue => new DfcFileContents.Value(
+                f.ValueLowerLimit,
+                f.ValueUpperLimit,
+                f.Value,
+                f.LimitedCredit,
+                f.LimitedCreditValue
+            )
             {
                 Pending = f.ValuePending != 0,
                 PendingDelta = f.ValuePendingDelta,
@@ -712,6 +718,7 @@ internal static unsafe class CredentialMarshaller
                 f.ValueUpperLimit = value.UpperLimit;
                 f.Value = value.Current;
                 f.LimitedCredit = value.LimitedCredit;
+                f.LimitedCreditValue = value.LimitedCreditValue;
                 f.ValuePending = Flag(value.Pending);
                 f.ValuePendingDelta = value.PendingDelta;
                 break;

@@ -200,7 +200,13 @@ class File(C.Structure):
         + [(n, C.c_uint32) for n in ["declared_size", "data_len"]]
         + [
             (n, C.c_int32)
-            for n in ["value_lower_limit", "value_upper_limit", "value", "value_pending_delta"]
+            for n in [
+                "value_lower_limit",
+                "value_upper_limit",
+                "value",
+                "limited_credit_value",
+                "value_pending_delta",
+            ]
         ]
         + [
             (n, C.c_uint32)

@@ -527,6 +527,31 @@ def test_delegated_format_setting_round_trips_through_public_model() -> None:
         assert decoded.model().applications[0].delegated_format_disabled
 
 
+def test_limited_credit_value_round_trips_through_public_model() -> None:
+    text = MAXIMAL_TEXT_FIXTURE.read_text().replace(
+        "Application 00 File 02 Limited Credit: 01\n",
+        "Application 00 File 02 Limited Credit: 01\n"
+        "Application 00 File 02 Limited Credit Value: 37\n",
+    )
+    with Credential.parse(text) as credential:
+        value_file = next(file for file in credential.model().files if file.type == 2)
+        assert value_file.limited_credit_value == 37
+        encoded = credential.encode()
+    with Credential.decode(encoded) as decoded:
+        assert decoded.model().files[2].limited_credit_value == 37
+
+
+@pytest.mark.parametrize("options", range(4))
+def test_limited_credit_options_preserve_each_flag(options: int) -> None:
+    text = MAXIMAL_TEXT_FIXTURE.read_text().replace(
+        "Application 00 File 02 Limited Credit: 01\n",
+        f"Application 00 File 02 Limited Credit: {options:02X}\n",
+    )
+    with Credential.parse(text) as credential:
+        value_file = next(file for file in credential.model().files if file.type == 2)
+        assert value_file.limited_credit == options
+
+
 def test_legacy_random_id_prefix_round_trips_through_public_model() -> None:
     text = MAXIMAL_TEXT_FIXTURE.read_text().replace(
         "PICC Random ID: 1\n",

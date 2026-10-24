@@ -103,6 +103,40 @@ public sealed class CredentialCodecTests
     }
 
     [Test]
+    public void LimitedCreditValue_RoundTripsThroughNativeLayout()
+    {
+        var source = Fixtures.Credential();
+        var application = source.Applications[0];
+        var files = application.Files.ToArray();
+        files[3] = files[3] with
+        {
+            Contents = new DfcFileContents.Value(0, 1000, 100, 1, 37),
+        };
+        source = source with { Applications = [application with { Files = files }, .. source.Applications.Skip(1)] };
+
+        var encoded = Fixtures.Ok(DfcCredentialCodec.Encode(source));
+        var decoded = Fixtures.Ok(DfcCredentialCodec.Decode(encoded));
+        var value = (DfcFileContents.Value)decoded.Applications[0].Files[3].Contents;
+
+        Assert.That(value.LimitedCreditValue, Is.EqualTo(37));
+    }
+
+    [Test]
+    public void LimitedCreditValue_IsRejectedWhenSupportIsDisabled()
+    {
+        var source = Fixtures.Credential();
+        var application = source.Applications[0];
+        var files = application.Files.ToArray();
+        files[3] = files[3] with
+        {
+            Contents = new DfcFileContents.Value(0, 1000, 100, 0, 37),
+        };
+        source = source with { Applications = [application with { Files = files }, .. source.Applications.Skip(1)] };
+
+        Assert.That(DfcCredentialCodec.Encode(source).IsFailure, Is.True);
+    }
+
+    [Test]
     public void BuiltRecords_EncodeLikeParsedOnes()
     {
         var credential = Fixtures.Credential();

@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 internal static unsafe partial class Native
 {
-    internal const long DFC_FFI_ABI_VERSION = 7;
+    internal const long DFC_FFI_ABI_VERSION = 8;
     internal const long DFC_FFI_OK = 0;
     internal const long DFC_FFI_INVALID_ARGUMENT = -1;
     internal const long DFC_FFI_BUFFER_TOO_SMALL = -2;
@@ -39,7 +39,7 @@ internal static unsafe partial class Native
     internal static ulong ExpectedLayoutFingerprint()
     {
         var hash = 14_695_981_039_346_656_037UL;
-        hash = LayoutWord(hash, unchecked((ulong)7L));
+        hash = LayoutWord(hash, unchecked((ulong)8L));
         hash = LayoutWord(hash, unchecked((ulong)0L));
         hash = LayoutWord(hash, unchecked((ulong)-1L));
         hash = LayoutWord(hash, unchecked((ulong)-2L));
@@ -214,6 +214,7 @@ internal static unsafe partial class Native
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeFile>(nameof(NativeFile.ValueLowerLimit)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeFile>(nameof(NativeFile.ValueUpperLimit)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeFile>(nameof(NativeFile.Value)));
+        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeFile>(nameof(NativeFile.LimitedCreditValue)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeFile>(nameof(NativeFile.ValuePendingDelta)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeFile>(nameof(NativeFile.RecordSize)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeFile>(nameof(NativeFile.MaxRecords)));

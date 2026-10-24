@@ -680,6 +680,20 @@ mod tests {
     }
 
     #[test]
+    fn limited_credit_value_is_exposed_by_the_public_file_model() {
+        let text = include_str!("../../../../examples/credentials/v6-maximal.dfc").replace(
+            "Application 00 File 02 Limited Credit: 01\n",
+            "Application 00 File 02 Limited Credit: 01\nApplication 00 File 02 Limited Credit Value: 37\n",
+        );
+        let credential = Credential::parse_text(&text).expect("fixture");
+        let file = (0..credential.file_count())
+            .map(|index| credential.file(index).expect("file"))
+            .find(|file| file.type_ == 2)
+            .expect("value file");
+        assert_eq!(file.limited_credit_value, 37);
+    }
+
+    #[test]
     fn diagnostic_snapshot_clear_wipes_every_field() {
         let mut snapshot = DiagnosticSnapshot(sys::DfcFfiDiagnosticSnapshot {
             transaction_identifier: [0xa1; 4],

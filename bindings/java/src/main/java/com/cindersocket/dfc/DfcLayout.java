@@ -3,7 +3,7 @@ package com.cindersocket.dfc;
 
 final class DfcLayout {
   private DfcLayout() {}
-  static final long DFC_FFI_ABI_VERSION = 7L;
+  static final long DFC_FFI_ABI_VERSION = 8L;
   static final long DFC_FFI_OK = 0L;
   static final long DFC_FFI_INVALID_ARGUMENT = -1L;
   static final long DFC_FFI_BUFFER_TOO_SMALL = -2L;

@@ -6,8 +6,10 @@
 - Preserve JNI exception delivery in minified Android consumers (#141).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
   target builds, with ABI-layout checks and caller-owned target storage.
-- Use ABI 7 to verify the complete generated native layout and semantic-constant
+- Use ABI 8 to verify the complete generated native layout and semantic-constant
   fingerprint before hosted bindings construct handles (#138, #140).
+- Preserve Limited Credit Value when credentials cross the FFI and hosted
+  binding models (#145).
 - Keep session secrets out of ordinary binding snapshots, with a separate
   wipeable diagnostic boundary for conformance checks (#140).
 - Support separately disabling PICC and delegated-application formatting, with

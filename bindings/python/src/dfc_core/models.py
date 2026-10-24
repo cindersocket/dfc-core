@@ -123,7 +123,8 @@ class File:
     iso_file_id: int | None = None
     contents_complete: bool = True
     transaction_pending: bool = False
-    limited_credit: bool = False
+    limited_credit: int = 0
+    limited_credit_value: int = 0
     value_pending: bool = False
     sdm: tuple[int, ...] = ()
     transaction_mac_key_type: int = 0
