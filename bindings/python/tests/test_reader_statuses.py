@@ -9,7 +9,7 @@ READER_STATUS_BLOCK = re.compile(
     r"(?P<definitions>(?:#define DFC_FFI_READER_[A-Z0-9_]+\s+-?\d+\n)+)"
 )
 READER_STATUS = re.compile(r"^#define (DFC_FFI_READER_[A-Z0-9_]+)\s+(-?\d+)\s*$")
-READER_STATUS_ASSERTION = re.compile(r"ASSERT_READER_STATUS\((DFC_FFI_READER_[A-Z_]+),")
+READER_STATUS_ASSERTION = re.compile(r"ASSERT_READER_STATUS\((DFC_FFI_READER_[A-Z0-9_]+),")
 
 
 def reader_statuses(header: str) -> dict[str, int]:
@@ -74,3 +74,6 @@ def test_new_c_reader_status_requires_registration() -> None:
     )
 
     assert set(statuses) != registered_reader_statuses(source)
+    assert registered_reader_statuses(
+        "ASSERT_READER_STATUS(DFC_FFI_READER_EV2_NEW, DfcReaderEv2New);"
+    ) == {"DFC_FFI_READER_EV2_NEW"}
