@@ -32,6 +32,8 @@
   types, and reserved access-right fields across credential codecs (#135).
 - Require Full protection for key-gated ChangeFileSettings commands while
   retaining plaintext operation for free change access (#122).
+- Support Full-protected ChangeKeySettings commands across D40, EV1, and EV2
+  sessions (#125).
 - Reject standard ISO file operations for Transaction-MAC applications and
   report EV1 short reads with the EOF warning (#120).
 - Accept zero-initialized credentials with empty file and key pools.

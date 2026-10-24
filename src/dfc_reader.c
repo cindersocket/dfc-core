@@ -1215,6 +1215,8 @@ static size_t ev2_always_encrypted_header(uint8_t ins) {
         return COMMIT_READER_ID_HEADER;
     case DFC_CMD_CHANGE_KEY_EV2:
         return CHANGE_KEY_EV2_HEADER;
+    case DFC_CMD_CHANGE_KEY_SETTINGS:
+        return 0;
     case DFC_CMD_CHANGE_FILE_SETTINGS:
         return 1;
     default:

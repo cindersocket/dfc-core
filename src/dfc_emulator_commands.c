@@ -1218,60 +1218,68 @@ static void handle_change_key(
     }
 }
 
+static size_t unwrap_write_payload(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    size_t header_len,
+    uint8_t comm,
+    uint8_t* out,
+    size_t out_cap);
+
 static void handle_change_key_settings(
     DfcEmulator* emulator,
     const uint8_t* apdu,
     size_t apdu_len,
     DfcByteBuf* tx_buffer) {
-    if(!dfc_emulator_native_authentication_active(emulator) ||
-       emulator->secure_messaging->cipher != DFC_CMD_AUTHENTICATE_LEGACY) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-    // ChangeKeySettings always requires the currently selected master key.
     if(!is_authenticated_as_master(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
-    if(apdu_len == 2) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return;
-    }
-    size_t encrypted_len = apdu_len - 1;
-    uint8_t clear[16];
-    if((encrypted_len % 8) != 0 || encrypted_len < 8 || encrypted_len > sizeof(clear)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+    if((current_key_settings_1(emulator) & DFC_KS1_CONFIGURATION_CHANGEABLE) == 0) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
 
-    memset(clear, 0, sizeof(clear));
-    if(!d40_receive_plain(
-           emulator->secure_messaging->session_key,
-           emulator->secure_messaging->session_key_len,
-           apdu + 1,
-           encrypted_len,
-           clear)) {
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-        return;
+    const uint8_t* settings = apdu + 1;
+    size_t settings_len = apdu_len - 1;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    bool ev2_active = emulator->ev2_session_active;
+#else
+    bool ev2_active = false;
+#endif
+    size_t clear_len = 0;
+    if(!ev2_active) {
+        clear_len = unwrap_write_payload(
+            emulator,
+            apdu,
+            apdu_len,
+            0,
+            DFC_COMM_ENCIPHERED,
+            emulator->pending_chain,
+            sizeof(emulator->pending_chain));
+        if(clear_len == SIZE_MAX) {
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return;
+        }
+        settings = emulator->pending_chain;
+        settings_len = clear_len;
     }
-
-    uint16_t expected_crc = crc16_iso14443(clear, 1);
-    uint16_t actual_crc = (uint16_t)clear[1] | ((uint16_t)clear[2] << 8);
-    if(expected_crc != actual_crc) {
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+    if(settings_len != 1) {
+        dfc_secure_wipe(emulator->pending_chain, clear_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
 
     DfcApplication* app = emulator_current_app(emulator);
     if(app) {
-        app->key_settings_1 = clear[0];
+        app->key_settings_1 = settings[0];
     } else {
-        emulator->credential->picc_key_settings_1 = clear[0];
+        emulator->credential->picc_key_settings_1 = settings[0];
     }
     dfc_credential_mark_dirty(emulator->credential);
-    dfc_secure_wipe(clear, sizeof(clear));
+    dfc_secure_wipe(emulator->pending_chain, clear_len);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
 
@@ -5355,7 +5363,8 @@ static bool dispatch_native_command(
     // Handlers that own EV1 command IV updates themselves:
     // ChangeKey and ChangeFileSettings (Full cryptograms), plus WriteData /
     // Credit / Debit / LimitedCredit (MAC-on-wire or Full decrypt).
-    bool defer_ev1_cmd_cmac = cmd == DFC_CMD_CHANGE_KEY || cmd == DFC_CMD_CHANGE_FILE_SETTINGS ||
+    bool defer_ev1_cmd_cmac = cmd == DFC_CMD_CHANGE_KEY || cmd == DFC_CMD_CHANGE_KEY_SETTINGS ||
+                              cmd == DFC_CMD_CHANGE_FILE_SETTINGS ||
                               dfc_secure_messaging_ev1_transmits_command_mac(cmd);
 #if DFC_ENABLE_PROXIMITY_CHECK
     defer_ev1_cmd_cmac = defer_ev1_cmd_cmac || cmd == DFC_CMD_PREPARE_PROXIMITY_CHECK;
@@ -5415,11 +5424,6 @@ static bool dispatch_native_command(
         return true;
 #endif
     case DFC_CMD_CHANGE_KEY_SETTINGS:
-        if(buffer_len < 2) return false;
-        if(buffer_len < 9) {
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-            return true;
-        }
         handle_change_key_settings(emulator, buffer, buffer_len, tx_buffer);
         return true;
     case DFC_CMD_GET_VERSION:
