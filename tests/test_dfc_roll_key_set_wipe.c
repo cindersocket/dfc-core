@@ -11,14 +11,13 @@
 static size_t observed_wipe_count;
 static size_t observed_wipe_length;
 static size_t expected_secret_length;
-static bool observed_secret;
 static bool observed_zeroed_buffer;
+static uint8_t observed_secrets[2][DFC_MAX_KEY_LEN];
 
 void dfc_test_observed_secure_wipe(void* buffer, size_t length) {
     uint8_t* bytes = buffer;
-    bool secret_matches = length >= expected_secret_length;
-    for(size_t i = 0; i < expected_secret_length && secret_matches; i++) {
-        secret_matches = bytes[i] == 0x40;
+    if(observed_wipe_count < 2 && length >= expected_secret_length) {
+        memcpy(observed_secrets[observed_wipe_count], bytes, expected_secret_length);
     }
 
     volatile uint8_t* wipe = buffer;
@@ -33,7 +32,6 @@ void dfc_test_observed_secure_wipe(void* buffer, size_t length) {
 
     observed_wipe_count++;
     observed_wipe_length = length;
-    observed_secret = observed_secret || secret_matches;
     observed_zeroed_buffer = all_zero;
 }
 
@@ -60,27 +58,40 @@ static MunitResult test_roll_wipes_complete_scratch(const MunitParameter params[
                 for(size_t slot = 0; slot < app->num_keys; slot++) {
                     uint8_t* key = dfc_credential_key_in_set(&credential, app, set, slot);
                     munit_assert_not_null(key);
-                    memset(key, (int)(0x40 + set), storage_widths[width_index]);
+                    size_t block = set * app->num_keys + slot;
+                    memset(key, (int)(0x40 + block), storage_widths[width_index]);
                 }
             }
 
             observed_wipe_count = 0;
             observed_wipe_length = 0;
             expected_secret_length = storage_widths[width_index];
-            observed_secret = false;
             observed_zeroed_buffer = false;
+            memset(observed_secrets, 0, sizeof(observed_secrets));
 
             munit_assert_true(dfc_credential_roll_key_set(&credential, app, rotations));
-            munit_assert_size(observed_wipe_count, >, 0);
+            munit_assert_size(observed_wipe_count, ==, 2);
             munit_assert_size(observed_wipe_length, ==, DFC_MAX_KEY_LEN);
-            munit_assert_true(observed_secret);
             munit_assert_true(observed_zeroed_buffer);
 
-            for(size_t slot = 0; slot < app->num_keys; slot++) {
-                const uint8_t* active = dfc_credential_key_in_set_const(&credential, app, 0, slot);
-                munit_assert_not_null(active);
+            for(size_t cycle = 0; cycle < 2; cycle++) {
                 for(size_t i = 0; i < storage_widths[width_index]; i++) {
-                    munit_assert_uint8(active[i], ==, (uint8_t)(0x40 + rotations));
+                    munit_assert_uint8(observed_secrets[cycle][i], ==, (uint8_t)(0x40 + cycle));
+                }
+            }
+
+            size_t shift = rotations * app->num_keys;
+            size_t block_count = app->num_key_sets * app->num_keys;
+            for(size_t set = 0; set < app->num_key_sets; set++) {
+                for(size_t slot = 0; slot < app->num_keys; slot++) {
+                    size_t block = set * app->num_keys + slot;
+                    uint8_t expected = (uint8_t)(0x40 + (block + shift) % block_count);
+                    const uint8_t* key =
+                        dfc_credential_key_in_set_const(&credential, app, set, slot);
+                    munit_assert_not_null(key);
+                    for(size_t i = 0; i < storage_widths[width_index]; i++) {
+                        munit_assert_uint8(key[i], ==, expected);
+                    }
                 }
             }
         }

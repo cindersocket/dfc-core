@@ -1,4 +1,5 @@
 #include "aes_cmac.h"
+#include "cmac_common.h"
 #include "dfc_crypto_internal.h"
 
 #define BLOCK_SIZE 16
@@ -24,12 +25,6 @@ static void aes_cmac_bitShiftLeft(uint8_t* input, uint8_t* output, size_t len) {
         }
     }
     output[last] = input[last] << 1;
-}
-
-static void aes_cmac_xor_in_place(uint8_t* value, const uint8_t* mask, size_t len) {
-    for(size_t i = 0; i < len; i++) {
-        value[i] ^= mask[i];
-    }
 }
 
 static bool
@@ -105,14 +100,14 @@ bool aes_cmac_segments_with_iv(
         size_t remaining = segments[segment_index].length;
         while(remaining) {
             if(pending_len == 0 && remaining > BLOCK_SIZE) {
-                aes_cmac_xor_in_place(x, data, BLOCK_SIZE);
+                dfc_cmac_xor_in_place(x, data, BLOCK_SIZE);
                 if(!dfc_crypto_aes_block_encrypt(&cipher, x, x)) goto cleanup;
                 data += BLOCK_SIZE;
                 remaining -= BLOCK_SIZE;
                 continue;
             }
             if(pending_len == BLOCK_SIZE) {
-                aes_cmac_xor_in_place(x, pending, BLOCK_SIZE);
+                dfc_cmac_xor_in_place(x, pending, BLOCK_SIZE);
                 if(!dfc_crypto_aes_block_encrypt(&cipher, x, x)) goto cleanup;
                 pending_len = 0;
             }
@@ -125,13 +120,13 @@ bool aes_cmac_segments_with_iv(
         }
     }
     if(total_len && pending_len == BLOCK_SIZE) {
-        aes_cmac_xor_in_place(pending, subkey1, BLOCK_SIZE);
+        dfc_cmac_xor_in_place(pending, subkey1, BLOCK_SIZE);
     } else {
         memset(pending + pending_len, 0, BLOCK_SIZE - pending_len);
         aes_cmac_padBlock(pending, pending_len);
-        aes_cmac_xor_in_place(pending, subkey2, BLOCK_SIZE);
+        dfc_cmac_xor_in_place(pending, subkey2, BLOCK_SIZE);
     }
-    aes_cmac_xor_in_place(x, pending, BLOCK_SIZE);
+    dfc_cmac_xor_in_place(x, pending, BLOCK_SIZE);
     success = dfc_crypto_aes_block_encrypt(&cipher, x, cmac);
 cleanup:
     if(!success) memset(cmac, 0, BLOCK_SIZE);

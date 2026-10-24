@@ -675,7 +675,7 @@ static size_t dfc_greatest_common_divisor(size_t a, size_t b) {
 }
 
 // Rotate fixed-width key blocks without copying a complete key set onto the
-// embedded stack. The caller wipes the one-key scratch after every cycle.
+// embedded stack. Each cycle wipes the one-key scratch after restoring it.
 static void dfc_rotate_key_blocks_left(
     uint8_t* blocks,
     size_t block_count,

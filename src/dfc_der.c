@@ -1101,6 +1101,7 @@ size_t dfc_der_length(const uint8_t* data, size_t capacity) {
 // enforced. `order` lists the identifiers in the order section 2.2.2 declares
 // them; anything else, or out of order, is malformed.
 #define MAX_COMPONENTS 16
+_Static_assert(MAX_COMPONENTS <= 16, "Fields.present is a uint16_t");
 
 typedef struct {
     const uint8_t* order;
