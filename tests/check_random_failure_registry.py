@@ -9,10 +9,19 @@ REGISTRY = {
     ("src/dfc_credential.c", "uid"): "test_random_failures_are_atomic",
     ("src/dfc_virtual_picc.c", "challenge"): "test_random_failures_are_atomic",
     ("src/dfc_virtual_picc.c", "clear"): "test_random_failures_are_atomic",
-    ("src/dfc_virtual_picc.c", "virtual_card_challenge"): "test_random_failures_are_atomic",
+    (
+        "src/dfc_virtual_picc.c",
+        "virtual_card_challenge",
+    ): "test_random_failures_are_atomic",
     ("src/dfc_virtual_picc.c", "random_uid_tail"): "test_random_failures_are_atomic",
-    ("src/dfc_emulator_commands.c", "proximity_random"): "test_random_failures_are_atomic",
-    ("src/dfc_emulator_commands.c", "random_material"): "test_random_failures_are_atomic",
+    (
+        "src/dfc_emulator_commands.c",
+        "proximity_random",
+    ): "test_random_failures_are_atomic",
+    (
+        "src/dfc_emulator_commands.c",
+        "random_material",
+    ): "test_random_failures_are_atomic",
     ("src/dfc_emulator_commands.c", "rnd_b"): "test_random_failures_are_atomic",
     (
         "src/dfc_emulator_commands.c",
@@ -35,15 +44,20 @@ def main() -> None:
     missing = sites - REGISTRY.keys()
     stale = REGISTRY.keys() - sites
     test_source = "\n".join(
-        path.read_text(encoding="utf-8") for path in sorted((root / "tests").glob("test_*.c"))
+        path.read_text(encoding="utf-8")
+        for path in sorted((root / "tests").glob("test_*.c"))
     )
-    missing_tests = sorted({test for test in REGISTRY.values() if test not in test_source})
+    missing_tests = sorted(
+        {test for test in REGISTRY.values() if test not in test_source}
+    )
     if missing or stale or missing_tests:
         details = [
             f"unregistered random draw: {path}: {argument}"
             for path, argument in sorted(missing)
         ]
-        details += [f"stale random draw: {path}: {argument}" for path, argument in sorted(stale)]
+        details += [
+            f"stale random draw: {path}: {argument}" for path, argument in sorted(stale)
+        ]
         details += [f"missing random-failure test: {test}" for test in missing_tests]
         raise SystemExit("\n".join(details))
 
