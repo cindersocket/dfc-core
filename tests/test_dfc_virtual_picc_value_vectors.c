@@ -104,6 +104,31 @@ static void assert_get_value(DfcVirtualPiccSession* session, uint8_t file_no, in
     assert_response(session, command, command_len, expected, sizeof(expected));
 }
 
+static void assert_value_file_settings(
+    DfcVirtualPiccSession* session,
+    uint8_t file_no,
+    uint8_t comm_settings,
+    uint16_t access_rights,
+    int32_t lower_limit,
+    int32_t upper_limit,
+    int32_t limited_credit_value,
+    uint8_t limited_credit_option) {
+    uint8_t command[] = {0x90, DFC_CMD_GET_FILE_SETTINGS, 0x00, 0x00, 0x01, file_no, 0x00};
+    uint8_t expected[19] = {
+        DFC_FILE_TYPE_VALUE,
+        comm_settings,
+        (uint8_t)(access_rights & 0xFF),
+        (uint8_t)(access_rights >> 8),
+    };
+    put_i32_le(expected + 4, lower_limit);
+    put_i32_le(expected + 8, upper_limit);
+    put_i32_le(expected + 12, limited_credit_value);
+    expected[16] = limited_credit_option;
+    expected[17] = 0x91;
+    expected[18] = DFC_STATUS_OK;
+    assert_response(session, command, sizeof(command), expected, sizeof(expected));
+}
+
 static void assert_value_status(
     DfcVirtualPiccSession* session,
     uint8_t ins,
@@ -531,6 +556,80 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_get_file_settings_reports_committed_limit(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = NULL;
+    setup_app(&credential, &session);
+    create_value_file(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 37, 1, DFC_STATUS_OK);
+
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x01, 11, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+    commit(session, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+
+    assert_value_status(session, DFC_CMD_DEBIT, 0x01, 7, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+    abort_transaction(session, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x01, 11, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+    commit(session, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+
+    DfcApplication* app = dfc_credential_get_primary_application(&credential);
+    munit_assert_not_null(app);
+    app->key_settings_2 = DFC_KEY_TYPE_DES_2K3DES | 2;
+    munit_assert_true(dfc_credential_keys_resize(&credential, app, 2, 8));
+    uint8_t* non_master_key = dfc_credential_key(&credential, app, 1);
+    munit_assert_not_null(non_master_key);
+    memset(non_master_key, 0x11, 8);
+    app->key_settings_1 &= (uint8_t)~DFC_KS1_FREE_DIRECTORY_ACCESS;
+    uint8_t get_settings[] = {0x90, DFC_CMD_GET_FILE_SETTINGS, 0x00, 0x00, 0x01, 0x01, 0x00};
+    assert_status(session, get_settings, sizeof(get_settings), DFC_STATUS_AUTHENTICATION_ERR);
+
+    uint8_t response[128];
+    size_t response_len = 0;
+    uint8_t session_key[DFC_MAX_KEY_LEN];
+    size_t session_key_len = 0;
+    uint8_t zero_key[8] = {0};
+    authenticate_legacy_key(
+        session,
+        1,
+        non_master_key,
+        8,
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        DFC_STATUS_OK);
+    assert_status(session, get_settings, sizeof(get_settings), DFC_STATUS_AUTHENTICATION_ERR);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    munit_assert_uint8(session->emulator->secure_messaging->cipher, !=, 0);
+    munit_assert_uint8(session->emulator->auth_key_no, ==, 1);
+
+    authenticate_legacy_key0(
+        session,
+        zero_key,
+        sizeof(zero_key),
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
 static MunitResult test_value_malformed_vectors(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
@@ -585,6 +684,12 @@ static MunitTest tests[] = {
      NULL},
     {"/limited-credit-transaction-state",
      test_limited_credit_transaction_state,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/get-file-settings-reports-committed-limit",
+     test_get_file_settings_reports_committed_limit,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

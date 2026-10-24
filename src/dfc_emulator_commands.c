@@ -1383,7 +1383,9 @@ static void
         dfc_bytebuf_append_bytes(tx_buffer, rights_wire, sizeof(rights_wire));
         append_int32_le(tx_buffer, file->value_lower_limit);
         append_int32_le(tx_buffer, file->value_upper_limit);
-        append_int32_le(tx_buffer, file->value);
+        // File settings expose the committed reusable limit, not the balance
+        // and not a debit that is still pending in the current transaction.
+        append_int32_le(tx_buffer, file->limited_credit_value);
         dfc_bytebuf_append_byte(tx_buffer, file->limited_credit);
     } else {
         uint8_t settings[7];
