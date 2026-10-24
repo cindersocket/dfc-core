@@ -713,7 +713,8 @@ static MunitResult test_activation_reset_wipes_retained_and_released_storage(
     return MUNIT_OK;
 }
 
-static void assert_native_exchange_bytebuf_wiped(size_t response_capacity, int expected_status) {
+static void
+    assert_native_exchange_bytebuf_reused_and_wiped(size_t response_capacity, int expected_status) {
     DfcCredential credential = {0};
     munit_assert_true(dfc_credential_clear(&credential));
     credential.card.generation = DfcGenerationEv3;
@@ -736,8 +737,11 @@ static void assert_native_exchange_bytebuf_wiped(size_t response_capacity, int e
     dfc_host_set_free_observer(NULL, NULL);
 
     munit_assert_int(status, ==, expected_status);
-    munit_assert_size(audit.count, ==, 1);
-    munit_assert_true(audit.zeroed);
+    munit_assert_size(audit.count, ==, 0);
+    munit_assert_memory_equal(
+        sizeof(*picc->emulator->tx_buffer),
+        picc->emulator->tx_buffer,
+        ((uint8_t[sizeof(*picc->emulator->tx_buffer)]){0}));
     dfc_virtual_picc_session_free(picc);
 }
 
@@ -745,8 +749,8 @@ static MunitResult
     test_native_exchange_wipes_bytebuf_on_all_exits(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    assert_native_exchange_bytebuf_wiped(16, DfcVirtualPiccStatusOk);
-    assert_native_exchange_bytebuf_wiped(0, DfcVirtualPiccStatusBufferTooSmall);
+    assert_native_exchange_bytebuf_reused_and_wiped(16, DfcVirtualPiccStatusOk);
+    assert_native_exchange_bytebuf_reused_and_wiped(0, DfcVirtualPiccStatusBufferTooSmall);
     return MUNIT_OK;
 }
 
