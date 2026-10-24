@@ -393,6 +393,37 @@ static void check_rejected_file_creation_is_atomic(void) {
         free_credential_state(&before);
     }
 
+    DfcFfiFile invalid = plain_file(0, DFC_EV1_MAX_FILE_NUMBER);
+    invalid.comm_settings = 0x02;
+    index = UINT32_C(0xA5A5A5A5);
+    before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_add_file(credential, &invalid, &index) == DfcDerMalformed);
+    CHECK(index == UINT32_C(0xA5A5A5A5));
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+    invalid = plain_file(0, DFC_EV1_MAX_FILE_NUMBER);
+    invalid.access_rights = 0x2EEE;
+    index = UINT32_C(0xA5A5A5A5);
+    before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_add_file(credential, &invalid, &index) == DfcDerMalformed);
+    CHECK(index == UINT32_C(0xA5A5A5A5));
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+
+#if DFC_ENABLE_TRANSACTION_MAC
+    invalid = plain_file(0, DFC_EV1_MAX_FILE_NUMBER);
+    invalid.type = DFC_FILE_TYPE_TRANSACTION_MAC;
+    invalid.access_rights = 0x0F00;
+    invalid.transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES + 1;
+    index = UINT32_C(0xA5A5A5A5);
+    before = capture_credential_state(credential);
+    CHECK(dfc_ffi_credential_add_file(credential, &invalid, &index) == DfcDerMalformed);
+    CHECK(index == UINT32_C(0xA5A5A5A5));
+    check_credential_state_unchanged(credential, &before);
+    free_credential_state(&before);
+#endif
+
     while(credential->model.num_apps < 16) {
         DfcFfiApplication application =
             capacity_test_application((uint8_t)(0x40u + credential->model.num_apps), false);
@@ -517,6 +548,14 @@ static void check_pool_resize_boundaries(void) {
     check_encoded_round_trip(credential);
 
     initial_key_pool = credential->model.key_pool_used;
+    // Keep the model valid while exercising zero-length key-pool compaction.
+    const uint16_t free_access_rights =
+        (uint16_t)((DFC_ACCESS_FREE << 12) | (DFC_ACCESS_FREE << 8) | (DFC_ACCESS_FREE << 4) |
+                   DFC_ACCESS_FREE);
+    for(size_t i = 0; i < credential->model.num_files; i++) {
+        if(credential->model.files[i].app_index == 0)
+            credential->model.files[i].access_rights = free_access_rights;
+    }
     CHECK(dfc_credential_keys_resize(&credential->model, app, 0, 16));
     CHECK(app->key_offset == DFC_KEY_POOL_NONE);
     CHECK(app->key_pool_len == 0);

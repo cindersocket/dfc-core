@@ -3135,6 +3135,14 @@ static void handle_create_transaction_mac_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
+    const DfcApplication* app = &emulator->credential->apps[emulator->selected_app_index];
+    uint16_t access_rights = access_rights_from_wire(buffer[3], buffer[4]);
+    if(!dfc_communication_settings_is_valid(buffer[2]) ||
+       !dfc_transaction_mac_access_rights_are_valid(access_rights, app->num_keys) ||
+       !dfc_transaction_mac_key_type_is_valid(buffer[5])) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        return;
+    }
     if(!transaction_mac_file_create_ready(emulator, buffer[1], tx_buffer)) return;
 
     /* No fallible operation remains after the transaction boundary moves. */
@@ -3148,7 +3156,8 @@ static void handle_create_transaction_mac_file(
     file->number = buffer[1];
     file->type = DFC_FILE_TYPE_TRANSACTION_MAC;
     file->comm_settings = buffer[2];
-    file->access_rights = access_rights_from_wire(buffer[3], buffer[4]);
+    file->access_rights = access_rights;
+    file->transaction_mac_key_type = buffer[5];
     file->declared_size = DFC_TRANSACTION_MAC_FILE_LENGTH;
     file->contents_complete = true;
     memcpy(file->transaction_mac_key, buffer + 6, DFC_AES_KEY_LENGTH);

@@ -255,6 +255,11 @@ extern const uint8_t DFC_ISO_AID[7];
 // builders, codecs, the FFI, and the emulator cannot drift apart.
 bool dfc_uid_length_is_valid(size_t length);
 bool dfc_iso_file_id_is_reserved(uint16_t value);
+bool dfc_communication_settings_is_valid(uint8_t value);
+bool dfc_access_rights_are_valid(uint16_t rights, size_t key_count);
+bool dfc_transaction_mac_access_rights_are_valid(uint16_t rights, size_t key_count);
+bool dfc_sdm_access_rights_are_valid(uint16_t rights, size_t key_count);
+bool dfc_transaction_mac_key_type_is_valid(uint8_t value);
 // Returns 16 or 24 for a valid key-set type, and zero for an invalid type.
 size_t dfc_key_set_type_length(uint8_t type);
 uint8_t dfc_key_type_for_set_type(uint8_t type);
@@ -269,6 +274,9 @@ uint32_t dfc_crc32(const uint8_t* data, size_t length);
 #define DFC_COMM_PLAIN      0x00
 #define DFC_COMM_MAC        0x01
 #define DFC_COMM_ENCIPHERED 0x03
+#define DFC_COMM_MODE_MASK  0x03
+
+#define DFC_TRANSACTION_MAC_KEY_TYPE_AES 0x02
 
 #define DFC_FILE_TYPE_STANDARD_DATA   0x00
 #define DFC_FILE_TYPE_BACKUP_DATA     0x01

@@ -908,6 +908,11 @@ int32_t dfc_ffi_credential_add_file(
 #if !DFC_ENABLE_TRANSACTION_MAC
     if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) return DfcDerUnsupported;
 #endif
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(f->type > DFC_FILE_TYPE_TRANSACTION_MAC) return DfcDerUnsupported;
+#else
+    if(f->type > DFC_FILE_TYPE_CYCLIC_RECORD) return DfcDerUnsupported;
+#endif
     DfcCredential* c = &credential->model;
     size_t owner;
     if(f->owner == DFC_FFI_OWNER_PICC) {
@@ -917,7 +922,37 @@ int32_t dfc_ffi_credential_add_file(
     } else {
         return DFC_FFI_INVALID_ARGUMENT;
     }
+    size_t key_count = owner == DFC_FILE_OWNER_PICC ? c->picc_num_keys : c->apps[owner].num_keys;
     if(c->num_files >= DFC_MAX_FILES) return DfcDerCapacity;
+    // Reject domains before publishing anything into the next model slot.
+    if(f->number > DFC_EV1_MAX_FILE_NUMBER ||
+       !dfc_communication_settings_is_valid(f->comm_settings) ||
+#if DFC_ENABLE_SDM
+       ((f->comm_settings & DFC_SDM_ENABLED_MASK) != 0 && !f->sdm_enabled) ||
+#endif
+       (f->type == DFC_FILE_TYPE_TRANSACTION_MAC ?
+            !dfc_transaction_mac_access_rights_are_valid(f->access_rights, key_count) :
+            !dfc_access_rights_are_valid(f->access_rights, key_count)) ||
+       (f->type == DFC_FILE_TYPE_VALUE && f->limited_credit > 3)) {
+        return DfcDerMalformed;
+    }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC &&
+       !dfc_transaction_mac_key_type_is_valid(f->transaction_mac_key_type)) {
+        return DfcDerMalformed;
+    }
+#endif
+#if DFC_ENABLE_SDM
+    if(f->sdm_enabled &&
+       (f->type != DFC_FILE_TYPE_STANDARD_DATA ||
+        (f->sdm_options &
+         (uint8_t)~(
+             DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK | DFC_SDM_COUNTER_LIMIT_MASK |
+             DFC_SDM_ENCRYPTED_FILE_MASK | DFC_SDM_ASCII_ENCODING_MASK)) != 0 ||
+        !dfc_sdm_access_rights_are_valid(f->sdm_access_rights, key_count))) {
+        return DfcDerMalformed;
+    }
+#endif
     for(size_t i = 0; i < c->num_files; i++) {
         if(c->files[i].app_index == owner && c->files[i].number == f->number)
             return DfcDerMalformed;

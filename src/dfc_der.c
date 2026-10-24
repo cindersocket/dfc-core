@@ -945,6 +945,19 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
 #else
         if(f->type == FILE_TYPE_TMAC || f->type > FILE_TYPE_CYCLIC) return DfcDerUnsupported;
 #endif
+        size_t key_count = f->app_index == DFC_FILE_OWNER_PICC ? c->picc_num_keys :
+                                                                 c->apps[f->app_index].num_keys;
+        if(!dfc_communication_settings_is_valid(f->comm_settings)) return DfcDerMalformed;
+#if DFC_ENABLE_SDM
+        if((f->comm_settings & DFC_SDM_ENABLED_MASK) != 0 && !f->sdm_enabled) {
+            return DfcDerMalformed;
+        }
+#endif
+        if(f->type == FILE_TYPE_TMAC ?
+               !dfc_transaction_mac_access_rights_are_valid(f->access_rights, key_count) :
+               !dfc_access_rights_are_valid(f->access_rights, key_count)) {
+            return DfcDerMalformed;
+        }
         for(size_t j = i + 1; j < c->num_files; j++) {
             if(c->files[j].app_index == f->app_index && c->files[j].number == f->number) {
                 return DfcDerMalformed;
@@ -958,9 +971,17 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
             if(f->value_lower_limit > f->value || f->value > f->value_upper_limit) {
                 return DfcDerMalformed;
             }
+            if(f->limited_credit > 3) return DfcDerMalformed;
         } else if(f->type == FILE_TYPE_TMAC) {
             // A transaction-MAC file is an EV2 feature (section 2.2.4 rule 13).
-            if(c->card.generation < DfcGenerationEv2) return DfcDerMalformed;
+            if(c->card.generation < DfcGenerationEv2) {
+                return DfcDerMalformed;
+            }
+#if DFC_ENABLE_TRANSACTION_MAC
+            if(!dfc_transaction_mac_key_type_is_valid(f->transaction_mac_key_type)) {
+                return DfcDerMalformed;
+            }
+#endif
         } else {
             if(f->record_size == 0 || f->record_size > U24_MAX) return DfcDerMalformed;
             if(f->max_records == 0 || f->max_records > U24_MAX) return DfcDerMalformed;
@@ -980,6 +1001,13 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
 #if DFC_ENABLE_SDM
         if(f->sdm_enabled) {
             if(f->type != FILE_TYPE_STANDARD) return DfcDerMalformed;
+            if((f->sdm_options & (uint8_t)~(
+                                     DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
+                                     DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
+                                     DFC_SDM_ASCII_ENCODING_MASK)) != 0 ||
+               !dfc_sdm_access_rights_are_valid(f->sdm_access_rights, key_count)) {
+                return DfcDerMalformed;
+            }
             // Every offset addresses a position inside the file.
             const uint32_t size = f->declared_size;
             if(f->sdm_has_uid_offset && f->sdm_uid_offset >= size) return DfcDerMalformed;

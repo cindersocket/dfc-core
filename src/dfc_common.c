@@ -9,6 +9,49 @@ bool dfc_iso_file_id_is_reserved(uint16_t value) {
     return value == 0x0000 || value == 0x3F00 || value == 0x3FFF || value == 0xFFFF;
 }
 
+bool dfc_communication_settings_is_valid(uint8_t value) {
+    uint8_t mode = value & DFC_COMM_MODE_MASK;
+    uint8_t flags = 0;
+#if DFC_ENABLE_SDM
+    // SDM shares the serialized octet with the communication mode.
+    flags = DFC_SDM_ENABLED_MASK;
+#endif
+    return (value & (uint8_t)~(flags | DFC_COMM_MODE_MASK)) == 0 &&
+           (mode == DFC_COMM_PLAIN || mode == DFC_COMM_MAC || mode == DFC_COMM_ENCIPHERED);
+}
+
+static bool access_nibble_is_valid(uint8_t value, size_t key_count) {
+    return value >= DFC_ACCESS_FREE || value < key_count;
+}
+
+bool dfc_access_rights_are_valid(uint16_t rights, size_t key_count) {
+    for(size_t shift = 0; shift < 16; shift += 4) {
+        if(!access_nibble_is_valid((uint8_t)(rights >> shift) & 0x0F, key_count)) return false;
+    }
+    return true;
+}
+
+bool dfc_transaction_mac_access_rights_are_valid(uint16_t rights, size_t key_count) {
+    // This file type reserves the write nibble and requires its disabled value.
+    return dfc_access_rights_are_valid(rights, key_count) &&
+           (((rights >> 8) & 0x0F) == DFC_ACCESS_DENY);
+}
+
+bool dfc_sdm_access_rights_are_valid(uint16_t rights, size_t key_count) {
+    uint8_t meta_read = (uint8_t)(rights >> 12);
+    uint8_t file_read = (uint8_t)(rights >> 8) & 0x0F;
+    uint8_t reserved = (uint8_t)(rights >> 4) & 0x0F;
+    uint8_t counter_read = (uint8_t)rights & 0x0F;
+    // Free is not a FileRead key, and the middle nibble is reserved.
+    return access_nibble_is_valid(meta_read, key_count) &&
+           (file_read == DFC_ACCESS_DENY || file_read < key_count) &&
+           reserved == DFC_ACCESS_DENY && access_nibble_is_valid(counter_read, key_count);
+}
+
+bool dfc_transaction_mac_key_type_is_valid(uint8_t value) {
+    return value == DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+}
+
 size_t dfc_key_set_type_length(uint8_t type) {
     if(type == DFC_KEY_SET_TYPE_3K3DES) return DFC_KEY_SET_MAXIMUM_24_BYTE;
     if(type == DFC_KEY_SET_TYPE_2K3DES || type == DFC_KEY_SET_TYPE_AES) {
