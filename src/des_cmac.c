@@ -28,10 +28,9 @@ static void des_cmac_bitShiftLeft(uint8_t* input, uint8_t* output, size_t len) {
     output[last] = input[last] << 1;
 }
 
-// x = a ^ b
-static void des_cmac_xor(const uint8_t* a, const uint8_t* b, uint8_t* x, size_t len) {
+static void des_cmac_xor_in_place(uint8_t* value, const uint8_t* mask, size_t len) {
     for(size_t i = 0; i < len; i++) {
-        x[i] = a[i] ^ b[i];
+        value[i] ^= mask[i];
     }
 }
 
@@ -81,7 +80,6 @@ bool des_cmac_segments_with_iv(
     size_t pending_len = 0;
     size_t total_len = 0;
     uint8_t x[BLOCK_SIZE] = {0};
-    uint8_t y[BLOCK_SIZE] = {0};
     DfcCryptoDesBlock cipher;
     bool success = false;
 
@@ -110,15 +108,15 @@ bool des_cmac_segments_with_iv(
         size_t remaining = segments[segment_index].length;
         while(remaining) {
             if(pending_len == 0 && remaining > BLOCK_SIZE) {
-                des_cmac_xor(x, data, y, BLOCK_SIZE);
-                if(!dfc_crypto_des_block_crypt(&cipher, y, x)) goto cleanup;
+                des_cmac_xor_in_place(x, data, BLOCK_SIZE);
+                if(!dfc_crypto_des_block_crypt(&cipher, x, x)) goto cleanup;
                 data += BLOCK_SIZE;
                 remaining -= BLOCK_SIZE;
                 continue;
             }
             if(pending_len == BLOCK_SIZE) {
-                des_cmac_xor(x, pending, y, BLOCK_SIZE);
-                if(!dfc_crypto_des_block_crypt(&cipher, y, x)) goto cleanup;
+                des_cmac_xor_in_place(x, pending, BLOCK_SIZE);
+                if(!dfc_crypto_des_block_crypt(&cipher, x, x)) goto cleanup;
                 pending_len = 0;
             }
             size_t take = BLOCK_SIZE - pending_len;
@@ -130,21 +128,20 @@ bool des_cmac_segments_with_iv(
         }
     }
     if(total_len && pending_len == BLOCK_SIZE) {
-        des_cmac_xor(pending, subkey1, pending, BLOCK_SIZE);
+        des_cmac_xor_in_place(pending, subkey1, BLOCK_SIZE);
     } else {
         memset(pending + pending_len, 0, BLOCK_SIZE - pending_len);
         des_cmac_padBlock(pending, pending_len);
-        des_cmac_xor(pending, subkey2, pending, BLOCK_SIZE);
+        des_cmac_xor_in_place(pending, subkey2, BLOCK_SIZE);
     }
-    des_cmac_xor(x, pending, y, BLOCK_SIZE);
-    success = dfc_crypto_des_block_crypt(&cipher, y, cmac);
+    des_cmac_xor_in_place(x, pending, BLOCK_SIZE);
+    success = dfc_crypto_des_block_crypt(&cipher, x, cmac);
 cleanup:
     if(!success) memset(cmac, 0, BLOCK_SIZE);
     des_cmac_wipe(subkey1, sizeof(subkey1));
     des_cmac_wipe(subkey2, sizeof(subkey2));
     des_cmac_wipe(pending, sizeof(pending));
     des_cmac_wipe(x, sizeof(x));
-    des_cmac_wipe(y, sizeof(y));
     dfc_crypto_des_block_clear(&cipher);
     return success;
 }
