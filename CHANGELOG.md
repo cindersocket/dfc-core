@@ -28,6 +28,8 @@
 - Add a reproducible Cortex-M4 footprint gate for code, static data, stack
   frames, model structures, and configured storage capacities.
 - Refactor credential validation and serialization around explicit model invariants.
+- Reject standard ISO file operations for Transaction-MAC applications and
+  report EV1 short reads with the EOF warning (#120).
 - Accept zero-initialized credentials with empty file and key pools.
 - Make credential and file-pool updates transactional.
 - Reuse prepared cipher contexts and stream segmented AES, DES, and TDEA MAC input,

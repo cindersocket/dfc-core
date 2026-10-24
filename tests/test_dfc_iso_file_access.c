@@ -94,6 +94,142 @@ static void assert_security_status(const uint8_t* response, size_t response_len)
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x69, 0x82}));
 }
 
+static void assert_conditions_not_satisfied(const uint8_t* response, size_t response_len) {
+    munit_assert_size(response_len, ==, 2);
+    munit_assert_memory_equal(
+        2,
+        response,
+        ((uint8_t[]){
+            DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_HI,
+            DFC_ISO7816_SW_CONDITIONS_NOT_SATISFIED_LO}));
+}
+
+#if DFC_ENABLE_TRANSACTION_MAC
+static void add_transaction_mac_file(DfcCredential* credential, size_t app_index) {
+    DfcFile* file = dfc_credential_create_file(credential, app_index, 0x0E);
+    munit_assert_not_null(file);
+    file->type = DFC_FILE_TYPE_TRANSACTION_MAC;
+}
+
+static MunitResult
+    test_transaction_mac_blocks_standard_iso_commands(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t read_binary[] = {0, DFC_ISO7816_INS_READ_BINARY, 0, 0, 3};
+    const uint8_t update_binary[] = {0, DFC_ISO7816_INS_UPDATE_BINARY, 0, 0, 1, 0xA5};
+    const uint8_t read_record[] = {0, DFC_ISO7816_INS_READ_RECORD, 1, 0, 3};
+    const uint8_t* commands[] = {read_binary, update_binary, read_record};
+    const size_t command_lengths[] = {
+        sizeof(read_binary), sizeof(update_binary), sizeof(read_record)};
+    const uint8_t file_types[] = {
+        DFC_FILE_TYPE_STANDARD_DATA, DFC_FILE_TYPE_STANDARD_DATA, DFC_FILE_TYPE_LINEAR_RECORD};
+
+    for(size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++) {
+        DfcCredential credential;
+        DfcVirtualPiccSession* session = prepare_session(&credential, file_types[i]);
+        DfcFile* target = &credential.files[0];
+        target->access_rights = ACCESS_FREE;
+        uint8_t before = dfc_file_data(&credential, target)[0];
+        add_transaction_mac_file(&credential, target->app_index);
+        uint8_t response[8];
+        size_t response_len;
+
+        exchange(
+            session, commands[i], command_lengths[i], response, sizeof(response), &response_len);
+        assert_conditions_not_satisfied(response, response_len);
+        munit_assert_uint8(dfc_file_data(&credential, target)[0], ==, before);
+        dfc_virtual_picc_session_free(session);
+    }
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_transaction_mac_blocks_standard_iso_selection(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = prepare_session(&credential, DFC_FILE_TYPE_STANDARD_DATA);
+    DfcFile* target = &credential.files[0];
+    add_transaction_mac_file(&credential, target->app_index);
+    const DfcApplication* app = &credential.apps[target->app_index];
+    DfcEmulatorSelectedApplication selection_before = session->emulator->selected_application;
+    size_t selected_app_before = session->emulator->selected_app_index;
+    bool file_selected_before = session->iso_file_selected;
+    size_t selected_file_before = session->iso_file_index;
+    uint8_t select_app[5 + sizeof(app->iso_aid)] = {
+        0, DFC_ISO7816_INS_SELECT, DFC_ISO7816_SELECT_BY_DF_NAME, 0, app->iso_aid_len};
+    memcpy(select_app + 5, app->iso_aid, app->iso_aid_len);
+    uint8_t response[8];
+    size_t response_len;
+
+    exchange(session, select_app, 5 + app->iso_aid_len, response, sizeof(response), &response_len);
+    assert_conditions_not_satisfied(response, response_len);
+    munit_assert_int(session->emulator->selected_application, ==, selection_before);
+    munit_assert_size(session->emulator->selected_app_index, ==, selected_app_before);
+    munit_assert_true(session->iso_file_selected == file_selected_before);
+    munit_assert_size(session->iso_file_index, ==, selected_file_before);
+
+    session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    session->emulator->selected_app_index = target->app_index;
+    const uint8_t select_file[] = {
+        0,
+        DFC_ISO7816_INS_SELECT,
+        DFC_ISO7816_SELECT_CHILD_EF,
+        0,
+        2,
+        (uint8_t)(target->iso_file_id >> 8),
+        (uint8_t)target->iso_file_id};
+    exchange(session, select_file, sizeof(select_file), response, sizeof(response), &response_len);
+    assert_conditions_not_satisfied(response, response_len);
+    munit_assert_int(
+        session->emulator->selected_application, ==, DfcEmulatorSelectedApplicationApp);
+    munit_assert_size(session->emulator->selected_app_index, ==, target->app_index);
+    munit_assert_true(session->iso_file_selected == file_selected_before);
+    munit_assert_size(session->iso_file_index, ==, selected_file_before);
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+#endif
+
+static MunitResult
+    test_ev1_read_binary_reports_short_eof(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t reads[][5] = {
+        {0, DFC_ISO7816_INS_READ_BINARY, 0, 0, 8},
+        {0, DFC_ISO7816_INS_READ_BINARY, 0, 2, 4},
+        {0, DFC_ISO7816_INS_READ_BINARY, 0, 3, 1},
+        {0, DFC_ISO7816_INS_READ_BINARY, 0, 2, 1},
+        {0, DFC_ISO7816_INS_READ_BINARY, 0, 2, 0},
+    };
+    const size_t returned[] = {3, 1, 0, 1, 1};
+    const bool short_eof[] = {true, true, true, false, false};
+
+    for(uint8_t generation = DfcGenerationEv1; generation <= DfcGenerationEv3; generation++) {
+        for(size_t i = 0; i < sizeof(reads) / sizeof(reads[0]); i++) {
+            DfcCredential credential;
+            DfcVirtualPiccSession* session =
+                prepare_session(&credential, DFC_FILE_TYPE_STANDARD_DATA);
+            credential.card.generation = generation;
+            credential.files[0].access_rights = ACCESS_FREE;
+            uint8_t response[8];
+            size_t response_len;
+            exchange(
+                session, reads[i], sizeof(reads[i]), response, sizeof(response), &response_len);
+            munit_assert_size(response_len, ==, returned[i] + 2);
+            bool reports_short_eof = generation == DfcGenerationEv1 && short_eof[i];
+            const uint8_t* expected_status =
+                reports_short_eof ?
+                    ((uint8_t[]){
+                        DFC_ISO7816_SW_EOF_BEFORE_LE_HI, DFC_ISO7816_SW_EOF_BEFORE_LE_LO}) :
+                    ((uint8_t[]){DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO});
+            munit_assert_memory_equal(2, response + returned[i], expected_status);
+            dfc_virtual_picc_session_free(session);
+        }
+    }
+    return MUNIT_OK;
+}
+
 static MunitResult test_iso_binary_access_family(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
@@ -182,20 +318,29 @@ static MunitResult test_iso_record_access_family(const MunitParameter params[], 
     return MUNIT_OK;
 }
 
-static void assert_iso_mac_response(const uint8_t* response, size_t response_len, uint8_t iv[8]) {
+static void assert_iso_mac_response_status(
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t iv[8],
+    uint8_t status_hi,
+    uint8_t status_lo) {
     munit_assert_size(response_len, ==, 13);
-    const uint8_t status = DFC_ISO7816_SW_OK_LO;
     DfcCryptoSegment segments[] = {
         {.data = response, .length = 3},
-        {.data = &status, .length = 1},
+        {.data = &status_lo, .length = 1},
     };
     uint8_t expected[8] = {0};
     uint8_t key[sizeof(SessionKey)];
     memcpy(key, SessionKey, sizeof(key));
     munit_assert_true(des_cmac_segments_with_iv(key, sizeof(key), segments, 2, iv, expected));
     munit_assert_memory_equal(sizeof(expected), response + 3, expected);
-    munit_assert_memory_equal(2, response + 11, ((uint8_t[]){0x90, 0x00}));
+    munit_assert_memory_equal(2, response + 11, ((uint8_t[]){status_hi, status_lo}));
     memcpy(iv, expected, sizeof(expected));
+}
+
+static void assert_iso_mac_response(const uint8_t* response, size_t response_len, uint8_t iv[8]) {
+    assert_iso_mac_response_status(
+        response, response_len, iv, DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO);
 }
 
 static void assert_d40_mac_response(const uint8_t* response, size_t response_len) {
@@ -449,6 +594,14 @@ static MunitResult test_iso_mac_le_boundaries(const MunitParameter params[], voi
     exchange(session, read, sizeof(read), response, sizeof(response), &response_len);
     uint8_t iv[8] = {0};
     assert_iso_mac_response(response, response_len, iv);
+    read[4] = 0xFF;
+    exchange(session, read, sizeof(read), response, sizeof(response), &response_len);
+    assert_iso_mac_response_status(
+        response,
+        response_len,
+        iv,
+        DFC_ISO7816_SW_EOF_BEFORE_LE_HI,
+        DFC_ISO7816_SW_EOF_BEFORE_LE_LO);
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
 }
@@ -559,6 +712,26 @@ static MunitResult
 }
 
 static MunitTest tests[] = {
+#if DFC_ENABLE_TRANSACTION_MAC
+    {"/transaction-mac-blocks-commands",
+     test_transaction_mac_blocks_standard_iso_commands,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/transaction-mac-blocks-selection",
+     test_transaction_mac_blocks_standard_iso_selection,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
+    {"/ev1-read-binary-short-eof",
+     test_ev1_read_binary_reports_short_eof,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/binary-access-family",
      test_iso_binary_access_family,
      NULL,

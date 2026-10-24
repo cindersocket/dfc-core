@@ -1,4 +1,5 @@
 #include "dfc_emulator_i.h"
+#include "dfc_credential_i.h"
 #include "dfc_ev2.h"
 #include "dfc_ev2_crypto.h"
 
@@ -496,6 +497,7 @@ static void emit_payload_with_chaining_comm(
             payload,
             payload_len,
             emulator->pending_chain,
+            sizeof(emulator->pending_chain),
             length_unknown);
         if(payload_len == 0) goto crypto_failure;
         pending_used = payload_len;
@@ -535,6 +537,7 @@ static void emit_payload_with_chaining_comm(
             payload,
             payload_len,
             emulator->pending_chain,
+            sizeof(emulator->pending_chain),
             length_unknown);
         if(payload_len == 0) goto crypto_failure;
         pending_used = payload_len;
@@ -2877,7 +2880,8 @@ static void handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
             DFC_STATUS_OK,
             value_bytes,
             sizeof(value_bytes),
-            wrapped);
+            wrapped,
+            sizeof(wrapped));
         dfc_secure_wipe(value_bytes, sizeof(value_bytes));
         if(wrapped_len == 0) {
             dfc_secure_wipe(wrapped, sizeof(wrapped));
@@ -2989,7 +2993,8 @@ static void handle_value_delta(
                 sizeof(header),
                 body + 1,
                 body_len - 1,
-                clear);
+                clear,
+                sizeof(clear));
             if(clear_len < 4) {
                 dfc_emulator_reset_session(emulator);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
@@ -3032,7 +3037,8 @@ static void handle_value_delta(
             sizeof(header),
             body + 1,
             body_len - 1,
-            clear);
+            clear,
+            sizeof(clear));
         if(clear_len < 4 && comm != DFC_COMM_PLAIN) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
@@ -3089,13 +3095,8 @@ static void handle_value_delta(
 
 #if DFC_ENABLE_TRANSACTION_MAC
 static DfcFile* transaction_mac_file(DfcEmulator* emulator) {
-    for(size_t i = 0; i < emulator->credential->num_files; i++) {
-        DfcFile* file = &emulator->credential->files[i];
-        if(file->app_index == emulator->selected_app_index &&
-           file->type == DFC_FILE_TYPE_TRANSACTION_MAC)
-            return file;
-    }
-    return NULL;
+    return dfc_credential_find_transaction_mac_file(
+        emulator->credential, emulator->selected_app_index);
 }
 
 static bool transaction_mac_file_create_ready(
@@ -4481,7 +4482,8 @@ static void handle_write_data(
                 8,
                 wrapped,
                 wrapped_len,
-                target);
+                target,
+                sizeof(emulator->pending_chain));
             clear = target;
             scratch_len = wrapped_len;
             if(out_len == 0 && wrapped_len > 0) {
@@ -4508,7 +4510,14 @@ static void handle_write_data(
                 }
                 uint8_t* target = emulator->pending_chain;
                 out_len = dfc_secure_messaging_verify_command(
-                    emulator->secure_messaging, comm, apdu, 8, wrapped, wrapped_len, target);
+                    emulator->secure_messaging,
+                    comm,
+                    apdu,
+                    8,
+                    wrapped,
+                    wrapped_len,
+                    target,
+                    sizeof(emulator->pending_chain));
                 clear = target;
                 scratch_len = wrapped_len;
             }
@@ -4704,7 +4713,8 @@ static size_t unwrap_write_payload(
             cmd_header,
             wrapped,
             wrapped_len,
-            out);
+            out,
+            out_cap);
         if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
         return data_len;
     }
@@ -4724,7 +4734,7 @@ static size_t unwrap_write_payload(
         return wrapped_len;
     }
     size_t data_len = dfc_secure_messaging_verify_command(
-        emulator->secure_messaging, comm, apdu, cmd_header, wrapped, wrapped_len, out);
+        emulator->secure_messaging, comm, apdu, cmd_header, wrapped, wrapped_len, out, out_cap);
     if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
     return data_len;
 }

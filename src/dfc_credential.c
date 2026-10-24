@@ -2,6 +2,20 @@
 
 #include <stdio.h>
 
+DfcFile* dfc_credential_find_transaction_mac_file(DfcCredential* credential, size_t app_index) {
+#if DFC_ENABLE_TRANSACTION_MAC
+    for(size_t i = 0; i < credential->num_files; i++) {
+        DfcFile* file = &credential->files[i];
+        if(file->app_index == app_index && file->type == DFC_FILE_TYPE_TRANSACTION_MAC)
+            return file;
+    }
+#else
+    DFC_UNUSED(credential);
+    DFC_UNUSED(app_index);
+#endif
+    return NULL;
+}
+
 #define TAG "DfcCredential"
 
 uint8_t dfc_credential_compiled_auth_commands(void) {

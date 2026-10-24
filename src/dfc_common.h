@@ -120,6 +120,8 @@ static inline uint8_t dfc_record_command_base(uint8_t command) {
 #define DFC_ISO7816_SW_WRONG_LE_LO            0x00
 #define DFC_ISO7816_SW_NO_DIAGNOSTIC_HI       0x6F
 #define DFC_ISO7816_SW_NO_DIAGNOSTIC_LO       0x00
+#define DFC_ISO7816_SW_EOF_BEFORE_LE_HI       0x62
+#define DFC_ISO7816_SW_EOF_BEFORE_LE_LO       0x82
 #define DFC_ISO7816_SELECT_PATH_FROM_MF       0x08
 #define DFC_ISO7816_SELECT_PATH_FROM_DF       0x09
 #define DFC_ISO7816_STATUS_WORD_LENGTH        2
