@@ -52,8 +52,19 @@ pub enum Error {
     OutOfMemory,
     Unsupported,
     RandomSourceFailed,
-    AbiMismatch { expected: u32, actual: u32 },
-    LayoutMismatch { expected: u64, actual: u64 },
+    AbiMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    LayoutMismatch {
+        expected: u64,
+        actual: u64,
+    },
+    StructSizeMismatch {
+        structure: &'static str,
+        expected: u32,
+        actual: u32,
+    },
     Native(i32),
 }
 
@@ -72,6 +83,14 @@ impl fmt::Display for Error {
             Self::LayoutMismatch { expected, actual } => write!(
                 f,
                 "dfc native layout fingerprint mismatch: expected {expected:#018x}, found {actual:#018x}"
+            ),
+            Self::StructSizeMismatch {
+                structure,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "dfc native {structure} structure size mismatch: expected {expected}, found {actual}"
             ),
             Self::Native(status) => write!(f, "dfc operation failed with status {status}"),
         }
@@ -109,6 +128,42 @@ fn require_layout_fingerprint(actual: u64) -> Result<(), Error> {
 }
 
 #[cfg(not(feature = "role-target"))]
+fn struct_size_mismatch(native: &sys::DfcFfiStructSizes) -> Option<Error> {
+    macro_rules! require_size {
+        ($field:ident, $type:ty) => {{
+            let expected = size_of::<$type>() as u32;
+            if native.$field != expected {
+                return Some(Error::StructSizeMismatch {
+                    structure: stringify!($field),
+                    expected,
+                    actual: native.$field,
+                });
+            }
+        }};
+    }
+    require_size!(capabilities, sys::DfcFfiCapabilities);
+    require_size!(error, sys::DfcFfiError);
+    require_size!(card, sys::DfcFfiCard);
+    require_size!(picc, sys::DfcFfiPiccSettings);
+    require_size!(application, sys::DfcFfiApplication);
+    require_size!(file, sys::DfcFfiFile);
+    require_size!(key, sys::DfcFfiKey);
+    require_size!(activation, sys::DfcFfiActivation);
+    require_size!(snapshot, sys::DfcFfiSnapshot);
+    require_size!(diagnostic_snapshot, sys::DfcFfiDiagnosticSnapshot);
+    require_size!(reader_state, sys::DfcFfiReaderState);
+    None
+}
+
+#[cfg(not(feature = "role-target"))]
+fn require_struct_sizes() -> Result<(), Error> {
+    let mut native = MaybeUninit::<sys::DfcFfiStructSizes>::uninit();
+    unsafe { sys::dfc_ffi_struct_sizes(native.as_mut_ptr()) };
+    let native = unsafe { native.assume_init() };
+    struct_size_mismatch(&native).map_or(Ok(()), Err)
+}
+
+#[cfg(not(feature = "role-target"))]
 fn ensure_abi() -> Result<(), Error> {
     match ABI_STATE.load(Ordering::Acquire) {
         1 => return Ok(()),
@@ -126,6 +181,7 @@ fn ensure_abi() -> Result<(), Error> {
                 actual,
             });
         }
+        4 => return require_struct_sizes(),
         _ => {}
     }
     let actual = unsafe { sys::dfc_ffi_abi_version() };
@@ -141,34 +197,9 @@ fn ensure_abi() -> Result<(), Error> {
         ABI_STATE.store(3, Ordering::Release);
         return Err(error);
     }
-    let mut native = MaybeUninit::<sys::DfcFfiStructSizes>::uninit();
-    unsafe { sys::dfc_ffi_struct_sizes(native.as_mut_ptr()) };
-    let native = unsafe { native.assume_init() };
-    let expected = [
-        (native.capabilities, size_of::<sys::DfcFfiCapabilities>()),
-        (native.error, size_of::<sys::DfcFfiError>()),
-        (native.card, size_of::<sys::DfcFfiCard>()),
-        (native.picc, size_of::<sys::DfcFfiPiccSettings>()),
-        (native.application, size_of::<sys::DfcFfiApplication>()),
-        (native.file, size_of::<sys::DfcFfiFile>()),
-        (native.key, size_of::<sys::DfcFfiKey>()),
-        (native.activation, size_of::<sys::DfcFfiActivation>()),
-        (native.snapshot, size_of::<sys::DfcFfiSnapshot>()),
-        (
-            native.diagnostic_snapshot,
-            size_of::<sys::DfcFfiDiagnosticSnapshot>(),
-        ),
-        (native.reader_state, size_of::<sys::DfcFfiReaderState>()),
-    ];
-    if expected
-        .iter()
-        .any(|(native, rust)| *native as usize != *rust)
-    {
-        ABI_STATE.store(3, Ordering::Release);
-        return Err(Error::LayoutMismatch {
-            expected: layout::expected_layout_fingerprint(),
-            actual: native_fingerprint,
-        });
+    if let Err(error) = require_struct_sizes() {
+        ABI_STATE.store(4, Ordering::Release);
+        return Err(error);
     }
     ABI_STATE.store(1, Ordering::Release);
     Ok(())
@@ -476,6 +507,40 @@ mod tests {
                 expected,
                 actual: expected ^ 1,
             })
+        );
+    }
+
+    #[test]
+    fn struct_size_mismatch_names_the_structure_and_sizes() {
+        let mut sizes = sys::DfcFfiStructSizes {
+            capabilities: size_of::<sys::DfcFfiCapabilities>() as u32,
+            error: size_of::<sys::DfcFfiError>() as u32,
+            card: size_of::<sys::DfcFfiCard>() as u32,
+            picc: size_of::<sys::DfcFfiPiccSettings>() as u32,
+            application: size_of::<sys::DfcFfiApplication>() as u32,
+            file: size_of::<sys::DfcFfiFile>() as u32,
+            key: size_of::<sys::DfcFfiKey>() as u32,
+            activation: size_of::<sys::DfcFfiActivation>() as u32,
+            snapshot: size_of::<sys::DfcFfiSnapshot>() as u32,
+            diagnostic_snapshot: size_of::<sys::DfcFfiDiagnosticSnapshot>() as u32,
+            reader_state: size_of::<sys::DfcFfiReaderState>() as u32,
+        };
+        assert_eq!(struct_size_mismatch(&sizes), None);
+
+        let expected = sizes.file;
+        sizes.file += 4;
+        let mismatch = Error::StructSizeMismatch {
+            structure: "file",
+            expected,
+            actual: expected + 4,
+        };
+        assert_eq!(struct_size_mismatch(&sizes), Some(mismatch.clone()));
+        assert_eq!(
+            mismatch.to_string(),
+            format!(
+                "dfc native file structure size mismatch: expected {expected}, found {}",
+                expected + 4
+            )
         );
     }
 
