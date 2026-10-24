@@ -29,6 +29,8 @@ jobs:
         run: python3 tests/test_check_decoder_registry.py
       - name: Test documentation link checker
         run: python3 tests/test_check_docs.py
+      - name: Check DESFire vector integrity
+        run: python3 tests/check_desfire_vectors.py
       - name: Test stack-usage checker
         run: python3 tests/test_check_stack_usage.py
       - name: Test CI unit workflow policy
