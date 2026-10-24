@@ -2207,8 +2207,8 @@ static size_t generate_d40_mac_response(
     size_t response_capacity) {
     DfcSecureMessaging card = link->session.sm;
     card.pcd = false;
-    return dfc_secure_messaging_generate_response(
-        &card, DFC_COMM_MAC, DFC_STATUS_OK, plain, plain_len, response, response_capacity);
+    return dfc_secure_messaging_generate_d40_response_mac(
+        &card, plain, plain_len, response, response_capacity);
 }
 
 static MunitResult

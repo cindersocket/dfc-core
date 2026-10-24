@@ -537,15 +537,22 @@ static void emit_payload_with_chaining_comm(
             return;
         }
         pending_used = payload_len + DFC_SM_MAX_CIPHER_BLOCK_SIZE;
-        payload_len = dfc_secure_messaging_generate_response_with_length_marker(
-            emulator->secure_messaging,
-            comm,
-            DFC_STATUS_OK,
-            payload,
-            payload_len,
-            emulator->pending_chain,
-            sizeof(emulator->pending_chain),
-            length_unknown);
+        payload_len = comm == DFC_COMM_MAC ?
+                          dfc_secure_messaging_generate_d40_response_mac(
+                              emulator->secure_messaging,
+                              payload,
+                              payload_len,
+                              emulator->pending_chain,
+                              sizeof(emulator->pending_chain)) :
+                          dfc_secure_messaging_generate_response_with_length_marker(
+                              emulator->secure_messaging,
+                              DFC_COMM_ENCIPHERED,
+                              DFC_STATUS_OK,
+                              payload,
+                              payload_len,
+                              emulator->pending_chain,
+                              sizeof(emulator->pending_chain),
+                              length_unknown);
         if(payload_len == 0) goto crypto_failure;
         pending_used = payload_len;
         payload = emulator->pending_chain;
@@ -1511,8 +1518,22 @@ static size_t unwrap_write_payload(
         memcpy(out, wrapped, wrapped_len);
         return wrapped_len;
     }
+    if(comm == DFC_COMM_MAC) {
+        size_t data_len = 0;
+        return dfc_secure_messaging_verify_d40_command_mac(
+                   emulator->secure_messaging, wrapped, wrapped_len, out, out_cap, &data_len) ?
+                   data_len :
+                   SIZE_MAX;
+    }
     size_t data_len = dfc_secure_messaging_verify_command(
-        emulator->secure_messaging, comm, apdu, cmd_header, wrapped, wrapped_len, out, out_cap);
+        emulator->secure_messaging,
+        DFC_COMM_ENCIPHERED,
+        apdu,
+        cmd_header,
+        wrapped,
+        wrapped_len,
+        out,
+        out_cap);
     if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
     return data_len;
 }
@@ -3105,14 +3126,20 @@ static void handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
                         comm != DFC_COMM_PLAIN && (!ev1_sm || comm == DFC_COMM_ENCIPHERED);
     if(protect_here) {
         uint8_t wrapped[DFC_SM_MAX_CIPHER_BLOCK_SIZE] = {0};
-        size_t wrapped_len = dfc_secure_messaging_generate_response(
-            emulator->secure_messaging,
-            comm,
-            DFC_STATUS_OK,
-            value_bytes,
-            sizeof(value_bytes),
-            wrapped,
-            sizeof(wrapped));
+        size_t wrapped_len = comm == DFC_COMM_MAC ? dfc_secure_messaging_generate_d40_response_mac(
+                                                        emulator->secure_messaging,
+                                                        value_bytes,
+                                                        sizeof(value_bytes),
+                                                        wrapped,
+                                                        sizeof(wrapped)) :
+                                                    dfc_secure_messaging_generate_response(
+                                                        emulator->secure_messaging,
+                                                        DFC_COMM_ENCIPHERED,
+                                                        DFC_STATUS_OK,
+                                                        value_bytes,
+                                                        sizeof(value_bytes),
+                                                        wrapped,
+                                                        sizeof(wrapped));
         dfc_secure_wipe(value_bytes, sizeof(value_bytes));
         if(wrapped_len == 0) {
             dfc_secure_wipe(wrapped, sizeof(wrapped));
@@ -3261,16 +3288,30 @@ static void handle_value_delta(
         }
         uint8_t clear[DFC_SM_MAX_CIPHER_BLOCK_SIZE];
         uint8_t header[2] = {cmd, body[0]};
-        size_t clear_len = dfc_secure_messaging_verify_command(
-            emulator->secure_messaging,
-            comm,
-            header,
-            sizeof(header),
-            body + 1,
-            body_len - 1,
-            clear,
-            sizeof(clear));
-        if(clear_len < 4 && comm != DFC_COMM_PLAIN) {
+        size_t clear_len = 0;
+        bool d40_mac_ok = true;
+        if(comm == DFC_COMM_MAC) {
+            d40_mac_ok = dfc_secure_messaging_verify_d40_command_mac(
+                emulator->secure_messaging,
+                body + 1,
+                body_len - 1,
+                clear,
+                sizeof(clear),
+                &clear_len);
+        } else if(comm == DFC_COMM_ENCIPHERED) {
+            clear_len = dfc_secure_messaging_verify_command(
+                emulator->secure_messaging,
+                DFC_COMM_ENCIPHERED,
+                header,
+                sizeof(header),
+                body + 1,
+                body_len - 1,
+                clear,
+                sizeof(clear));
+        } else {
+            clear_len = body_len - 1;
+        }
+        if(!d40_mac_ok || (clear_len < 4 && comm != DFC_COMM_PLAIN)) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
@@ -4943,19 +4984,32 @@ static void handle_write_data(
                     return;
                 }
                 uint8_t* target = emulator->pending_chain;
-                out_len = dfc_secure_messaging_verify_command(
-                    emulator->secure_messaging,
-                    comm,
-                    apdu,
-                    8,
-                    wrapped,
-                    wrapped_len,
-                    target,
-                    sizeof(emulator->pending_chain));
+                bool d40_mac_ok = true;
+                if(comm == DFC_COMM_MAC) {
+                    d40_mac_ok = dfc_secure_messaging_verify_d40_command_mac(
+                        emulator->secure_messaging,
+                        wrapped,
+                        wrapped_len,
+                        target,
+                        sizeof(emulator->pending_chain),
+                        &out_len);
+                } else {
+                    out_len = dfc_secure_messaging_verify_command(
+                        emulator->secure_messaging,
+                        DFC_COMM_ENCIPHERED,
+                        apdu,
+                        8,
+                        wrapped,
+                        wrapped_len,
+                        target,
+                        sizeof(emulator->pending_chain));
+                }
+                if(!d40_mac_ok) out_len = SIZE_MAX;
                 clear = target;
                 scratch_len = wrapped_len;
             }
-            if(out_len == 0 && wrapped_len > 0 && comm != DFC_COMM_PLAIN) {
+            if((out_len == 0 && wrapped_len > 0 && comm != DFC_COMM_PLAIN) ||
+               out_len == SIZE_MAX) {
                 dfc_secure_wipe(emulator->pending_chain, scratch_len);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
                 return;

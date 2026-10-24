@@ -1258,10 +1258,8 @@ static DfcVirtualPiccStatus write_iso_file_read_response(
         if(data_len) memcpy(response, data, data_len);
         // The response MAC authenticates SW2, including warning statuses.
         payload_len = session->emulator->secure_messaging->cipher == DFC_CMD_AUTHENTICATE_LEGACY ?
-                          dfc_secure_messaging_generate_response(
+                          dfc_secure_messaging_generate_d40_response_mac(
                               session->emulator->secure_messaging,
-                              DFC_COMM_MAC,
-                              status_lo,
                               data,
                               data_len,
                               response,

@@ -144,13 +144,40 @@ size_t dfc_secure_messaging_unwrap_ev1_response(
     uint8_t* out,
     size_t out_capacity);
 
-// Wraps a command payload under the given file's communication mode
-// (plain/MAC/enciphered). `header` is the cleartext head of the command - the
-// command byte followed by the parameters that precede the payload, so
-// Cmd||FileNo||Offset||Length for a write - and `plain` is the payload after it.
-// An EV1 session's MAC and CRC cover header and payload together; a legacy
-// session covers the payload alone. Writes the wrapped payload (never the
-// header) into `out`. Returns zero without changing the IV or output when the
+// D40 uses a four-byte CBC-MAC over payload bytes only. These named entry
+// points keep that rule separate from EV1 chained CMAC and EV2 MACs.
+size_t dfc_secure_messaging_wrap_d40_command_mac(
+    DfcSecureMessaging* sm,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t* out,
+    size_t out_capacity);
+bool dfc_secure_messaging_verify_d40_command_mac(
+    DfcSecureMessaging* sm,
+    const uint8_t* wrapped,
+    size_t wrapped_len,
+    uint8_t* out,
+    size_t out_capacity,
+    size_t* out_len);
+size_t dfc_secure_messaging_generate_d40_response_mac(
+    DfcSecureMessaging* sm,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t* out,
+    size_t out_capacity);
+bool dfc_secure_messaging_unwrap_d40_response_mac(
+    DfcSecureMessaging* sm,
+    const uint8_t* wrapped,
+    size_t wrapped_len,
+    uint8_t* out,
+    size_t out_capacity,
+    size_t* out_len);
+
+// Wraps a command payload in plain or enciphered communication mode. MAC mode
+// is family-specific and is rejected here. `header` is the cleartext command
+// head, such as Cmd||FileNo||Offset||Length, and `plain` is its payload. CRC
+// covers the command head in EV1 and only the payload in D40. Writes only the
+// wrapped payload to `out`. Returns zero without changing the IV or output when the
 // requested cryptographic operation fails. Enciphered-mode output is wiped if
 // a cipher fails after writing has begun.
 size_t dfc_secure_messaging_wrap(
@@ -163,8 +190,8 @@ size_t dfc_secure_messaging_wrap(
     uint8_t* out,
     size_t out_capacity);
 
-// Unwraps a response payload (status byte NOT included) received under the given
-// communication mode. Returns true on authentication and format success and
+// Unwraps a plain or enciphered response payload; MAC mode is rejected. The
+// status byte is not included in `wrapped`. Returns true on format success and
 // writes the cleartext length to `out_len`, including zero for an authenticated
 // empty payload. Success advances the IV to the accepted message's chaining
 // value. Failure returns false, sets `out_len` to zero, and leaves the IV
@@ -179,8 +206,7 @@ bool dfc_secure_messaging_unwrap(
     size_t out_capacity,
     size_t* out_len);
 
-// Emulator (PICC) side: generates a response payload under the given comm mode, matching
-// what dfc_secure_messaging_unwrap() on the reader side will accept.
+// Emulator side: generates a plain or enciphered response payload.
 size_t dfc_secure_messaging_generate_response(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,
@@ -199,8 +225,7 @@ size_t dfc_secure_messaging_generate_response_with_length_marker(
     size_t out_capacity,
     bool length_unknown);
 
-// Emulator (PICC) side: verifies/unwraps an incoming command payload under the given comm
-// mode, matching what dfc_secure_messaging_wrap() on the reader side produced.
+// Emulator side: unwraps a plain or enciphered command payload.
 size_t dfc_secure_messaging_verify_command(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,

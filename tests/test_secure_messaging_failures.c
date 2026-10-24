@@ -1367,20 +1367,21 @@ static MunitResult
     return MUNIT_OK;
 }
 
-static void assert_mac_wrap_failure(uint8_t cipher, size_t key_len, size_t plain_len) {
+static void assert_d40_mac_wrap_failure(size_t key_len) {
     uint8_t plain[32] = {0};
-    for(fail_at = 1; fail_at <= 3; fail_at++) {
+    for(fail_at = 1; fail_at <= sizeof(plain) / DFC_SM_LEGACY_BLOCK_SIZE; fail_at++) {
         DfcSecureMessaging sm;
-        init_session(&sm, cipher, key_len);
+        init_session(&sm, DFC_CMD_AUTHENTICATE_LEGACY, key_len);
         uint8_t before_iv[sizeof(sm.iv)];
         memcpy(before_iv, sm.iv, sizeof(before_iv));
         uint8_t output[64];
         memset(output, 0xA5, sizeof(output));
 
-        size_t result = dfc_secure_messaging_wrap(
-            &sm, DFC_COMM_MAC, NULL, 0, plain, plain_len, output, sizeof(output));
+        size_t result = dfc_secure_messaging_wrap_d40_command_mac(
+            &sm, plain, sizeof(plain), output, sizeof(output));
 
         munit_assert_size(result, ==, 0);
+        munit_assert_size(des_block_call, ==, fail_at);
         munit_assert_memory_equal(sizeof(before_iv), sm.iv, before_iv);
         assert_filled(output, sizeof(output), 0xA5);
     }
@@ -1391,10 +1392,8 @@ static MunitResult
     (void)params;
     (void)user_data;
     fail_cbc = false;
-    assert_mac_wrap_failure(DFC_CMD_AUTHENTICATE_AES, 16, 32);
-    for(size_t key_len = 8; key_len <= 24; key_len += 8) {
-        assert_mac_wrap_failure(DFC_CMD_AUTHENTICATE_ISO, key_len, 16);
-    }
+    assert_d40_mac_wrap_failure(8);
+    assert_d40_mac_wrap_failure(16);
     return MUNIT_OK;
 }
 
@@ -1573,8 +1572,8 @@ static void
     fail_at = 0;
     fail_cbc = false;
     uint8_t wrapped[48];
-    size_t wrapped_len = dfc_secure_messaging_generate_response(
-        &writer, DFC_COMM_MAC, DFC_STATUS_OK, plain, sizeof(plain), wrapped, sizeof(wrapped));
+    size_t wrapped_len = dfc_secure_messaging_generate_d40_response_mac(
+        &writer, plain, sizeof(plain), wrapped, sizeof(wrapped));
     munit_assert_size(wrapped_len, >, sizeof(plain));
 
     for(size_t position = 1; position <= positions; position++) {
@@ -1588,29 +1587,15 @@ static void
         memset(output, 0xA5, sizeof(output));
 
         size_t output_len = SIZE_MAX;
-        munit_assert_false(dfc_secure_messaging_unwrap(
-            &reader,
-            DFC_COMM_MAC,
-            DFC_STATUS_OK,
-            wrapped,
-            wrapped_len,
-            output,
-            sizeof(output),
-            &output_len));
+        munit_assert_false(dfc_secure_messaging_unwrap_d40_response_mac(
+            &reader, wrapped, wrapped_len, output, sizeof(output), &output_len));
         munit_assert_size(output_len, ==, 0);
         munit_assert_memory_equal(sizeof(before_iv), reader.iv, before_iv);
         assert_filled(output, sizeof(output), 0xA5);
 
         fail_at = 0;
-        munit_assert_true(dfc_secure_messaging_unwrap(
-            &reader,
-            DFC_COMM_MAC,
-            DFC_STATUS_OK,
-            wrapped,
-            wrapped_len,
-            output,
-            sizeof(output),
-            &output_len));
+        munit_assert_true(dfc_secure_messaging_unwrap_d40_response_mac(
+            &reader, wrapped, wrapped_len, output, sizeof(output), &output_len));
         munit_assert_size(output_len, ==, sizeof(plain));
         munit_assert_memory_equal(sizeof(plain), output, plain);
     }
@@ -1620,12 +1605,6 @@ static MunitResult
     test_response_mac_failures_allow_retry(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
-    // 32 data octets plus the status consume three AES blocks or five DES
-    // blocks after subkey generation. Include the final cipher invocation.
-    assert_response_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_AES, 16, 4);
-    for(size_t key_len = 8; key_len <= 24; key_len += 8) {
-        assert_response_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_ISO, key_len, 6);
-    }
     assert_response_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_LEGACY, 8, 4);
     assert_response_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_LEGACY, 16, 4);
     return MUNIT_OK;
@@ -1712,7 +1691,6 @@ static MunitResult
 
 static void
     assert_command_mac_failure_and_retry(uint8_t cipher, size_t key_len, size_t positions) {
-    const uint8_t header[] = {DFC_CMD_WRITE_DATA, 1, 0, 0, 0, 32, 0, 0};
     uint8_t plain[32];
     for(size_t i = 0; i < sizeof(plain); i++)
         plain[i] = (uint8_t)i;
@@ -1722,15 +1700,8 @@ static void
     fail_at = 0;
     fail_cbc = false;
     uint8_t wrapped[48];
-    size_t wrapped_len = dfc_secure_messaging_wrap(
-        &writer,
-        DFC_COMM_MAC,
-        header,
-        sizeof(header),
-        plain,
-        sizeof(plain),
-        wrapped,
-        sizeof(wrapped));
+    size_t wrapped_len = dfc_secure_messaging_wrap_d40_command_mac(
+        &writer, plain, sizeof(plain), wrapped, sizeof(wrapped));
     munit_assert_size(wrapped_len, >, sizeof(plain));
 
     for(size_t position = 1; position <= positions; position++) {
@@ -1742,34 +1713,17 @@ static void
         uint8_t output[sizeof(plain)];
         memset(output, 0xA5, sizeof(output));
 
-        munit_assert_size(
-            dfc_secure_messaging_verify_command(
-                &card,
-                DFC_COMM_MAC,
-                header,
-                sizeof(header),
-                wrapped,
-                wrapped_len,
-                output,
-                sizeof(output)),
-            ==,
-            0);
+        size_t output_len = SIZE_MAX;
+        munit_assert_false(dfc_secure_messaging_verify_d40_command_mac(
+            &card, wrapped, wrapped_len, output, sizeof(output), &output_len));
+        munit_assert_size(output_len, ==, 0);
         munit_assert_memory_equal(sizeof(before_iv), card.iv, before_iv);
         assert_filled(output, sizeof(output), 0xA5);
 
         fail_at = 0;
-        munit_assert_size(
-            dfc_secure_messaging_verify_command(
-                &card,
-                DFC_COMM_MAC,
-                header,
-                sizeof(header),
-                wrapped,
-                wrapped_len,
-                output,
-                sizeof(output)),
-            ==,
-            sizeof(plain));
+        munit_assert_true(dfc_secure_messaging_verify_d40_command_mac(
+            &card, wrapped, wrapped_len, output, sizeof(output), &output_len));
+        munit_assert_size(output_len, ==, sizeof(plain));
         munit_assert_memory_equal(sizeof(plain), output, plain);
     }
 }
@@ -1778,10 +1732,6 @@ static MunitResult
     test_command_mac_failures_allow_retry(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
-    assert_command_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_AES, 16, 4);
-    for(size_t key_len = 8; key_len <= 24; key_len += 8) {
-        assert_command_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_ISO, key_len, 6);
-    }
     assert_command_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_LEGACY, 8, 4);
     assert_command_mac_failure_and_retry(DFC_CMD_AUTHENTICATE_LEGACY, 16, 4);
     return MUNIT_OK;
