@@ -517,8 +517,7 @@ int32_t dfc_ffi_credential_get_file(
         out->limited_credit = f->limited_credit;
         out->value_pending = f->value_pending;
         out->value_pending_delta = f->value_pending_delta;
-    } else if(
-        f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
+    } else if(f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
         out->record_size = f->record_size;
         out->max_records = f->max_records;
         out->record_count = f->record_count;
@@ -943,8 +942,7 @@ int32_t dfc_ffi_credential_add_file(
         file->limited_credit = f->limited_credit;
         file->value_pending = f->value_pending != 0;
         file->value_pending_delta = f->value_pending_delta;
-    } else if(
-        f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
+    } else if(f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
         file->record_size = f->record_size;
         file->max_records = f->max_records;
         file->record_count = f->record_count;

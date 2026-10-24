@@ -35,8 +35,8 @@ static void expect_protected_response(
     munit_assert_size(command_len, >=, 5);
     size_t body_len = command_len == 5 ? 0 : command[4];
     munit_assert_size(command_len, ==, body_len ? body_len + 6 : 5);
-    munit_assert_true(dfc_secure_messaging_update_ev1_command(
-        oracle, command[1], command + 5, body_len));
+    munit_assert_true(
+        dfc_secure_messaging_update_ev1_command(oracle, command[1], command + 5, body_len));
 
     uint8_t response[128];
     size_t response_len = 0;
@@ -61,8 +61,8 @@ static void expect_plain_special_response(
     size_t payload_len) {
     size_t body_len = command_len == 5 ? 0 : command[4];
     munit_assert_size(command_len, ==, body_len ? body_len + 6 : 5);
-    munit_assert_true(dfc_secure_messaging_update_ev1_command(
-        oracle, command[1], command + 5, body_len));
+    munit_assert_true(
+        dfc_secure_messaging_update_ev1_command(oracle, command[1], command + 5, body_len));
 
     uint8_t response[128];
     size_t response_len = 0;
@@ -81,8 +81,8 @@ static void expect_fixed_wire_response(
     const uint8_t* expected_wire,
     size_t expected_wire_len) {
     size_t body_len = command_len == 5 ? 0 : command[4];
-    munit_assert_true(dfc_secure_messaging_update_ev1_command(
-        oracle, command[1], command + 5, body_len));
+    munit_assert_true(
+        dfc_secure_messaging_update_ev1_command(oracle, command[1], command + 5, body_len));
     uint8_t response[128];
     size_t response_len = 0;
     exchange(session, command, command_len, response, sizeof(response), &response_len);
@@ -200,8 +200,22 @@ static DfcVirtualPiccSession* open_authenticated_picc(
 
 static DfcSecureMessaging* install_known_ev1_session(DfcVirtualPiccSession* session) {
     const uint8_t key[DFC_AES_KEY_LENGTH] = {
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+        0x00,
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        0x07,
+        0x08,
+        0x09,
+        0x0A,
+        0x0B,
+        0x0C,
+        0x0D,
+        0x0E,
+        0x0F};
     session->emulator->secure_messaging =
         dfc_secure_messaging_alloc(DFC_CMD_AUTHENTICATE_AES, key, sizeof(key), NULL);
     munit_assert_not_null(session->emulator->secure_messaging);
@@ -222,43 +236,44 @@ static MunitResult test_dispatcher_protects_every_ev1_success_response(
     DfcCredential credential;
     DfcSecureMessaging* oracle = NULL;
     DfcApplication* app = NULL;
-    DfcVirtualPiccSession* session =
-        open_authenticated_application(&credential, &oracle, &app);
+    DfcVirtualPiccSession* session = open_authenticated_application(&credential, &oracle, &app);
 
     const uint8_t change_settings[] = {
         0x90, DFC_CMD_CHANGE_FILE_SETTINGS, 0x00, 0x00, 0x04, 0x0F, 0x00, 0xEE, 0xEE, 0x00};
-    const uint8_t create_linear[] = {0x90,
-                                     DFC_CMD_CREATE_LINEAR_RECORD_FILE,
-                                     0x00,
-                                     0x00,
-                                     0x0A,
-                                     0x02,
-                                     DFC_COMM_PLAIN,
-                                     0xEE,
-                                     0xEE,
-                                     0x02,
-                                     0x00,
-                                     0x00,
-                                     0x03,
-                                     0x00,
-                                     0x00,
-                                     0x00};
-    const uint8_t create_cyclic[] = {0x90,
-                                     DFC_CMD_CREATE_CYCLIC_RECORD_FILE,
-                                     0x00,
-                                     0x00,
-                                     0x0A,
-                                     0x03,
-                                     DFC_COMM_PLAIN,
-                                     0xEE,
-                                     0xEE,
-                                     0x02,
-                                     0x00,
-                                     0x00,
-                                     0x03,
-                                     0x00,
-                                     0x00,
-                                     0x00};
+    const uint8_t create_linear[] = {
+        0x90,
+        DFC_CMD_CREATE_LINEAR_RECORD_FILE,
+        0x00,
+        0x00,
+        0x0A,
+        0x02,
+        DFC_COMM_PLAIN,
+        0xEE,
+        0xEE,
+        0x02,
+        0x00,
+        0x00,
+        0x03,
+        0x00,
+        0x00,
+        0x00};
+    const uint8_t create_cyclic[] = {
+        0x90,
+        DFC_CMD_CREATE_CYCLIC_RECORD_FILE,
+        0x00,
+        0x00,
+        0x0A,
+        0x03,
+        DFC_COMM_PLAIN,
+        0xEE,
+        0xEE,
+        0x02,
+        0x00,
+        0x00,
+        0x03,
+        0x00,
+        0x00,
+        0x00};
     const uint8_t get_key_version[] = {
         0x90, DFC_CMD_GET_KEY_VERSION, 0x00, 0x00, 0x01, 0x00, 0x00};
 
@@ -290,9 +305,8 @@ static MunitResult test_dispatcher_protects_every_ev1_success_response(
     return MUNIT_OK;
 }
 
-static MunitResult test_picc_directory_commands_chain_responses(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_picc_directory_commands_chain_responses(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
@@ -300,8 +314,7 @@ static MunitResult test_picc_directory_commands_chain_responses(
     DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, false);
     const uint8_t create_application[] = {
         0x90, DFC_CMD_CREATE_APPLICATION, 0, 0, 5, 1, 2, 3, 0x0F, 0x01, 0};
-    const uint8_t get_application_ids[] = {
-        0x90, DFC_CMD_GET_APPLICATION_IDS, 0, 0, 0};
+    const uint8_t get_application_ids[] = {0x90, DFC_CMD_GET_APPLICATION_IDS, 0, 0, 0};
     const uint8_t aid[] = {1, 2, 3};
     const ProtectedCommandCase cases[] = {
         {"CreateApplication", create_application, sizeof(create_application), NULL, 0},
@@ -323,9 +336,8 @@ static MunitResult test_picc_directory_commands_chain_responses(
     return MUNIT_OK;
 }
 
-static MunitResult test_fixed_wire_management_chains(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_fixed_wire_management_chains(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
@@ -382,38 +394,40 @@ static MunitResult test_fixed_wire_management_chains(
     const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
     exchange(session, select, sizeof(select), response, sizeof(response), &response_len);
     oracle = install_known_ev1_session(session);
-    const uint8_t create_linear[] = {0x90,
-                                     DFC_CMD_CREATE_LINEAR_RECORD_FILE,
-                                     0,
-                                     0,
-                                     10,
-                                     2,
-                                     DFC_COMM_PLAIN,
-                                     0xEE,
-                                     0xEE,
-                                     2,
-                                     0,
-                                     0,
-                                     3,
-                                     0,
-                                     0,
-                                     0};
-    const uint8_t create_cyclic[] = {0x90,
-                                     DFC_CMD_CREATE_CYCLIC_RECORD_FILE,
-                                     0,
-                                     0,
-                                     10,
-                                     3,
-                                     DFC_COMM_PLAIN,
-                                     0xEE,
-                                     0xEE,
-                                     2,
-                                     0,
-                                     0,
-                                     3,
-                                     0,
-                                     0,
-                                     0};
+    const uint8_t create_linear[] = {
+        0x90,
+        DFC_CMD_CREATE_LINEAR_RECORD_FILE,
+        0,
+        0,
+        10,
+        2,
+        DFC_COMM_PLAIN,
+        0xEE,
+        0xEE,
+        2,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0};
+    const uint8_t create_cyclic[] = {
+        0x90,
+        DFC_CMD_CREATE_CYCLIC_RECORD_FILE,
+        0,
+        0,
+        10,
+        3,
+        DFC_COMM_PLAIN,
+        0xEE,
+        0xEE,
+        2,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0};
     const uint8_t get_file_ids[] = {0x90, DFC_CMD_GET_FILE_IDS, 0, 0, 0};
     static const uint8_t linear_response[] = {
         0xC9, 0x39, 0x53, 0x45, 0xAB, 0x05, 0x8B, 0xEF, 0x91, 0x00};
@@ -447,30 +461,26 @@ static MunitResult test_fixed_wire_management_chains(
     return MUNIT_OK;
 }
 
-static MunitResult test_special_success_keeps_ev1_chain(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_special_success_keeps_ev1_chain(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
     DfcSecureMessaging* oracle = NULL;
     DfcApplication* app = NULL;
-    DfcVirtualPiccSession* session =
-        open_authenticated_application(&credential, &oracle, &app);
+    DfcVirtualPiccSession* session = open_authenticated_application(&credential, &oracle, &app);
     credential.card.generation = DfcGenerationEv3;
     credential.picc_has_static_signature = true;
     for(size_t index = 0; index < sizeof(credential.picc_static_signature); index++)
         credential.picc_static_signature[index] = (uint8_t)(0x40 + index);
 
-    const uint8_t read_signature[] = {
-        0x90, DFC_CMD_READ_SIGNATURE, 0, 0, 1, 0, 0};
+    const uint8_t read_signature[] = {0x90, DFC_CMD_READ_SIGNATURE, 0, 0, 1, 0, 0};
     uint8_t signature[DFC_STATIC_SIGNATURE_LENGTH];
     expect_plain_special_response(
         session, oracle, read_signature, sizeof(read_signature), signature, sizeof(signature));
     munit_assert_int(
         memcmp(signature, credential.picc_static_signature, sizeof(signature)), ==, 0);
-    const uint8_t get_key_version[] = {
-        0x90, DFC_CMD_GET_KEY_VERSION, 0, 0, 1, 0, 0};
+    const uint8_t get_key_version[] = {0x90, DFC_CMD_GET_KEY_VERSION, 0, 0, 1, 0, 0};
     uint8_t expected_version[] = {app->key_versions[0]};
     expect_protected_response(
         session,
@@ -486,15 +496,13 @@ static MunitResult test_special_success_keeps_ev1_chain(
 }
 
 #if DFC_ENABLE_PROXIMITY_CHECK
-static MunitResult test_proximity_successes_keep_ev1_chain(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_proximity_successes_keep_ev1_chain(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
     DfcSecureMessaging* oracle = NULL;
-    DfcVirtualPiccSession* session =
-        open_authenticated_picc(&credential, &oracle, true);
+    DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, true);
 
     const uint8_t prepare[] = {0x90, DFC_CMD_PREPARE_PROXIMITY_CHECK, 0, 0, 0};
     uint8_t published[1 + DFC_PROXIMITY_PUBLISHED_TIME_LENGTH];
@@ -545,15 +553,13 @@ static MunitResult test_proximity_successes_keep_ev1_chain(
     return MUNIT_OK;
 }
 
-static MunitResult test_proximity_failure_retires_ev1_session(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_proximity_failure_retires_ev1_session(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     DfcCredential credential;
     DfcSecureMessaging* oracle = NULL;
-    DfcVirtualPiccSession* session =
-        open_authenticated_picc(&credential, &oracle, true);
+    DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, true);
     const uint8_t prepare[] = {0x90, DFC_CMD_PREPARE_PROXIMITY_CHECK, 0, 0, 0};
     uint8_t published[1 + DFC_PROXIMITY_PUBLISHED_TIME_LENGTH];
     expect_plain_special_response(
@@ -588,8 +594,7 @@ static MunitResult test_session_retirement_precedes_response_policy(
     (void)params;
     (void)user_data;
     const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
-    const uint8_t delete_app[] = {
-        0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
+    const uint8_t delete_app[] = {0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
     const uint8_t get_card_uid[] = {0x90, DFC_CMD_GET_CARD_UID, 0, 0, 0};
     const ProtectedCommandCase cases[] = {
         {"SelectApplication", select, sizeof(select), NULL, 0},
@@ -631,11 +636,11 @@ static MunitResult test_error_retires_session_without_response_mac(
     DfcCredential credential;
     DfcSecureMessaging* oracle = NULL;
     DfcApplication* app = NULL;
-    DfcVirtualPiccSession* session =
-        open_authenticated_application(&credential, &oracle, &app);
+    DfcVirtualPiccSession* session = open_authenticated_application(&credential, &oracle, &app);
 
     const uint8_t unsupported[] = {0x90, 0xFE, 0, 0, 0};
-    expect_plain_status(session, unsupported, sizeof(unsupported), DFC_STATUS_ILLEGAL_COMMAND_CODE);
+    expect_plain_status(
+        session, unsupported, sizeof(unsupported), DFC_STATUS_ILLEGAL_COMMAND_CODE);
     const uint8_t get_card_uid[] = {0x90, DFC_CMD_GET_CARD_UID, 0, 0, 0};
     expect_plain_status(
         session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
@@ -646,60 +651,61 @@ static MunitResult test_error_retires_session_without_response_mac(
     return MUNIT_OK;
 }
 
-static MunitTest tests[] = {{"/dispatcher-protects-covered-ev1-success-responses",
-                             test_dispatcher_protects_every_ev1_success_response,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
-                            {"/special-success-keeps-ev1-chain",
-                             test_special_success_keeps_ev1_chain,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
+static MunitTest tests[] = {
+    {"/dispatcher-protects-covered-ev1-success-responses",
+     test_dispatcher_protects_every_ev1_success_response,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/special-success-keeps-ev1-chain",
+     test_special_success_keeps_ev1_chain,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #if DFC_ENABLE_PROXIMITY_CHECK
-                            {"/proximity-successes-keep-ev1-chain",
-                             test_proximity_successes_keep_ev1_chain,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
-                            {"/proximity-failure-retires-ev1-session",
-                             test_proximity_failure_retires_ev1_session,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
+    {"/proximity-successes-keep-ev1-chain",
+     test_proximity_successes_keep_ev1_chain,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/proximity-failure-retires-ev1-session",
+     test_proximity_failure_retires_ev1_session,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #endif
-                            {"/picc-directory-commands-chain-responses",
-                             test_picc_directory_commands_chain_responses,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
-                            {"/fixed-wire-management-chains",
-                             test_fixed_wire_management_chains,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
-                            {"/session-retirement-precedes-response-policy",
-                             test_session_retirement_precedes_response_policy,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
-                            {"/error-retires-session-without-response-mac",
-                             test_error_retires_session_without_response_mac,
-                             NULL,
-                             NULL,
-                             MUNIT_TEST_OPTION_NONE,
-                             NULL},
-                            {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL}};
+    {"/picc-directory-commands-chain-responses",
+     test_picc_directory_commands_chain_responses,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/fixed-wire-management-chains",
+     test_fixed_wire_management_chains,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/session-retirement-precedes-response-policy",
+     test_session_retirement_precedes_response_policy,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/error-retires-session-without-response-mac",
+     test_error_retires_session_without_response_mac,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL}};
 
-static const MunitSuite suite = {
-    "/dfc_ev1_response_policy", tests, NULL, 1, MUNIT_SUITE_OPTION_NONE};
+static const MunitSuite suite =
+    {"/dfc_ev1_response_policy", tests, NULL, 1, MUNIT_SUITE_OPTION_NONE};
 
 int main(int argc, char* argv[MUNIT_ARRAY_PARAM(argc + 1)]) {
     return munit_suite_main(&suite, NULL, argc, argv);

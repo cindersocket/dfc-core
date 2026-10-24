@@ -190,7 +190,8 @@ bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
     for(size_t index = 0; index < emulator->credential->num_files; index++) {
         DfcFile* file = &emulator->credential->files[index];
         if(file->app_index != app_index) continue;
-        if(file->type == DFC_FILE_TYPE_LINEAR_RECORD || file->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
+        if(file->type == DFC_FILE_TYPE_LINEAR_RECORD ||
+           file->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
             file->record_count = emulator->transaction_snapshot_record_counts[index];
         }
         file->transaction_pending = false;

@@ -478,8 +478,7 @@ static MunitResult
     munit_assert_size(fixture.credential.num_files, ==, files_before + 1);
     DfcFile* created = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
     munit_assert_not_null(created);
-    munit_assert_size(
-        fixture.credential.file_pool_used, ==, pool_before + created->data_len);
+    munit_assert_size(fixture.credential.file_pool_used, ==, pool_before + created->data_len);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
