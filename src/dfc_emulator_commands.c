@@ -4510,6 +4510,12 @@ static void handle_read_data(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
         return;
     }
+    if(file->type != DFC_FILE_TYPE_STANDARD_DATA && file->type != DFC_FILE_TYPE_BACKUP_DATA &&
+       file->type != DFC_FILE_TYPE_TRANSACTION_MAC) {
+        // ReadData cannot reinterpret a value or record file as an octet stream.
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
     if(!file_allows_read(file, emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, file_access_refusal_status(file, false));
         return;
