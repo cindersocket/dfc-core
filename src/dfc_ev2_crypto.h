@@ -101,6 +101,4 @@ bool dfc_ev2_decrypt_data(
     bool allow_unpadded);
 
 // Comparison whose duration does not depend on where two MACs differ.
-bool dfc_ev2_equal(const uint8_t* a, const uint8_t* b, size_t len);
-
 #endif // DFC_ENABLE_EV2_SECURE_MESSAGING

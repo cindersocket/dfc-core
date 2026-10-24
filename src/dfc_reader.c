@@ -760,10 +760,7 @@ static DfcReaderStatus step_authenticate(
     uint8_t expected[16];
     memcpy(expected, ex->auth_random_a, challenge);
     dfc_rotate_left(expected, challenge);
-    uint8_t difference = 0;
-    for(size_t i = 0; i < challenge; i++)
-        difference |= rotated[i] ^ expected[i];
-    if(difference != 0) {
+    if(!dfc_ct_equal(rotated, expected, challenge)) {
         dfc_secure_wipe(rotated, sizeof(rotated));
         dfc_secure_wipe(expected, sizeof(expected));
         dfc_secure_wipe(iv, sizeof(iv));

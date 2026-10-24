@@ -239,11 +239,4 @@ bool dfc_ev2_decrypt_data(
     return true;
 }
 
-bool dfc_ev2_equal(const uint8_t* a, const uint8_t* b, size_t len) {
-    uint8_t difference = 0;
-    for(size_t i = 0; i < len; i++)
-        difference |= a[i] ^ b[i];
-    return difference == 0;
-}
-
 #endif // DFC_ENABLE_EV2_SECURE_MESSAGING

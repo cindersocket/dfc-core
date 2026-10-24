@@ -1761,10 +1761,7 @@ static void handle_verify_proximity_check(
         proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         goto cleanup;
     }
-    uint8_t difference = 0;
-    for(size_t i = 0; i < sizeof(expected); i++)
-        difference |= expected[i] ^ buffer[i + 1];
-    if(difference != 0) {
+    if(!dfc_ct_equal(expected, buffer + 1, sizeof(expected))) {
         proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         goto cleanup;
     }

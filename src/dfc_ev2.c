@@ -137,7 +137,7 @@ bool dfc_ev2_verify_chained_command_mac(
     const uint8_t mac[DFC_WIRE_MAC_LENGTH]) {
     uint8_t expected[DFC_WIRE_MAC_LENGTH];
     if(!command_mac(emulator, instruction, data, data_len, expected)) return false;
-    return dfc_ev2_equal(expected, mac, sizeof(expected));
+    return dfc_ct_equal(expected, mac, sizeof(expected));
 }
 
 static bool response_mac(
@@ -236,7 +236,7 @@ DfcEv2CommandSecurity dfc_ev2_prepare_command(
         dfc_secure_wipe(expected, sizeof(expected));
         return DfcEv2CommandInvalid;
     }
-    if(!dfc_ev2_equal(expected, command + 1 + secured_data_len, sizeof(expected))) {
+    if(!dfc_ct_equal(expected, command + 1 + secured_data_len, sizeof(expected))) {
         dfc_secure_wipe(expected, sizeof(expected));
         return DfcEv2CommandInvalid;
     }
