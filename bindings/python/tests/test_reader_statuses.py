@@ -4,16 +4,21 @@ from pathlib import Path
 from dfc_core import reader
 
 REPOSITORY = Path(__file__).parents[3]
-READER_STATUS = re.compile(r"^#define (DFC_FFI_READER_[A-Z_]+)\s+(-?\d+)\s*$")
+READER_STATUS_BLOCK = re.compile(
+    r"// Stable reader-step statuses returned by dfc_ffi_reader_step\.\n"
+    r"(?P<definitions>(?:#define DFC_FFI_READER_[A-Z0-9_]+\s+-?\d+\n)+)"
+)
+READER_STATUS = re.compile(r"^#define (DFC_FFI_READER_[A-Z0-9_]+)\s+(-?\d+)\s*$")
 READER_STATUS_ASSERTION = re.compile(r"ASSERT_READER_STATUS\((DFC_FFI_READER_[A-Z_]+),")
-READER_LIMIT = "DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH"
 
 
 def reader_statuses(header: str) -> dict[str, int]:
+    block = READER_STATUS_BLOCK.search(header)
+    assert block is not None
     return {
         match.group(1): int(match.group(2))
-        for line in header.splitlines()
-        if (match := READER_STATUS.fullmatch(line)) and match.group(1) != READER_LIMIT
+        for line in block.group("definitions").splitlines()
+        if (match := READER_STATUS.fullmatch(line))
     }
 
 
@@ -61,6 +66,11 @@ def test_new_c_reader_status_requires_registration() -> None:
     header = (REPOSITORY / "ffi" / "dfc_ffi.h").read_text()
     source = (REPOSITORY / "ffi" / "dfc_ffi.c").read_text()
 
-    statuses = reader_statuses(header + "\n#define DFC_FFI_READER_NEW 8\n")
+    statuses = reader_statuses(
+        header.replace(
+            "\n\n// Largest explicit clear-header length",
+            "\n#define DFC_FFI_READER_EV2_NEW 8\n\n// Largest explicit clear-header length",
+        )
+    )
 
     assert set(statuses) != registered_reader_statuses(source)
