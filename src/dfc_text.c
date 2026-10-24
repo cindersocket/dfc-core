@@ -301,8 +301,14 @@ static bool required(P* p, const char* key, Line* out) {
     if(lookup(p, key, out, true)) return true;
     if(p->failed) return false;
     Line next;
-    size_t line = peek_line(p, &next) ? next.number : 0;
-    return fail(p, line, "missing required key %s", key);
+    if(peek_line(p, &next)) {
+        return fail(
+            p,
+            next.number,
+            "missing required key %s; next key is unrecognised or out of order",
+            key);
+    }
+    return fail(p, 0, "missing required key %s", key);
 }
 
 static bool opt_preferred_auth_command(P* p, const char* key, bool* present, uint8_t* command) {
@@ -694,20 +700,46 @@ static bool parse_record_contents(P* p, const char* prefix, DfcFile* f) {
     f->max_records = (uint32_t)rmax;
     f->record_count = (uint32_t)rcount;
 
-    // Count the stored records first: the pool slice is sized once, so the
-    // records cannot be decoded as they are found.
+    // Count the contiguous record lines without moving the parser. The pool
+    // slice is sized once, then the same short span is consumed and decoded.
     size_t stored = 0;
+    size_t pos = p->cursor_pos;
+    size_t number = p->cursor_line;
     while(true) {
         snprintf(key, sizeof(key), "%s Record %02X", prefix, (unsigned)stored);
+        const char* s;
+        size_t len;
         Line l;
-        if(!lookup(p, key, &l, true)) break;
-        size_t n = 0;
-        if(!hex_count(p, &l, key, &n)) return false;
-        if(n != rsize) return fail(p, l.number, "%s: length is not Record Size", key);
+        do {
+            if(!raw_line(p, &pos, &s, &len)) goto records_counted;
+            number++;
+        } while(line_is_skipped(s, len));
+        if(!split_line(p, s, len, number, &l)) return false;
+        size_t key_len = strlen(key);
+        if(l.key_len != key_len || memcmp(l.key, key, key_len) != 0) break;
         stored++;
     }
+records_counted:
     if(p->failed) return false;
     if(stored > rcount) return fail(p, 0, "%s: more records than Record Count", prefix);
+
+    uint8_t* dst = NULL;
+    if(stored > 0) {
+        if(!dfc_file_resize(p->c, f, stored * (size_t)rsize)) {
+            return fail_class(p, DfcTextCapacity, 0, "%s: records do not fit", prefix);
+        }
+        dst = dfc_file_data(p->c, f);
+        if(!dst) return fail_class(p, DfcTextCapacity, 0, "%s: no room for records", prefix);
+        for(size_t i = 0; i < stored; i++) {
+            snprintf(key, sizeof(key), "%s Record %02X", prefix, (unsigned)i);
+            Line l;
+            if(!lookup(p, key, &l, true)) return fail(p, 0, "%s: record vanished", prefix);
+            size_t n = 0;
+            if(!hex_count(p, &l, key, &n)) return false;
+            if(n != rsize) return fail(p, l.number, "%s: length is not Record Size", key);
+            hex_decode(&l, dst + i * (size_t)rsize, (size_t)rsize);
+        }
+    }
 
     snprintf(key, sizeof(key), "%s Record Complete", prefix);
     if(!req_bool(p, key, &f->contents_complete)) return false;
@@ -715,19 +747,6 @@ static bool parse_record_contents(P* p, const char* prefix, DfcFile* f) {
         return fail(p, 0, "%s: Record Complete is 1 but records are missing", prefix);
     }
 
-    if(stored > 0) {
-        if(!dfc_file_resize(p->c, f, stored * (size_t)rsize)) {
-            return fail_class(p, DfcTextCapacity, 0, "%s: records do not fit", prefix);
-        }
-        uint8_t* dst = dfc_file_data(p->c, f);
-        if(!dst) return fail_class(p, DfcTextCapacity, 0, "%s: no room for records", prefix);
-        for(size_t i = 0; i < stored; i++) {
-            snprintf(key, sizeof(key), "%s Record %02X", prefix, (unsigned)i);
-            Line l;
-            if(!lookup(p, key, &l, false)) return fail(p, 0, "%s: record vanished", prefix);
-            hex_decode(&l, dst + i * (size_t)rsize, (size_t)rsize);
-        }
-    }
     return true;
 }
 
@@ -1360,10 +1379,10 @@ static DfcTextStatus parse_credential(
                 size_t copy = bad.key_len < sizeof(name) ? bad.key_len : sizeof(name) - 1;
                 memcpy(name, bad.key, copy);
                 name[copy] = '\0';
-                fail(&p, number, "unrecognised key %s", name);
+                fail(&p, number, "unrecognised or out of order key %s", name);
                 named = true;
             }
-            if(!named) fail(&p, 0, "unrecognised keys are present");
+            if(!named) fail(&p, 0, "unrecognised or out of order keys are present");
             break;
         }
     } while(false);
