@@ -245,7 +245,7 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     DfcFile* sdm_file = &sdm.files[0];
     sdm_file->sdm_enabled = true;
     sdm_file->comm_settings = DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN;
-    sdm_file->sdm_access_rights = 0xFEFE;
+    sdm_file->sdm_access_rights = 0xEFFE;
     const uint8_t sdm_option_mask = DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
                                     DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
                                     DFC_SDM_ASCII_ENCODING_MASK;
@@ -259,13 +259,13 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     sdm_file->sdm_options = 0;
     for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
         sdm_file->sdm_access_rights = (uint16_t)rights;
-        uint8_t reserved = (uint8_t)(rights >> 12);
-        uint8_t meta = (uint8_t)(rights >> 8) & 0x0F;
-        uint8_t file_read = (uint8_t)(rights >> 4) & 0x0F;
+        uint8_t meta = (uint8_t)(rights >> 12);
+        uint8_t file_read = (uint8_t)(rights >> 8) & 0x0F;
+        uint8_t reserved = (uint8_t)(rights >> 4) & 0x0F;
         uint8_t counter = (uint8_t)rights & 0x0F;
-        bool valid = reserved == DFC_ACCESS_DENY && access_nibble_is_valid_for_keys(meta, 2) &&
+        bool valid = access_nibble_is_valid_for_keys(meta, 2) &&
                      access_nibble_is_valid_for_keys(file_read, 2) &&
-                     access_nibble_is_valid_for_keys(counter, 2);
+                     reserved == DFC_ACCESS_DENY && access_nibble_is_valid_for_keys(counter, 2);
         munit_assert_int(
             dfc_credential_validate_model(&sdm), ==, valid ? DfcModelOk : DfcModelMalformed);
     }
