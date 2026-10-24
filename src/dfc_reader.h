@@ -134,6 +134,7 @@ typedef struct {
     uint8_t status;
     bool invalidates_session;
     bool special_success;
+    bool requires_response_data;
 
     union {
         struct {

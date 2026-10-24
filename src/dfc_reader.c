@@ -943,6 +943,16 @@ static bool is_file_read(uint8_t ins) {
            ins == DFC_CMD_READ_RECORDS_ISO || ins == DFC_CMD_GET_VALUE;
 }
 
+static bool command_requires_response_data(const DfcCommand* command) {
+    if(command->ins == DFC_CMD_GET_VALUE) return true;
+    if((command->ins == DFC_CMD_READ_DATA || command->ins == DFC_CMD_READ_RECORDS ||
+        command->ins == DFC_CMD_READ_RECORDS_ISO) &&
+       command->data_len >= FILE_HEADER_LENGTH) {
+        return command->data[4] != 0 || command->data[5] != 0 || command->data[6] != 0;
+    }
+    return false;
+}
+
 static bool is_file_command(uint8_t ins) {
     switch(ins) {
     case DFC_CMD_READ_DATA:
@@ -1333,6 +1343,7 @@ static DfcReaderStatus reader_exchange_begin(
     exchange->kind = KindCommand;
     exchange->ins = command->ins;
     exchange->comm_mode = options->comm_mode;
+    exchange->requires_response_data = command_requires_response_data(command);
     exchange->invalidates_session = invalidates_session(session, command);
     size_t header_len = options->has_header_len ? options->header_len :
                                                   file_header_length(command->ins);
@@ -1555,6 +1566,13 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
     case PlanD40Mac: {
         if(ex->data_len == 0 && ex->response_plan != PlanD40Mac)
             return finish_command(ex, DfcReaderOk);
+        if(ex->response_plan == PlanD40Mac && ex->requires_response_data &&
+           ex->data_len == DFC_SM_LEGACY_MAC_LENGTH) {
+            dfc_secure_wipe(ex->data, ex->data_len);
+            ex->data_len = 0;
+            dfc_reader_session_clear(session);
+            return finish_command(ex, DfcReaderProtocolError);
+        }
         uint8_t comm = ex->response_plan == PlanD40Mac ? DFC_COMM_MAC : DFC_COMM_ENCIPHERED;
         if(ex->data_len > DFC_SM_MAX_CRYPTO_SIZE) {
             dfc_reader_session_clear(session);

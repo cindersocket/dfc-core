@@ -68,6 +68,8 @@ fn card_status_survives_a_grown_command_buffer() {
 struct CorruptD40MacTransport {
     picc: VirtualPicc,
     calls: usize,
+    forge_empty: bool,
+    forged: usize,
 }
 
 impl Transport for CorruptD40MacTransport {
@@ -76,23 +78,36 @@ impl Transport for CorruptD40MacTransport {
     fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.calls += 1;
         let mut response = self.picc.exchange(command)?;
-        if command.get(1) == Some(&0xbd) && response.len() >= 6 {
-            response[0] ^= 1;
+        let is_read = command.first() == Some(&0xbd) || command.get(1) == Some(&0xbd);
+        if is_read {
+            if self.forge_empty {
+                response = vec![0, 0, 0, 0, 0x91, 0];
+                self.forged += 1;
+            } else if response.len() >= 6 {
+                response[0] ^= 1;
+            }
         }
         Ok(response)
     }
 }
 
-#[test]
-fn d40_integrity_failure_is_terminal_and_retires_session() {
+fn d40_reader(forge_empty: bool) -> Reader<CorruptD40MacTransport> {
     let credential = Credential::decode(include_bytes!(
         "../../../../examples/credentials/v6-auth-commands.dfcb"
     ))
     .expect("fixture");
     let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
     picc.activate().expect("activation");
-    let mut reader =
-        Reader::new(CorruptD40MacTransport { picc, calls: 0 }, Framing::Iso7816).expect("reader");
+    let mut reader = Reader::new(
+        CorruptD40MacTransport {
+            picc,
+            calls: 0,
+            forge_empty,
+            forged: 0,
+        },
+        Framing::Iso7816,
+    )
+    .expect("reader");
 
     reader
         .exchange(
@@ -115,12 +130,18 @@ fn d40_integrity_failure_is_terminal_and_retires_session() {
             None,
         )
         .expect("create MAC-mode data file");
+    reader
+}
+
+#[test]
+fn d40_integrity_failure_is_terminal_and_retires_session() {
+    let mut reader = d40_reader(false);
 
     let calls = reader.transport_mut().calls;
     let result = reader.exchange(
         &Command {
             instruction: 0xbd,
-            data: vec![1, 4, 0, 0, 0, 0, 0],
+            data: vec![1, 0, 0, 0, 1, 0, 0],
         },
         CommunicationMode::Mac,
         None,
@@ -130,6 +151,33 @@ fn d40_integrity_failure_is_terminal_and_retires_session() {
             result,
             Err(ReaderError::Dfc(Error::Native(status)))
                 if status == raw::DFC_FFI_READER_INTEGRITY_ERROR as i32
+        ),
+        "{result:?}"
+    );
+    assert_eq!(reader.transport_mut().calls, calls + 1);
+    assert_eq!(reader.state().expect("retired state").0.auth_mode, 0);
+}
+
+#[test]
+fn d40_empty_mac_forge_is_terminal_and_retires_session() {
+    let mut reader = d40_reader(true);
+    let calls = reader.transport_mut().calls;
+
+    let result = reader.exchange(
+        &Command {
+            instruction: 0xbd,
+            data: vec![1, 0, 0, 0, 1, 0, 0],
+        },
+        CommunicationMode::Mac,
+        None,
+    );
+
+    assert_eq!(reader.transport_mut().forged, 1);
+    assert!(
+        matches!(
+            result,
+            Err(ReaderError::Dfc(Error::Native(status)))
+                if status == raw::DFC_FFI_READER_PROTOCOL_ERROR as i32
         ),
         "{result:?}"
     );

@@ -2122,13 +2122,15 @@ static MunitResult test_d40_session(const MunitParameter params[], void* data) {
 
 static DfcReaderStatus finish_d40_mac_response(
     Link* link,
+    uint32_t requested_length,
     const uint8_t* response_data,
     size_t response_data_len,
     size_t* clear_len) {
     DfcCommand command;
     DfcReaderExchange exchange;
     DfcReaderOptions options = {.comm_mode = DFC_COMM_MAC};
-    munit_assert_int(dfc_command_read_data(&command, FileMac, 0, 1), ==, DfcCommandOk);
+    munit_assert_int(
+        dfc_command_read_data(&command, FileMac, 0, requested_length), ==, DfcCommandOk);
     munit_assert_int(
         dfc_reader_exchange_begin(&exchange, &link->session, link->framing, &command, &options),
         ==,
@@ -2164,7 +2166,7 @@ static size_t generate_d40_mac_response(
 }
 
 static MunitResult
-    test_d40_empty_response_requires_valid_mac(const MunitParameter params[], void* data) {
+    test_d40_reader_rejects_empty_mac_response(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
 
@@ -2177,11 +2179,27 @@ static MunitResult
             authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
         size_t clear_len = SIZE_MAX;
         munit_assert_int(
-            finish_d40_mac_response(&link, valid_empty_mac, sizeof(valid_empty_mac), &clear_len),
+            finish_d40_mac_response(&link, 0, valid_empty_mac, sizeof(valid_empty_mac), &clear_len),
             ==,
             DfcReaderOk);
         munit_assert_size(clear_len, ==, 0);
         munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
+        link_close(&link);
+    }
+
+    {
+        Link link;
+        link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+        select_app(&link, AID_D40);
+        munit_assert_int(
+            authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
+        size_t clear_len = SIZE_MAX;
+        munit_assert_int(
+            finish_d40_mac_response(&link, 1, valid_empty_mac, sizeof(valid_empty_mac), &clear_len),
+            ==,
+            DfcReaderProtocolError);
+        munit_assert_size(clear_len, ==, 0);
+        munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
         link_close(&link);
     }
 
@@ -2197,7 +2215,9 @@ static MunitResult
             generate_d40_mac_response(&link, nonempty, sizeof(nonempty), response);
         size_t clear_len = SIZE_MAX;
         munit_assert_int(
-            finish_d40_mac_response(&link, response, response_len, &clear_len), ==, DfcReaderOk);
+            finish_d40_mac_response(&link, 1, response, response_len, &clear_len),
+            ==,
+            DfcReaderOk);
         munit_assert_size(clear_len, ==, sizeof(nonempty));
         munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
         link_close(&link);
@@ -2215,7 +2235,7 @@ static MunitResult
         response[sizeof(nonempty) + mac_index] ^= 0x01;
         size_t clear_len = SIZE_MAX;
         munit_assert_int(
-            finish_d40_mac_response(&link, response, response_len, &clear_len),
+            finish_d40_mac_response(&link, 1, response, response_len, &clear_len),
             ==,
             DfcReaderIntegrityError);
         munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
@@ -2232,9 +2252,9 @@ static MunitResult
         invalid_mac[mac_index] = 1;
         size_t clear_len = SIZE_MAX;
         munit_assert_int(
-            finish_d40_mac_response(&link, invalid_mac, sizeof(invalid_mac), &clear_len),
+            finish_d40_mac_response(&link, 1, invalid_mac, sizeof(invalid_mac), &clear_len),
             ==,
-            DfcReaderIntegrityError);
+            DfcReaderProtocolError);
         munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
         link_close(&link);
     }
@@ -2247,7 +2267,7 @@ static MunitResult
             authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
         size_t clear_len = SIZE_MAX;
         munit_assert_int(
-            finish_d40_mac_response(&link, valid_empty_mac, truncated_len, &clear_len),
+            finish_d40_mac_response(&link, 1, valid_empty_mac, truncated_len, &clear_len),
             ==,
             DfcReaderIntegrityError);
         munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
@@ -3905,8 +3925,8 @@ static MunitTest tests[] = {
 #endif
     {"/3k3des-session", test_3k3des_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/d40-session", test_d40_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
-    {"/d40-empty-response-requires-valid-mac",
-     test_d40_empty_response_requires_valid_mac,
+    {"/d40-reader-rejects-empty-mac-response",
+     test_d40_reader_rejects_empty_mac_response,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
