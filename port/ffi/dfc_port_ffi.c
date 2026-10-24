@@ -111,9 +111,7 @@ bool dfc_random_fill(uint8_t* buf, size_t len) {
 
 void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {
     DFC_UNUSED(tag);
-    void* block = malloc(size);
-    if(block) memset(block, 0, size);
-    return block;
+    return calloc(1, size);
 }
 
 void dfc_platform_free(void* ptr) {
