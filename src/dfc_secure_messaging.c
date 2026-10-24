@@ -338,6 +338,30 @@ size_t dfc_secure_messaging_verify_ev1_transmitted_command_mac_full(
     return clear_len - 1;
 }
 
+bool dfc_secure_messaging_generate_ev1_response_mac(
+    DfcSecureMessaging* sm,
+    uint8_t status,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t mac[DFC_WIRE_MAC_LENGTH]) {
+    if(!sm || !mac || (plain_len && !plain)) return false;
+    DfcMacSegment segments[] = {
+        {.data = plain, .length = plain_len},
+        {.data = &status, .length = 1},
+    };
+    uint8_t full_mac[16] = {0};
+    size_t full_mac_len = 0;
+    if(!compute_full_cmac_segments(sm, segments, 2, full_mac, &full_mac_len) ||
+       full_mac_len < DFC_WIRE_MAC_LENGTH) {
+        dfc_secure_wipe(full_mac, sizeof(full_mac));
+        return false;
+    }
+    memcpy(mac, full_mac, DFC_WIRE_MAC_LENGTH);
+    update_iv_from_full_cmac(sm, full_mac, full_mac_len);
+    dfc_secure_wipe(full_mac, sizeof(full_mac));
+    return true;
+}
+
 size_t dfc_secure_messaging_generate_ev1_response(
     DfcSecureMessaging* sm,
     uint8_t status,
@@ -345,24 +369,14 @@ size_t dfc_secure_messaging_generate_ev1_response(
     size_t plain_len,
     uint8_t* out) {
     if(!sm || !out || (plain_len && !plain)) return 0;
-    DfcMacSegment segments[] = {
-        {.data = plain, .length = plain_len},
-        {.data = &status, .length = 1},
-    };
-    uint8_t full_mac[16] = {0};
-    size_t full_mac_len = 0;
-    bool ok = compute_full_cmac_segments(sm, segments, 2, full_mac, &full_mac_len);
-    if(!ok) {
-        dfc_secure_wipe(full_mac, sizeof(full_mac));
+    uint8_t mac[DFC_WIRE_MAC_LENGTH];
+    if(!dfc_secure_messaging_generate_ev1_response_mac(sm, status, plain, plain_len, mac)) {
         return 0;
     }
-    size_t truncated_len = DFC_MIN((size_t)8, full_mac_len);
-
-    memcpy(out, plain, plain_len);
-    memcpy(out + plain_len, full_mac, truncated_len);
-    update_iv_from_full_cmac(sm, full_mac, full_mac_len);
-    dfc_secure_wipe(full_mac, sizeof(full_mac));
-    return plain_len + truncated_len;
+    if(plain_len) memmove(out, plain, plain_len);
+    memcpy(out + plain_len, mac, sizeof(mac));
+    dfc_secure_wipe(mac, sizeof(mac));
+    return plain_len + sizeof(mac);
 }
 
 size_t dfc_secure_messaging_generate_ev1_response_in_place(
@@ -371,25 +385,13 @@ size_t dfc_secure_messaging_generate_ev1_response_in_place(
     uint8_t* buffer,
     size_t plain_len,
     size_t capacity) {
-    if(!sm) return 0;
-    size_t full_mac_len = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
-    size_t truncated_len = DFC_MIN((size_t)8, full_mac_len);
-    if(!buffer || plain_len > capacity || truncated_len > capacity - plain_len) return 0;
-
-    DfcMacSegment segments[] = {
-        {.data = buffer, .length = plain_len},
-        {.data = &status, .length = 1},
-    };
-    uint8_t full_mac[16] = {0};
-    if(!compute_full_cmac_segments(sm, segments, 2, full_mac, &full_mac_len)) {
-        dfc_secure_wipe(full_mac, sizeof(full_mac));
+    if(!sm || !buffer || plain_len > capacity || DFC_WIRE_MAC_LENGTH > capacity - plain_len)
+        return 0;
+    if(!dfc_secure_messaging_generate_ev1_response_mac(
+           sm, status, buffer, plain_len, buffer + plain_len)) {
         return 0;
     }
-    truncated_len = DFC_MIN((size_t)8, full_mac_len);
-    memcpy(buffer + plain_len, full_mac, truncated_len);
-    update_iv_from_full_cmac(sm, full_mac, full_mac_len);
-    dfc_secure_wipe(full_mac, sizeof(full_mac));
-    return plain_len + truncated_len;
+    return plain_len + DFC_WIRE_MAC_LENGTH;
 }
 
 size_t dfc_secure_messaging_unwrap_ev1_response(

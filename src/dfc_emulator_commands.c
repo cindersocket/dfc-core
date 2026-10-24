@@ -4950,39 +4950,25 @@ static void
         return;
     }
 
-    uint8_t scratch_buffer[DFC_WORKER_MAX_BUFFER_SIZE];
-    size_t scratch_len = 0;
-    if(offset > 0) {
-        memcpy(scratch_buffer, tx_data, offset);
-        scratch_len += offset;
-    }
-    scratch_buffer[scratch_len++] = status;
-    if(payload_len > sizeof(scratch_buffer) - scratch_len - DFC_WIRE_MAC_LENGTH) {
+    if(payload_len > DFC_WORKER_MAX_BUFFER_SIZE - (offset + 1) - DFC_WIRE_MAC_LENGTH) {
         dfc_emulator_reset_session(emulator);
         dfc_bytebuf_reset(tx_buffer);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
-    memcpy(&scratch_buffer[scratch_len], tx_data + offset + 1, payload_len);
-    size_t wrapped_len = dfc_secure_messaging_generate_ev1_response_in_place(
-        emulator->secure_messaging,
-        status,
-        &scratch_buffer[scratch_len],
-        payload_len,
-        sizeof(scratch_buffer) - scratch_len);
-    if(wrapped_len == 0) {
-        dfc_secure_wipe(scratch_buffer, sizeof(scratch_buffer));
+    uint8_t mac[DFC_WIRE_MAC_LENGTH];
+    if(!dfc_secure_messaging_generate_ev1_response_mac(
+           emulator->secure_messaging, status, tx_data + offset + 1, payload_len, mac)) {
+        dfc_secure_wipe(mac, sizeof(mac));
         dfc_emulator_reset_session(emulator);
         dfc_bytebuf_reset(tx_buffer);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         return;
     }
-    scratch_len += wrapped_len;
 
-    dfc_bytebuf_reset(tx_buffer);
-    dfc_bytebuf_append_bytes(tx_buffer, scratch_buffer, scratch_len);
+    dfc_bytebuf_append_bytes(tx_buffer, mac, sizeof(mac));
     emulator->response_secured = true;
-    dfc_secure_wipe(scratch_buffer, sizeof(scratch_buffer));
+    dfc_secure_wipe(mac, sizeof(mac));
 }
 
 const char* dfc_desfire_command_name(uint8_t cmd, const DfcEmulator* emulator) {

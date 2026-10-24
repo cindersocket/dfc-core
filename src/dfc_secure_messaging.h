@@ -114,6 +114,12 @@ static inline size_t dfc_secure_messaging_command_payload_length(
     if(clear_len > SIZE_MAX - maximum_extra) return SIZE_MAX;
     return ((clear_len + overhead + block - 1) / block) * block + trailer;
 }
+bool dfc_secure_messaging_generate_ev1_response_mac(
+    DfcSecureMessaging* sm,
+    uint8_t status,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t mac[DFC_WIRE_MAC_LENGTH]);
 size_t dfc_secure_messaging_generate_ev1_response(
     DfcSecureMessaging* sm,
     uint8_t status,
