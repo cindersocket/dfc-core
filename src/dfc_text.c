@@ -88,7 +88,13 @@ typedef struct {
     // recognised (rule 4).
     size_t total;
     size_t consumed;
-    size_t last_claimed_line;
+    size_t cursor_pos;
+    size_t cursor_line;
+    size_t lookahead_end;
+    Line lookahead;
+    const char* last_key;
+    size_t last_key_len;
+    bool has_lookahead;
     uint8_t seen[TRACKED_LINES / 8];
     bool tracked;
 
@@ -240,42 +246,63 @@ static bool prescan(P* p) {
     return true;
 }
 
-// Find the single line carrying `key`. A second occurrence is a duplicate and
-// therefore an error (rule 2). Claiming a line marks it recognised.
-static bool lookup(P* p, const char* key, Line* out, bool claim) {
-    if(p->failed) return false;
-    size_t key_len = strlen(key);
-    size_t pos = 0;
-    size_t number = 0;
-    bool found = false;
+// Peek at the next significant line. Grammar rules request keys in wire order,
+// so valid documents are consumed in one forward pass rather than rescanned
+// from byte zero for every field.
+static bool peek_line(P* p, Line* out) {
+    if(p->has_lookahead) {
+        *out = p->lookahead;
+        return true;
+    }
+    size_t pos = p->cursor_pos;
+    size_t number = p->cursor_line;
     while(true) {
         const char* s;
         size_t n;
-        if(!raw_line(p, &pos, &s, &n)) break;
+        if(!raw_line(p, &pos, &s, &n)) return false;
         number++;
         if(line_is_skipped(s, n)) continue;
-        Line l;
-        if(!split_line(p, s, n, number, &l)) return false;
-        if(l.key_len != key_len || memcmp(l.key, key, key_len) != 0) continue;
-        if(found) return fail(p, number, "duplicate key %s", key);
-        *out = l;
-        found = true;
+        if(!split_line(p, s, n, number, &p->lookahead)) return false;
+        p->lookahead_end = pos;
+        p->has_lookahead = true;
+        *out = p->lookahead;
+        return true;
     }
-    if(found && claim) {
-        if(out->number <= p->last_claimed_line) {
-            return fail(p, out->number, "%s: out of order", key);
+}
+
+// Claim the next line when it carries `key`. Optional keys can therefore be
+// tested without consuming the following field.
+static bool lookup(P* p, const char* key, Line* out, bool claim) {
+    if(p->failed) return false;
+    Line line;
+    if(!peek_line(p, &line)) return false;
+    size_t key_len = strlen(key);
+    if(line.key_len != key_len || memcmp(line.key, key, key_len) != 0) {
+        if(p->last_key && line.key_len == p->last_key_len &&
+           memcmp(line.key, p->last_key, line.key_len) == 0) {
+            return fail(p, line.number, "duplicate key %.*s", (int)line.key_len, line.key);
         }
-        p->last_claimed_line = out->number;
-        p->consumed++;
-        mark_seen(p, out->number);
+        return false;
     }
-    return found;
+    *out = line;
+    if(claim) {
+        p->cursor_pos = p->lookahead_end;
+        p->cursor_line = line.number;
+        p->has_lookahead = false;
+        p->last_key = line.key;
+        p->last_key_len = line.key_len;
+        p->consumed++;
+        mark_seen(p, line.number);
+    }
+    return true;
 }
 
 static bool required(P* p, const char* key, Line* out) {
     if(lookup(p, key, out, true)) return true;
     if(p->failed) return false;
-    return fail(p, 0, "missing required key %s", key);
+    Line next;
+    size_t line = peek_line(p, &next) ? next.number : 0;
+    return fail(p, line, "missing required key %s", key);
 }
 
 static bool opt_preferred_auth_command(P* p, const char* key, bool* present, uint8_t* command) {
@@ -953,7 +980,7 @@ static bool parse_applications(P* p) {
         }
 
         char selector[KEY_MAX];
-        snprintf(selector, sizeof(selector), "%s Key Set Count", prefix);
+        snprintf(selector, sizeof(selector), "%s Key Set Key Count", prefix);
         Line probe;
         // The key-set block replaces the ordinary key list.
         if(lookup(p, selector, &probe, false)) {
@@ -1267,7 +1294,9 @@ static DfcTextStatus parse_credential(
             break;
         }
         if(!dfc_uid_length_is_valid(credential->uid_len)) {
-            fail(&p, 0, "UID: length shall be 4, 7, or 10");
+            Line next;
+            size_t line = peek_line(&p, &next) ? next.number : 0;
+            fail(&p, line, "UID: length shall be 4, 7, or 10");
             break;
         }
         if(!req_token(&p, "UID Provenance", PROVENANCE_NAMES, 3, &index)) break;
@@ -1309,6 +1338,24 @@ static DfcTextStatus parse_credential(
                 if(was_seen(&p, number)) continue;
                 Line bad;
                 if(!split_line(&p, s, n, number, &bad)) break;
+                size_t prior_pos = 0;
+                size_t prior_number = 0;
+                const char* prior_s;
+                size_t prior_n;
+                while(raw_line(&p, &prior_pos, &prior_s, &prior_n)) {
+                    prior_number++;
+                    if(prior_number >= number) break;
+                    if(line_is_skipped(prior_s, prior_n) || !was_seen(&p, prior_number)) continue;
+                    Line prior;
+                    if(!split_line(&p, prior_s, prior_n, prior_number, &prior)) break;
+                    if(prior.key_len == bad.key_len &&
+                       memcmp(prior.key, bad.key, bad.key_len) == 0) {
+                        fail(&p, number, "duplicate key %.*s", (int)bad.key_len, bad.key);
+                        named = true;
+                        break;
+                    }
+                }
+                if(named) break;
                 char name[KEY_MAX];
                 size_t copy = bad.key_len < sizeof(name) ? bad.key_len : sizeof(name) - 1;
                 memcpy(name, bad.key, copy);
