@@ -100,7 +100,7 @@ static MunitResult test_iso_authentication_resets_ev1_secure_messaging_iv(
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
-        expected_sm, DFC_STATUS_OK, response, response_len - 2, recovered);
+        expected_sm, DFC_STATUS_OK, response, response_len - 2, recovered, sizeof(recovered));
 
     // The fixture holds logical rights 0x1230, emitted low octet first.
     uint8_t expected_settings[] = {0x00, 0x01, 0x30, 0x12, 0x03, 0x00, 0x00};
@@ -363,7 +363,7 @@ static MunitResult
             reader, i == 0 ? DFC_CMD_GET_VERSION : DFC_CMD_ADDITIONAL_FRAME, NULL, 0);
         munit_assert_memory_not_equal(sizeof(previous_iv), previous_iv, reader->iv);
         size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
-            reader, status, response, response_len - 2, recovered);
+            reader, status, response, response_len - 2, recovered, sizeof(recovered));
         munit_assert_size(recovered_len, ==, plain_len);
         if(i == 2) munit_assert_memory_equal(7, recovered, credential.uid);
     }

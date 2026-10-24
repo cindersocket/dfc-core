@@ -125,7 +125,8 @@ size_t dfc_secure_messaging_generate_ev1_response(
     uint8_t status,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* out);
+    uint8_t* out,
+    size_t out_capacity);
 // Appends the response CMAC directly to `buffer`, which must have eight spare
 // octets. Both response
 // helpers return zero without changing the IV or output when CMAC fails.
@@ -141,7 +142,8 @@ size_t dfc_secure_messaging_unwrap_ev1_response(
     uint8_t status,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out);
+    uint8_t* out,
+    size_t out_capacity);
 
 // Wraps a command payload under the given file's communication mode
 // (plain/MAC/enciphered). `header` is the cleartext head of the command - the
@@ -159,7 +161,8 @@ size_t dfc_secure_messaging_wrap(
     size_t header_len,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* out);
+    uint8_t* out,
+    size_t out_capacity);
 
 // Unwraps a response payload (status byte NOT included) received under the given
 // communication mode. Returns true on authentication and format success and
@@ -174,6 +177,7 @@ bool dfc_secure_messaging_unwrap(
     const uint8_t* wrapped,
     size_t wrapped_len,
     uint8_t* out,
+    size_t out_capacity,
     size_t* out_len);
 
 // Emulator (PICC) side: generates a response payload under the given comm mode, matching
@@ -184,7 +188,8 @@ size_t dfc_secure_messaging_generate_response(
     uint8_t status,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* out);
+    uint8_t* out,
+    size_t out_capacity);
 size_t dfc_secure_messaging_generate_response_with_length_marker(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,
@@ -192,6 +197,7 @@ size_t dfc_secure_messaging_generate_response_with_length_marker(
     const uint8_t* plain,
     size_t plain_len,
     uint8_t* out,
+    size_t out_capacity,
     bool length_unknown);
 
 // Emulator (PICC) side: verifies/unwraps an incoming command payload under the given comm
@@ -203,4 +209,5 @@ size_t dfc_secure_messaging_verify_command(
     size_t header_len,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out);
+    uint8_t* out,
+    size_t out_capacity);

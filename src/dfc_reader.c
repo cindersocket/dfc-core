@@ -1113,7 +1113,14 @@ static DfcReaderStatus prepare_wrapped_file_write(
     memcpy(head + 1, command->data, header_len);
     memcpy(ex->frame, command->data, header_len);
     size_t wrapped_len = dfc_secure_messaging_wrap(
-        &session->sm, comm_mode, head, header_len + 1, body, body_len, ex->frame + header_len);
+        &session->sm,
+        comm_mode,
+        head,
+        header_len + 1,
+        body,
+        body_len,
+        ex->frame + header_len,
+        sizeof(ex->frame) - header_len);
     if(wrapped_len == 0 || wrapped_len != wire_len) {
         return fail_prepared_command(ex, DfcReaderIntegrityError);
     }
@@ -1579,7 +1586,14 @@ static DfcReaderStatus finish_answer(DfcReaderExchange* ex) {
             return finish_command(ex, DfcReaderProtocolError);
         }
         bool authenticated = dfc_secure_messaging_unwrap(
-            &session->sm, comm, status, ex->data, ex->data_len, ex->data, &clear_len);
+            &session->sm,
+            comm,
+            status,
+            ex->data,
+            ex->data_len,
+            ex->data,
+            sizeof(ex->data),
+            &clear_len);
         if(!authenticated) {
             dfc_reader_session_clear(session);
             return finish_command(ex, DfcReaderIntegrityError);

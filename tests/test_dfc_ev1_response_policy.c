@@ -47,7 +47,7 @@ static void expect_protected_response(
 
     uint8_t clear[128];
     size_t clear_len = dfc_secure_messaging_unwrap_ev1_response(
-        oracle, DFC_STATUS_OK, response, response_len - 2, clear);
+        oracle, DFC_STATUS_OK, response, response_len - 2, clear, sizeof(clear));
     munit_assert_size(clear_len, ==, expected_len);
     if(expected_len) munit_assert_int(memcmp(clear, expected, expected_len), ==, 0);
 }

@@ -5,6 +5,27 @@
 
 #define TAG "DfcSecureMessaging"
 
+static bool cipher_accepts_key_length(uint8_t cipher, size_t key_len) {
+    switch(cipher) {
+    case DFC_CMD_AUTHENTICATE_LEGACY:
+        return key_len == 8 || key_len == 16;
+    case DFC_CMD_AUTHENTICATE_ISO:
+        return key_len == 8 || key_len == 16 || key_len == 24;
+    case DFC_CMD_AUTHENTICATE_AES:
+        return key_len == DFC_AES_KEY_LENGTH;
+    default:
+        return false;
+    }
+}
+
+static bool session_is_valid(const DfcSecureMessaging* sm) {
+    return sm && cipher_accepts_key_length(sm->cipher, sm->session_key_len);
+}
+
+static bool output_fits(uint8_t* out, size_t capacity, size_t required) {
+    return required == 0 || (out && capacity >= required);
+}
+
 bool dfc_secure_messaging_init(
     DfcSecureMessaging* sm,
     uint8_t cipher,
@@ -12,7 +33,7 @@ bool dfc_secure_messaging_init(
     size_t session_key_len,
     const uint8_t* initial_iv) {
     if(!sm) return false;
-    if(!session_key || session_key_len > DFC_MAX_KEY_LEN) {
+    if(!session_key || !cipher_accepts_key_length(cipher, session_key_len)) {
         dfc_secure_wipe(sm, sizeof(*sm));
         return false;
     }
@@ -30,7 +51,7 @@ DfcSecureMessaging* dfc_secure_messaging_alloc(
     const uint8_t* session_key,
     size_t session_key_len,
     const uint8_t* initial_iv) {
-    if(!session_key || session_key_len > DFC_MAX_KEY_LEN) return NULL;
+    if(!session_key || !cipher_accepts_key_length(cipher, session_key_len)) return NULL;
 
     DfcSecureMessaging* sm =
         dfc_platform_alloc(sizeof(DfcSecureMessaging), DfcAllocSecureMessaging);
@@ -334,7 +355,9 @@ bool dfc_secure_messaging_generate_ev1_response_mac(
     const uint8_t* plain,
     size_t plain_len,
     uint8_t mac[DFC_WIRE_MAC_LENGTH]) {
-    if(!sm || !mac || (plain_len && !plain)) return false;
+    if(!session_is_valid(sm) || sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY || !mac ||
+       (plain_len && !plain))
+        return false;
     DfcMacSegment segments[] = {
         {.data = plain, .length = plain_len},
         {.data = &status, .length = 1},
@@ -357,8 +380,12 @@ size_t dfc_secure_messaging_generate_ev1_response(
     uint8_t status,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* out) {
-    if(!sm || !out || (plain_len && !plain)) return 0;
+    uint8_t* out,
+    size_t out_capacity) {
+    if(plain_len > SIZE_MAX - DFC_WIRE_MAC_LENGTH ||
+       !output_fits(out, out_capacity, plain_len + DFC_WIRE_MAC_LENGTH) ||
+       (plain_len && !plain))
+        return 0;
     uint8_t mac[DFC_WIRE_MAC_LENGTH];
     if(!dfc_secure_messaging_generate_ev1_response_mac(sm, status, plain, plain_len, mac)) {
         return 0;
@@ -375,7 +402,8 @@ size_t dfc_secure_messaging_generate_ev1_response_in_place(
     uint8_t* buffer,
     size_t plain_len,
     size_t capacity) {
-    if(!sm || !buffer || plain_len > capacity || DFC_WIRE_MAC_LENGTH > capacity - plain_len)
+    if(!session_is_valid(sm) || sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY || !buffer ||
+       plain_len > capacity || DFC_WIRE_MAC_LENGTH > capacity - plain_len)
         return 0;
     if(!dfc_secure_messaging_generate_ev1_response_mac(
            sm, status, buffer, plain_len, buffer + plain_len)) {
@@ -389,12 +417,17 @@ size_t dfc_secure_messaging_unwrap_ev1_response(
     uint8_t status,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out) {
+    uint8_t* out,
+    size_t out_capacity) {
+    if(!session_is_valid(sm) || sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ||
+       (wrapped_len && !wrapped))
+        return SIZE_MAX;
     size_t full_mac_len = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
     size_t truncated_len = DFC_MIN((size_t)8, full_mac_len);
     if(wrapped_len < truncated_len) return SIZE_MAX;
 
     size_t plain_len = wrapped_len - truncated_len;
+    if(!output_fits(out, out_capacity, plain_len)) return SIZE_MAX;
     DfcMacSegment segments[] = {
         {.data = wrapped, .length = plain_len},
         {.data = &status, .length = 1},
@@ -412,7 +445,7 @@ size_t dfc_secure_messaging_unwrap_ev1_response(
         return SIZE_MAX;
     }
 
-    memcpy(out, wrapped, plain_len);
+    if(plain_len) memmove(out, wrapped, plain_len);
     update_iv_from_full_cmac(sm, full_mac, full_mac_len);
     dfc_secure_wipe(full_mac, sizeof(full_mac));
     return plain_len;
@@ -501,13 +534,15 @@ static size_t enciphered_encode(
     const uint8_t* crc_suffix,
     size_t crc_suffix_len,
     bool response_padding,
-    uint8_t* out) {
-    size_t block_size = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
-    size_t crc_len = sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 2 : 4;
-    if(!out || (plain_len && !plain) || plain_len > DFC_MAX_FILE_DATA ||
-       plain_len > SIZE_MAX - crc_len) {
+    uint8_t* out,
+    size_t out_capacity) {
+    if(!session_is_valid(sm) || (plain_len && !plain) || (crc_prefix_len && !crc_prefix) ||
+       (crc_suffix_len && !crc_suffix) || plain_len > DFC_MAX_FILE_DATA) {
         return 0;
     }
+    size_t block_size = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
+    size_t crc_len = sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 2 : 4;
+    if(plain_len > SIZE_MAX - crc_len) return 0;
     size_t with_crc_len = plain_len + crc_len;
     if(with_crc_len > SIZE_MAX - (block_size - 1)) return 0;
     size_t padded_len = ((with_crc_len + block_size - 1) / block_size) * block_size;
@@ -517,6 +552,8 @@ static size_t enciphered_encode(
         padded_len += block_size;
     }
     if(padded_len > DFC_SM_MAX_CRYPTO_SIZE) return 0;
+    // CBC writes the complete padded message before the clear length is known.
+    if(!output_fits(out, out_capacity, padded_len)) return 0;
 
     uint32_t crc;
     if(sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
@@ -583,8 +620,13 @@ static size_t enciphered_decode(
     size_t crc_suffix_len,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out) {
-    if(!sm || !out || !wrapped || wrapped_len > DFC_SM_MAX_CRYPTO_SIZE) return SIZE_MAX;
+    uint8_t* out,
+    size_t out_capacity) {
+    if(!session_is_valid(sm) || !wrapped || wrapped_len == 0 ||
+       wrapped_len > DFC_SM_MAX_CRYPTO_SIZE || (crc_prefix_len && !crc_prefix) ||
+       (crc_suffix_len && !crc_suffix) || !output_fits(out, out_capacity, wrapped_len)) {
+        return SIZE_MAX;
+    }
     size_t block_size = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_AES_KEY_LENGTH :
                                                                  DFC_SM_LEGACY_BLOCK_SIZE;
     if(wrapped_len % block_size != 0) {
@@ -675,9 +717,12 @@ size_t dfc_secure_messaging_wrap(
     size_t header_len,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* out) {
+    uint8_t* out,
+    size_t out_capacity) {
+    if(!session_is_valid(sm) || (header_len && !header) || (plain_len && !plain)) return 0;
     if(comm_mode == DFC_COMM_PLAIN) {
-        memcpy(out, plain, plain_len);
+        if(!output_fits(out, out_capacity, plain_len)) return 0;
+        if(plain_len) memmove(out, plain, plain_len);
         return plain_len;
     }
 
@@ -685,6 +730,9 @@ size_t dfc_secure_messaging_wrap(
 
     if(comm_mode == DFC_COMM_MAC) {
         size_t mac_len = mac_len_for_cipher(sm->cipher);
+        if(plain_len > SIZE_MAX - mac_len ||
+           !output_fits(out, out_capacity, plain_len + mac_len))
+            return 0;
         size_t prefix_len = legacy ? 0 : header_len;
         DfcMacSegment segments[] = {
             {.data = header, .length = prefix_len},
@@ -697,13 +745,15 @@ size_t dfc_secure_messaging_wrap(
             return 0;
         }
 
-        memcpy(out, plain, plain_len);
+        if(plain_len) memmove(out, plain, plain_len);
         memcpy(out + plain_len, mac, mac_len);
         dfc_secure_wipe(mac, sizeof(mac));
         return plain_len + mac_len;
     }
 
-    return enciphered_encode(sm, header, header_len, plain, plain_len, NULL, 0, false, out);
+    if(comm_mode != DFC_COMM_ENCIPHERED) return 0;
+    return enciphered_encode(
+        sm, header, header_len, plain, plain_len, NULL, 0, false, out, out_capacity);
 }
 
 // PICC -> PCD direction (reader receiving a response): MAC covers [...data, status].
@@ -714,11 +764,13 @@ bool dfc_secure_messaging_unwrap(
     const uint8_t* wrapped,
     size_t wrapped_len,
     uint8_t* out,
+    size_t out_capacity,
     size_t* out_len) {
     if(out_len) *out_len = 0;
-    if(!sm || !out_len || (wrapped_len && (!wrapped || !out))) return false;
+    if(!session_is_valid(sm) || !out_len || (wrapped_len && !wrapped)) return false;
     if(comm_mode == DFC_COMM_PLAIN) {
-        if(wrapped_len) memcpy(out, wrapped, wrapped_len);
+        if(!output_fits(out, out_capacity, wrapped_len)) return false;
+        if(wrapped_len) memmove(out, wrapped, wrapped_len);
         *out_len = wrapped_len;
         return true;
     }
@@ -727,6 +779,7 @@ bool dfc_secure_messaging_unwrap(
         size_t mac_len = mac_len_for_cipher(sm->cipher);
         if(wrapped_len < mac_len) return false;
         size_t data_len = wrapped_len - mac_len;
+        if(!output_fits(out, out_capacity, data_len)) return false;
 
         // An EV1 session covers the status byte; a legacy session covers the
         // payload alone.
@@ -748,13 +801,15 @@ bool dfc_secure_messaging_unwrap(
             return false;
         }
 
-        if(data_len) memcpy(out, wrapped, data_len);
+        if(data_len) memmove(out, wrapped, data_len);
         dfc_secure_wipe(mac, sizeof(mac));
         *out_len = data_len;
         return true;
     }
 
-    size_t clear_len = enciphered_decode(sm, NULL, 0, &status, 1, wrapped, wrapped_len, out);
+    if(comm_mode != DFC_COMM_ENCIPHERED) return false;
+    size_t clear_len =
+        enciphered_decode(sm, NULL, 0, &status, 1, wrapped, wrapped_len, out, out_capacity);
     if(clear_len == SIZE_MAX) return false;
     *out_len = clear_len;
     return true;
@@ -769,14 +824,20 @@ size_t dfc_secure_messaging_generate_response_with_length_marker(
     const uint8_t* plain,
     size_t plain_len,
     uint8_t* out,
+    size_t out_capacity,
     bool length_unknown) {
+    if(!session_is_valid(sm) || (plain_len && !plain)) return 0;
     if(comm_mode == DFC_COMM_PLAIN) {
-        memcpy(out, plain, plain_len);
+        if(!output_fits(out, out_capacity, plain_len)) return 0;
+        if(plain_len) memmove(out, plain, plain_len);
         return plain_len;
     }
 
     if(comm_mode == DFC_COMM_MAC) {
         size_t mac_len = mac_len_for_cipher(sm->cipher);
+        if(plain_len > SIZE_MAX - mac_len ||
+           !output_fits(out, out_capacity, plain_len + mac_len))
+            return 0;
         // Mirrors dfc_secure_messaging_unwrap: EV1 covers the status byte, legacy
         // covers the payload alone.
         size_t suffix_len = sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY ? 0 : 1;
@@ -791,13 +852,15 @@ size_t dfc_secure_messaging_generate_response_with_length_marker(
             return 0;
         }
 
-        memcpy(out, plain, plain_len);
+        if(plain_len) memmove(out, plain, plain_len);
         memcpy(out + plain_len, mac, mac_len);
         dfc_secure_wipe(mac, sizeof(mac));
         return plain_len + mac_len;
     }
 
-    return enciphered_encode(sm, NULL, 0, plain, plain_len, &status, 1, length_unknown, out);
+    if(comm_mode != DFC_COMM_ENCIPHERED) return 0;
+    return enciphered_encode(
+        sm, NULL, 0, plain, plain_len, &status, 1, length_unknown, out, out_capacity);
 }
 
 size_t dfc_secure_messaging_generate_response(
@@ -806,9 +869,10 @@ size_t dfc_secure_messaging_generate_response(
     uint8_t status,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* out) {
+    uint8_t* out,
+    size_t out_capacity) {
     return dfc_secure_messaging_generate_response_with_length_marker(
-        sm, comm_mode, status, plain, plain_len, out, false);
+        sm, comm_mode, status, plain, plain_len, out, out_capacity, false);
 }
 
 // PCD -> PICC direction (emulator verifying an incoming command): mirrors
@@ -820,9 +884,12 @@ size_t dfc_secure_messaging_verify_command(
     size_t header_len,
     const uint8_t* wrapped,
     size_t wrapped_len,
-    uint8_t* out) {
+    uint8_t* out,
+    size_t out_capacity) {
+    if(!session_is_valid(sm) || (header_len && !header) || (wrapped_len && !wrapped)) return 0;
     if(comm_mode == DFC_COMM_PLAIN) {
-        memcpy(out, wrapped, wrapped_len);
+        if(!output_fits(out, out_capacity, wrapped_len)) return 0;
+        if(wrapped_len) memmove(out, wrapped, wrapped_len);
         return wrapped_len;
     }
 
@@ -832,6 +899,7 @@ size_t dfc_secure_messaging_verify_command(
         size_t mac_len = mac_len_for_cipher(sm->cipher);
         if(wrapped_len < mac_len) return 0;
         size_t data_len = wrapped_len - mac_len;
+        if(!output_fits(out, out_capacity, data_len)) return 0;
 
         size_t prefix_len = legacy ? 0 : header_len;
         DfcMacSegment segments[] = {
@@ -851,12 +919,13 @@ size_t dfc_secure_messaging_verify_command(
             return 0;
         }
 
-        memcpy(out, wrapped, data_len);
+        if(data_len) memmove(out, wrapped, data_len);
         dfc_secure_wipe(mac, sizeof(mac));
         return data_len;
     }
 
-    size_t clear_len =
-        enciphered_decode(sm, header, header_len, NULL, 0, wrapped, wrapped_len, out);
+    if(comm_mode != DFC_COMM_ENCIPHERED) return 0;
+    size_t clear_len = enciphered_decode(
+        sm, header, header_len, NULL, 0, wrapped, wrapped_len, out, out_capacity);
     return clear_len == SIZE_MAX ? 0 : clear_len;
 }

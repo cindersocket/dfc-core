@@ -1221,7 +1221,8 @@ static MunitResult test_streamed_secure_write(const MunitParameter params[], voi
         sizeof(mismatched_header),
         mismatched_clear,
         sizeof(mismatched_clear),
-        mismatched_wrapped);
+        mismatched_wrapped,
+        sizeof(mismatched_wrapped));
     munit_assert_size(mismatched_wrapped_len, >, 0);
     uint8_t apdu[5 + 7 + sizeof(mismatched_wrapped) + 1] = {0x90, DFC_CMD_WRITE_DATA, 0, 0};
     apdu[4] = (uint8_t)(7 + mismatched_wrapped_len);
@@ -2158,11 +2159,12 @@ static size_t generate_d40_mac_response(
     const Link* link,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* response) {
+    uint8_t* response,
+    size_t response_capacity) {
     DfcSecureMessaging card = link->session.sm;
     card.pcd = false;
     return dfc_secure_messaging_generate_response(
-        &card, DFC_COMM_MAC, DFC_STATUS_OK, plain, plain_len, response);
+        &card, DFC_COMM_MAC, DFC_STATUS_OK, plain, plain_len, response, response_capacity);
 }
 
 static MunitResult
@@ -2211,8 +2213,8 @@ static MunitResult
         munit_assert_int(
             authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
         uint8_t response[sizeof(nonempty) + DFC_SM_LEGACY_MAC_LENGTH];
-        size_t response_len =
-            generate_d40_mac_response(&link, nonempty, sizeof(nonempty), response);
+        size_t response_len = generate_d40_mac_response(
+            &link, nonempty, sizeof(nonempty), response, sizeof(response));
         size_t clear_len = SIZE_MAX;
         munit_assert_int(
             finish_d40_mac_response(&link, 1, response, response_len, &clear_len),
@@ -2230,8 +2232,8 @@ static MunitResult
         munit_assert_int(
             authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, 16), ==, DfcReaderOk);
         uint8_t response[sizeof(nonempty) + DFC_SM_LEGACY_MAC_LENGTH];
-        size_t response_len =
-            generate_d40_mac_response(&link, nonempty, sizeof(nonempty), response);
+        size_t response_len = generate_d40_mac_response(
+            &link, nonempty, sizeof(nonempty), response, sizeof(response));
         response[sizeof(nonempty) + mac_index] ^= 0x01;
         size_t clear_len = SIZE_MAX;
         munit_assert_int(

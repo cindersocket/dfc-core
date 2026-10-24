@@ -1057,7 +1057,14 @@ static MunitResult
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = 0;
     munit_assert_true(dfc_secure_messaging_unwrap(
-        reader, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, response, 16, recovered, &recovered_len));
+        reader,
+        DFC_COMM_ENCIPHERED,
+        DFC_STATUS_OK,
+        response,
+        16,
+        recovered,
+        sizeof(recovered),
+        &recovered_len));
     munit_assert_size(recovered_len, ==, sizeof(file_data));
     munit_assert_memory_equal(sizeof(file_data), recovered, file_data);
 

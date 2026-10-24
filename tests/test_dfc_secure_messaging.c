@@ -47,12 +47,26 @@ static MunitResult
 
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_wrap(
-        sm_reader, comm_mode, header, sizeof(header), plain, sizeof(plain), wrapped);
+        sm_reader,
+        comm_mode,
+        header,
+        sizeof(header),
+        plain,
+        sizeof(plain),
+        wrapped,
+        sizeof(wrapped));
     munit_assert_size(wrapped_len, >=, sizeof(plain));
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = dfc_secure_messaging_verify_command(
-        sm_emulator, comm_mode, header, sizeof(header), wrapped, wrapped_len, recovered);
+        sm_emulator,
+        comm_mode,
+        header,
+        sizeof(header),
+        wrapped,
+        wrapped_len,
+        recovered,
+        sizeof(recovered));
 
     munit_assert_size(recovered_len, ==, sizeof(plain));
     munit_assert_memory_equal(sizeof(plain), recovered, plain);
@@ -75,13 +89,20 @@ static MunitResult
 
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_generate_response(
-        sm_emulator, comm_mode, status, plain, sizeof(plain), wrapped);
+        sm_emulator, comm_mode, status, plain, sizeof(plain), wrapped, sizeof(wrapped));
     munit_assert_size(wrapped_len, >=, sizeof(plain));
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = 0;
     munit_assert_true(dfc_secure_messaging_unwrap(
-        sm_reader, comm_mode, status, wrapped, wrapped_len, recovered, &recovered_len));
+        sm_reader,
+        comm_mode,
+        status,
+        wrapped,
+        wrapped_len,
+        recovered,
+        sizeof(recovered),
+        &recovered_len));
 
     munit_assert_size(recovered_len, ==, sizeof(plain));
     munit_assert_memory_equal(sizeof(plain), recovered, plain);
@@ -122,7 +143,7 @@ static void assert_d40_response_authentication(const uint8_t* plain, size_t plai
 
     uint8_t wrapped[32];
     size_t wrapped_len = dfc_secure_messaging_generate_response(
-        card, DFC_COMM_MAC, DFC_STATUS_OK, plain, plain_len, wrapped);
+        card, DFC_COMM_MAC, DFC_STATUS_OK, plain, plain_len, wrapped, sizeof(wrapped));
     munit_assert_size(wrapped_len, ==, plain_len + DFC_SM_LEGACY_MAC_LENGTH);
 
     DfcSecureMessaging reader_before = *reader;
@@ -130,7 +151,14 @@ static void assert_d40_response_authentication(const uint8_t* plain, size_t plai
     memset(recovered, 0xA5, sizeof(recovered));
     size_t recovered_len = SIZE_MAX;
     munit_assert_true(dfc_secure_messaging_unwrap(
-        reader, DFC_COMM_MAC, DFC_STATUS_OK, wrapped, wrapped_len, recovered, &recovered_len));
+        reader,
+        DFC_COMM_MAC,
+        DFC_STATUS_OK,
+        wrapped,
+        wrapped_len,
+        recovered,
+        sizeof(recovered),
+        &recovered_len));
     munit_assert_size(recovered_len, ==, plain_len);
     if(plain_len > 0) munit_assert_memory_equal(plain_len, recovered, plain);
 
@@ -141,7 +169,14 @@ static void assert_d40_response_authentication(const uint8_t* plain, size_t plai
         corrupted[mac_index] ^= 0x01;
         recovered_len = SIZE_MAX;
         munit_assert_false(dfc_secure_messaging_unwrap(
-            reader, DFC_COMM_MAC, DFC_STATUS_OK, corrupted, wrapped_len, recovered, &recovered_len));
+            reader,
+            DFC_COMM_MAC,
+            DFC_STATUS_OK,
+            corrupted,
+            wrapped_len,
+            recovered,
+            sizeof(recovered),
+            &recovered_len));
         munit_assert_size(recovered_len, ==, 0);
         munit_assert_memory_equal(sizeof(reader_before.iv), reader->iv, reader_before.iv);
     }
@@ -157,6 +192,7 @@ static void assert_d40_response_authentication(const uint8_t* plain, size_t plai
                 wrapped,
                 truncated_len,
                 recovered,
+                sizeof(recovered),
                 &recovered_len));
             munit_assert_size(recovered_len, ==, 0);
             munit_assert_memory_equal(sizeof(reader_before.iv), reader->iv, reader_before.iv);
@@ -231,7 +267,14 @@ static MunitResult
         memset(clear, 0xA5, sizeof(clear));
         size_t clear_len = SIZE_MAX;
         munit_assert_false(dfc_secure_messaging_unwrap(
-            reader, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, wrapped, length, clear, &clear_len));
+            reader,
+            DFC_COMM_ENCIPHERED,
+            DFC_STATUS_OK,
+            wrapped,
+            length,
+            clear,
+            sizeof(clear),
+            &clear_len));
         munit_assert_size(clear_len, ==, 0);
         for(size_t i = 0; i < length; i++)
             munit_assert_uint8(clear[i], ==, 0);
@@ -240,7 +283,14 @@ static MunitResult
         memset(clear, 0xA5, sizeof(clear));
         munit_assert_size(
             dfc_secure_messaging_verify_command(
-                card, DFC_COMM_ENCIPHERED, header, sizeof(header), wrapped, length, clear),
+                card,
+                DFC_COMM_ENCIPHERED,
+                header,
+                sizeof(header),
+                wrapped,
+                length,
+                clear,
+                sizeof(clear)),
             ==,
             0);
         for(size_t i = 0; i < length; i++)
@@ -255,7 +305,14 @@ static MunitResult
     for(size_t length = 1; length < 16; length++) {
         memset(clear, 0x5A, length);
         size_t wrapped_len = dfc_secure_messaging_wrap(
-            reader, DFC_COMM_ENCIPHERED, header, sizeof(header), clear, length, wrapped);
+            reader,
+            DFC_COMM_ENCIPHERED,
+            header,
+            sizeof(header),
+            clear,
+            length,
+            wrapped,
+            sizeof(wrapped));
         munit_assert_size(wrapped_len, >, 0);
         munit_assert_size(wrapped_len % DFC_SM_LEGACY_BLOCK_SIZE, ==, 0);
     }
@@ -284,15 +341,16 @@ static size_t encode_for_overlap_test(
     bool response,
     const uint8_t* plain,
     size_t plain_len,
-    uint8_t* out) {
+    uint8_t* out,
+    size_t out_capacity) {
     static const uint8_t header[] = {DFC_CMD_WRITE_DATA, 1, 0, 0, 0, 0, 0, 0};
     if(response) {
         return dfc_secure_messaging_generate_response(
-            sm, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, plain, plain_len, out);
+            sm, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, plain, plain_len, out, out_capacity);
     }
     sm->pcd = true;
     return dfc_secure_messaging_wrap(
-        sm, DFC_COMM_ENCIPHERED, header, sizeof(header), plain, plain_len, out);
+        sm, DFC_COMM_ENCIPHERED, header, sizeof(header), plain, plain_len, out, out_capacity);
 }
 
 static MunitResult
@@ -323,7 +381,12 @@ static MunitResult
                     alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
                 uint8_t expected[DFC_SM_MAX_SIZE];
                 size_t expected_len = encode_for_overlap_test(
-                    baseline, response != 0, plain, lengths[length_index], expected);
+                    baseline,
+                    response != 0,
+                    plain,
+                    lengths[length_index],
+                    expected,
+                    sizeof(expected));
                 munit_assert_size(expected_len, >, 0);
                 dfc_secure_messaging_free(baseline);
 
@@ -336,7 +399,12 @@ static MunitResult
                     DfcSecureMessaging* overlap =
                         alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
                     size_t actual_len = encode_for_overlap_test(
-                        overlap, response != 0, source, lengths[length_index], destination);
+                        overlap,
+                        response != 0,
+                        source,
+                        lengths[length_index],
+                        destination,
+                        (size_t)(workspace + sizeof(workspace) - destination));
                     munit_assert_size(actual_len, ==, expected_len);
                     munit_assert_memory_equal(expected_len, destination, expected);
                     dfc_secure_messaging_free(overlap);
@@ -382,7 +450,8 @@ static MunitResult test_command_payload_lengths_match_encoder(const MunitParamet
                     sizeof(header),
                     plain,
                     lengths[length_index],
-                    encoded);
+                    encoded,
+                    sizeof(encoded));
                 munit_assert_size(predicted, ==, actual);
                 dfc_secure_messaging_free(sm);
             }
@@ -428,13 +497,27 @@ static MunitResult test_mac_tamper_rejected(const MunitParameter p[], void* d) {
     uint8_t plain[] = {0xde, 0xad, 0xbe, 0xef};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_wrap(
-        sm_reader, DFC_COMM_MAC, header, sizeof(header), plain, sizeof(plain), wrapped);
+        sm_reader,
+        DFC_COMM_MAC,
+        header,
+        sizeof(header),
+        plain,
+        sizeof(plain),
+        wrapped,
+        sizeof(wrapped));
 
     wrapped[wrapped_len - 1] ^= 0xFF; // corrupt the last MAC byte
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = dfc_secure_messaging_verify_command(
-        sm_emulator, DFC_COMM_MAC, header, sizeof(header), wrapped, wrapped_len, recovered);
+        sm_emulator,
+        DFC_COMM_MAC,
+        header,
+        sizeof(header),
+        wrapped,
+        wrapped_len,
+        recovered,
+        sizeof(recovered));
 
     munit_assert_size(recovered_len, ==, 0);
 
@@ -460,7 +543,7 @@ static MunitResult
     uint8_t settings[] = {0x00, 0x01, 0x12, 0x30, 0x35, 0x00, 0x00};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_generate_ev1_response(
-        sm, DFC_STATUS_OK, settings, sizeof(settings), wrapped);
+        sm, DFC_STATUS_OK, settings, sizeof(settings), wrapped, sizeof(wrapped));
 
     munit_assert_size(wrapped_len, ==, sizeof(settings) + 8);
     munit_assert_memory_equal(sizeof(settings), wrapped, settings);
@@ -493,16 +576,16 @@ static MunitResult
     uint8_t plain[] = {0x30, 0x2f, 0x81, 0x02, 0x0c};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_generate_ev1_response(
-        sm_emulator, DFC_STATUS_OK, plain, sizeof(plain), wrapped);
+        sm_emulator, DFC_STATUS_OK, plain, sizeof(plain), wrapped, sizeof(wrapped));
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = dfc_secure_messaging_unwrap_ev1_response(
-        sm_reader, DFC_STATUS_OK, wrapped, wrapped_len, recovered);
+        sm_reader, DFC_STATUS_OK, wrapped, wrapped_len, recovered, sizeof(recovered));
     munit_assert_size(recovered_len, ==, sizeof(plain));
     munit_assert_memory_equal(sizeof(plain), recovered, plain);
 
     recovered_len = dfc_secure_messaging_unwrap_ev1_response(
-        sm_stale_reader, DFC_STATUS_OK, wrapped, wrapped_len, recovered);
+        sm_stale_reader, DFC_STATUS_OK, wrapped, wrapped_len, recovered, sizeof(recovered));
     munit_assert_size(recovered_len, ==, SIZE_MAX);
 
     dfc_secure_messaging_free(sm_reader);
@@ -546,7 +629,7 @@ static MunitResult
     uint8_t settings[] = {0x00, 0x01, 0x12, 0x30, 0x33, 0x00, 0x00};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_generate_ev1_response(
-        sm, DFC_STATUS_OK, settings, sizeof(settings), wrapped);
+        sm, DFC_STATUS_OK, settings, sizeof(settings), wrapped, sizeof(wrapped));
 
     uint8_t expected[] = {
         0x00, 0x01, 0x12, 0x30, 0x33, 0x00, 0x00, 0xcd, 0x69, 0x3f, 0x57, 0x7b, 0x9a, 0x04, 0xf4};
@@ -575,7 +658,7 @@ static MunitResult
     uint8_t settings[] = {0x00, 0x01, 0x12, 0x30, 0x33, 0x00, 0x00};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_generate_ev1_response(
-        sm, DFC_STATUS_OK, settings, sizeof(settings), wrapped);
+        sm, DFC_STATUS_OK, settings, sizeof(settings), wrapped, sizeof(wrapped));
 
     uint8_t expected[] = {
         0x00, 0x01, 0x12, 0x30, 0x33, 0x00, 0x00, 0x27, 0xde, 0x15, 0x26, 0xf2, 0xbf, 0x84, 0x0f};
@@ -643,7 +726,13 @@ static MunitResult
     uint8_t plain[] = {0x30, 0x2F, 0x81, 0x02, 0x0C};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_generate_response(
-        sm, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, plain, sizeof(plain), wrapped);
+        sm,
+        DFC_COMM_ENCIPHERED,
+        DFC_STATUS_OK,
+        plain,
+        sizeof(plain),
+        wrapped,
+        sizeof(wrapped));
 
     munit_assert_size(wrapped_len, ==, 16);
 
@@ -678,7 +767,14 @@ static MunitResult header_tamper_rejected(uint8_t comm_mode) {
     uint8_t plain[] = {0xde, 0xad, 0xbe, 0xef};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_wrap(
-        sm_reader, comm_mode, header, sizeof(header), plain, sizeof(plain), wrapped);
+        sm_reader,
+        comm_mode,
+        header,
+        sizeof(header),
+        plain,
+        sizeof(plain),
+        wrapped,
+        sizeof(wrapped));
 
     uint8_t tampered[sizeof(header)];
     memcpy(tampered, header, sizeof(header));
@@ -686,7 +782,14 @@ static MunitResult header_tamper_rejected(uint8_t comm_mode) {
 
     uint8_t recovered[DFC_SM_MAX_SIZE];
     size_t recovered_len = dfc_secure_messaging_verify_command(
-        sm_emulator, comm_mode, tampered, sizeof(tampered), wrapped, wrapped_len, recovered);
+        sm_emulator,
+        comm_mode,
+        tampered,
+        sizeof(tampered),
+        wrapped,
+        wrapped_len,
+        recovered,
+        sizeof(recovered));
 
     munit_assert_size(recovered_len, ==, 0);
 
@@ -722,9 +825,10 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
         {DFC_CMD_AUTHENTICATE_AES, 16},
     };
     const uint8_t modes[] = {DFC_COMM_PLAIN, DFC_COMM_MAC, DFC_COMM_ENCIPHERED};
+    const size_t buffer_capacity = DFC_SM_MAX_CRYPTO_SIZE + DFC_WIRE_MAC_LENGTH;
     uint8_t* plain = malloc(DFC_MAX_FILE_DATA);
-    uint8_t* wrapped = malloc(DFC_SM_MAX_CRYPTO_SIZE + DFC_WIRE_MAC_LENGTH);
-    uint8_t* recovered = malloc(DFC_SM_MAX_CRYPTO_SIZE + DFC_WIRE_MAC_LENGTH);
+    uint8_t* wrapped = malloc(buffer_capacity);
+    uint8_t* recovered = malloc(buffer_capacity);
     munit_assert_not_null(plain);
     munit_assert_not_null(wrapped);
     munit_assert_not_null(recovered);
@@ -747,7 +851,14 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
                 reader->pcd = true;
 
                 size_t wrapped_len = dfc_secure_messaging_wrap(
-                    reader, modes[mode_index], header, sizeof(header), plain, length, wrapped);
+                    reader,
+                    modes[mode_index],
+                    header,
+                    sizeof(header),
+                    plain,
+                    length,
+                    wrapped,
+                    buffer_capacity);
                 munit_assert_size(wrapped_len, >=, length);
                 size_t recovered_len = dfc_secure_messaging_verify_command(
                     card,
@@ -756,12 +867,19 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
                     sizeof(header),
                     wrapped,
                     wrapped_len,
-                    recovered);
+                    recovered,
+                    buffer_capacity);
                 munit_assert_size(recovered_len, ==, length);
                 munit_assert_memory_equal(length, recovered, plain);
 
                 wrapped_len = dfc_secure_messaging_generate_response(
-                    card, modes[mode_index], DFC_STATUS_OK, plain, length, wrapped);
+                    card,
+                    modes[mode_index],
+                    DFC_STATUS_OK,
+                    plain,
+                    length,
+                    wrapped,
+                    buffer_capacity);
                 munit_assert_size(wrapped_len, >=, length);
                 recovered_len = 0;
                 munit_assert_true(dfc_secure_messaging_unwrap(
@@ -771,6 +889,7 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
                     wrapped,
                     wrapped_len,
                     recovered,
+                    buffer_capacity,
                     &recovered_len));
                 munit_assert_size(recovered_len, ==, length);
                 munit_assert_memory_equal(length, recovered, plain);
@@ -796,9 +915,23 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
         reader->pcd = true;
 
         size_t wrapped_len = dfc_secure_messaging_wrap(
-            reader, DFC_COMM_ENCIPHERED, header, sizeof(header), plain, DFC_MAX_FILE_DATA, wrapped);
+            reader,
+            DFC_COMM_ENCIPHERED,
+            header,
+            sizeof(header),
+            plain,
+            DFC_MAX_FILE_DATA,
+            wrapped,
+            buffer_capacity);
         size_t recovered_len = dfc_secure_messaging_verify_command(
-            card, DFC_COMM_ENCIPHERED, header, sizeof(header), wrapped, wrapped_len, recovered);
+            card,
+            DFC_COMM_ENCIPHERED,
+            header,
+            sizeof(header),
+            wrapped,
+            wrapped_len,
+            recovered,
+            buffer_capacity);
         munit_assert_size(recovered_len, ==, DFC_MAX_FILE_DATA);
         munit_assert_memory_equal(DFC_MAX_FILE_DATA, recovered, plain);
 
@@ -808,6 +941,92 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
     free(recovered);
     free(wrapped);
     free(plain);
+    return MUNIT_OK;
+}
+
+static MunitResult test_initialization_rejects_invalid_cipher_key_pairs(
+    const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const struct {
+        uint8_t cipher;
+        size_t key_len;
+    } invalid[] = {
+        {0x00, 16},
+        {DFC_CMD_AUTHENTICATE_LEGACY, 0},
+        {DFC_CMD_AUTHENTICATE_LEGACY, 24},
+        {DFC_CMD_AUTHENTICATE_ISO, 7},
+        {DFC_CMD_AUTHENTICATE_AES, 8},
+        {DFC_CMD_AUTHENTICATE_AES, 24},
+    };
+    uint8_t key[DFC_MAX_KEY_LEN] = {0};
+    for(size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        DfcSecureMessaging sm;
+        memset(&sm, 0xA5, sizeof(sm));
+        munit_assert_false(dfc_secure_messaging_init(
+            &sm, invalid[i].cipher, key, invalid[i].key_len, NULL));
+        uint8_t cleared[sizeof(sm)];
+        memset(cleared, 0, sizeof(cleared));
+        munit_assert_memory_equal(sizeof(sm), &sm, cleared);
+        munit_assert_null(
+            dfc_secure_messaging_alloc(invalid[i].cipher, key, invalid[i].key_len, NULL));
+    }
+    munit_assert_false(dfc_secure_messaging_init(NULL, DFC_CMD_AUTHENTICATE_AES, key, 16, NULL));
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_output_capacity_fails_before_writes_or_state_changes(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t header[] = {DFC_CMD_WRITE_DATA, 1};
+    static const uint8_t plain[] = {1, 2, 3};
+    static const uint8_t modes[] = {DFC_COMM_PLAIN, DFC_COMM_MAC, DFC_COMM_ENCIPHERED};
+
+    for(size_t mode_index = 0; mode_index < sizeof(modes); mode_index++) {
+        size_t required = dfc_secure_messaging_command_payload_length(
+            &(DfcSecureMessaging){.cipher = DFC_CMD_AUTHENTICATE_AES,
+                                  .session_key_len = DFC_AES_KEY_LENGTH},
+            false,
+            modes[mode_index],
+            sizeof(plain));
+        for(size_t capacity = 0; capacity <= required; capacity++) {
+            DfcSecureMessaging* sm = alloc_session(DFC_CMD_AUTHENTICATE_AES, 16);
+            munit_assert_not_null(sm);
+            sm->pcd = true;
+            DfcSecureMessaging before = *sm;
+            uint8_t output[32];
+            memset(output, 0xA5, sizeof(output));
+            size_t result = dfc_secure_messaging_wrap(
+                sm,
+                modes[mode_index],
+                header,
+                sizeof(header),
+                plain,
+                sizeof(plain),
+                output,
+                capacity);
+            if(capacity < required) {
+                munit_assert_size(result, ==, 0);
+                munit_assert_memory_equal(sizeof(before), sm, &before);
+                uint8_t untouched[sizeof(output)];
+                memset(untouched, 0xA5, sizeof(untouched));
+                munit_assert_memory_equal(sizeof(output), output, untouched);
+            } else {
+                munit_assert_size(result, ==, required);
+            }
+            dfc_secure_messaging_free(sm);
+        }
+    }
+
+    size_t out_len = 9;
+    munit_assert_false(dfc_secure_messaging_unwrap(
+        NULL, DFC_COMM_PLAIN, DFC_STATUS_OK, NULL, 0, NULL, 0, &out_len));
+    munit_assert_size(out_len, ==, 0);
+    munit_assert_size(
+        dfc_secure_messaging_unwrap_ev1_response(NULL, DFC_STATUS_OK, NULL, 0, NULL, 0),
+        ==,
+        SIZE_MAX);
     return MUNIT_OK;
 }
 
@@ -897,6 +1116,18 @@ static MunitTest tests[] = {
      NULL},
     {"/boundaries/configured-max",
      test_configured_max_boundaries,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/contracts/initialization",
+     test_initialization_rejects_invalid_cipher_key_pairs,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/contracts/output-capacity",
+     test_output_capacity_fails_before_writes_or_state_changes,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

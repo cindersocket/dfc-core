@@ -34,6 +34,8 @@
 - Make credential and file-pool updates transactional.
 - Reuse prepared cipher contexts and stream segmented AES, DES, and TDEA MAC input,
   removing message-sized secure-messaging scratch buffers.
+- Enforce explicit output capacities and initialization contracts across secure
+  messaging operations (#124).
 - Propagate cipher and MAC failures, reject overflowing or malformed inputs,
   and consistently wipe staged output, retired ISO-DEP requests, file-pool
   bytes, replay buffers, and secret scratch storage.
