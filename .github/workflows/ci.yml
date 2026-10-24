@@ -370,8 +370,12 @@ jobs:
           java-version: "17"
       - name: Build four-ABI AAR, minified sample, and lint
         working-directory: bindings/android
-        run: ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease \
-          :dfc:lintRelease :dfc:testDebugUnitTest
+        run: >-
+          ./gradlew --no-daemon
+          :dfc:assembleRelease
+          :sample:assembleRelease
+          :dfc:lintRelease
+          :dfc:testDebugUnitTest
       - name: Run minified native-exception smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
