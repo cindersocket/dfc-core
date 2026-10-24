@@ -1,0 +1,22 @@
+# PROVENANCE: Synthetic cross-binding regression for finite random replay.
+name: replay random exhaustion is non-consuming and non-sticky
+case-id: replay-random-exhaustion
+origin: synthetic
+feature-version: 6
+source: generated replay-source regression
+requires: ev3,iso7816-auth
+uid: 04223344556677
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: AES
+picc-key-len: 16
+picc-auth-commands: 23
+scan
+inject-random	11 11 11 11 11 11 11 11
+expect-error random-source exchange iso-apdu 0084000010
+exchange iso-apdu 0084000008 => 11111111111111119000
+expect-error random-source exchange iso-apdu 0084000008
+exchange native-apdu 9045000000 => 0F019100
+field-off

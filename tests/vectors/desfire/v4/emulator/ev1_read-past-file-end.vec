@@ -1,0 +1,25 @@
+# ReadData past the end of the file is rejected.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /read-past-file-end by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all 4 literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+#
+# The source builds the application and its 4-byte file directly in the
+# credential struct; here the same state is reached over the wire.
+
+name: ev1 conformance: read-past-file-end
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /read-past-file-end
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050102030F0100 => 00
+status   905A00000301020300 => 00
+status   90CD0000070100EEEE04000000 => 00
+status   905A00000301020300 => 00
+status   90BD0000070103000002000000 => BE

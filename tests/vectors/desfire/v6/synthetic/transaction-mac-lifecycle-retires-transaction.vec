@@ -1,0 +1,40 @@
+# PROVENANCE: Synthetic regression for Transaction-MAC file lifecycle transitions.
+name: Transaction-MAC file creation and deletion retire pending transactions
+case-id: transaction-mac-file-lifecycle-retires-pending-transaction
+origin: synthetic
+feature-version: 6
+source: generated Transaction-MAC lifecycle regression
+requires: ev3,backup-files,record-files,transaction-mac
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+scan
+exchange native-apdu 90CA0000050102030F8100 => 9100
+exchange native-apdu 905A00000301020300 => 9100
+exchange native-apdu 90CB0000070100EEEE04000000 => 9100
+exchange native-apdu 903D00000B010000000400002121212100 => 9100
+exchange native-apdu 90C100000A0200EEEE04000003000000 => 9100
+exchange native-apdu 903B00000B020000000400003132333400 => 9100
+exchange native-apdu 90CC0000110400EEEE00000000640000000A0000000100 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 903D00000B01000000040000B1B2B3B400 => 9100
+exchange native-apdu 903B00000B02000000040000C1C2C3C400 => 9100
+exchange native-apdu 900C000005040500000000 => 9100
+exchange native-apdu 90CE0000160500EEEF025A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A0100 => 9100
+exchange native-apdu 90A7000000 => 910C
+exchange native-apdu 90BD0000070100000004000000 => 212121219100
+exchange native-apdu 90BB0000070200000000000000 => 313233349100
+exchange native-apdu 906C0000010400 => 0A0000009100
+exchange native-apdu 903D00000B01000000040000C1C2C3C400 => 9100
+exchange native-apdu 903B00000B02000000040000D1D2D3D400 => 9100
+exchange native-apdu 900C000005040500000000 => 9100
+exchange native-apdu 90DF0000010500 => 9100
+exchange native-apdu 90A7000000 => 910C
+exchange native-apdu 90BD0000070100000004000000 => 212121219100
+exchange native-apdu 90BB0000070200000000000000 => 313233349100
+exchange native-apdu 906C0000010400 => 0A0000009100
+

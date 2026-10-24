@@ -1,0 +1,68 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 4K over PC/SC and is used here as an expectation
+# for our emulator. This vector is therefore the opposite of the rest of the
+# corpus: the others were recorded from the reference engine and cross-checked
+# against a reviewed test, so they pin what we decided; this one pins what the
+# silicon does. A mismatch here is either a real divergence or a difference we
+# can justify in writing, never a vector to be re-recorded.
+#
+# Card: UID 045704EA916F80, hardware 1.0, software 1.4, storage 4K, one
+# application AC CE 55 (wire order 55CEAC) with four keys, one Standard Data
+# file 01 of 16 octets, access rights 0x1230, plain communication.
+#
+# The three steps at the end are why this was captured: the card gives three
+# different answers to three different reasons for refusing, and the emulator
+# used to collapse two of them into one.
+
+name: genuine EV1 4K, read-only surface
+origin: physical-card
+feature-version: 5
+uid: 045704EA916F80
+picc-storage: 8192
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-hardware-version: 04010101001A05
+picc-software-version: 04010101041A05
+
+scan
+
+# PICC key settings, before anything is created.
+exchange native-apdu 9045000000 => 0F019100
+
+# Build the card's structure. Free create is permitted by key settings 0x0F.
+status 90CA00000555CEAC0F0400 => 00
+
+# The application directory, least significant byte first on the wire.
+exchange native-apdu 906A000000 => 55CEAC9100
+
+# Select it, then its key settings: four keys, DES family.
+status 905A00000355CEAC00 => 00
+exchange native-apdu 9045000000 => 0F049100
+
+# One Standard Data file, 16 octets, rights 0x1230, plain.
+status 90CD0000070100301210000000 => 00
+exchange native-apdu 906F000000 => 019100
+exchange native-apdu 90F50000010100 => 000030121000009100
+
+# Three refusals, three statuses.
+#
+# The object does not exist: file 07 was never created.
+status 90BD0000070700000000000000 => F0
+#
+# The operation does not fit the object: GetValue on a Standard Data file.
+status 906C0000010100 => 9D
+#
+# The operation fits and the object exists, but the access rights name read
+# key 1 and read&write key 3 and no session is open. The caller is missing an
+# authentication, which is a different thing from being denied.
+status 90BD0000070100000000000000 => AE
+
+# GetVersion. The hardware frame matches us byte for byte. In the software
+# frame the card reports minor version 04 where we report 03, a known and
+# unrelated divergence, so that single byte is wildcarded rather than quietly
+# rewritten to ours; everything around it stays as measured. The captured byte
+# was 04.
+exchange native-apdu 9060000000 => 04010101001A0591AF
+exchange native-apdu 90AF000000 => 040101 01 ?? 1A0591AF

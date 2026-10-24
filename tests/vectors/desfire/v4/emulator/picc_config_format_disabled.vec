@@ -1,0 +1,34 @@
+# Format disabled: FormatPicc is refused even for the authenticated master,
+# with the status this command already uses to refuse one, and the
+# credential is left intact.
+#
+# Recorded from the reference engine and cross-checked against the
+# expectations the recorder asserts; see tests/vectors/desfire/README.md.
+#
+# The application is created over the wire so that a wipe would be visible.
+# inject-random pins RndB for the D40 handshake.
+
+name: picc config: format disabled
+origin: synthetic
+source: recorded from the reference engine, see tests/vectors/desfire/README.md
+uid: 04223344556677
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-format-disabled: 1
+
+scan
+status   90CA000005C3B2A10F0100             => 00
+assert   credential.num_apps      = 1
+clear-dirty
+
+# Authenticate as the PICC master.
+inject-random 0001020304050607
+exchange native-apdu 900A0000010000                     => 491E890DE9ACE93291AF
+exchange native-apdu 90AF000010491E890DE9ACE932E9416AD3B58C583700 => B7D1DA7CE0DD986B9100
+
+# FormatPicc is refused, and the application is still there.
+status   90FC000000                         => 1C
+assert   credential.num_apps      = 1
+assert   credential.dirty         = 0

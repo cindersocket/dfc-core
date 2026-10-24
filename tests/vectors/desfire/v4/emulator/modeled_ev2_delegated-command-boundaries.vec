@@ -1,0 +1,16 @@
+# PROVENANCE: Modeled from deterministic delegated-application command behavior.
+name: EV2 delegated application command boundaries
+origin: synthetic
+case-id: ev2-delegated-command-boundaries
+requires: ev2,delegated-applications
+source: deterministic command validation regression
+uid: 04112233445566
+picc-generation: EV2
+picc-storage: 4096
+scan
+exchange native-apdu 90C900000AD4D3D234120120000F8100 => 91AF
+field-off
+scan
+exchange native-apdu 9069000002341200 => 91A0
+exchange native-apdu 90C9000000 => 917E
+field-off

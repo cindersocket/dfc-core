@@ -1,0 +1,48 @@
+# Changing the key the session authenticated with ends that session and
+# answers a plain status with no CMAC. The old key then fails and the new key
+# authenticates; GetKeyVersion reports the new version under EV1 secure
+# messaging.
+#
+# Generated from tests/test_dfc_virtual_picc_mutation_vectors.c
+# (/aes-change-key-same-key-round-trip) by recording the exchanges the
+# reference engine performed, then cross-checked: all 10 byte
+# expectations asserted by that test matched the recording exactly.
+# 4 further exchanges carry no byte expectation in the source.
+#
+# The ChangeKey cryptograms are computed at runtime by the original test
+# from the derived session key, so they are recorded rather than
+# transcribed. inject-random pins RndB ahead of every authentication so
+# the vector does not depend on the engine's default generator.
+#
+# The two assert steps are the credential-state checks the original makes on
+# credential.apps[0] straight after the ChangeKey.
+
+name: AES ChangeKey on the authenticated key
+origin: synthetic
+requires: auth-aes
+source: tests/test_dfc_virtual_picc_mutation_vectors.c#/aes-change-key-same-key-round-trip
+uid: 04334455667788
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-key-len: 16
+
+scan
+status   905A00000300000000 => 00
+status   90CA0000057EC1D50F8100 => 00
+status   905A0000037EC1D500 => 00
+inject-random 000102030405060708090A0B0C0D0E0F
+exchange native-apdu 90AA0000010000 => 7ACA0FD9BCD6EC7C9F97466616E6A28291AF
+exchange native-apdu 90AF000020ECC9B00FDB4E6B30E0A7FCF1C08A892CA8F292369D4982D894F48C546C1F476700 => 220F6B51DD0CF762D6C7D2FC66BD72689100
+status   90C4000021005227DE554EE964D7A9FCF4573E1011FB03C76E4CF9D2774095D7C8445B4C8B6200 => 00
+assert   apps[0].key_versions[0] = 0x5A
+assert   apps[0].keys[0] = 1032547698BADCFE0123456789ABCDEF
+status   905A0000037EC1D500 => 00
+inject-random 000102030405060708090A0B0C0D0E0F
+exchange native-apdu 90AA0000010000 => B51537B283D7AB3046D8E09A0BE2257E91AF
+status   90AF000020FA9BB7E63FB56BB38569600BBF0B2B0B1E0B6F062D2703A61C3E977E5897116200 => AE
+status   905A0000037EC1D500 => 00
+inject-random 000102030405060708090A0B0C0D0E0F
+exchange native-apdu 90AA0000010000 => B51537B283D7AB3046D8E09A0BE2257E91AF
+exchange native-apdu 90AF0000203EF770C68E2645645E442B90D5AD7BF9F2941D15267AD43FE8AD8970F23CF41E00 => 6334623FE6CBBE91D99856D9BA2249C69100
+exchange native-apdu 90640000010000 => 5AD7BA25E4008B271A9100

@@ -1,0 +1,36 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: genuine EV3 ISO selection modes and record file types
+origin: physical-card
+requires: ev1,record-files
+source: captured hardware behavior
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+scan
+exchange native-apdu 90CA00000EE3E3E30FA113E1D276000085010200 => 9100
+exchange native-apdu 905A000003E3E3E300 => 9100
+exchange native-apdu 90CD0000090114E100E0EE10000000 => 9100
+exchange native-apdu 90C100000C0316E100EEEE04000003000000 => 9100
+exchange native-apdu 90C000000C0417E100EEEE04000003000000 => 9100
+exchange native-apdu 903D00001701000000100000FFEEDDCCBBAA9988776655443322110000 => 9100
+exchange native-apdu 903B00000B03000000040000A1A2A3A400 => 9100
+exchange native-apdu 903B00000B04000000040000B1B2B3B400 => 9100
+exchange native-apdu 90C7000000 => 9100
+field-off
+scan
+exchange iso-apdu 00A4010002E11300 => 9000
+exchange iso-apdu 00A4020002E11400 => 9000
+exchange iso-apdu 00B0000000 => FFEEDDCCBBAA998877665544332211009000
+exchange iso-apdu 00A4030000 => 9000
+exchange iso-apdu 00A4080004E113E11700 => 6A86
+exchange iso-apdu 00A4000002E11300 => 9000
+exchange iso-apdu 00A4090002E11700 => 6A86
+exchange iso-apdu 00A4030000 => 9000
+exchange iso-apdu 00A4040007D2760000850102 => 9000
+exchange iso-apdu 00A4020002E11600 => 9000
+exchange iso-apdu 00B2010400 => A1A2A3A49000
+exchange iso-apdu 00A4030000 => 9000
+exchange iso-apdu 00A4010002E11300 => 9000
+exchange iso-apdu 00A4020002E11700 => 9000
+exchange iso-apdu 00B2010400 => B1B2B3B49000
+field-off

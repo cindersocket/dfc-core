@@ -1,0 +1,18 @@
+# AuthenticateLegacy against a key number the PICC level does not have.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /authenticate-missing-key by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all 2 literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+
+name: ev1 conformance: authenticate-missing-key
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /authenticate-missing-key
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   900A0000010100 => 40

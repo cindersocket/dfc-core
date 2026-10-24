@@ -1,0 +1,63 @@
+# Application and file lifecycle.
+#
+# Generated from tests/test_dfc_virtual_picc_lifecycle_vectors.c by recording the
+# exchanges the reference engine performed, then cross-checked: all 28 byte
+# expectations asserted by that test matched the recording exactly. The extra
+# steps are the two D40 authentication handshakes, which the source performs via
+# a helper and asserts only by status.
+#
+# The engine's default RndB generator (00 01 02 ...) makes authentication
+# deterministic, which is what allows these to be literal bytes.
+#
+# Re-recorded when access-rights refusals were split from wrong-object
+# refusals. Only the read after ChangeFileSettings set the rights to 0x0000
+# moved, from 0x9D to 0xAE; the other 33 recorded steps were byte-identical to
+# the previous recording.
+
+name: application and file lifecycle
+origin: synthetic
+source: tests/test_dfc_virtual_picc_lifecycle_vectors.c
+issues: https://github.com/cindersocket/dfc-core/issues/10, https://github.com/cindersocket/dfc-core/issues/12, https://github.com/cindersocket/dfc-core/issues/13
+uid: 04223344556677
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   905A00000300000000 => 00
+status   90CA000005C3B2A10F0100 => 00
+status   90CA000005C3B2A10F0100 => DE
+exchange native-apdu 906A000000 => C3B2A19100
+status   905A000003C3B2A100 => 00
+exchange native-apdu 9045000000 => 0F019100
+exchange native-apdu 90640000010000 => 009100
+status   906F000000 => 00
+status   90F50000017F00 => 9E
+status   90BD0000077F00000001000000 => F0
+status   90CD0000070100EEEE04000000 => 00
+status   90CD0000070100EEEE04000000 => DE
+exchange native-apdu 906F000000 => 019100
+exchange native-apdu 90F50000010100 => 0000EEEE0400009100
+exchange native-apdu 90BD0000070100000000000000 => 000000009100
+status   90BD0000070104000001000000 => BE
+status   90BD0000070105000001000000 => BE
+status   903D00000B010000000400004445534600 => 00
+exchange native-apdu 90BD0000070100000004000000 => 444553469100
+status   903D000008010400000100009900 => BE
+status   905F0000040100000000 => 00
+status   905A000003C3B2A100 => 00
+status   90BD0000070100000004000000 => AE
+inject-random 0001020304050607
+exchange native-apdu 900A0000010000 => 491E890DE9ACE93291AF
+exchange native-apdu 90AF000010491E890DE9ACE932E9416AD3B58C583700 => B7D1DA7CE0DD986B9100
+exchange native-apdu 90BD0000070100000004000000 => 444553469100
+status   90DF0000010100 => 00
+status   906F000000 => 00
+status   905A00000300000000 => 00
+status   90DA000003C3B2A100 => AE
+inject-random 0001020304050607
+exchange native-apdu 900A0000010000 => 491E890DE9ACE93291AF
+exchange native-apdu 90AF000010491E890DE9ACE932E9416AD3B58C583700 => B7D1DA7CE0DD986B9100
+status   90DA000003C3B2A100 => 00
+status   906A000000 => 00

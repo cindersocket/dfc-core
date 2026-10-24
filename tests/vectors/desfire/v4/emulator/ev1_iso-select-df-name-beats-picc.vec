@@ -1,0 +1,40 @@
+# An application whose DF name is the well-known PICC-level name is still
+# selected as an application, per section 1.3. Real credentials carry
+# D2 76 00 00 85 01 00 as the DF name of the application holding their payload,
+# so an implementation that matched that name at PICC level first would answer
+# 90 00 and then serve every following command from the wrong level, leaving the
+# application unreachable.
+#
+# The header cannot declare an application, so it is created over the wire with
+# that DF name first. Its key settings are deliberately unlike the PICC's, so
+# GetKeySettings tells the two levels apart: PICC 0F with one key answers 0F 01,
+# this application 0B with two keys answers 0B 02.
+#
+# ev1_iso-select-picc-df.vec is the negative control: with no application
+# claiming the name, the same SELECT still reaches PICC level.
+
+name: ev1: iso select by df name beats the picc-level name
+origin: synthetic
+source: recorded from the reference engine, see tests/vectors/desfire/README.md
+uid: 04112233445566
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 8
+
+scan
+
+# AID D3494F (least significant octet first on the wire), key settings 0B/22,
+# ISO file ID E110, DF name D2760000850100.
+status   90CA00000E4F49D30B22E110D276000085010000 => 00
+assert   apps[0].iso_aid_len = 7
+
+# PICC level answers its own key settings.
+exchange native-apdu 9045000000 => 0F019100
+
+# Selecting the well-known name selects the application, not the PICC.
+exchange native-apdu 00A4040007D276000085010000 => 9000
+assert   emulator.selected_application = 2
+
+# And commands are now served from the application.
+exchange native-apdu 9045000000 => 0B029100

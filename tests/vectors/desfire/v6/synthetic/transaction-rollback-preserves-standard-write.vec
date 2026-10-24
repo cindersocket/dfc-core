@@ -1,0 +1,40 @@
+# PROVENANCE: Synthetic regression for immediate writes made during another file's transaction.
+name: abort keeps a successful StandardData write and rolls back BackupData
+case-id: transaction-abort-preserves-immediate-standard-write
+origin: synthetic
+feature-version: 6
+source: generated immediate-write transaction regression
+requires: ev3,backup-files,record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+scan
+exchange native-apdu 90CA0000050102030F8100 => 9100
+exchange native-apdu 905A00000301020300 => 9100
+exchange native-apdu 90CD0000070100EEEE04000000 => 9100
+exchange native-apdu 903D00000B010000000400001111111100 => 9100
+exchange native-apdu 90CB0000070200EEEE04000000 => 9100
+exchange native-apdu 903D00000B020000000400002222222200 => 9100
+exchange native-apdu 90C100000A0300EEEE04000003000000 => 9100
+exchange native-apdu 903B00000B030000000400003132333400 => 9100
+exchange native-apdu 90CC0000110400EEEE00000000640000000A0000000100 => 9100
+exchange native-apdu 90CD0000070500EEEE04000000 => 9100
+exchange native-apdu 903D00000B050000000400005555555500 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 903D00000B02000000040000B1B1B1B100 => 9100
+exchange native-apdu 903B00000B03000000040000A1A2A3A400 => 9100
+exchange native-apdu 900C000005040500000000 => 9100
+exchange native-apdu 903D00000B01000000040000C1C2C3C400 => 9100
+exchange native-apdu 903D00000B01000000040000C5C6C7C800 => 9100
+exchange native-apdu 903D00000B05000000040000D1D2D3D400 => 9100
+exchange native-apdu 90A7000000 => 9100
+exchange native-apdu 90BD0000070100000004000000 => C5C6C7C89100
+exchange native-apdu 90BD0000070500000004000000 => D1D2D3D49100
+exchange native-apdu 90BD0000070200000004000000 => 222222229100
+exchange native-apdu 90BB0000070300000000000000 => 313233349100
+exchange native-apdu 906C0000010400 => 0A0000009100
+

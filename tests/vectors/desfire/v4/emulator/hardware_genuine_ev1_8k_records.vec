@@ -1,0 +1,172 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 8K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 04304622216A80, hardware 1.0, software 1.4, storage 8K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: record files in every communication mode.
+#   file 01 (linear plain): record 5 refused with BE
+#   file 01 (linear plain): 4 records read back, oldest to newest [0, 1, 2, 3]
+#   file 11 (cyclic plain): 3 records read back, oldest to newest [2, 3, 4]
+#   file 02 (linear MACed): record 5 refused with BE
+#   file 02 (linear MACed): 4 records read back, oldest to newest [0, 1, 2, 3]
+#   file 12 (cyclic MACed): 3 records read back, oldest to newest [2, 3, 4]
+#   file 03 (linear enciphered): record 5 refused with BE
+#   file 03 (linear enciphered): 4 records read back, oldest to newest [0, 1, 2, 3]
+#   file 13 (cyclic enciphered): 3 records read back, oldest to newest [2, 3, 4]
+#   a cleared record file answers ReadRecords with BE
+
+name: genuine EV1 8K, linear and cyclic record files under an AES session
+origin: physical-card
+requires: auth-aes
+uid: 04304622216A80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+requires: ev1,record-files
+picc-generation: EV1
+picc-storage: 8192
+
+scan
+# An AES application with two keys; key 1 owns every record file below.
+status   90CA000005F3F2F10F8200 => 00
+status   905A000003F3F2F100 => 00
+#
+# A linear and a cyclic record file per communication mode, with
+# 16-octet records and room for four.
+status   90C100000A0100111110000004000000 => 00
+status   90C000000A1100111110000004000000 => 00
+status   90C100000A0201111110000004000000 => 00
+status   90C000000A1201111110000004000000 => 00
+status   90C100000A0303111110000004000000 => 00
+status   90C000000A1303111110000004000000 => 00
+#
+# Authenticate as key 1.
+inject-random 005996227D48A7E2B339D2E01BCA7C75
+exchange native-apdu 90AA0000010100 => D60DC81274C93554EC042168056A8B8C91AF
+exchange native-apdu 90AF00002025471A4562837B98E5837661044D43D9DD2517ECF1352D71CCE2AECD954C4A8600 => F49CCCCEE310B05BB6B9FB85148408EB9100
+#
+# File 01, linear, plain: five records written and committed one at a time,
+# one more than the file holds, then every record read at once.
+exchange native-apdu 903B000017010000001000001010101010101010101010101010101000 => DB05BF5A54F31C1B9100
+exchange native-apdu 90C7000000 => 14566560EFF61A1D9100
+exchange native-apdu 903B000017010000001000001111111111111111111111111111111100 => 2AF0443E006FD3B69100
+exchange native-apdu 90C7000000 => 5D10656ED2B2D0459100
+exchange native-apdu 903B000017010000001000001212121212121212121212121212121200 => BB9B188EAB79E3EB9100
+exchange native-apdu 90C7000000 => 25E6932079198E729100
+exchange native-apdu 903B000017010000001000001313131313131313131313131313131300 => CB11B290221FEEF59100
+exchange native-apdu 90C7000000 => F9A48030A44082E09100
+exchange native-apdu 903B000017010000001000001414141414141414141414141414141400 => 91BE
+status   905A000003F3F2F100 => 00
+inject-random 33A3F46C84D99F9E08AA58F56EAA8FDC
+exchange native-apdu 90AA0000010100 => 00751A65E246405818BDAED82DD39F2891AF
+exchange native-apdu 90AF00002059A79F63A4B1E721E6A62AA2420AE3419AC6EB776E5B0095DD9B1C8F8969849500 => 0D55B5FEDC4BECD3F6408ADC9F470EF39100
+exchange native-apdu 90BB0000070100000000000000 => 10101010101010101010101010101010111111111111111111111111111111111212121212121212121212121212121291AF
+exchange native-apdu 90AF000000 => 13131313131313131313131313131313DB665265CAA3C8999100
+#
+# File 11, cyclic, plain: five records written and committed one at a time,
+# one more than the file holds, then every record read at once.
+exchange native-apdu 903B000017110000001000001010101010101010101010101010101000 => 64965ABD6E4B76E19100
+exchange native-apdu 90C7000000 => 852A7A905F92CD629100
+exchange native-apdu 903B000017110000001000001111111111111111111111111111111100 => 7F961E6B69230B079100
+exchange native-apdu 90C7000000 => F915246C70C940429100
+exchange native-apdu 903B000017110000001000001212121212121212121212121212121200 => 1F7A2A680E3AD0A79100
+exchange native-apdu 90C7000000 => 88C2BF6350717EF89100
+exchange native-apdu 903B000017110000001000001313131313131313131313131313131300 => E7240128D26BCD849100
+exchange native-apdu 90C7000000 => A41EBE908876FFA69100
+exchange native-apdu 903B000017110000001000001414141414141414141414141414141400 => FF238EC698FD1ABB9100
+exchange native-apdu 90C7000000 => FE87F9001EDC63DD9100
+exchange native-apdu 90BB0000071100000000000000 => 121212121212121212121212121212121313131313131313131313131313131314141414141414141414141414141414E8CA6D825D41AEE49100
+#
+# File 02, linear, MACed: five records written and committed one at a time,
+# one more than the file holds, then every record read at once.
+exchange native-apdu 903B00001F020000001000002020202020202020202020202020202042C2ADFC621DC5C800 => 20780078558A7D769100
+exchange native-apdu 90C7000000 => 7BB357F68946F5C39100
+exchange native-apdu 903B00001F020000001000002121212121212121212121212121212110B9C0E4A6C6425800 => 6F8AC7094616C8649100
+exchange native-apdu 90C7000000 => 2F2133C2994013CF9100
+exchange native-apdu 903B00001F02000000100000222222222222222222222222222222228755D5AA2A6B0CF500 => 300597B248DF63689100
+exchange native-apdu 90C7000000 => 2627F4B6618D1BAC9100
+exchange native-apdu 903B00001F02000000100000232323232323232323232323232323237257F78AC1BAF9F600 => 390E2819A756F7189100
+exchange native-apdu 90C7000000 => A81FBEACAFD419AE9100
+exchange native-apdu 903B00001F0200000010000024242424242424242424242424242424FF9CF7F011908C9600 => 91BE
+status   905A000003F3F2F100 => 00
+inject-random 23E9C7988994FF8D7A63FEAD87AAD412
+exchange native-apdu 90AA0000010100 => 6FFF508DAB05E1AF5335AC2158FED8C291AF
+exchange native-apdu 90AF000020BD33EC55B9696EF3F46C37D4B5F4447C54C4A914370F9C7D5EC99C94B037805800 => 139BEFE45A9330E3101EA40FDE6704F49100
+exchange native-apdu 90BB0000070200000000000000 => 20202020202020202020202020202020212121212121212121212121212121212222222222222222222222222222222291AF
+exchange native-apdu 90AF000000 => 232323232323232323232323232323236022B8A0FE5D09049100
+#
+# File 12, cyclic, MACed: five records written and committed one at a time,
+# one more than the file holds, then every record read at once.
+exchange native-apdu 903B00001F1200000010000020202020202020202020202020202020A3FBC9959A94AFBA00 => A8A436BE62F7EE8A9100
+exchange native-apdu 90C7000000 => 86186ADB7893C9F89100
+exchange native-apdu 903B00001F12000000100000212121212121212121212121212121218ABAC5C6A571244A00 => A2EBBE2B96E02A249100
+exchange native-apdu 90C7000000 => ADA3D8A7B72D8CA69100
+exchange native-apdu 903B00001F120000001000002222222222222222222222222222222270FB22F0DEF2E37F00 => 887AEA410F060E539100
+exchange native-apdu 90C7000000 => C63233DB8612DFBC9100
+exchange native-apdu 903B00001F12000000100000232323232323232323232323232323232C118E51A11845E200 => A2C7D8B625348C969100
+exchange native-apdu 90C7000000 => A8D54BB61A3B2CBF9100
+exchange native-apdu 903B00001F1200000010000024242424242424242424242424242424E20F117D2B9BFF0B00 => 6F98965AC933B6D69100
+exchange native-apdu 90C7000000 => D53D1BC788D06A4D9100
+exchange native-apdu 90BB0000071200000000000000 => 222222222222222222222222222222222323232323232323232323232323232324242424242424242424242424242424E0D6747C7B0CE3D39100
+#
+# File 03, linear, enciphered: five records written and committed one at a time,
+# one more than the file holds, then every record read at once.
+exchange native-apdu 903B000027030000001000001D7FFA338E70396FC72861B655612E800D1C258E7BF1152156A9807E02F9974D00 => 28ED63714E9BDF5E9100
+exchange native-apdu 90C7000000 => 05B3F057592423F29100
+exchange native-apdu 903B000027030000001000002D3EE9AC8DAD30661E52D1EF6458E841D5EB134E5A76D0161FCD4D8ED5F70A4C00 => CC7812E663D742E19100
+exchange native-apdu 90C7000000 => D8F218061CCC1A7E9100
+exchange native-apdu 903B00002703000000100000520177499E1B7DD48FF216DDFBE4E0BE7461B57F45B5C0038075E69D163948BF00 => B1F16FE21FD03AE89100
+exchange native-apdu 90C7000000 => 1FB4093F680ED1A69100
+exchange native-apdu 903B000027030000001000002DC8BF9996D0F2DF28C0A861BCB4241FC6A3F67057145CCA50CAC6C8B89182A400 => F41B3AA3DCBC11669100
+exchange native-apdu 90C7000000 => 571A0C52894B7FC99100
+exchange native-apdu 903B0000270300000010000017CF8F6800BCC39AB5307A1FDE56ECED5B00D098A0A8AC0F7CE96947546E8B9900 => 91BE
+status   905A000003F3F2F100 => 00
+inject-random 35BCBA4560F45F8BF281E9EED95A0D71
+exchange native-apdu 90AA0000010100 => FC6342C5711606A4DBC94E4958A1B63E91AF
+exchange native-apdu 90AF000020D7862E1C86B840F53FCE2A411FA67291A230976992B7D2F622251A7D7AAD213A00 => 6B8D012AEC009CE82AC8EA37CD6C84C99100
+exchange native-apdu 90BB0000070300000000000000 => EC3F69FC2D6D353A50A3BC07EA5408B0958A5BCE920955C24F3E647C5668814031E47304885C40330736B0D45C664BD991AF
+#
+# OPEN DIVERGENCE, card versus engine: enciphered record answers pad with 0x80.
+#
+# This card pads an enciphered read answer with 0x80 then zeroes after the
+# CRC32; the engine pads with zeroes, as the EV1 4K captures in this corpus do.
+# The record data and CRC match; only the padding block differs, so the answer
+# cannot be asserted byte for byte across both cards. The steps from here are
+# recorded unexecuted until the padding is reconciled across silicon.
+#
+#   exchange native-apdu 90AF000000 => 85687AF268F29242A92DF1048F762CB5C15ED96838EC2156BCC8ABF7FEF000F69100
+#
+# File 13, cyclic, enciphered: five records written and committed one at a time,
+# one more than the file holds, then every record read at once.
+#   exchange native-apdu 903B0000271300000010000068741CA383B80E710D22A362401ABF7CB2C858AFB27D024A2E47E7711B0CF72700 => BF0583E298167CD89100
+#   exchange native-apdu 90C7000000 => C687035B0B4E35859100
+#   exchange native-apdu 903B00002713000000100000DF7F427FFDC3335861D6A6DDC4396A1E2DD9AB5D5AF66D70BF8446416DAF3CF900 => 838FF23D770DF7869100
+#   exchange native-apdu 90C7000000 => 70F950639E42A6F79100
+#   exchange native-apdu 903B00002713000000100000612158069005EE93156C791CA89FCA596D1D7BDD3C4300AE0E62B06F45E6547E00 => CC7BED0281E3911B9100
+#   exchange native-apdu 90C7000000 => 52EC646D30A6F15B9100
+#   exchange native-apdu 903B00002713000000100000AF5164AB88D91F522DCB402053AA3D4D7BC7B822C43931E862BEA8AF86FCC3A500 => EFD8CA039F69B1BD9100
+#   exchange native-apdu 90C7000000 => 3D0AFD9C83E8E29F9100
+#   exchange native-apdu 903B00002713000000100000A8C68700797DC04FFAAB907A49334F947BC3C7DEBF62485071923B2CF4E8792700 => B5EAE70B70E709729100
+#   exchange native-apdu 90C7000000 => 453D1B440B506FED9100
+#   exchange native-apdu 90BB0000071300000000000000 => EC42B50DB3C1F560B1D4EC4B8AEA35C39D53263716FFEC11149DF90FAE0FA6B539EB6A71C055A76935CFCC5A72C5295391AF
+#   exchange native-apdu 90AF000000 => F5769714842000BE6EF4FDC904B5305D9100
+#
+# ClearRecordFile on the plain linear file, committed, then read again.
+#   exchange native-apdu 90EB0000010100 => FB4B636CB618980E9100
+#   exchange native-apdu 90C7000000 => 3557CEDBB5B63C829100
+#   exchange native-apdu 90BB0000070100000000000000 => 91BE

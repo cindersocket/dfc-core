@@ -1,0 +1,33 @@
+# PROVENANCE: Synthetic regression for committing pending state after file-pool compaction.
+name: deleting a lower file keeps remaining transaction state aligned on commit
+case-id: transaction-snapshot-delete-rebases-on-commit
+origin: synthetic
+feature-version: 6
+source: generated transaction snapshot commit regression
+requires: ev3,backup-files,record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+scan
+exchange native-apdu 90CA0000050102030F8100 => 9100
+exchange native-apdu 905A00000301020300 => 9100
+exchange native-apdu 90CD0000070100EEEE04000000 => 9100
+exchange native-apdu 903D00000B010000000400001111111100 => 9100
+exchange native-apdu 90CB0000070200EEEE04000000 => 9100
+exchange native-apdu 903D00000B020000000400002122232400 => 9100
+exchange native-apdu 90C100000A0300EEEE04000003000000 => 9100
+exchange native-apdu 903B00000B030000000400003132333400 => 9100
+exchange native-apdu 90CC0000110400EEEE00000000640000000A0000000100 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 903D00000B02000000040000B1B2B3B400 => 9100
+exchange native-apdu 903B00000B03000000040000C1C2C3C400 => 9100
+exchange native-apdu 900C000005040500000000 => 9100
+exchange native-apdu 90DF0000010100 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BD0000070200000004000000 => B1B2B3B49100
+exchange native-apdu 90BB0000070300000000000000 => 31323334C1C2C3C49100
+exchange native-apdu 906C0000010400 => 0F0000009100

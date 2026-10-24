@@ -1,0 +1,15 @@
+# PROVENANCE: Synthetic 10-byte UID case retained because matching capture hardware is unavailable.
+name: EV3 ten-byte UID encrypted PICC data
+origin: synthetic
+requires: ev3,sdm
+source: deterministic synthetic fixture with independently calculated cipher and MAC
+uid: 04112233445566778899
+picc-generation: EV3
+picc-storage: 4096
+exchange native-apdu 90CA000005A1A1A10F8100 => 9100
+exchange native-apdu 905A000003A1A1A100 => 9100
+exchange native-apdu 90CD0000070140EEEE50000000 => 9100
+exchange native-apdu 905F0000100140EEEE81FF0000000000000040000000 => 9100
+inject-random 000102030405060708090A0B0C0D0E0F1011121314
+exchange native-apdu 90BD0000070100000028000000 => 414442323232444339414136453437443530384441343133423934334630444436314141303145389100
+exchange native-apdu 90BD0000070128000028000000 => 364138344432453736384331334435303232424442384643433438353542394439384634383137329100

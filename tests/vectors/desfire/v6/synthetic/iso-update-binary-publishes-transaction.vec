@@ -1,0 +1,40 @@
+# PROVENANCE: Synthetic regression for ISO UPDATE BINARY transaction publication.
+name: successful ISO UPDATE BINARY publishes the active transaction
+case-id: iso-update-binary-publishes-active-transaction
+origin: synthetic
+feature-version: 6
+source: generated ISO UPDATE BINARY transaction regression
+requires: ev3,backup-files,record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+scan
+exchange native-apdu 90CA00000E4F49D30F22E110D276000085010000 => 9100
+exchange native-apdu 905A0000034F49D300 => 9100
+assert apps[0].iso_aid_len = 7
+assert apps[0].iso_file_id = 0x10E1
+exchange native CD0114E100E0EE100000 => 00
+exchange native CB0200EEEE040000 => 00
+exchange native C10300EEEE040000030000 => 00
+exchange native 3B0300000004000031323334 => 00
+exchange native CC0400EEEE00000000640000000A00000001 => 00
+assert credential.num_files = 4
+assert files[0].has_iso_file_id = 1
+assert files[0].iso_file_id = 0xE114
+exchange native 3D0200000004000021222324 => 00
+exchange native C7 => 00
+field-off
+scan
+exchange iso-apdu 00A4040007D276000085010000 => 9000
+assert emulator.selected_application = 2
+exchange iso-apdu 00A4000002E11400 => 9000
+exchange native-apdu 903D00000B02000000040000B1B2B3B400 => 9100
+exchange native-apdu 903B00000B03000000040000A1A2A3A400 => 9100
+exchange native-apdu 900C000005040500000000 => 9100
+exchange iso-apdu 00D6000004C1C2C3C4 => 9000
+exchange iso-apdu 00B0000004 => C1C2C3C49000
+exchange native-apdu 90A7000000 => 910C
+exchange native-apdu 90BD0000070200000004000000 => B1B2B3B49100
+exchange native-apdu 90BB0000070300000000000000 => 31323334A1A2A3A49100
+exchange native-apdu 906C0000010400 => 0F0000009100
+

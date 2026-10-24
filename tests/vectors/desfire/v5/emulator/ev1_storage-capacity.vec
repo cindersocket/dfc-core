@@ -1,0 +1,25 @@
+# Synthetic 2 KiB card: version, FreeMem, and file admission agree.
+name: synthetic EV1 2K storage capacity
+origin: synthetic
+feature-version: 5
+description: advertised storage bounds file creation and FreeMem
+source: synthetic
+case-id: dfc-v5-ev1-storage-capacity
+uid: 04A1B2C3D4E5F6
+picc-generation: EV1
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+exchange native-apdu 9060000000 => 0401010100160591AF
+exchange native-apdu 90AF000000 => 0401010103160591AF
+exchange native-apdu 90AF000000 => 04A1B2C3D4E5F6000000000001249100
+exchange native-apdu 906E000000 => 0008009100
+status 90CA0000050102030F0100 => 00
+status 905A00000301020300 => 00
+status 90CD0000070100EEEE01080000 => 0E
+status 90CD0000070100EEEE00080000 => 00
+exchange native-apdu 906E000000 => 0000009100

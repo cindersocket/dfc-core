@@ -1,0 +1,15 @@
+# Synthetic EV3 command length checks for all three GetVersion parts.
+name: synthetic EV3 GetVersion rejects extra data
+origin: synthetic
+feature-version: 5
+description: GetVersion and its additional frames have no data parameters
+source: synthetic
+case-id: dfc-v5-ev3-get-version-length
+uid: 0442381AD31090
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+status 90600000010000 => 7E
+exchange native-apdu 9060000000 => 0401013300180591AF
+status 90AF0000010000 => 7E

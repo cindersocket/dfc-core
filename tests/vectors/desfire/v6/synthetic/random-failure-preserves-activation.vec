@@ -1,0 +1,19 @@
+# PROVENANCE: Synthetic failure-injection regression for activation atomicity.
+name: random failure preserves queued activation bytes
+case-id: random-failure-preserves-activation
+origin: synthetic
+feature-version: 6
+source: generated activation failure-injection regression
+requires: ev3
+uid: 04223344556677
+picc-generation: EV3
+picc-storage: 4096
+picc-random-id: 1
+
+random-source finite
+inject-random A1B2
+expect-error	random-source scan
+inject-random C3
+scan
+assert activation.uid = 08A1B2C3
+field-off

@@ -1,0 +1,865 @@
+{
+  "schema": 1,
+  "files": [
+    {
+      "path": "v4/emulator/binding-select-application-aid-order.vec",
+      "sha256": "1dfb7d99665bffb808b4707576a40afbabe8a62978773873b8ce1284a95195f6",
+      "size": 651
+    },
+    {
+      "path": "v4/emulator/ev1_abort-restores-transactional-files.vec",
+      "sha256": "e76f1fb9b39f171a81ac75c59533e1c2029a2ec8f8ed7f95c1fb1ac11fd8fa76",
+      "size": 1236
+    },
+    {
+      "path": "v4/emulator/ev1_authenticate-missing-key.vec",
+      "sha256": "0c9a83f868881beba5e1310a076b195ff88463d93f15fa34c8cb13e3a2bd92ad",
+      "size": 623
+    },
+    {
+      "path": "v4/emulator/ev1_authenticate-wrong-algorithm.vec",
+      "sha256": "3d7907df0da62b3879647deba5da0af42f980f71c2becb709b0c70b8dab37dd1",
+      "size": 893
+    },
+    {
+      "path": "v4/emulator/ev1_command-during-chaining.vec",
+      "sha256": "2aa7fa0ebc681faa11a8caabd6998afa85bf53cbf399c0a490395d6e29601bbf",
+      "size": 1584
+    },
+    {
+      "path": "v4/emulator/ev1_create-29th-application.vec",
+      "sha256": "654363aa4be8e3cd8fa47696ba89ceaf3fb889f3ba258f3cfc507c041cacd120",
+      "size": 1684
+    },
+    {
+      "path": "v4/emulator/ev1_create-application-and-list.vec",
+      "sha256": "ed9c33a23b9bd0f140d4847ad1e298ee43e9f5190a6c380267775c853ed39574",
+      "size": 795
+    },
+    {
+      "path": "v4/emulator/ev1_create-application-fifteen-keys.vec",
+      "sha256": "ef67bf4054f4229fb81c08c525e3f5d5a194f81b3aa8e69d2b7529cfd3960d92",
+      "size": 636
+    },
+    {
+      "path": "v4/emulator/ev1_create-duplicate-file.vec",
+      "sha256": "938a42e8866267611f90bbfd296f1cc15d9805865e2dabeec1e30f22373dc0a8",
+      "size": 721
+    },
+    {
+      "path": "v4/emulator/ev1_create-file-beyond-capacity.vec",
+      "sha256": "ce9aed5348891dabfdef461ac5755fa6ac1533efe34021b6d11d2336a96ab895",
+      "size": 706
+    },
+    {
+      "path": "v4/emulator/ev1_create-file-requires-auth.vec",
+      "sha256": "61ca5204e315547f76f5d4db0f0c61aa2aa5332b2916ec02ff8c7fd16f0e4920",
+      "size": 691
+    },
+    {
+      "path": "v4/emulator/ev1_create-std-data-file-iso-fid-requires-ks2-bit.vec",
+      "sha256": "a8c5d4caf1dbd24771860ae1d6e12e6c6068bd8ea7679dc9b1bbf7c3786d5787",
+      "size": 848
+    },
+    {
+      "path": "v4/emulator/ev1_delete-application-requires-auth.vec",
+      "sha256": "b90cb61b2c2a0f240adab535f5efd546001af95761809f672a1757f9a5f219f6",
+      "size": 661
+    },
+    {
+      "path": "v4/emulator/ev1_delete-file-free-create-delete.vec",
+      "sha256": "bfce5867f1c24474ee3801d7dfada43db446e7e2573f64faac41d1e3ecc35bbd",
+      "size": 953
+    },
+    {
+      "path": "v4/emulator/ev1_delete-file-requires-auth.vec",
+      "sha256": "0fae97caa8e47188941058d21be1c8820b4b870c22446d33fa0b193e5974fcb8",
+      "size": 1268
+    },
+    {
+      "path": "v4/emulator/ev1_duplicate-df-name.vec",
+      "sha256": "757423ea8b84862416bf77e7a24a555da50310c90a2e30b825b746eb4612a19d",
+      "size": 658
+    },
+    {
+      "path": "v4/emulator/ev1_duplicate-iso-file-id.vec",
+      "sha256": "c286578dac1dfd08d7b7febcd0466032af58d1d6095ff226fdbd899ba7b0c8cf",
+      "size": 655
+    },
+    {
+      "path": "v4/emulator/ev1_file-number-out-of-range.vec",
+      "sha256": "bf67c93479073e5854d8b1a058d93e7facc239d3416ef419fff007098fcd866f",
+      "size": 671
+    },
+    {
+      "path": "v4/emulator/ev1_get-df-names-lists-unnamed.vec",
+      "sha256": "3ee61b7229b1e50375daeb881f9e023fcac750838fabaa8fc10f1255d89b38f5",
+      "size": 795
+    },
+    {
+      "path": "v4/emulator/ev1_get-iso-file-ids-chains-when-many.vec",
+      "sha256": "0248ad59ed72760ac891e75e78e32a4563e79c914cff617485b14842045c58dc",
+      "size": 2734
+    },
+    {
+      "path": "v4/emulator/ev1_get-iso-file-ids-lists-file-fids.vec",
+      "sha256": "57a4b384a17e4b62a929c30d4d25f2b985ce014f1e0d0e7a732b15c70c88bd15",
+      "size": 877
+    },
+    {
+      "path": "v4/emulator/ev1_get-version-frames.vec",
+      "sha256": "8f800f30068dda6321e5121bb8333905071a99346dc7ec9a690997f6d803a504",
+      "size": 741
+    },
+    {
+      "path": "v4/emulator/ev1_iso-select-df-name-beats-picc.vec",
+      "sha256": "cdec9db89765f8ba93c21f76f46d98f151df60390dcba739eb7a6a30c4ec6b53",
+      "size": 1678
+    },
+    {
+      "path": "v4/emulator/ev1_iso-select-picc-df.vec",
+      "sha256": "13fa8442aaa69a79252b10a6b865765354459c75443c1094fd28d54bd5c68a29",
+      "size": 734
+    },
+    {
+      "path": "v4/emulator/ev1_read-past-file-end.vec",
+      "sha256": "476dcf643d1eec3c3189df91612093e9b54bae07ae5562b3d709e6dfbbd85dbb",
+      "size": 883
+    },
+    {
+      "path": "v4/emulator/ev1_restricted-app-directory.vec",
+      "sha256": "35dd9800980acc575602a11df9303747ef38686c8955b272b8aaf86dd1c171bc",
+      "size": 675
+    },
+    {
+      "path": "v4/emulator/ev1_restricted-picc-create.vec",
+      "sha256": "b6215e3d4703687efc2c1abcb6f722696ebd394c8dd4194933a0ff516bbcf869",
+      "size": 599
+    },
+    {
+      "path": "v4/emulator/ev1_restricted-picc-directory.vec",
+      "sha256": "90a8d64bb9986483f48180a7c64ac2f6ccf395988258282501e77e6a6eacc4c4",
+      "size": 599
+    },
+    {
+      "path": "v4/emulator/ev1_stray-additional-frame.vec",
+      "sha256": "e7f4c14ef66dc643798e3824f66ff22bcef2011084ba93d4ad075690cabb0886",
+      "size": 585
+    },
+    {
+      "path": "v4/emulator/ev1_truncated-payload.vec",
+      "sha256": "042dd2862e6fc99af9cf27ab0e9074896774b478d36c1b1c6e23466de64d37d1",
+      "size": 582
+    },
+    {
+      "path": "v4/emulator/ev1_unsupported-command.vec",
+      "sha256": "4de95d9e7424008da8ce9b90c3bfaf6a8af91879187ac66eb4495d6d0136b279",
+      "size": 593
+    },
+    {
+      "path": "v4/emulator/ev1_write-past-file-end.vec",
+      "sha256": "3ba0e61bab8fcddec4aaf20e2efd9367a3e86fa674660258a077b86beba7bc50",
+      "size": 986
+    },
+    {
+      "path": "v4/emulator/ev3_record-order-update-clear.vec",
+      "sha256": "0280a4962e766e76a4ddfde56ac370007a876d27226f58612eb5b70005468040",
+      "size": 1631
+    },
+    {
+      "path": "v4/emulator/hardware_ev2_4k_directory_issue1.vec",
+      "sha256": "c5611043dc22dc1115e9227cc01e8e74810622d02b6405b9517ae5715ad8f57a",
+      "size": 683
+    },
+    {
+      "path": "v4/emulator/hardware_ev2_4k_identity_issue1.vec",
+      "sha256": "d2bafc7ebd4ac92ada43e96a15babef9cc6b6ff4f0c25fd22da25495b5742822",
+      "size": 795
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_4k_access_rights.vec",
+      "sha256": "4edb41d9153db266c2fa8ef70b9aa51ee2d5e44613d2da6185acc48e5812a287",
+      "size": 4697
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_4k_aes_comm_modes.vec",
+      "sha256": "c724210d336f49e0030aca6a9c2ef7b57840f9d3066e12f024bb786ade74e214",
+      "size": 5265
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_4k_chaining.vec",
+      "sha256": "0fe8775a6bd01193d4372d9cd8c5bc489c00e12ff0c7318b32a5bd030d38be89",
+      "size": 3411
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_4k_d40_comm_modes.vec",
+      "sha256": "5f2fb87178c81248ffdf3bcff319e9e99fb46bb7813fe2f69f6b3e7407f19e5c",
+      "size": 3978
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_4k_free_create.vec",
+      "sha256": "0975dc1dffb4582411e73d04c5849260e618d34621f5466296f7a5806bec993e",
+      "size": 3474
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_4k_handshakes.vec",
+      "sha256": "e8476bf47767fc95ab4532529fa5590cdb6dec7b8cfc3050efc7f2aec0f1002b",
+      "size": 4106
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_4k_iso_comm_modes.vec",
+      "sha256": "fd1e46a3cb4e99a97e4949181f5a3e9857e0fb94acb03bb34f4691f47a6038c8",
+      "size": 4939
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_3k3des_comm_modes.vec",
+      "sha256": "fb6395c50b103427439db354e7f156f37b2fc111184ba198eab13bf3e884ca85",
+      "size": 5561
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_3k3des_handshakes.vec",
+      "sha256": "a3656646cc73d4e1e6fba92ed15de3684d32fcb1033f83ca6af823ed8d49b81e",
+      "size": 3337
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_application_memory.vec",
+      "sha256": "98aea054aa1235a632212163f63e02896a0fe98e2f94e3791552bbdae5a05f6e",
+      "size": 9527
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_application_memory_reversed.vec",
+      "sha256": "82dcd96722c845a397eaa0c44a1aba5786d84f46285d14705790bfe90f91f1ab",
+      "size": 9560
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_directory.vec",
+      "sha256": "6ef58d184c88415dcc730555c13887b68a88475214a642c980f2588a4e276c91",
+      "size": 5761
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_free_memory.vec",
+      "sha256": "8b7d8fc555f620f9998f0fd765fbb9ecf87756725418c627b178ca5020d23014",
+      "size": 5636
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_identity.vec",
+      "sha256": "36e65d008a99e59124bffea89b4545bde2e23864151cf135c5680ffe40d1e06a",
+      "size": 2330
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_long_data.vec",
+      "sha256": "4939be20b4782f802853d6c282cb8fc02081ba7a2e7498558e41c0eafc334847",
+      "size": 18395
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_long_data_d40.vec",
+      "sha256": "7a263b94709ebbc67d672f49d525463a417dc3f2956ac038248a8df1a719c178",
+      "size": 17842
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_long_data_iso.vec",
+      "sha256": "e6034bf075c844b2a9b8ca1eae53aa43836418545541060c51a884b277a692b8",
+      "size": 18056
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_records.vec",
+      "sha256": "f17bca73504180cc6505d901ed1e55575d80b2a7b86728e6facc81f5f3465e96",
+      "size": 11963
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_records_d40.vec",
+      "sha256": "82d1e56e4a442b1c7c17d5a72f1f7e6f23993a73f62141219193595ff2113e50",
+      "size": 10359
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_8k_records_iso.vec",
+      "sha256": "b45bac23c84bd2fa58f01e5469cb632a9039d3d6edbd7e0d0998cc7ddfe4749d",
+      "size": 11410
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_change-key-ev2-success.vec",
+      "sha256": "f1e84801c1283c3d0ca280fdcffb6a713b55c7c129fb58826b7378448f36ea16",
+      "size": 1782
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_delegated-application-lifecycle.vec",
+      "sha256": "a6d247ed4f4b4d27d76ce9da6412d098807b0e91ae1a4cfb640f282a29ff940e",
+      "size": 1432
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_ev2_auth.vec",
+      "sha256": "e5ba94a60e57a06bf5e3bbe4b7452da3e782cb6322c9945ca6e238fada6e0f89",
+      "size": 952
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_ev2_comm_modes.vec",
+      "sha256": "2ed0a576780a2a85b624703c9172a7c53a481fa50cad8b6f4257cbfba1a103ee",
+      "size": 2046
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_ev2_nonfirst.vec",
+      "sha256": "a25b6d6c0826f5ed85ba0fdeae39b985c126f27975b5f9b8836e7f49c3630b68",
+      "size": 1802
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_identity.vec",
+      "sha256": "6fd2585503151d66c181f98d3277e46650fc4ab47787f50a18f44afd8b4626b1",
+      "size": 805
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_iso_select_file_types.vec",
+      "sha256": "c914205c69878e278598c3ac7e60f0b1dbfc748a41681893003bfc4794c4a2f5",
+      "size": 1547
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_transactions.vec",
+      "sha256": "b803314853ba708d479759b7a29d0bd9d817ac2749599e0bd0689c8098bf5961",
+      "size": 1268
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_value_modes.vec",
+      "sha256": "ec60fd172db6ddd3ba819c43a106a3eacfe650f7c967b457dcdb63d5de7dfa52",
+      "size": 1875
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_virtual_card.vec",
+      "sha256": "912ae31a3c66ab63690f40579cd7161b0c1f0f242066177bd777c5cf25609000",
+      "size": 752
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev3_4k_wire_dialects.vec",
+      "sha256": "17e59de78917cbdfd74d5cd3f6d7bb3e21662b1e4247c51db546cf68098d02a4",
+      "size": 1345
+    },
+    {
+      "path": "v4/emulator/lifecycle.vec",
+      "sha256": "7f1a5bc8a0b092acd10d7a97ea92a4c0801828b9ba3a88ffc1ab924447d132e2",
+      "size": 2763
+    },
+    {
+      "path": "v4/emulator/model_key_set_invariants.vec",
+      "sha256": "7687d250b85ef991e2083866ab7c25c62441748cacc641f61f769b8c0685c97f",
+      "size": 990
+    },
+    {
+      "path": "v4/emulator/model_sdm_encrypted_range_overflow.vec",
+      "sha256": "fcab4da07debfdaedf65d97cafee0d88a792f4dfa1ec7c0134fdda3881ec14b6",
+      "size": 939
+    },
+    {
+      "path": "v4/emulator/modeled_ev2_capability_exchange.vec",
+      "sha256": "9b04e1d26acea3334a4ffc4c52d9fa1e57417149fcbfcf5712fddca22a638a3b",
+      "size": 3815
+    },
+    {
+      "path": "v4/emulator/modeled_ev2_change-key-ev2-errors.vec",
+      "sha256": "3777a8f62fb1618cfb361e6c2bccdd588a55082df5389ad687ce9e21075fb977",
+      "size": 647
+    },
+    {
+      "path": "v4/emulator/modeled_ev2_delegated-command-boundaries.vec",
+      "sha256": "ae77269b47f5494c2d6faa01cadac5db1ec36c80f2d26d63472e9838ae0e0839",
+      "size": 519
+    },
+    {
+      "path": "v4/emulator/modeled_ev2_key_set_lifecycle.vec",
+      "sha256": "106d54276a2e08420de1cf9a361706a57594b01763786ffde01d81d3f5a39938",
+      "size": 1846
+    },
+    {
+      "path": "v4/emulator/modeled_ev3_sdm_random_id_plain_uid.vec",
+      "sha256": "c608444a841448a870e62ec347e6489f89eb3a5b1d76180ca450632189e3c9ef",
+      "size": 562
+    },
+    {
+      "path": "v4/emulator/modeled_ev3_sdm_ten_byte_encrypted_uid.vec",
+      "sha256": "14df22ef06acb4c79e4ba4bc5df416986045f25deb4a581a8fd26e58c397f824",
+      "size": 889
+    },
+    {
+      "path": "v4/emulator/modeled_ev3_virtual_card_authenticated.vec",
+      "sha256": "3018f2c559036e1c3e8e189a301914abd6f0138f48561f64e7a654572a15be25",
+      "size": 759
+    },
+    {
+      "path": "v4/emulator/multi_app.vec",
+      "sha256": "b5a70a1336d1e78dadaf6568e675106cb99ef9015778af7b5c893fd5ff0cf1ae",
+      "size": 2727
+    },
+    {
+      "path": "v4/emulator/mutation_aes_change_key_integrity_error.vec",
+      "sha256": "e7f0919e477c9cf9ddd966f86162b0ec7021a2ef9b446155012f063782dff25f",
+      "size": 1922
+    },
+    {
+      "path": "v4/emulator/mutation_aes_change_key_same_key.vec",
+      "sha256": "c09f1f7865c0822286f742964e5306893226999af52db0e6c67a68c10eb48bda",
+      "size": 2423
+    },
+    {
+      "path": "v4/emulator/mutation_iso_change_key_same_key.vec",
+      "sha256": "a97938a545ef3347423558666ded47bf5aa700a99c446fc5093a7be586d765c3",
+      "size": 2038
+    },
+    {
+      "path": "v4/emulator/mutation_pcsc_change_key.vec",
+      "sha256": "c936a05a0d75cd30c6a8a07a752ecb73ad4b26ff0f17877513a5bf946db9d57d",
+      "size": 2504
+    },
+    {
+      "path": "v4/emulator/picc_config_default_ats.vec",
+      "sha256": "0becd1e655ca72d0367d44ba486ab301b61970fa89fe78382618b9150e89678f",
+      "size": 1123
+    },
+    {
+      "path": "v4/emulator/picc_config_format_disabled.vec",
+      "sha256": "c80708cb62a044082d10f872550e7dd461d3b8a470d716ab84c4ef5c60584c22",
+      "size": 1236
+    },
+    {
+      "path": "v4/emulator/picc_config_sak_atqa.vec",
+      "sha256": "39d5f14795649b2c9581b7262ddb54ec165cb3b8627922a3c1ce7b4eede92bb6",
+      "size": 764
+    },
+    {
+      "path": "v4/emulator/picc_config_user_ats.vec",
+      "sha256": "ef2045048d171148af3e64a7f66ff1b6e56c4236f3bc23a5c7b509b31e6f80b9",
+      "size": 788
+    },
+    {
+      "path": "v4/emulator/picc_random_id_activation.vec",
+      "sha256": "1281fcfc0bc2a4f26814d0dc4b7f1a82533ae968ccbbd69426cceada0eaa0edf",
+      "size": 1557
+    },
+    {
+      "path": "v4/emulator/probe_blank_card.vec",
+      "sha256": "c374c7df0d910ecfdb915bbe46f61660392e48d7b8963d9de5c2308b234bc5b6",
+      "size": 909
+    },
+    {
+      "path": "v4/emulator/probe_reader_sequence.vec",
+      "sha256": "4018f5bb8fafb7d91ccde7b8b356521aaf9c90beef7e0a4ec46030ea4db83a32",
+      "size": 1676
+    },
+    {
+      "path": "v4/emulator/value_access.vec",
+      "sha256": "50bd08d431e53cf46805fe45e53111ba145566d675320bd51efb7fb5ef473c99",
+      "size": 2148
+    },
+    {
+      "path": "v4/emulator/value_comm_limited_options.vec",
+      "sha256": "ca54dde33d52abef4d009edbbde72c1e6ef41e3055dd326241373da5cd3991a0",
+      "size": 2045
+    },
+    {
+      "path": "v4/emulator/value_create_status.vec",
+      "sha256": "3047abcc6cde5e1adb9e7bdd0c36045d6b72eb1179c187d8d6ab1f590cc6d2f5",
+      "size": 1100
+    },
+    {
+      "path": "v4/emulator/value_malformed.vec",
+      "sha256": "1bf6e760fe22d861f56ffd58b59addd6c53e1f659ad128b6f59c5d0ccc6f448c",
+      "size": 862
+    },
+    {
+      "path": "v4/emulator/value_multi_file_delete.vec",
+      "sha256": "45443917e9fdc62039449d13be602dc37b41020afb5b1cd144621f2680663136",
+      "size": 1059
+    },
+    {
+      "path": "v4/emulator/value_transactions.vec",
+      "sha256": "365d48691edf92770af240b5474691458447c8e42a1f83198e40d509a7a11b10",
+      "size": 1836
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_3k3des_handshakes.vec",
+      "sha256": "c879c7886e26e4fd34e2e4157f3e347dc658a70256b59401647fd69bb63b970f",
+      "size": 3296
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_handshakes.vec",
+      "sha256": "91b3e2ced6f11ce1fce5c7c8166a28abb3bcf3ec86055d4bfc563032ffc7989f",
+      "size": 4139
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_proximity_check.vec",
+      "sha256": "cb3bab61281d6bac92fc7d199effd2940e91d8c6a4404bdac550c19bc90dce20",
+      "size": 701
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_proximity_check_split.vec",
+      "sha256": "63698b50a727097d1428ae19dfc17979174f9e09cda062330e16e6443c890ee2",
+      "size": 748
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_sdm_counter.vec",
+      "sha256": "b6b4187054c0e306dd56264e08e985c0dfb4ff60f460a19132f3d35b1febd435",
+      "size": 773
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_transaction_mac_modes.vec",
+      "sha256": "e8adf52f31f88aecd9842a9f5921b9eaa142f71ef6f80bf4dbc0d36f514fc426",
+      "size": 1499
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_transaction_mac_reader_id.vec",
+      "sha256": "ee801e52db8117d2faeb1dc6523b1709592925b5b083f97092395631453b1ca4",
+      "size": 1944
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_4k_transaction_timer.vec",
+      "sha256": "eac73e5cba332267276412fa869bda2fa7768f639e9c3a2c8f603fb254a6f7e2",
+      "size": 1446
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_sdm_encrypted_file_native_iso.vec",
+      "sha256": "3c32f58bd6dbbfa3a5bcf63e3604425084ef5216c922f5cea664dd614caa8089",
+      "size": 1404
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_sdm_hidden_counter_limit.vec",
+      "sha256": "c7ff3f3866fef8d6ac35abdcb8dfee267f09e5b061fc34ad0323837102e5f30a",
+      "size": 1055
+    },
+    {
+      "path": "v4/hardware/hardware_genuine_ev3_sdm_picc_native_iso.vec",
+      "sha256": "f9a637ae2371c7eec39fa712d0381c04ab52ad9b3f413afadfa627660590a19e",
+      "size": 980
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_048222f2cf1890_authenticated_app_directory.vec",
+      "sha256": "1b9f08a034720c35a2fe987851d65ed1f8bafb94faac30857db924f7cfdc2fb7",
+      "size": 2800
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_048222f2cf1890_authenticated_file_ids.vec",
+      "sha256": "718a48ef4f4f170acd5455be03b56114de514da0b6fb2da28065d469c3dcfa03",
+      "size": 2817
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_048222f2cf1890_update_record_edges.vec",
+      "sha256": "521bae3f20190ca7dcf8cbcce37019bdac0f97ffdc31867084a2ec96492c300a",
+      "size": 1803
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_3k3des_comm_modes.vec",
+      "sha256": "53806501c5bc43d3fee251d12eb65c0952ad4e0522f4d1ea79998c767f805822",
+      "size": 5577
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_3k3des_handshakes.vec",
+      "sha256": "a38ce4307bf518f2e1ea966ed5be0e50401b36942cf170a2b7269104b5661748",
+      "size": 3294
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_access_rights.vec",
+      "sha256": "ebe7c23478ade5360a4e44a76e864a6af5175c1cb41b1803a44b6bdd8151d21b",
+      "size": 4733
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_aes_comm_modes.vec",
+      "sha256": "bf25a2b9c11306a9a1b16477255e6f668f7a79f8a7f05cd9b5e7271d7b232c50",
+      "size": 5301
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_chaining.vec",
+      "sha256": "27776e848daf72b294b7c2d3f16a48e334cbb3e28838b5357e626020e303c02b",
+      "size": 3447
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_d40_comm_modes.vec",
+      "sha256": "c84578f29a1b8c835b29412dc3faabc2dae64159b565695619e14b86d5c0c4d5",
+      "size": 4014
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_free_create.vec",
+      "sha256": "1a4a91ac72fc30f3e978b65f95bcc653005cb5b27c42e63a94035d1abdd55a24",
+      "size": 3510
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_free_memory.vec",
+      "sha256": "60dc05bd27216656c3afd07f39feb58c4a805c11430bda721ca10c6126fbe547",
+      "size": 5652
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_handshakes.vec",
+      "sha256": "654a40282a1e98f30f93a5bc0fba9350c128905a013fe57a49cb9d8d839af4d9",
+      "size": 4142
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_identity.vec",
+      "sha256": "b8762f9c44342f82b5fc376da869a01bef5a8b04968d321cecbe0f4e9aeb794d",
+      "size": 2346
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_iso_comm_modes.vec",
+      "sha256": "4b903a9632b26fab4fa4ea1238e74f2251fe6a32e0249f6151788a14f49f9c88",
+      "size": 4975
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_long_data.vec",
+      "sha256": "9c1f2245d03f8147d19bbe8ee167d14521216176f3007941f64106cc4e6ce7e7",
+      "size": 17622
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_long_data_d40.vec",
+      "sha256": "9f88f11306a262106336c519b47e4111225254c182bd8812ba4ce4fee0b98aea",
+      "size": 17056
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_long_data_iso.vec",
+      "sha256": "0f06c17afab20b94f27fda9fed0747eced8947bcab3ae95496d73e0e7cac2b68",
+      "size": 17285
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_records.vec",
+      "sha256": "4fd9e4e468b7a17e7c05220d331c89ba303aa04eaf302e6e8a487fc3ce2b9563",
+      "size": 11429
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_records_d40.vec",
+      "sha256": "e20cabb89e2b52d7e54747dbddc02936e760be8d4da9e7e9944f90ca8def9286",
+      "size": 9833
+    },
+    {
+      "path": "v4/hardware/hardware_physical_ev3_4k_records_iso.vec",
+      "sha256": "300ee0ef25594c224aadff8326a57cd920c888933eb4121a33b6737682d3041e",
+      "size": 10884
+    },
+    {
+      "path": "v5/emulator/ev1_get-version-defaults.vec",
+      "sha256": "ffcec09dee7909d6ac51a26521bbef4adc7dbddeea7c7ddfdea16c39bc04e774",
+      "size": 534
+    },
+    {
+      "path": "v5/emulator/ev1_storage-capacity.vec",
+      "sha256": "3df96205aef4f4e980924bacb85b43bbbabeb282f10e2e0a8f9aa9e505cd5e0d",
+      "size": 832
+    },
+    {
+      "path": "v5/emulator/ev2_get-version-defaults.vec",
+      "sha256": "9d55b0e5915ac776ebfd13203580f63e55303c96ee7634127263b8b259fc13ed",
+      "size": 536
+    },
+    {
+      "path": "v5/emulator/ev2_get-version-overrides.vec",
+      "sha256": "f375c6e1d1a0ce4ce538a8f2ec43a896613b091c9d586c7d0a3f724a7253329b",
+      "size": 655
+    },
+    {
+      "path": "v5/emulator/ev3_get-version-defaults.vec",
+      "sha256": "aef5be3fe08a566c3509a725f68b6b5e57236f606615a8a443a7b96e4cbcdec5",
+      "size": 542
+    },
+    {
+      "path": "v5/emulator/ev3_get-version-length.vec",
+      "sha256": "5951cfb99d0e7c055757fc42f7183beaa544fb18c06bef7269a5409df83fb9bc",
+      "size": 464
+    },
+    {
+      "path": "v5/emulator/ev3_unsupported-storage.vec",
+      "sha256": "b9aeadf1197b373f5d42151ca72617e5f98acfa63b818a28021673069d713eba",
+      "size": 380
+    },
+    {
+      "path": "v5/emulator/hardware_genuine_ev1_4k.vec",
+      "sha256": "49ab56ae4f1247fbee640aee5a8c01005de5342313f1a76b40e557ede9563652",
+      "size": 2822
+    },
+    {
+      "path": "v5/emulator/hardware_genuine_ev1_4k_issued.vec",
+      "sha256": "49771d3cafb759b856f7e4e4b2e1d4eef42e395b4b4c765b239c975e2183ed90",
+      "size": 7073
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_dam-auth-disabled.vec",
+      "sha256": "3d18bd081b5a40baa19f42f640f063d6f28591a7dd72141106944c63c37e98ec",
+      "size": 547
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_ev2_first_nonfirst.vec",
+      "sha256": "b1656d299f1a9abe9aa52fecbb554138bd299be260197139243089f01bd60862",
+      "size": 1031
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-2tdea.vec",
+      "sha256": "5c4b5537839672c1772bc7a3a5c72ce9055d7bf6a76b4b31eb0b1e0e219dab03",
+      "size": 808
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-3tdea.vec",
+      "sha256": "be190f175f3406328599643341adb0f3102ed9e1cdf6000f9a33d51a9746f389",
+      "size": 936
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-aes.vec",
+      "sha256": "dce4e28feaeb0a2913645c3ef8e30556b8e9fded9c7fb2cd8ad8a7e5eb69889a",
+      "size": 934
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-length.vec",
+      "sha256": "7239e43af56b1ff69186b87bf9d830af00e2d600f2899b165196de1b96dff7ab",
+      "size": 427
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-p1.vec",
+      "sha256": "e68beff06169ed3ec894a8ad280e5d0952abef83a1a1dcfc06eeaea65cc1ea72",
+      "size": 423
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-without-challenge.vec",
+      "sha256": "3564ce83bb9174e23d30d897dcd46c6b5a3471094ab86b6cc77cd1548a101f52",
+      "size": 463
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-algorithm.vec",
+      "sha256": "b5393b07506578d686c0ca118b942a63fb9e42966c30ec117af62ac414d2195d",
+      "size": 577
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-cryptogram.vec",
+      "sha256": "d041525336a8b132e3d77a6f6b6cec57c38e91ed76e8266f7b58a3d600f38a31",
+      "size": 546
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-key-reference.vec",
+      "sha256": "c4744aa5697c0ce25ec1cebb02b1168a042240089b189e734f1d58de40d342a9",
+      "size": 517
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_internal-without-external.vec",
+      "sha256": "18a2d2caed03150dc3077c3952841ed811d508d93593325de053b5638482afa9",
+      "size": 448
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_picc-2tdea.vec",
+      "sha256": "b6eb8cfa78d233d9c905a9327a99fb996cbae90ddf2a4402456343a2ef458703",
+      "size": 709
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_originality-aes.vec",
+      "sha256": "f248251ef8e7682bec5af2b5b44f3719c4b205992bb797afb0302e9c8a08933b",
+      "size": 702
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_originality-ev2-first.vec",
+      "sha256": "b7552f2cd1b9b5d4e044bc8574b629888b1b1f47df49e4d03c2f9262c7c5c1f2",
+      "size": 691
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_originality-ev2-nonfirst-without-first.vec",
+      "sha256": "a9ae56e62c0d7bfbe1f150e717eb294e3cbb16002ec4834ba61bebf0d0533d81",
+      "size": 706
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_vc-config-disabled.vec",
+      "sha256": "417f27bd69ed4ec2a9b4f8f409f9b8db8fccc603d579ed78ec1eeca076029dd2",
+      "size": 567
+    },
+    {
+      "path": "v6/synthetic/d40-terminal-command-error-retains-session.vec",
+      "sha256": "f8deb7ed5503182f74c2208dcba0302e9e019238e25ed19d7fdcfa8a65f43c2b",
+      "size": 1385
+    },
+    {
+      "path": "v6/synthetic/ev1-terminal-command-error-rolls-back.vec",
+      "sha256": "db126e039331d0e78ebd41b61da4ee5d02518bc255d386306c2bb12550238489",
+      "size": 1718
+    },
+    {
+      "path": "v6/synthetic/ev1-terminal-error-families.vec",
+      "sha256": "0995b11e3bb47b023c78de8e8dde1262efd27af450858c1a758c63759501730a",
+      "size": 3749
+    },
+    {
+      "path": "v6/synthetic/ev2-full-command-error-rolls-back.vec",
+      "sha256": "820cb318148a0c016ade2b76ea4b9f616e3ef35930c27b29c7bd627ccfa532cf",
+      "size": 1905
+    },
+    {
+      "path": "v6/synthetic/finite-random-reset.vec",
+      "sha256": "408e112e33d17b3fc32873d875d8dad8f81d31be5f13aabdb4befc314060042d",
+      "size": 703
+    },
+    {
+      "path": "v6/synthetic/iso-command-aborts-native-chain.vec",
+      "sha256": "26b8e2f3ac81d8a2426653a3502dbf1a71bab282cff0d0ccfd41f9305dcd56f3",
+      "size": 491
+    },
+    {
+      "path": "v6/synthetic/iso-update-binary-publishes-transaction.vec",
+      "sha256": "5aed72e12447ed72075c419411016fa81677bc0cbaf84e17c7f1430673d1bd59",
+      "size": 1653
+    },
+    {
+      "path": "v6/synthetic/random-failure-preserves-activation.vec",
+      "sha256": "adb2cb9b5960000c3b5a35556e6b3c00495c4a36cf355c199db1e4f14ea80a28",
+      "size": 504
+    },
+    {
+      "path": "v6/synthetic/random-failure-preserves-ev1-ev2-first.vec",
+      "sha256": "a3096b6f226b700106ad0150d64107a3f30faac9f90cceb5cb3043b52b14efac",
+      "size": 1181
+    },
+    {
+      "path": "v6/synthetic/random-failure-preserves-ev1-prepare-pc.vec",
+      "sha256": "9ae97d3595bd8ee098278c979249496d8140d643e74057a743acbaffdb46835d",
+      "size": 1387
+    },
+    {
+      "path": "v6/synthetic/rejected-ev2-authentication-retires-session.vec",
+      "sha256": "76c63fb57bf1a15b8e888a0ba7d883fe32e358e2ac55d3c350a445a23ae9d298",
+      "size": 1007
+    },
+    {
+      "path": "v6/synthetic/rejected-internal-auth-aborts-handshake.vec",
+      "sha256": "e059473ba5bd60475d8c561893caba1c85f0eca68bdd236debcc0953eb68ea98",
+      "size": 967
+    },
+    {
+      "path": "v6/synthetic/rejected-native-authentication-retires-session.vec",
+      "sha256": "a6871a03a6b84ebddb9f78272fac4ca5b7d2a4e407b861d856c8be4d595dbb08",
+      "size": 1200
+    },
+    {
+      "path": "v6/synthetic/replay-random-exhaustion.vec",
+      "sha256": "2f25409151c3bfff0bcf0bf24a0593863f144d0017e440d7341e74a3fb574774",
+      "size": 709
+    },
+    {
+      "path": "v6/synthetic/sdm-reconfiguration-resets-read-counter.vec",
+      "sha256": "ce16b4c66d4503e6c8eac7627aa8e72e4da8a5bdc9c7aae97b58521bef32dc14",
+      "size": 1531
+    },
+    {
+      "path": "v6/synthetic/sdm-reserved-access-rights-are-atomic.vec",
+      "sha256": "cacbd9bb9b15a2091049620f2e90ba2d8ace5a5367e4792d4d87cd24d3294cab",
+      "size": 1381
+    },
+    {
+      "path": "v6/synthetic/transaction-mac-lifecycle-retires-transaction.vec",
+      "sha256": "24acdb9c8ff4b89fe63862c1260dc86ac4038adbab0c58aa3b9b16cd35983733",
+      "size": 1919
+    },
+    {
+      "path": "v6/synthetic/transaction-rollback-preserves-standard-write.vec",
+      "sha256": "50a1b64ab19b7c53b1b0ca41f63473b522f506a8000465b25902eac10aa79352",
+      "size": 1941
+    },
+    {
+      "path": "v6/synthetic/transaction-snapshot-create-rebases.vec",
+      "sha256": "1c75757804aabece9db703a847b44b8eb71337309fcc9dabd0a9c0d11e0b9982",
+      "size": 1729
+    },
+    {
+      "path": "v6/synthetic/transaction-snapshot-delete-commit.vec",
+      "sha256": "dc6f4d81d73bc7fd6f83acaebe218086a620ccbbe892073f780eb2273386c617",
+      "size": 1545
+    },
+    {
+      "path": "v6/synthetic/transaction-snapshot-delete-rebases.vec",
+      "sha256": "f54eb8cb6ee564cd6d77cab99cb4c19ec401e7f5dbec30046b0096df140c8463",
+      "size": 1087
+    }
+  ]
+}

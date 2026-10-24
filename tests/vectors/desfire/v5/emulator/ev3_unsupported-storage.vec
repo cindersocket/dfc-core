@@ -1,0 +1,13 @@
+# Synthetic EV3 storage outside Tables 108 and 112 has no default frame.
+name: synthetic EV3 unsupported storage default
+origin: synthetic
+feature-version: 5
+description: GetVersion refuses to fabricate an unlisted EV3 storage code
+source: synthetic
+case-id: dfc-v5-ev3-unsupported-storage
+uid: 0442381AD31090
+picc-generation: EV3
+picc-storage: 1024
+
+scan
+status 9060000000 => 9E

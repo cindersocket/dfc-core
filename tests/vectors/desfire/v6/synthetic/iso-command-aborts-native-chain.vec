@@ -1,0 +1,16 @@
+# PROVENANCE: Synthetic regression for standard ISO commands during native chaining.
+name: standard ISO command aborts native response chaining
+case-id: iso-command-aborts-native-chain
+origin: synthetic
+feature-version: 6
+source: generated native-chain state regression
+requires: ev3
+uid: 0442381AD31090
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+exchange native-apdu 9060000000 => 0401013300180591AF
+exchange iso-apdu 00B0000001 => 6985
+exchange native-apdu 90AF000000 => 911C
+field-off

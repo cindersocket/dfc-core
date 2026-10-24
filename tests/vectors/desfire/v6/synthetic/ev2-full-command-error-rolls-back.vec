@@ -1,0 +1,40 @@
+# PROVENANCE: Synthetic regression for terminal errors in an authenticated EV2 session.
+name: EV2 full-command error retires session and rolls back transaction
+case-id: ev2-full-command-error-retires-session
+origin: synthetic
+feature-version: 6
+source: generated secure-command error regression
+requires: ev3,ev2-secure-messaging
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+picc-ev2-card-capabilities: 00000000A55A
+scan
+exchange native-apdu 90CA000005C3C2C10F8400 => 9100
+exchange native-apdu 905A000003C3C2C100 => 9100
+exchange native-apdu 90CD0000070100000004000000 => 9100
+exchange native-apdu 90CB0000070200EEEE04000000 => 9100
+exchange native-apdu 903D00000B020000000400001122334400 => 9100
+exchange native-apdu 90C7000000 => 9100
+inject-random 000102030405060708090A0B0C0D0E0F
+inject-random A1B2C3D4
+exchange native-apdu 9071000002000000 => 7ACA0FD9BCD6EC7C9F97466616E6A28291AF
+exchange native-apdu 90AF000020358D5B59ADB65D04107676586F4734468AE4FC4E8630324D15ABDA99C0D0202C00 => 4D693FA018614D600133425883AE77E23203B92B0FDA3D6BCA7CDABA75E8EEDD9100
+assert emulator.secure_messaging = present
+assert session.transaction_identifier = A1B2C3D4
+assert session.encryption_key = B01FBB86AE90BD233B2645192C145DF7
+assert session.mac_key = 7EF008F05E67CC4DA9C0B00EA97B1BA9
+assert session.command_counter = 0000
+exchange native-apdu 903D00000B02000000040000AABBCCDD00 => 9100
+assert session.command_counter = 0100
+# A valid MAC proves command authentication succeeded. The out-of-range length
+# then produces the original boundary status without response protection.
+exchange native-apdu 90BD00000F0100000005000076667D45596C122500 => 91BE
+assert emulator.secure_messaging = null
+exchange native-apdu 90BD0000070200000004000000 => 112233449100
+exchange native-apdu 90BD0000070100000001000000 => 91AE
+field-off

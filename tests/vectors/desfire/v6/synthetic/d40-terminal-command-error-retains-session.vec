@@ -1,0 +1,32 @@
+# PROVENANCE: Synthetic regression for legacy authenticated-error handling.
+name: D40 terminal command error retains session and rolls back transaction
+case-id: d40-terminal-command-error-retains-session
+origin: synthetic
+feature-version: 6
+source: generated legacy command-error state regression
+requires: ev1,auth-d40,backup-files
+uid: 045704EA916F80
+picc-generation: EV1
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+scan
+exchange native-apdu 90CA000005A3A2A10F0400 => 9100
+exchange native-apdu 905A000003A3A2A100 => 9100
+exchange native-apdu 90CD0000070100111104000000 => 9100
+exchange native-apdu 90CB0000070200EEEE04000000 => 9100
+exchange native-apdu 903D00000B020000000400001122334400 => 9100
+exchange native-apdu 90C7000000 => 9100
+inject-random 78F9275C6099F975
+exchange native-apdu 900A0000010100 => 72479A0480598EE091AF
+exchange native-apdu 90AF00001005EEC31F1E6A0CC35EEB800257F3858700 => 26ACED3C771EF9A09100
+assert emulator.secure_messaging = present
+exchange native-apdu 903D00000B02000000040000AABBCCDD00 => 9100
+exchange native-apdu 90FF000000 => 911C
+# Legacy authentication remains active after the transaction is rolled back.
+assert emulator.secure_messaging = present
+exchange native-apdu 90BD0000070200000004000000 => 112233449100
+exchange native-apdu 90BD0000070100000004000000 => 000000009100
+field-off
