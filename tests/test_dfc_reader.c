@@ -253,6 +253,15 @@ static MunitResult test_rejected_authentication_start_clears_authorization(
     return MUNIT_OK;
 }
 
+static void mark_host_random_failure_retryable(void) {
+    const uint8_t one_byte = 0;
+    uint8_t two_bytes[2];
+    dfc_host_clear_random_buffer();
+    dfc_host_set_random_buffer(&one_byte, sizeof(one_byte));
+    munit_assert_false(dfc_random_fill(two_bytes, sizeof(two_bytes)));
+    munit_assert_true(dfc_random_failure_is_retryable());
+}
+
 static MunitResult test_random_failures_are_atomic(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -267,11 +276,44 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
         {AID_AES, DFC_CMD_AUTHENTICATE_AES, 15},
     };
     uint8_t short_random[16] = {0};
+
+    // Only an exhausted caller script is retryable, and replenishing or
+    // successfully consuming it clears the failure cause.
+    uint8_t random_probe[2];
+    dfc_host_set_random_buffer(short_random, 1);
+    munit_assert_false(dfc_random_fill(random_probe, sizeof(random_probe)));
+    munit_assert_true(dfc_random_failure_is_retryable());
+    dfc_host_set_random_buffer(short_random + 1, 1);
+    munit_assert_false(dfc_random_failure_is_retryable());
+    munit_assert_true(dfc_random_fill(random_probe, sizeof(random_probe)));
+    munit_assert_false(dfc_random_failure_is_retryable());
+    dfc_host_clear_random_buffer();
+
+    // Every public PICC operation starts a new failure-classification scope,
+    // including operations that do not draw randomness themselves.
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    DfcVirtualPiccActivation activation;
+    mark_host_random_failure_retryable();
+    munit_assert_true(dfc_virtual_picc_anticollision(&link.credential, &activation));
+    munit_assert_false(dfc_random_failure_is_retryable());
+    mark_host_random_failure_retryable();
+    munit_assert_int(dfc_virtual_picc_reset_protocol(link.picc), ==, DfcVirtualPiccStatusOk);
+    munit_assert_false(dfc_random_failure_is_retryable());
+    mark_host_random_failure_retryable();
+    munit_assert_int(dfc_virtual_picc_advance_time(link.picc, 0), ==, DfcVirtualPiccStatusOk);
+    munit_assert_false(dfc_random_failure_is_retryable());
+    mark_host_random_failure_retryable();
+    munit_assert_int(dfc_virtual_picc_field_off(link.picc), ==, DfcVirtualPiccStatusOk);
+    munit_assert_false(dfc_random_failure_is_retryable());
+    dfc_host_clear_random_buffer();
+    link_close(&link);
+
     for(size_t i = 0; i < sizeof(authentication_cases) / sizeof(authentication_cases[0]); i++) {
         link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
         select_app(&link, authentication_cases[i].aid);
         DfcEmulator before = *link.picc->emulator;
         dfc_host_set_random_buffer(short_random, authentication_cases[i].short_random_len);
+        munit_assert_false(dfc_random_failure_is_retryable());
         uint8_t apdu[] = {0x90, authentication_cases[i].command, 0, 0, 1, 0, 0};
         uint8_t response[32];
         size_t response_len = 0;
@@ -281,8 +323,10 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
             ==,
             DfcVirtualPiccStatusProtocolError);
         munit_assert_size(response_len, ==, 0);
+        munit_assert_true(dfc_random_failure_is_retryable());
         assert_emulator_unchanged(&before, &link);
         dfc_host_clear_random_buffer();
+        munit_assert_false(dfc_random_failure_is_retryable());
         link_close(&link);
     }
 

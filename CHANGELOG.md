@@ -85,7 +85,8 @@
   buffers promptly (#123).
 - Standardize replay-random exhaustion across the hosted bindings.
 - Make random providers fallible in ABI 5 and fail random-dependent operations
-  atomically, with consistent error propagation through every binding.
+  atomically, distinguish retryable exhaustion from terminal backend failures,
+  and propagate both consistently through every binding (#131).
 - Propagate every native virtual-PICC status through the .NET binding (#139).
 - Verify SDM random-padding failures leave counters, cached renders, and card
   sessions unchanged across native and ISO reads (#134).

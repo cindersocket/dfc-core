@@ -95,6 +95,7 @@ READER_LINK_TESTS := test_dfc_reader test_dfc_reader_header_bounds test_dfc_form
 
 FAULT_TEST := test_cmac_failures
 SECURE_MESSAGING_FAULT_TEST := test_secure_messaging_failures
+AUTH_BACKEND_FAULT_TEST := test_dfc_auth_backend_failures
 EV2_RESPONSE_FAULT_TEST := test_dfc_ev2_response_atomicity
 KEY_SET_WIPE_TEST := test_dfc_roll_key_set_wipe
 REDUCED_PROFILE_TEST := test_dfc_ffi_reduced_profile
@@ -148,6 +149,10 @@ test_secure_messaging_failures: test_secure_messaging_failures.c \
 		dfc_virtual_picc_test_helpers.c $(FAULT_CORE_SRC) $(HOST)/dfc_bytebuf_host.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+test_dfc_auth_backend_failures: test_dfc_auth_backend_failures.c auth_fault_test_support.c \
+		dfc_virtual_picc_test_helpers.c $(FAULT_CORE_SRC) $(HOST)/dfc_bytebuf_host.c munit/munit.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 test_dfc_ev2_response_atomicity: test_dfc_ev2_response_atomicity.c \
 		$(CORE)/dfc_ev2.c $(CORE)/dfc_emulator_access.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -173,10 +178,11 @@ test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpe
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-decoder-registry check-random-failure-registry check-ffi-layout-registry $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-decoder-registry check-random-failure-registry check-ffi-layout-registry $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
+	./$(AUTH_BACKEND_FAULT_TEST)
 	./$(EV2_RESPONSE_FAULT_TEST)
 	./$(KEY_SET_WIPE_TEST)
 	./$(REDUCED_PROFILE_TEST)
@@ -274,4 +280,4 @@ codecs-disabled-link:
 	echo "  target, no codecs ok"
 
 clean:
-	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)

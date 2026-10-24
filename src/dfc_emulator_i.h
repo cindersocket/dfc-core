@@ -41,6 +41,15 @@ bool dfc_emulator_abort_pending_native_work(DfcEmulator* emulator);
 bool dfc_emulator_abort_transaction(DfcEmulator* emulator);
 void dfc_emulator_publish_transaction(DfcEmulator* emulator);
 
+#if DFC_ENABLE_SDM
+typedef enum {
+    DfcSdmRenderFailed,
+    DfcSdmRenderRandomExhausted,
+    DfcSdmRenderOk,
+} DfcSdmRenderStatus;
+DfcSdmRenderStatus dfc_emulator_render_sdm_read_status(DfcEmulator* emulator, DfcFile* file);
+#endif
+
 typedef enum {
     DfcEmulatorAuthFamilyNative,
     DfcEmulatorAuthFamilyEv2,

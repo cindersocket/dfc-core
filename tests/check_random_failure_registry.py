@@ -21,13 +21,33 @@ REGISTRY = {
     (
         "src/dfc_emulator_commands.c",
         "random_material",
-    ): "test_random_failures_are_atomic",
-    ("src/dfc_emulator_commands.c", "rnd_b"): "test_random_failures_are_atomic",
+    ): "test_random_generation_failures_report_memory_error",
+    (
+        "src/dfc_emulator_commands.c",
+        "rnd_b",
+    ): "test_random_generation_failures_report_memory_error",
     (
         "src/dfc_emulator_commands.c",
         "picc_clear + random_offset",
     ): "test_sdm_random_padding_failure_is_atomic",
 }
+
+PORTS = (
+    "port/ffi/dfc_port_ffi.c",
+    "port/host/dfc_port_host.c",
+    "tests/auth_fault_test_support.c",
+    "tests/test_secure_messaging_failures.c",
+)
+
+PICC_OPERATION_ENTRIES = (
+    "dfc_virtual_picc_reset_protocol",
+    "dfc_virtual_picc_advance_time",
+    "dfc_virtual_picc_field_off",
+    "dfc_virtual_picc_anticollision",
+    "dfc_virtual_picc_scan_iso14443a",
+    "dfc_virtual_picc_iso_dep_exchange",
+    "dfc_virtual_picc_iso_dep_frame_exchange",
+)
 
 
 def call_sites(root: Path) -> set[tuple[str, str]]:
@@ -47,12 +67,36 @@ def main() -> None:
         path.read_text(encoding="utf-8") for path in sorted((root / "tests").glob("test_*.c"))
     )
     missing_tests = sorted({test for test in REGISTRY.values() if test not in test_source})
-    if missing or stale or missing_tests:
+    port_hooks = (
+        "void dfc_random_operation_begin(void)",
+        "bool dfc_random_failure_is_retryable(void)",
+    )
+    missing_port_hooks = [
+        f"{path}: {hook}"
+        for path in PORTS
+        for hook in port_hooks
+        if hook not in (root / path).read_text(encoding="utf-8")
+    ]
+    virtual_picc_source = (root / "src/dfc_virtual_picc.c").read_text(encoding="utf-8")
+    missing_operation_resets = []
+    for operation in PICC_OPERATION_ENTRIES:
+        match = re.search(rf"\b{operation}\s*\([^)]*\)\s*\{{", virtual_picc_source, re.DOTALL)
+        if (
+            not match
+            or "dfc_random_operation_begin();"
+            not in virtual_picc_source[match.end() : match.end() + 160]
+        ):
+            missing_operation_resets.append(operation)
+    if missing or stale or missing_tests or missing_port_hooks or missing_operation_resets:
         details = [
             f"unregistered random draw: {path}: {argument}" for path, argument in sorted(missing)
         ]
         details += [f"stale random draw: {path}: {argument}" for path, argument in sorted(stale)]
         details += [f"missing random-failure test: {test}" for test in missing_tests]
+        details += [f"missing retryable-random port hook: {path}" for path in missing_port_hooks]
+        details += [
+            f"missing random-operation reset: {operation}" for operation in missing_operation_resets
+        ]
         raise SystemExit("\n".join(details))
 
 

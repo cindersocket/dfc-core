@@ -109,6 +109,14 @@ bool dfc_random_fill(uint8_t* buf, size_t len) {
     return true;
 }
 
+void dfc_random_operation_begin(void) {
+    random_failed = false;
+}
+
+bool dfc_random_failure_is_retryable(void) {
+    return random_failed;
+}
+
 void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {
     DFC_UNUSED(tag);
     return calloc(1, size);

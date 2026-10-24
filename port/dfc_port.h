@@ -56,6 +56,13 @@ void dfc_assert_fail(const char* file, int line);
  * false without supplying predictable replacement bytes when the source cannot
  * satisfy the whole request. */
 bool dfc_random_fill(uint8_t* buf, size_t len);
+// Starts one public PICC operation. Ports clear the previous operation's
+// failure classification here; the classification remains readable by every
+// layer handling the current operation.
+void dfc_random_operation_begin(void);
+// True only when the caller controls the source and can retry after adding
+// more bytes. Terminal entropy/backend failures return false.
+bool dfc_random_failure_is_retryable(void);
 
 /* Object allocation.
  *

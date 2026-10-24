@@ -90,6 +90,23 @@ static int32_t failing_random(void* context, uint8_t* buffer, size_t len) {
     return DFC_FFI_RANDOM_FAILED;
 }
 
+typedef struct {
+    size_t calls;
+    size_t failures_remaining;
+} ScriptedRandom;
+
+static int32_t scripted_random(void* context, uint8_t* buffer, size_t len) {
+    ScriptedRandom* script = context;
+    script->calls++;
+    if(script->failures_remaining) {
+        script->failures_remaining--;
+        return DFC_FFI_RANDOM_FAILED;
+    }
+    for(size_t i = 0; i < len; i++)
+        buffer[i] = (uint8_t)(0x60 + i);
+    return DFC_FFI_OK;
+}
+
 static uint8_t* encode(const DfcFfiCredential* credential, size_t* len) {
     CHECK(dfc_ffi_credential_encode(credential, NULL, 0, len) == 0);
     uint8_t* out = malloc(*len);
@@ -1098,10 +1115,11 @@ int main(void) {
     // A failed random request aborts the operation without changing card state.
     DfcFfiCredential* failure_credential = NULL;
     CHECK(dfc_ffi_credential_clone(built, &failure_credential) == 0);
+    ScriptedRandom failure_random = {.failures_remaining = 1};
     DfcFfiPicc* failure_picc = NULL;
     CHECK(
-        dfc_ffi_picc_create_take(&failure_credential, failing_random, NULL, &failure_picc) ==
-        DFC_FFI_OK);
+        dfc_ffi_picc_create_take(
+            &failure_credential, scripted_random, &failure_random, &failure_picc) == DFC_FFI_OK);
     DfcFfiActivation failure_activation;
     CHECK(dfc_ffi_picc_activate(failure_picc, &failure_activation) == DFC_FFI_OK);
     DfcFfiSnapshot before_failure;
@@ -1121,6 +1139,40 @@ int main(void) {
     CHECK(dfc_ffi_picc_snapshot(failure_picc, &after_failure) == DFC_FFI_OK);
     CHECK(memcmp(&before_failure, &after_failure, sizeof(before_failure)) == 0);
     CHECK(failed_response_len == 0);
+
+    uint8_t retry_response[32] = {0};
+    size_t retry_response_len = 0;
+    CHECK(
+        dfc_ffi_picc_exchange(
+            failure_picc,
+            authenticate,
+            sizeof(authenticate),
+            retry_response,
+            sizeof(retry_response),
+            &retry_response_len) == DFC_FFI_OK);
+
+    DfcFfiCredential* baseline_credential = NULL;
+    CHECK(dfc_ffi_credential_clone(built, &baseline_credential) == DFC_FFI_OK);
+    ScriptedRandom baseline_random = {0};
+    DfcFfiPicc* baseline_picc = NULL;
+    CHECK(
+        dfc_ffi_picc_create_take(
+            &baseline_credential, scripted_random, &baseline_random, &baseline_picc) ==
+        DFC_FFI_OK);
+    CHECK(dfc_ffi_picc_activate(baseline_picc, &failure_activation) == DFC_FFI_OK);
+    uint8_t baseline_response[32] = {0};
+    size_t baseline_response_len = 0;
+    CHECK(
+        dfc_ffi_picc_exchange(
+            baseline_picc,
+            authenticate,
+            sizeof(authenticate),
+            baseline_response,
+            sizeof(baseline_response),
+            &baseline_response_len) == DFC_FFI_OK);
+    CHECK(retry_response_len == baseline_response_len);
+    CHECK(memcmp(retry_response, baseline_response, retry_response_len) == 0);
+    dfc_ffi_picc_free(baseline_picc);
     dfc_ffi_picc_free(failure_picc);
 
     // Random-ID activation is also atomic: a failed source leaves activation

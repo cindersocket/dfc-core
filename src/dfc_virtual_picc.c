@@ -721,6 +721,7 @@ static void clear_protocol(DfcVirtualPiccSession* session) {
 }
 
 DfcVirtualPiccStatus dfc_virtual_picc_reset_protocol(DfcVirtualPiccSession* session) {
+    dfc_random_operation_begin();
     if(!session || !session->emulator) return DfcVirtualPiccStatusProtocolError;
 
     dfc_emulator_reset_activation(session->emulator);
@@ -737,6 +738,7 @@ static void clear_activation(DfcVirtualPiccSession* session) {
 
 DfcVirtualPiccStatus
     dfc_virtual_picc_advance_time(DfcVirtualPiccSession* session, uint32_t elapsed_milliseconds) {
+    dfc_random_operation_begin();
     if(!session || !session->emulator) return DfcVirtualPiccStatusProtocolError;
 #if DFC_ENABLE_TRANSACTION_TIMER
     bool timer_enabled = session->emulator->transaction_timer_enabled;
@@ -749,6 +751,7 @@ DfcVirtualPiccStatus
 }
 
 DfcVirtualPiccStatus dfc_virtual_picc_field_off(DfcVirtualPiccSession* session) {
+    dfc_random_operation_begin();
     if(!session || !session->emulator) return DfcVirtualPiccStatusProtocolError;
     dfc_emulator_reset_activation(session->emulator);
     // The next physical activation generates a new random ID.
@@ -756,7 +759,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_field_off(DfcVirtualPiccSession* session) 
     return DfcVirtualPiccStatusOk;
 }
 
-bool dfc_virtual_picc_anticollision(
+static bool virtual_picc_anticollision(
     const DfcCredential* credential,
     DfcVirtualPiccActivation* activation) {
     if(!credential || !activation) return false;
@@ -801,15 +804,23 @@ bool dfc_virtual_picc_anticollision(
     return true;
 }
 
+bool dfc_virtual_picc_anticollision(
+    const DfcCredential* credential,
+    DfcVirtualPiccActivation* activation) {
+    dfc_random_operation_begin();
+    return virtual_picc_anticollision(credential, activation);
+}
+
 DfcVirtualPiccStatus dfc_virtual_picc_scan_iso14443a(
     DfcVirtualPiccSession* session,
     DfcVirtualPiccActivation* activation) {
+    dfc_random_operation_begin();
     if(!session || !activation) return DfcVirtualPiccStatusProtocolError;
     if(!dfc_credential_uid_is_detectable(session->credential)) {
         return DfcVirtualPiccStatusNoCard;
     }
 
-    if(!dfc_virtual_picc_anticollision(session->credential, activation))
+    if(!virtual_picc_anticollision(session->credential, activation))
         return DfcVirtualPiccStatusProtocolError;
     if(session->credential->picc_random_id) {
         memcpy(session->random_uid, activation->uid, DFC_RANDOM_UID_LEN);
@@ -1339,7 +1350,11 @@ static DfcVirtualPiccStatus handle_iso_file_command(
             return DfcVirtualPiccStatusBufferTooSmall;
 #if DFC_ENABLE_SDM
         if(file->sdm_enabled) {
-            if(!dfc_emulator_render_sdm_read(session->emulator, file)) {
+            DfcSdmRenderStatus render_status =
+                dfc_emulator_render_sdm_read_status(session->emulator, file);
+            if(render_status == DfcSdmRenderRandomExhausted)
+                return DfcVirtualPiccStatusProtocolError;
+            if(render_status != DfcSdmRenderOk) {
                 return write_status_word(
                     DFC_ISO7816_SW_WRONG_PARAMETERS_HI,
                     DFC_ISO7816_SW_WRONG_PARAMETERS_LO,
@@ -1497,7 +1512,10 @@ static DfcVirtualPiccStatus handle_native_exchange(
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
         if(security == DfcEv2CommandPlainCounted && !session->emulator->command_chain_active &&
            session->emulator->ev2_session_active) {
-            if(tx_data[0] == DFC_STATUS_OK) {
+            if(dfc_random_failure_is_retryable()) {
+                // The outer adapter discards this provisional response. Keep
+                // the session exactly where a retry will find it.
+            } else if(tx_data[0] == DFC_STATUS_OK) {
                 session->emulator->ev2_command_counter++;
             } else {
                 dfc_emulator_reset_session(session->emulator);
@@ -1520,7 +1538,8 @@ static DfcVirtualPiccStatus handle_native_exchange(
     bool protect_ev2_response = security == DfcEv2CommandSecured || security == DfcEv2CommandFull;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     protect_ev2_response = protect_ev2_response && session->emulator->ev2_session_active &&
-                           !session->emulator->ev2_response_plain;
+                           !session->emulator->ev2_response_plain &&
+                           !dfc_random_failure_is_retryable();
 #endif
     if(protect_ev2_response) {
         if(!dfc_ev2_protect_response(
@@ -1754,8 +1773,16 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_exchange(
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len) {
-    return virtual_picc_iso_dep_exchange(
+    dfc_random_operation_begin();
+    DfcVirtualPiccStatus status = virtual_picc_iso_dep_exchange(
         session, command, command_len, response, response_capacity, response_len, true);
+    if(dfc_random_failure_is_retryable()) {
+        // The caller can replenish its script and repeat this command. Do not
+        // expose the provisional status produced by the core handler.
+        *response_len = 0;
+        return DfcVirtualPiccStatusProtocolError;
+    }
+    return status;
 }
 
 DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
@@ -1765,6 +1792,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len) {
+    dfc_random_operation_begin();
     if(!session || !frame || !response || !response_len) return DfcVirtualPiccStatusProtocolError;
     if(!session->activated) return DfcVirtualPiccStatusNoCard;
     *response_len = 0;
@@ -1875,6 +1903,11 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
                 response_len);
         }
 
+        // A retryable random failure can only stage a native status byte or
+        // its two-byte wrapped form. Preserve those bytes without copying the
+        // full response buffer on every embedded exchange.
+        uint8_t retry_response_before[DFC_ISO7816_STATUS_WORD_LENGTH];
+        memcpy(retry_response_before, session->pending_response, sizeof(retry_response_before));
         size_t apdu_response_len = 0;
         DfcVirtualPiccStatus status = virtual_picc_iso_dep_exchange(
             session,
@@ -1884,6 +1917,12 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
             sizeof(session->pending_response),
             &apdu_response_len,
             false);
+        if(dfc_random_failure_is_retryable()) {
+            memcpy(
+                session->pending_response, retry_response_before, sizeof(retry_response_before));
+            truncate_pending_command(session, pending_command_len_before);
+            return DfcVirtualPiccStatusProtocolError;
+        }
         if(status != DfcVirtualPiccStatusOk) {
             if(session->pending_command_len > sizeof(session->pending_command) &&
                !session->emulator->command_chain)

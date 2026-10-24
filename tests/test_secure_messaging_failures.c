@@ -23,6 +23,8 @@ static size_t fail_aes_cbc_operation;
 static bool fail_cbc;
 static bool fail_secure_messaging_alloc;
 static bool fail_random_fill;
+static bool random_failure_retryable;
+static size_t random_fill_calls;
 
 bool dfc_crypto_aes_block_init(DfcCryptoAesBlock* block, const uint8_t* key, size_t key_len) {
     if(!block || !key || key_len != 16) return false;
@@ -157,10 +159,22 @@ bool dfc_crypto_des_ecb(
 }
 
 bool dfc_random_fill(uint8_t* data, size_t length) {
-    if(fail_random_fill) return false;
+    random_fill_calls++;
+    if(fail_random_fill) {
+        random_failure_retryable = true;
+        return false;
+    }
     for(size_t i = 0; i < length; i++)
         data[i] = (uint8_t)(0x20 + i);
     return true;
+}
+
+void dfc_random_operation_begin(void) {
+    random_failure_retryable = false;
+}
+
+bool dfc_random_failure_is_retryable(void) {
+    return random_failure_retryable;
 }
 
 void dfc_port_notify(void* context, DfcEvent event) {
@@ -602,16 +616,18 @@ static MunitResult test_ev2_crypto_failures_clear_accepted_session(
     uint8_t response[64];
     fail_random_fill = true;
     munit_assert_size(
-        fault_emulator_command(emulator, begin, sizeof(begin), response, true), ==, 0);
+        fault_emulator_command(emulator, begin, sizeof(begin), response, true), ==, 1);
     fail_random_fill = false;
+    munit_assert_uint8(response[0], ==, DFC_STATUS_MEMORY_ERROR);
     assert_ev2_active_capabilities(emulator, active_card, active_reader);
     assert_ev2_pending_cleared(emulator);
 
     fail_cbc = true;
     munit_assert_size(
-        fault_emulator_command(emulator, begin, sizeof(begin), response, true), ==, 0);
+        fault_emulator_command(emulator, begin, sizeof(begin), response, true), ==, 1);
     fail_cbc = false;
-    assert_ev2_active_capabilities(emulator, active_card, active_reader);
+    munit_assert_uint8(response[0], ==, DFC_STATUS_MEMORY_ERROR);
+    assert_ev2_session_cleared(emulator);
     assert_ev2_pending_cleared(emulator);
 
     for(size_t failure_kind = 0; failure_kind < 3; failure_kind++) {
@@ -640,7 +656,7 @@ static MunitResult test_ev2_crypto_failures_clear_accepted_session(
             fault_emulator_command(emulator, continuation, sizeof(continuation), response, true),
             ==,
             1);
-        munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
+        munit_assert_uint8(response[0], ==, DFC_STATUS_MEMORY_ERROR);
         assert_ev2_session_cleared(emulator);
         assert_ev2_pending_cleared(emulator);
     }
@@ -1956,7 +1972,7 @@ static void assert_sdm_random_failure_is_atomic(bool iso_read) {
     link.credential.card.generation = DfcGenerationEv3;
     file->comm_settings = DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
-    dfc_emulator_retire_authentication(emulator);
+    if(iso_read) dfc_emulator_retire_authentication(emulator);
 
     emulator->sdm_read_cache_valid = false;
     emulator->sdm_read_cache_file_number = 0xA5;
@@ -1987,23 +2003,14 @@ static void assert_sdm_random_failure_is_atomic(bool iso_read) {
     uint8_t response[16];
     size_t response_len = 0;
 
+    random_fill_calls = 0;
     fail_random_fill = true;
-    munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(
-            link.picc, command, command_len, response, sizeof(response), &response_len),
-        ==,
-        DfcVirtualPiccStatusOk);
+    DfcVirtualPiccStatus random_status = dfc_virtual_picc_iso_dep_exchange(
+        link.picc, command, command_len, response, sizeof(response), &response_len);
+    munit_assert_int(random_status, ==, DfcVirtualPiccStatusProtocolError);
     fail_random_fill = false;
-    munit_assert_size(response_len, ==, 2);
-    if(iso_read) {
-        munit_assert_memory_equal(
-            2,
-            response,
-            ((uint8_t[]){DFC_ISO7816_SW_WRONG_PARAMETERS_HI, DFC_ISO7816_SW_WRONG_PARAMETERS_LO}));
-    } else {
-        munit_assert_uint8(response[0], ==, 0x91);
-        munit_assert_uint8(response[1], ==, DFC_STATUS_PARAMETER_ERROR);
-    }
+    munit_assert_size(random_fill_calls, >, 0);
+    munit_assert_size(response_len, ==, 0);
     munit_assert_uint32(file->sdm_read_counter, ==, counter_before);
     munit_assert_false(emulator->sdm_read_cache_valid);
     munit_assert_uint8(emulator->sdm_read_cache_file_number, ==, cache_file_before);
@@ -2023,10 +2030,11 @@ static void assert_sdm_random_failure_is_atomic(bool iso_read) {
             link.picc, command, command_len, response, sizeof(response), &response_len),
         ==,
         DfcVirtualPiccStatusOk);
-    munit_assert_size(response_len, ==, 5);
+    size_t expected_response_len = iso_read ? 5 : 13;
+    munit_assert_size(response_len, ==, expected_response_len);
     munit_assert_memory_equal(
         2,
-        response + 3,
+        response + response_len - 2,
         iso_read ? ((uint8_t[]){0x90, 0x00}) : ((uint8_t[]){0x91, DFC_STATUS_OK}));
     munit_assert_uint32(file->sdm_read_counter, ==, counter_before + 1);
     munit_assert_true(emulator->sdm_read_cache_valid);

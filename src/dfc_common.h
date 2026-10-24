@@ -155,6 +155,7 @@ extern const uint8_t DFC_ISO_AID[7];
 #define DFC_STATUS_COMMAND_ABORTED        0xCA
 #define DFC_STATUS_COUNT_ERROR            0xCE
 #define DFC_STATUS_DUPLICATE_ERROR        0xDE
+#define DFC_STATUS_MEMORY_ERROR           0xEE
 #define DFC_STATUS_FILE_NOT_FOUND         0xF0
 
 #define DFC_CHANGE_KEY_EV2_HEADER_LENGTH               3
