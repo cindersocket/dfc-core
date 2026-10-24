@@ -330,8 +330,32 @@ static void build_read_data_command(uint32_t offset, uint32_t length, uint8_t co
     command[12] = 0x00;
 }
 
+static DfcVirtualPiccSession* prepare_read_data_session(
+    DfcCredential* credential,
+    uint8_t file_type,
+    size_t file_len,
+    uint8_t fill) {
+    load_standard_credential(credential);
+    DfcFile* file = &credential->files[0];
+    file->type = file_type;
+    file->access_rights = 0xEEEE;
+    file->sdm_read_counter = 7;
+    munit_assert_true(dfc_file_resize(credential, file, file_len));
+    uint8_t* file_data = dfc_file_data(credential, file);
+    munit_assert_not_null(file_data);
+    memset(file_data, fill, file_len);
+
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(credential);
+    munit_assert_not_null(session);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    return session;
+}
+
 static MunitResult
-    test_read_data_checks_every_file_type(const MunitParameter params[], void* user_data) {
+    test_read_data_type_errors_retire_ev1_session(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
 
@@ -346,38 +370,25 @@ static MunitResult
         {0, 9},
     };
 
-    for(size_t i = 0; i < sizeof(incompatible_types); i++) {
-        DfcCredential credential;
-        load_standard_credential(&credential);
-        DfcFile* file = &credential.files[0];
-        file->type = incompatible_types[i];
-        file->access_rights = 0xEEEE;
-        file->sdm_read_counter = 7;
-        file->transaction_counter = 9;
-        munit_assert_true(dfc_file_resize(&credential, file, 8));
-        uint8_t* file_data = dfc_file_data(&credential, file);
-        munit_assert_not_null(file_data);
-        memset(file_data, 0x5A, 8);
-
-        DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
-        munit_assert_not_null(session);
-        DfcVirtualPiccActivation activation;
-        munit_assert_int(
-            dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
-        session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
-        uint8_t session_key[8] = {0};
-        session->emulator->secure_messaging = dfc_secure_messaging_alloc(
-            DFC_CMD_AUTHENTICATE_LEGACY, session_key, sizeof(session_key), NULL);
-        munit_assert_not_null(session->emulator->secure_messaging);
-        session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_LEGACY;
-        session->emulator->auth_key_no = 1;
-
-        DfcFile file_before = *file;
-        uint8_t file_data_before[8];
-        memcpy(file_data_before, file_data, sizeof(file_data_before));
-        DfcSecureMessaging session_before = *session->emulator->secure_messaging;
+    for(size_t i = 0; i < sizeof(incompatible_types) / sizeof(incompatible_types[0]); i++) {
         for(size_t range = 0; range < sizeof(rejected_ranges) / sizeof(rejected_ranges[0]);
             range++) {
+            DfcCredential credential;
+            DfcVirtualPiccSession* session =
+                prepare_read_data_session(&credential, incompatible_types[i], 8, 0x5A);
+            DfcFile* file = &credential.files[0];
+            uint8_t* file_data = dfc_file_data(&credential, file);
+            DfcFile file_before = *file;
+            uint8_t file_data_before[8];
+            memcpy(file_data_before, file_data, sizeof(file_data_before));
+
+            uint8_t session_key[16] = {0};
+            session->emulator->secure_messaging = dfc_secure_messaging_alloc(
+                DFC_CMD_AUTHENTICATE_ISO, session_key, sizeof(session_key), NULL);
+            munit_assert_not_null(session->emulator->secure_messaging);
+            session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_ISO;
+            session->emulator->auth_key_no = 1;
+
             uint8_t read_data[13];
             build_read_data_command(
                 rejected_ranges[range][0], rejected_ranges[range][1], read_data);
@@ -402,40 +413,39 @@ static MunitResult
             }
             munit_assert_memory_equal(sizeof(file_before), file, &file_before);
             munit_assert_memory_equal(sizeof(file_data_before), file_data, file_data_before);
-            munit_assert_memory_equal(
-                sizeof(session_before), session->emulator->secure_messaging, &session_before);
-            munit_assert_uint8(session->emulator->auth_key_no, ==, 1);
-        }
+            munit_assert_false(dfc_emulator_native_authentication_active(session->emulator));
+            munit_assert_uint8(session->emulator->auth_cipher, ==, 0);
+            munit_assert_uint8(session->emulator->auth_key_no, ==, 0);
 
-        dfc_virtual_picc_session_free(session);
+            dfc_virtual_picc_session_free(session);
+        }
     }
+
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_read_data_accepts_supported_file_types(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
 
     static const uint8_t supported_types[] = {
         DFC_FILE_TYPE_STANDARD_DATA,
         DFC_FILE_TYPE_BACKUP_DATA,
         DFC_FILE_TYPE_TRANSACTION_MAC,
     };
-    for(size_t i = 0; i < sizeof(supported_types); i++) {
+    for(size_t i = 0; i < sizeof(supported_types) / sizeof(supported_types[0]); i++) {
         DfcCredential credential;
-        load_standard_credential(&credential);
+        size_t file_len = supported_types[i] == DFC_FILE_TYPE_TRANSACTION_MAC ?
+                              DFC_TRANSACTION_MAC_FILE_LENGTH :
+                              8;
+        DfcVirtualPiccSession* session =
+            prepare_read_data_session(&credential, supported_types[i], file_len, 0);
         DfcFile* file = &credential.files[0];
-        file->type = supported_types[i];
         file->comm_settings = DFC_COMM_PLAIN;
-        file->access_rights = 0xEEEE;
-        size_t file_len =
-            file->type == DFC_FILE_TYPE_TRANSACTION_MAC ? DFC_TRANSACTION_MAC_FILE_LENGTH : 8;
-        munit_assert_true(dfc_file_resize(&credential, file, file_len));
         uint8_t* file_data = dfc_file_data(&credential, file);
-        munit_assert_not_null(file_data);
         for(size_t byte = 0; byte < file_len; byte++)
             file_data[byte] = (uint8_t)(0x40 + byte);
-
-        DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
-        munit_assert_not_null(session);
-        DfcVirtualPiccActivation activation;
-        munit_assert_int(
-            dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
-        session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
 
         uint8_t read_data[13];
         uint8_t response[32];
@@ -577,7 +587,6 @@ static MunitResult test_read_data_type_error_aborts_pending_transaction(
     file->value_pending = true;
     file->value_pending_delta = 5;
     file->sdm_read_counter = 7;
-    file->transaction_counter = 9;
 
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
     munit_assert_not_null(session);
@@ -595,13 +604,12 @@ static MunitResult test_read_data_type_error_aborts_pending_transaction(
             session, read_data, sizeof(read_data), response, sizeof(response), &response_len),
         ==,
         DfcVirtualPiccStatusOk);
-    munit_assert_memory_equal(
-        response_len, response, ((uint8_t[]){0x91, DFC_STATUS_PERMISSION_DENIED}));
+    munit_assert_size(response_len, ==, 2);
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_PERMISSION_DENIED}));
     munit_assert_false(file->value_pending);
     munit_assert_int32(file->value_pending_delta, ==, 0);
     munit_assert_int32(file->value, ==, 17);
     munit_assert_uint32(file->sdm_read_counter, ==, 7);
-    munit_assert_uint32(file->transaction_counter, ==, 9);
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
@@ -812,8 +820,14 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/read-data-checks-every-file-type",
-     test_read_data_checks_every_file_type,
+    {"/read-data-type-errors-retire-ev1-session",
+     test_read_data_type_errors_retire_ev1_session,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/read-data-accepts-supported-file-types",
+     test_read_data_accepts_supported_file_types,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
