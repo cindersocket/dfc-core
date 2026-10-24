@@ -89,6 +89,7 @@ Required CI jobs (exact IDs):
 - `embedded-footprint`
 - `unit`
 - `native`
+- `mismatch-native`
 - `dotnet`
 - `java`
 - `android`
