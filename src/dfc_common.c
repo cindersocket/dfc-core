@@ -42,9 +42,9 @@ bool dfc_sdm_access_rights_are_valid(uint16_t rights, size_t key_count) {
     uint8_t meta_read = (uint8_t)(rights >> 8) & 0x0F;
     uint8_t file_read = (uint8_t)(rights >> 4) & 0x0F;
     uint8_t counter_read = (uint8_t)rights & 0x0F;
-    // The high nibble is reserved; Free is not a FileRead key.
+    // The high nibble is reserved; the remaining nibbles use normal access semantics.
     return reserved == DFC_ACCESS_DENY && access_nibble_is_valid(meta_read, key_count) &&
-           (file_read == DFC_ACCESS_DENY || file_read < key_count) &&
+           access_nibble_is_valid(file_read, key_count) &&
            access_nibble_is_valid(counter_read, key_count);
 }
 

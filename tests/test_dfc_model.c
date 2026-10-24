@@ -264,7 +264,7 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
         uint8_t file_read = (uint8_t)(rights >> 4) & 0x0F;
         uint8_t counter = (uint8_t)rights & 0x0F;
         bool valid = reserved == DFC_ACCESS_DENY && access_nibble_is_valid_for_keys(meta, 2) &&
-                     (file_read == DFC_ACCESS_DENY || file_read < 2) &&
+                     access_nibble_is_valid_for_keys(file_read, 2) &&
                      access_nibble_is_valid_for_keys(counter, 2);
         munit_assert_int(
             dfc_credential_validate_model(&sdm), ==, valid ? DfcModelOk : DfcModelMalformed);
