@@ -2845,21 +2845,20 @@ static void handle_delete_file(DfcEmulator* emulator, const uint8_t* apdu, DfcBy
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
 }
 
-// Returns true if caller should apply EV1 response CMAC (false after Full encrypt).
-static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByteBuf* tx_buffer) {
+static void handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByteBuf* tx_buffer) {
     DfcFile* file = dfc_credential_find_file_in_app(
         emulator->credential, emulator->selected_app_index, apdu[1]);
     if(!file) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
-        return true;
+        return;
     }
     if(file->type != 0x02) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-        return true;
+        return;
     }
     if(!file_allows_read(file, emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, file_access_refusal_status(file, false));
-        return true;
+        return;
     }
 
     uint8_t value_bytes[4] = {0};
@@ -2891,19 +2890,18 @@ static bool handle_get_value(DfcEmulator* emulator, const uint8_t* apdu, DfcByte
             dfc_emulator_reset_session(emulator);
             dfc_bytebuf_reset(tx_buffer);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-            return false;
+            return;
         }
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         dfc_bytebuf_append_bytes(tx_buffer, wrapped, wrapped_len);
         emulator->response_secured = true;
         dfc_secure_wipe(wrapped, sizeof(wrapped));
-        return !ev1_sm;
+        return;
     }
 
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
     dfc_bytebuf_append_bytes(tx_buffer, value_bytes, sizeof(value_bytes));
     dfc_secure_wipe(value_bytes, sizeof(value_bytes));
-    return true;
 }
 
 #if DFC_ENABLE_TRANSACTION_MAC
@@ -4309,10 +4307,7 @@ bool dfc_emulator_render_sdm_read(DfcEmulator* emulator, DfcFile* file) {
 }
 #endif
 
-// Returns true if the caller should still apply EV1 response CMAC.
-// EV1 CommMode.Full (enciphered) responses carry CRC32 inside the ciphertext only
-// (no trailing CMAC); plain/MAC EV1 responses need session CMAC on the status.
-static bool handle_read_data(
+static void handle_read_data(
     DfcEmulator* emulator,
     const uint8_t* apdu,
     size_t apdu_len,
@@ -4324,11 +4319,11 @@ static bool handle_read_data(
         emulator->credential, emulator->selected_app_index, file_no);
     if(!file) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
-        return true;
+        return;
     }
     if(!file_allows_read(file, emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, file_access_refusal_status(file, false));
-        return true;
+        return;
     }
 
     uint32_t offset = read_uint24_le(apdu + 2);
@@ -4336,7 +4331,7 @@ static bool handle_read_data(
     if(offset > file->data_len ||
        (requested_len != 0 && (size_t)offset + (size_t)requested_len > file->data_len)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
-        return true;
+        return;
     }
 
     size_t available = file->data_len - offset;
@@ -4359,18 +4354,18 @@ static bool handle_read_data(
         if(!emulator->sdm_read_cache_valid && file->sdm_has_counter_limit &&
            file->sdm_read_counter >= file->sdm_counter_limit) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-            return true;
+            return;
         }
         if(!dfc_emulator_render_sdm_read(emulator, file)) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
-            return true;
+            return;
         }
         file_bytes = emulator->sdm_read_cache;
     }
 #endif
     if(read_len > 0 && !file_bytes) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
-        return true;
+        return;
     }
 
     uint8_t comm = dfc_emulator_file_effective_comm_settings(
@@ -4388,7 +4383,6 @@ static bool handle_read_data(
     if(dfc && read_len > 0) {
         dfc_port_notify(dfc, DfcEventFileRequested);
     }
-    return false;
 }
 
 #if DFC_ENABLE_SDM
@@ -5311,6 +5305,8 @@ static bool dispatch_native_command(
         emulator->command_chain_expected = SIZE_MAX;
         bool handled = dispatch_native_command(
             emulator, emulator->command_chain, logical_len, tx_buffer, context);
+        if(handled)
+            apply_ev1_response_secure_messaging(emulator, emulator->command_chain[0], tx_buffer);
         dfc_emulator_discard_command_chain(emulator);
         return handled;
     }
@@ -5398,15 +5394,12 @@ static bool dispatch_native_command(
     case DFC_CMD_GET_VERSION:
         if(buffer_len != 1) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-            apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
             return true;
         }
         handle_get_version(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_GET_CARD_UID:
         handle_get_card_uid(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_SELECT_APPLICATION:
         if(buffer_len < 4) return false;
@@ -5414,12 +5407,10 @@ static bool dispatch_native_command(
         return true;
     case DFC_CMD_GET_KEY_SETTINGS:
         handle_get_key_settings(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_GET_KEY_VERSION:
         if(buffer_len < 2) return false;
         handle_get_key_version(emulator, buffer, buffer_len, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #if DFC_ENABLE_KEY_SETS
     case DFC_CMD_INITIALIZE_KEY_SET:
@@ -5445,15 +5436,12 @@ static bool dispatch_native_command(
 #endif
     case DFC_CMD_GET_APPLICATION_IDS:
         handle_get_application_ids(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_GET_DF_NAMES:
         handle_get_df_names(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_FREE_MEM:
         handle_free_mem(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_CREATE_APPLICATION:
         if(buffer_len < 6) {
@@ -5472,18 +5460,15 @@ static bool dispatch_native_command(
     case DFC_CMD_GET_ISO_FILE_IDS:
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_get_iso_file_ids(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_GET_FILE_IDS:
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_get_file_ids(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_GET_FILE_SETTINGS:
         if(buffer_len < 2) return false;
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_get_file_settings(emulator, buffer, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_CHANGE_FILE_SETTINGS:
         if(buffer_len < 5) return false;
@@ -5498,7 +5483,6 @@ static bool dispatch_native_command(
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_create_std_data_file(
             emulator, buffer, buffer_len, DFC_FILE_TYPE_STANDARD_DATA, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #if DFC_ENABLE_BACKUP_FILES
     case DFC_CMD_CREATE_BACKUP_DATA_FILE:
@@ -5509,7 +5493,6 @@ static bool dispatch_native_command(
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_create_std_data_file(
             emulator, buffer, buffer_len, DFC_FILE_TYPE_BACKUP_DATA, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #endif
     case DFC_CMD_CREATE_VALUE_FILE:
@@ -5519,7 +5502,6 @@ static bool dispatch_native_command(
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_create_value_file(emulator, buffer, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #if DFC_ENABLE_RECORD_FILES
     case DFC_CMD_CREATE_LINEAR_RECORD_FILE:
@@ -5541,7 +5523,6 @@ static bool dispatch_native_command(
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_delete_file(emulator, buffer, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_GET_VALUE:
         if(buffer_len < 2) {
@@ -5549,9 +5530,7 @@ static bool dispatch_native_command(
             return true;
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
-        if(handle_get_value(emulator, buffer, tx_buffer)) {
-            apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
-        }
+        handle_get_value(emulator, buffer, tx_buffer);
         return true;
     case DFC_CMD_CREDIT:
     case DFC_CMD_LIMITED_CREDIT:
@@ -5569,7 +5548,6 @@ static bool dispatch_native_command(
             cmd,
             cmd == DFC_CMD_DEBIT,
             cmd == DFC_CMD_LIMITED_CREDIT);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_COMMIT_TRANSACTION:
         if(!require_selected_application(emulator, tx_buffer)) return true;
@@ -5583,7 +5561,6 @@ static bool dispatch_native_command(
             emulator,
             buffer_len == 2 && buffer[1] == DFC_TRANSACTION_COMMIT_RETURN_MAC_OPTION,
             tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #if DFC_ENABLE_TRANSACTION_MAC
     case DFC_CMD_CREATE_TRANSACTION_MAC_FILE:
@@ -5606,7 +5583,6 @@ static bool dispatch_native_command(
             return true;
         }
         handle_abort_transaction(emulator, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_CHANGE_KEY:
         handle_change_key(emulator, buffer, buffer_len, tx_buffer);
@@ -5689,9 +5665,7 @@ static bool dispatch_native_command(
             return true;
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
-        if(handle_read_data(emulator, buffer, buffer_len, tx_buffer, dfc)) {
-            apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
-        }
+        handle_read_data(emulator, buffer, buffer_len, tx_buffer, dfc);
         return true;
 #if DFC_ENABLE_SDM
     case DFC_CMD_GET_FILE_COUNTERS:
@@ -5706,7 +5680,6 @@ static bool dispatch_native_command(
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_write_data(emulator, buffer, buffer_len, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #if DFC_ENABLE_RECORD_FILES
     case DFC_CMD_WRITE_RECORD:
@@ -5716,7 +5689,6 @@ static bool dispatch_native_command(
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_write_record(emulator, buffer, buffer_len, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_READ_RECORDS:
         if(buffer_len != 8) {
@@ -5738,12 +5710,10 @@ static bool dispatch_native_command(
         }
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_update_record(emulator, buffer, buffer_len, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
     case DFC_CMD_CLEAR_RECORD_FILE:
         if(!require_selected_application(emulator, tx_buffer)) return true;
         handle_clear_record_file(emulator, buffer, buffer_len, tx_buffer);
-        apply_ev1_response_secure_messaging(emulator, cmd, tx_buffer);
         return true;
 #endif
     default:
