@@ -16,8 +16,8 @@
   full byte-sized input domain across authenticated session families (#116).
 - Validate binding integers before narrowing them to native field widths (#117).
 - Stop Rust reader exchanges on terminal native statuses, preserve card status
-  in Python and Rust, retry capacity failures, and verify generated reader
-  statuses against the C header (#136).
+  in Python and Rust, retry capacity failures, and verify both bindings' reader
+  status constants against the C header (#136, #143).
 - Make every credential decoder leave an empty, securely wiped credential after
   any failure, and enforce decoder coverage with a registry check and fuzz
   invariant (#115).

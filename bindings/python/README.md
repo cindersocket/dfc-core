@@ -94,9 +94,11 @@ Use the named `Command` constructors for common operations, such as
 same readable byte order as credential files; the binding performs the protocol
 byte-order conversion.
 
-Responses contain the card status and returned data. Binding failures raise a
-subclass of `DfcError`; transport exceptions pass through unchanged. Check a
-nonzero card status before consuming response data.
+Successful responses contain the card status and returned data. Terminal card
+errors raise `CardError`; its `card_status` identifies the card's status byte.
+Special-success statuses from ReadSignature and proximity-check commands remain
+on `Response`. Other binding failures raise a subclass of `DfcError`, and
+transport exceptions pass through unchanged.
 
 ## Random sources and secret lifetime
 

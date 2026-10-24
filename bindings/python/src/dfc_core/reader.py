@@ -11,9 +11,9 @@ from . import _native as N
 from .errors import CardError
 from .models import ReaderState, Response, Transport
 
-PENDING = 1
-BUFFER_TOO_SMALL = 3
-CARD_ERROR = 6
+READER_PENDING = 1
+READER_BUFFER_TOO_SMALL = 3
+READER_CARD_ERROR = 6
 INITIAL_OUTPUT_CAPACITY = 64
 
 
@@ -156,11 +156,11 @@ class Reader:
                     status = N.library().dfc_ffi_reader_step(
                         self._exchange, pointer, len(answer), out, capacity, C.byref(length)
                     )
-                    if status != BUFFER_TOO_SMALL:
+                    if status != READER_BUFFER_TOO_SMALL:
                         break
                     capacity *= 2
                     out = (C.c_uint8 * capacity)()
-                if status == PENDING:
+                if status == READER_PENDING:
                     try:
                         self._in_transport_callback = True
                         try:
@@ -173,7 +173,7 @@ class Reader:
                         raise
                     self._open()
                     continue
-                if status == CARD_ERROR:
+                if status == READER_CARD_ERROR:
                     raise CardError(
                         status, N.library().dfc_ffi_reader_result_status(self._exchange)
                     )
