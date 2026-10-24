@@ -291,6 +291,7 @@ bool dfc_secure_messaging_ev1_transmits_command_mac(uint8_t cmd) {
     case DFC_CMD_CREDIT:
     case DFC_CMD_DEBIT:
     case DFC_CMD_LIMITED_CREDIT:
+    case DFC_CMD_GET_FILE_COUNTERS:
         return true;
     default:
         return false;

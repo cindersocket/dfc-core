@@ -90,6 +90,8 @@
 - Propagate every native virtual-PICC status through the .NET binding (#139).
 - Verify SDM random-padding failures leave counters, cached renders, and card
   sessions unchanged across native and ISO reads (#134).
+- Enforce GetFileCounters file, access-key, command-MAC, and Full-response
+  rules across D40, EV1, and EV2 sessions (#132).
 - Make credential factory and blank initialization, and virtual-card
   anticollision, report random-source failures through boolean return values.
 - Abort rejected ISO authentication handshakes and require a fresh challenge.

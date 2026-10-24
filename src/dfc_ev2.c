@@ -31,6 +31,7 @@ static DfcFile* target_file(DfcEmulator* emulator, const uint8_t* command, size_
     case DFC_CMD_UPDATE_RECORD:
     case DFC_CMD_UPDATE_RECORD_ISO:
     case DFC_CMD_GET_VALUE:
+    case DFC_CMD_GET_FILE_COUNTERS:
     case DFC_CMD_CREDIT:
     case DFC_CMD_DEBIT:
     case DFC_CMD_LIMITED_CREDIT:
@@ -76,6 +77,7 @@ static uint8_t command_file_comm(
     DfcFile* file = target_file(emulator, command, command_len);
     DfcFileAccess access;
     if(target) *target = file;
+    if(file && command[0] == DFC_CMD_GET_FILE_COUNTERS) return DFC_COMM_ENCIPHERED;
     if(!file || !command_file_access(command[0], &access)) return DFC_COMM_PLAIN;
     uint8_t configured = command[0] == DFC_CMD_CHANGE_FILE_SETTINGS ? DFC_COMM_ENCIPHERED :
                                                                       file->comm_settings;
@@ -316,10 +318,11 @@ bool dfc_ev2_protect_response(
     uint8_t base_command = dfc_record_command_base(clear_command[0]);
     // GetCardUID is Full regardless of file settings; file reads inherit Full
     // from the selected file's effective communication mode.
-    bool encrypt = base_command == DFC_CMD_GET_CARD_UID ||
-                   (file && comm == DFC_COMM_ENCIPHERED &&
-                    (base_command == DFC_CMD_READ_DATA || base_command == DFC_CMD_READ_RECORDS ||
-                     base_command == DFC_CMD_GET_VALUE));
+    bool encrypt =
+        base_command == DFC_CMD_GET_CARD_UID ||
+        (file && comm == DFC_COMM_ENCIPHERED &&
+         (base_command == DFC_CMD_READ_DATA || base_command == DFC_CMD_READ_RECORDS ||
+          base_command == DFC_CMD_GET_VALUE || base_command == DFC_CMD_GET_FILE_COUNTERS));
 
     size_t protected_data_len = response_data_len;
     if(encrypt) {

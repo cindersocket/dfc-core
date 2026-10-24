@@ -63,9 +63,9 @@ bool dfc_secure_messaging_update_ev1_command_full(
     DfcSecureMessaging* sm,
     const uint8_t* command,
     size_t command_len);
-// EV1 option-b commands (WriteData, Credit, …): verify trailing 8-byte truncated
-// CMAC over Cmd||data_without_mac, update IV from full CMAC. Returns clear length
-// (data_len - 8) or SIZE_MAX on failure.
+// EV1 commands that carry MACt on the wire: verify the trailing 8-byte
+// truncated CMAC over Cmd||data_without_mac and update the IV from the full
+// CMAC. Returns clear length (data_len - 8) or SIZE_MAX on failure.
 size_t dfc_secure_messaging_verify_ev1_transmitted_command_mac(
     DfcSecureMessaging* sm,
     uint8_t cmd,
@@ -76,8 +76,7 @@ size_t dfc_secure_messaging_verify_ev1_transmitted_command_mac_full(
     DfcSecureMessaging* sm,
     const uint8_t* command,
     size_t command_len);
-// True for WriteData / Credit / Debit / LimitedCredit / WriteRecord / UpdateRecord
-// (EV1 MAC-mode commands that place MACt on the wire).
+// True for commands whose EV1 form places MACt on the wire.
 bool dfc_secure_messaging_ev1_transmits_command_mac(uint8_t cmd);
 
 // Computes the transmitted payload length for a command before it is encoded.

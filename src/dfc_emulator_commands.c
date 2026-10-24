@@ -4779,17 +4779,54 @@ static void handle_get_file_counters(
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer) {
-    if(buffer_len != 2) {
+    bool ev1 = dfc_emulator_native_authentication_active(emulator) &&
+               dfc_secure_messaging_applies_ev1(emulator->secure_messaging, buffer[0]);
+    if(ev1) {
+        size_t clear_len = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
+            emulator->secure_messaging, buffer[0], buffer + 1, buffer_len - 1);
+        if(clear_len != 1) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return;
+        }
+    } else if(buffer_len != 2) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
-    DfcFile* file = dfc_credential_find_file_in_app(
-        emulator->credential, emulator->selected_app_index, buffer[1]);
-    if(!file || !file->sdm_enabled) {
+    uint8_t file_selector = buffer[1];
+    if((file_selector & 0x60u) != 0) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        return;
+    }
+    // The model has no secondary-application selection state, so SAI cannot
+    // name a reachable file even when its low five bits are otherwise valid.
+    if((file_selector & 0x80u) != 0) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    DfcFile* file = dfc_credential_find_file_in_app(
+        emulator->credential, emulator->selected_app_index, file_selector & 0x1Fu);
+    if(!file) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
+        return;
+    }
+    if(file->type != DFC_FILE_TYPE_STANDARD_DATA || !file->sdm_enabled) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+
+    // SDMCtrRet is the low access-rights nibble. A key reference requires that
+    // exact authenticated key; 0xE is free access and 0xF denies the command.
+    uint8_t counter_access = (uint8_t)(file->sdm_access_rights & DFC_SDM_ACCESS_MASK);
+    if(counter_access == DFC_SDM_DENIED_ACCESS) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+    if(counter_access != DFC_SDM_FREE_ACCESS &&
+       !is_authenticated_with_key(emulator, counter_access)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+        return;
+    }
+
     const uint8_t encoded_counter[] = {
         (uint8_t)file->sdm_read_counter,
         (uint8_t)(file->sdm_read_counter >> 8),
@@ -4797,7 +4834,19 @@ static void handle_get_file_counters(
         0,
         0,
     };
-    dfc_bytebuf_append_bytes(tx_buffer, encoded_counter, sizeof(encoded_counter));
+    bool authenticated = dfc_emulator_native_authentication_active(emulator);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    authenticated = authenticated || emulator->ev2_session_active;
+#endif
+    emit_payload_with_chaining_comm(
+        emulator,
+        tx_buffer,
+        DFC_CMD_GET_FILE_COUNTERS,
+        encoded_counter,
+        sizeof(encoded_counter),
+        1,
+        authenticated ? DFC_COMM_ENCIPHERED : DFC_COMM_PLAIN,
+        false);
     emulator->sdm_read_cache_valid = false;
 }
 #endif
