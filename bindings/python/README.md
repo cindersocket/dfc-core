@@ -130,3 +130,13 @@ MYPYPATH=bindings/python/src \
   --config-file bindings/python/pyproject.toml examples/python/virtual_card.py
 uv run --project bindings/python pytest bindings/python/tests
 ```
+
+## Secret lifetime
+
+Ordinary card snapshots exclude session keys. The private conformance helper
+returns mutable buffers that callers must consume only inside its context. The
+context clears those buffers and its native temporary on exit. Python may retain
+immutable copies created by callers, so applications should avoid converting
+secret buffers to `bytes`. Native key temporaries are cleared after the Python
+model has been built. Model key fields, encoded credentials, and text results
+are immutable runtime copies that Python cannot wipe; keep them short-lived.

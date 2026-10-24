@@ -27,12 +27,18 @@ REQUIRED_FILES = (
     "examples/credentials/v6-minimal.dfcb",
     "scripts/check-release-artifacts.py",
     "tests/java/DfcJniSmokeTest.java",
+    "tests/java/DfcSecretLifetimeTest.java",
 )
 
 
 def safe_relative(name: str, prefix: str) -> str | None:
     path = PurePosixPath(name)
-    if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] != prefix:
+    if (
+        path.is_absolute()
+        or ".." in path.parts
+        or not path.parts
+        or path.parts[0] != prefix
+    ):
         raise ValueError(f"unsafe or unexpected archive member: {name}")
     relative = PurePosixPath(*path.parts[1:])
     return None if not relative.parts else relative.as_posix()
@@ -94,7 +100,9 @@ def inspect_archives(version: str, tar_path: Path, zip_path: Path) -> None:
         )
     missing = [name for name in REQUIRED_FILES if name not in tar_files]
     if missing:
-        raise ValueError("source archives omit supported entry points: " + ", ".join(missing))
+        raise ValueError(
+            "source archives omit supported entry points: " + ", ".join(missing)
+        )
     if not tar_files:
         raise ValueError("source archives are empty")
 
@@ -280,6 +288,16 @@ def smoke_java(root: Path, tiny: Path) -> None:
             str(classes),
             *(str(path) for path in java_sources),
             "tests/java/DfcJniSmokeTest.java",
+            "tests/java/DfcSecretLifetimeTest.java",
+        ],
+        root,
+    )
+    run(
+        [
+            "java",
+            "-cp",
+            str(classes),
+            "com.cindersocket.dfc.DfcSecretLifetimeTest",
         ],
         root,
     )

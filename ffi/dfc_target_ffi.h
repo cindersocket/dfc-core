@@ -45,9 +45,6 @@ typedef struct {
     uint8_t auth_key_no;
     uint8_t ev2_active;
     uint8_t ev2_key_no;
-    uint8_t ev2_transaction_identifier[4];
-    uint8_t ev2_encryption_key[16];
-    uint8_t ev2_mac_key[16];
     uint8_t virtual_card_selected;
     uint8_t proximity_verified;
 } DfcTargetSnapshot;

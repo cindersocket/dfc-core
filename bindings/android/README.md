@@ -46,3 +46,11 @@ The artifacts are `dfc/build/outputs/aar/dfc-release.aar` and
 release sample is minified. Its release instrumentation test deliberately
 rejects a credential in native code and verifies that the resulting
 `DfcException` remains constructible.
+
+## Secret lifetime
+
+Card snapshots exclude session keys. The JNI layer clears native temporary
+buffers on every exit. Android runtime or application copies of Java arrays
+cannot be recalled, so callers should close `DfcCredential` promptly and clear
+mutable key arrays they own. A cleaner clears owned credential and diagnostic
+buffers if explicit close is missed, with runtime-dependent timing.

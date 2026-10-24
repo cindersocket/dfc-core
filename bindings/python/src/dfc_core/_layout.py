@@ -2,7 +2,7 @@
 # fmt: off
 
 CONSTANTS = (
-    ('DFC_FFI_ABI_VERSION', 6),
+    ('DFC_FFI_ABI_VERSION', 7),
     ('DFC_FFI_OK', 0),
     ('DFC_FFI_INVALID_ARGUMENT', -1),
     ('DFC_FFI_BUFFER_TOO_SMALL', -2),
@@ -37,7 +37,7 @@ CONSTANTS = (
 
 STRUCTS = (
     ('Capabilities', ('abi_version', 'build_role', 'build_profile', 'generation_ev1', 'generation_ev2', 'generation_ev3', 'storage_2k', 'storage_4k', 'storage_8k', 'ev2_secure_messaging', 'iso7816', 'transaction_mac', 'secure_dynamic_messaging', 'proximity_check', 'virtual_card', 'key_sets', 'delegated_applications', 'transaction_timer', 'application_capability_data', 'static_signature', 'auth_d40', 'auth_iso', 'auth_aes', 'emulator', 'reader', 'der_decoder', 'der_encoder', 'text_codec', 'max_applications', 'max_files', 'max_keys', 'file_pool_size', 'key_pool_size')),
-    ('StructSizes', ('capabilities', 'error', 'card', 'picc', 'application', 'file', 'key', 'activation', 'snapshot', 'reader_state')),
+    ('StructSizes', ('capabilities', 'error', 'card', 'picc', 'application', 'file', 'key', 'activation', 'snapshot', 'diagnostic_snapshot', 'reader_state')),
     ('Error', ('status', 'line', 'message')),
     ('Card', ('generation', 'storage', 'uid_provenance', 'uid_len', 'uid', 'has_hardware_version', 'hardware_version', 'has_software_version', 'software_version', 'has_static_signature', 'static_signature')),
     ('PiccSettings', ('num_keys', 'key_len', 'key_settings_1', 'key_settings_2', 'auth_command', 'random_id', 'random_id_legacy', 'format_disabled', 'ats_len', 'ats', 'has_sak', 'sak', 'has_atqa', 'atqa', 'has_sm_disable', 'sm_disable', 'has_ev2_capabilities', 'ev2_capabilities', 'has_proximity_key', 'proximity_key', 'proximity_option', 'has_proximity_bitrate', 'proximity_bitrate', 'proximity_published_response_time', 'virtual_card_configured', 'virtual_card_installation_id_len', 'virtual_card_installation_id', 'virtual_card_information', 'virtual_card_capabilities', 'virtual_card_uid_len', 'virtual_card_uid', 'virtual_card_select_mac_key', 'virtual_card_select_encryption_key', 'virtual_card_authentication_mandatory', 'virtual_card_proximity_mandatory', 'has_dam_keys', 'dam_auth_key', 'dam_mac_key', 'dam_encryption_key', 'has_auth_commands', 'auth_commands', 'has_preferred_auth_command', 'preferred_auth_command')),
@@ -45,7 +45,8 @@ STRUCTS = (
     ('File', ('owner', 'declared_size', 'data_len', 'value_lower_limit', 'value_upper_limit', 'value', 'value_pending_delta', 'record_size', 'max_records', 'record_count', 'sdm_uid_offset', 'sdm_counter_offset', 'sdm_picc_data_offset', 'sdm_mac_input_offset', 'sdm_mac_offset', 'sdm_encrypted_file_offset', 'sdm_encrypted_file_length', 'sdm_counter_limit', 'sdm_read_counter', 'transaction_counter', 'access_rights', 'iso_file_id', 'sdm_access_rights', 'number', 'type', 'comm_settings', 'has_iso_file_id', 'contents_complete', 'transaction_pending', 'limited_credit', 'value_pending', 'sdm_enabled', 'sdm_options', 'sdm_has_uid_offset', 'sdm_has_counter_offset', 'sdm_has_picc_data_offset', 'sdm_has_mac_input_offset', 'sdm_has_mac_offset', 'sdm_has_encrypted_file_offset', 'sdm_has_counter_limit', 'transaction_mac_key_type', 'transaction_mac_key_version', 'transaction_mac_key', 'transaction_mac', 'previous_reader_id')),
     ('Key', ('len', 'value', 'version')),
     ('Activation', ('uid_len', 'ats_len', 'atqa_len', 'protocol_len', 'rf_detail_len', 'uid', 'ats', 'atqa', 'sak', 'protocol', 'rf_detail')),
-    ('Snapshot', ('selected', 'selected_application_index', 'ev2_command_counter', 'selected_aid', 'dirty', 'auth_mode', 'auth_key_no', 'ev2_active', 'ev2_key_no', 'ev2_transaction_identifier', 'ev2_encryption_key', 'ev2_mac_key', 'virtual_card_selected', 'proximity_verified')),
+    ('Snapshot', ('selected', 'selected_application_index', 'ev2_command_counter', 'selected_aid', 'dirty', 'auth_mode', 'auth_key_no', 'ev2_active', 'ev2_key_no', 'virtual_card_selected', 'proximity_verified')),
+    ('DiagnosticSnapshot', ('transaction_identifier', 'encryption_key', 'mac_key')),
     ('ReaderState', ('ev2_command_counter', 'auth_mode', 'key_no', 'ev2_transaction_identifier', 'ev2_card_capabilities', 'ev2_reader_capabilities')),
 )
 
@@ -59,6 +60,7 @@ SIZE_FIELDS = (
     ('key', 'Key'),
     ('activation', 'Activation'),
     ('snapshot', 'Snapshot'),
+    ('diagnostic_snapshot', 'DiagnosticSnapshot'),
     ('reader_state', 'ReaderState'),
 )
 

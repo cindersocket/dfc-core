@@ -71,3 +71,12 @@ Set `DfcNativeDirectory` if the native build is elsewhere. Published packages
 place the library under `runtimes/<RID>/native`; local builds copy it beside the
 test or example assembly. The assembly verifies the complete generated native
 layout fingerprint before constructing a handle.
+
+## Secret lifetime
+
+Ordinary card snapshots exclude session keys. `DiagnosticSnapshot()` returns a
+disposable secret-bearing object for diagnostics and conformance tests; dispose
+it promptly to clear its managed buffers. The runtime may retain copies created
+by application code. Credential records expose mutable `byte[]` fields whose
+lifetime belongs to the caller; native marshalling temporaries are cleared on
+every exit.

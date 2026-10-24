@@ -29,6 +29,7 @@ DOTNET_TYPES = {
     "DfcFfiKey": "NativeKey",
     "DfcFfiActivation": "NativeActivation",
     "DfcFfiSnapshot": "NativeSnapshot",
+    "DfcFfiDiagnosticSnapshot": "NativeDiagnosticSnapshot",
     "DfcFfiReaderState": "NativeReaderState",
 }
 
@@ -43,6 +44,7 @@ TYPE_NAMES = {
     "DfcFfiKey": "Key",
     "DfcFfiActivation": "Activation",
     "DfcFfiSnapshot": "Snapshot",
+    "DfcFfiDiagnosticSnapshot": "DiagnosticSnapshot",
     "DfcFfiReaderState": "ReaderState",
 }
 
@@ -56,6 +58,7 @@ STRUCT_SIZE_TYPES = {
     "key": "Key",
     "activation": "Activation",
     "snapshot": "Snapshot",
+    "diagnostic_snapshot": "DiagnosticSnapshot",
     "reader_state": "ReaderState",
 }
 

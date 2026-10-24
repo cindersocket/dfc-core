@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dfc_core import Credential, RandomSourceError, VirtualPicc, _native
+from dfc_core import Credential, InvalidArgumentError, RandomSourceError, VirtualPicc, _native
 
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
 GET_CHALLENGE = bytes.fromhex("0084000008")
@@ -30,6 +30,61 @@ def freed_piccs(monkeypatch: pytest.MonkeyPatch) -> list[int | None]:
 
 def make_picc(random: Callable[[int], bytes] | None = None) -> VirtualPicc:
     return VirtualPicc(Credential.decode(FIXTURE.read_bytes()), random)
+
+
+def test_model_wipes_partial_picc_output_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    library = _native.library()
+    retained: list[_native.PiccSettings] = []
+
+    def fail(_handle: _native.Handle, output: object) -> int:
+        picc = output._obj  # type: ignore[attr-defined]
+        picc.proximity_key[:] = b"\xa5" * 16
+        retained.append(picc)
+        return -1
+
+    monkeypatch.setattr(library, "dfc_ffi_credential_get_picc", fail)
+    with Credential.decode(FIXTURE.read_bytes()) as credential:
+        with pytest.raises(InvalidArgumentError):
+            credential.model()
+    assert retained and not any(retained[0].proximity_key)
+
+
+def test_model_wipes_partial_file_output_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    library = _native.library()
+    retained: list[_native.File] = []
+
+    def fail(_handle: _native.Handle, _index: int, output: object) -> int:
+        file = output._obj  # type: ignore[attr-defined]
+        file.transaction_mac_key[:] = b"\xa5" * 16
+        retained.append(file)
+        return -1
+
+    monkeypatch.setattr(library, "dfc_ffi_credential_file_count", lambda _handle: 1)
+    monkeypatch.setattr(library, "dfc_ffi_credential_get_file", fail)
+    with Credential.decode(FIXTURE.read_bytes()) as credential:
+        with pytest.raises(InvalidArgumentError):
+            credential.model()
+    assert retained and not any(retained[0].transaction_mac_key)
+
+
+def test_diagnostic_snapshot_clears_binding_owned_copies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    picc = make_picc()
+    library = _native.library()
+
+    def diagnostic(_handle: _native.Handle, output: object) -> int:
+        snapshot = output._obj  # type: ignore[attr-defined]
+        snapshot.transaction_identifier[:] = b"\x11" * 4
+        snapshot.encryption_key[:] = b"\x22" * 16
+        snapshot.mac_key[:] = b"\x33" * 16
+        return 0
+
+    monkeypatch.setattr(library, "dfc_ffi_picc_diagnostic_snapshot", diagnostic)
+    with picc._diagnostic_snapshot() as values:
+        assert values == (bytearray(b"\x11" * 4), bytearray(b"\x22" * 16), bytearray(b"\x33" * 16))
+    assert all(not any(value) for value in values)
+    picc.close()
 
 
 def test_callback_close_defers_native_free_until_exchange_returns(

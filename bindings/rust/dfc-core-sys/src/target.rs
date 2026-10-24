@@ -40,9 +40,6 @@ pub struct DfcTargetSnapshot {
     pub auth_key_no: u8,
     pub ev2_active: u8,
     pub ev2_key_no: u8,
-    pub ev2_transaction_identifier: [u8; 4],
-    pub ev2_encryption_key: [u8; 16],
-    pub ev2_mac_key: [u8; 16],
     pub virtual_card_selected: u8,
     pub proximity_verified: u8,
 }

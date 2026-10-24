@@ -55,6 +55,7 @@ internal struct NativeStructSizes
     public uint Key;
     public uint Activation;
     public uint Snapshot;
+    public uint DiagnosticSnapshot;
     public uint ReaderState;
 }
 
@@ -251,11 +252,16 @@ internal unsafe struct NativeSnapshot
     public byte AuthKeyNo;
     public byte Ev2Active;
     public byte Ev2KeyNo;
-    public fixed byte Ev2TransactionIdentifier[4];
-    public fixed byte Ev2EncryptionKey[16];
-    public fixed byte Ev2MacKey[16];
     public byte VirtualCardSelected;
     public byte ProximityVerified;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeDiagnosticSnapshot
+{
+    public fixed byte TransactionIdentifier[4];
+    public fixed byte EncryptionKey[16];
+    public fixed byte MacKey[16];
 }
 
 [StructLayout(LayoutKind.Sequential)]

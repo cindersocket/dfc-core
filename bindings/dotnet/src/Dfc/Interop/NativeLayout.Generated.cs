@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 internal static unsafe partial class Native
 {
-    internal const long DFC_FFI_ABI_VERSION = 6;
+    internal const long DFC_FFI_ABI_VERSION = 7;
     internal const long DFC_FFI_OK = 0;
     internal const long DFC_FFI_INVALID_ARGUMENT = -1;
     internal const long DFC_FFI_BUFFER_TOO_SMALL = -2;
@@ -39,7 +39,7 @@ internal static unsafe partial class Native
     internal static ulong ExpectedLayoutFingerprint()
     {
         var hash = 14_695_981_039_346_656_037UL;
-        hash = LayoutWord(hash, unchecked((ulong)6L));
+        hash = LayoutWord(hash, unchecked((ulong)7L));
         hash = LayoutWord(hash, unchecked((ulong)0L));
         hash = LayoutWord(hash, unchecked((ulong)-1L));
         hash = LayoutWord(hash, unchecked((ulong)-2L));
@@ -114,6 +114,7 @@ internal static unsafe partial class Native
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeStructSizes>(nameof(NativeStructSizes.Key)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeStructSizes>(nameof(NativeStructSizes.Activation)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeStructSizes>(nameof(NativeStructSizes.Snapshot)));
+        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeStructSizes>(nameof(NativeStructSizes.DiagnosticSnapshot)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeStructSizes>(nameof(NativeStructSizes.ReaderState)));
         hash = LayoutWord(hash, (ulong)sizeof(NativeError));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeError>(nameof(NativeError.Status)));
@@ -278,11 +279,12 @@ internal static unsafe partial class Native
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.AuthKeyNo)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.Ev2Active)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.Ev2KeyNo)));
-        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.Ev2TransactionIdentifier)));
-        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.Ev2EncryptionKey)));
-        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.Ev2MacKey)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.VirtualCardSelected)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeSnapshot>(nameof(NativeSnapshot.ProximityVerified)));
+        hash = LayoutWord(hash, (ulong)sizeof(NativeDiagnosticSnapshot));
+        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeDiagnosticSnapshot>(nameof(NativeDiagnosticSnapshot.TransactionIdentifier)));
+        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeDiagnosticSnapshot>(nameof(NativeDiagnosticSnapshot.EncryptionKey)));
+        hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeDiagnosticSnapshot>(nameof(NativeDiagnosticSnapshot.MacKey)));
         hash = LayoutWord(hash, (ulong)sizeof(NativeReaderState));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeReaderState>(nameof(NativeReaderState.Ev2CommandCounter)));
         hash = LayoutWord(hash, (ulong)Marshal.OffsetOf<NativeReaderState>(nameof(NativeReaderState.AuthMode)));

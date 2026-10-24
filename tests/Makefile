@@ -127,7 +127,8 @@ FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
 .PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds \
 	codecs-disabled-link check-constant-time-auth check-teardown-wipes check-jni-wipes \
-	check-decoder-registry check-random-failure-registry check-secure-messaging-policy \
+	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
+	check-secure-messaging-policy \
 	check-ffi-layout-registry fuzz clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
@@ -180,7 +181,7 @@ test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpe
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
@@ -199,6 +200,9 @@ check-teardown-wipes:
 
 check-jni-wipes:
 	python3 check_jni_wipes.py
+
+check-snapshot-secret-policy:
+	python3 check_snapshot_secret_policy.py
 
 check-decoder-registry:
 	python3 check_decoder_registry.py

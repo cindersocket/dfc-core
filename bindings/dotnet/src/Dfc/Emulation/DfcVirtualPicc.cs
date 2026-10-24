@@ -2,6 +2,7 @@ namespace Dfc.Emulation;
 
 using System;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpFunctionalExtensions;
@@ -40,14 +41,52 @@ public sealed record DfcPiccSnapshot(
     bool ProximityVerified
 );
 
-/// <summary>An open EV2 session on the card.</summary>
-public sealed record DfcEv2SessionSnapshot(
-    byte KeyNo,
-    byte[] TransactionIdentifier,
-    ushort CommandCounter,
-    byte[] EncryptionKey,
-    byte[] MacKey
-);
+/// <summary>Non-secret state for an open EV2 session on the card.</summary>
+public sealed record DfcEv2SessionSnapshot(byte KeyNo, ushort CommandCounter);
+
+/// <summary>Secret-bearing state for diagnostics and conformance tests.</summary>
+public sealed class DfcDiagnosticSnapshot : IDisposable
+{
+    private byte[] transactionIdentifier;
+    private byte[] encryptionKey;
+    private byte[] macKey;
+
+    internal DfcDiagnosticSnapshot(byte[] transactionIdentifier, byte[] encryptionKey, byte[] macKey)
+    {
+        this.transactionIdentifier = transactionIdentifier;
+        this.encryptionKey = encryptionKey;
+        this.macKey = macKey;
+    }
+
+    /// <summary>Clears buffers if disposal was missed.</summary>
+    ~DfcDiagnosticSnapshot()
+    {
+        this.Clear();
+    }
+
+    /// <summary>The session transaction identifier.</summary>
+    public ReadOnlyMemory<byte> TransactionIdentifier => this.transactionIdentifier;
+
+    /// <summary>The session encryption key.</summary>
+    public ReadOnlyMemory<byte> EncryptionKey => this.encryptionKey;
+
+    /// <summary>The session authentication key.</summary>
+    public ReadOnlyMemory<byte> MacKey => this.macKey;
+
+    /// <summary>Clears the managed secret buffers.</summary>
+    public void Dispose()
+    {
+        this.Clear();
+        GC.SuppressFinalize(this);
+    }
+
+    private void Clear()
+    {
+        CryptographicOperations.ZeroMemory(this.transactionIdentifier);
+        CryptographicOperations.ZeroMemory(this.encryptionKey);
+        CryptographicOperations.ZeroMemory(this.macKey);
+    }
+}
 
 /// <summary>
 /// A DESFire-compatible card in process. It answers anticollision, ISO 7816 and native APDUs, and ISO-DEP
@@ -324,14 +363,8 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
             s = this.operations.Snapshot(lease.Raw);
         }
 
-        DfcEv2SessionSnapshot? ev2 = s.Ev2Active != 0
-            ? new DfcEv2SessionSnapshot(
-                s.Ev2KeyNo,
-                new ReadOnlySpan<byte>(s.Ev2TransactionIdentifier, 4).ToArray(),
-                (ushort)s.Ev2CommandCounter,
-                new ReadOnlySpan<byte>(s.Ev2EncryptionKey, 16).ToArray(),
-                new ReadOnlySpan<byte>(s.Ev2MacKey, 16).ToArray()
-            )
+        var ev2 = s.Ev2Active != 0
+            ? new DfcEv2SessionSnapshot(s.Ev2KeyNo, (ushort)s.Ev2CommandCounter)
             : null;
         return new DfcPiccSnapshot(
             (DfcSelection)s.Selected,
@@ -343,6 +376,34 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
             s.VirtualCardSelected != 0,
             s.ProximityVerified != 0
         );
+    }
+
+    /// <summary>Copies secret session state for diagnostics. Dispose it promptly.</summary>
+    public DfcDiagnosticSnapshot DiagnosticSnapshot()
+    {
+        NativeDiagnosticSnapshot native = default;
+        lock (this.gate)
+        {
+            using var lease = new PiccHandleLease(this.handle);
+            try
+            {
+                CredentialMarshaller.Check(
+                    Native.dfc_ffi_picc_diagnostic_snapshot(lease.Raw, &native)
+                );
+                return new DfcDiagnosticSnapshot(
+                    new ReadOnlySpan<byte>(native.TransactionIdentifier, 4).ToArray(),
+                    new ReadOnlySpan<byte>(native.EncryptionKey, 16).ToArray(),
+                    new ReadOnlySpan<byte>(native.MacKey, 16).ToArray()
+                );
+            }
+            finally
+            {
+                Native.dfc_ffi_secure_zero(
+                    (byte*)&native,
+                    (nuint)sizeof(NativeDiagnosticSnapshot)
+                );
+            }
+        }
     }
 
     /// <summary>Whether the card has changed since it was created or last persisted.</summary>

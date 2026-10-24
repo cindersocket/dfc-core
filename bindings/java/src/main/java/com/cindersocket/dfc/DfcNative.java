@@ -22,6 +22,7 @@ final class DfcNative {
   static native void piccFree(long handle);
   static native byte[] piccActivate(long handle) throws DfcException;
   static native byte[] piccSnapshot(long handle) throws DfcException;
+  static native byte[] piccDiagnosticSnapshot(long handle) throws DfcException;
   static native byte[] piccExchange(long handle, byte[] command, boolean frame) throws DfcException;
   static native void piccFieldOff(long handle) throws DfcException;
   static native void piccResetProtocol(long handle) throws DfcException;

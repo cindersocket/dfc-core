@@ -84,7 +84,6 @@ public sealed class ReaderTests
         Assert.That(card, Is.Not.Null);
         Assert.That(card!.CommandCounter, Is.EqualTo(reader.Session.Ev2CommandCounter));
         Assert.That(card.CommandCounter, Is.GreaterThan(0));
-        Assert.That(card.TransactionIdentifier, Is.EqualTo(reader.Session.Ev2TransactionIdentifier));
 
         var transaction = reader.Session.Ev2TransactionIdentifier;
         Fixtures.Ok(await reader.AuthenticateEv2NonFirstAsync(0, Fixtures.AesKey0));

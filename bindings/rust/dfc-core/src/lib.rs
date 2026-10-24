@@ -28,7 +28,7 @@ use core::{
 use dfc_core_sys as sys;
 
 #[cfg(not(feature = "role-target"))]
-pub use credential::Credential;
+pub use credential::{Credential, CredentialFile, CredentialKey, CredentialPiccSettings};
 #[cfg(not(feature = "role-target"))]
 pub use reader::{
     Command, CommunicationMode, Framing, Reader, ReaderError, ReaderState, Response, Transport,
@@ -36,6 +36,13 @@ pub use reader::{
 
 #[cfg(not(feature = "role-target"))]
 static ABI_STATE: AtomicU8 = AtomicU8::new(0);
+
+#[cfg(not(feature = "role-target"))]
+fn wipe<T>(value: &mut T) {
+    unsafe {
+        sys::dfc_ffi_secure_zero((value as *mut T).cast(), core::mem::size_of::<T>());
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(not(feature = "role-target"))]
@@ -147,6 +154,10 @@ fn ensure_abi() -> Result<(), Error> {
         (native.key, size_of::<sys::DfcFfiKey>()),
         (native.activation, size_of::<sys::DfcFfiActivation>()),
         (native.snapshot, size_of::<sys::DfcFfiSnapshot>()),
+        (
+            native.diagnostic_snapshot,
+            size_of::<sys::DfcFfiDiagnosticSnapshot>(),
+        ),
         (native.reader_state, size_of::<sys::DfcFfiReaderState>()),
     ];
     if expected
@@ -192,6 +203,36 @@ pub struct Activation(pub sys::DfcFfiActivation);
 #[cfg(not(feature = "role-target"))]
 pub struct Snapshot(pub sys::DfcFfiSnapshot);
 
+/// Secret-bearing state for diagnostics and conformance tests.
+///
+/// The backing storage is wiped when this value is dropped. Code that copies a
+/// returned slice is responsible for the lifetime of its own copy.
+#[cfg(not(feature = "role-target"))]
+pub struct DiagnosticSnapshot(sys::DfcFfiDiagnosticSnapshot);
+
+#[cfg(not(feature = "role-target"))]
+impl DiagnosticSnapshot {
+    fn clear(&mut self) {
+        wipe(&mut self.0);
+    }
+    pub fn transaction_identifier(&self) -> &[u8; 4] {
+        &self.0.transaction_identifier
+    }
+    pub fn encryption_key(&self) -> &[u8; 16] {
+        &self.0.encryption_key
+    }
+    pub fn mac_key(&self) -> &[u8; 16] {
+        &self.0.mac_key
+    }
+}
+
+#[cfg(not(feature = "role-target"))]
+impl Drop for DiagnosticSnapshot {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
 #[cfg(not(feature = "role-target"))]
 struct RandomContext {
     source: Box<dyn FnMut(usize) -> Vec<u8> + Send>,
@@ -206,11 +247,13 @@ unsafe extern "C" fn random_callback(
     let context = unsafe { &mut *context.cast::<RandomContext>() };
     let generated =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (context.source)(len)));
-    if let Ok(bytes) = generated {
+    if let Ok(mut bytes) = generated {
         if bytes.len() == len {
             unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
+            bytes.fill(0);
             return 0;
         }
+        bytes.fill(0);
     }
     -5
 }
@@ -379,6 +422,14 @@ impl VirtualPicc {
         let mut value = MaybeUninit::uninit();
         status(unsafe { sys::dfc_ffi_picc_snapshot(self.raw.as_ptr(), value.as_mut_ptr()) })?;
         Ok(Snapshot(unsafe { value.assume_init() }))
+    }
+
+    pub fn diagnostic_snapshot(&self) -> Result<DiagnosticSnapshot, Error> {
+        let mut value = MaybeUninit::zeroed();
+        status(unsafe {
+            sys::dfc_ffi_picc_diagnostic_snapshot(self.raw.as_ptr(), value.as_mut_ptr())
+        })?;
+        Ok(DiagnosticSnapshot(unsafe { value.assume_init() }))
     }
 
     pub fn export(&self) -> Result<Credential, Error> {
@@ -561,6 +612,19 @@ mod tests {
             Err(Error::InvalidArgument)
         );
         assert_eq!(credential.file_data(wrapped), Err(Error::InvalidArgument));
+    }
+
+    #[test]
+    fn diagnostic_snapshot_clear_wipes_every_field() {
+        let mut snapshot = DiagnosticSnapshot(sys::DfcFfiDiagnosticSnapshot {
+            transaction_identifier: [0xa1; 4],
+            encryption_key: [0xa2; 16],
+            mac_key: [0xa3; 16],
+        });
+        snapshot.clear();
+        assert_eq!(snapshot.transaction_identifier(), &[0; 4]);
+        assert_eq!(snapshot.encryption_key(), &[0; 16]);
+        assert_eq!(snapshot.mac_key(), &[0; 16]);
     }
 }
 pub use dfc_core_sys as raw;

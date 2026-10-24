@@ -1,6 +1,7 @@
 namespace Dfc.Credentials;
 
 using System;
+using System.Security.Cryptography;
 using System.Text;
 using CSharpFunctionalExtensions;
 using Dfc.Interop;
@@ -20,7 +21,14 @@ public static unsafe class DfcCredentialCodec
     {
         ArgumentNullException.ThrowIfNull(text);
         var bytes = Encoding.UTF8.GetBytes(text);
-        return Read(bytes, static (p, n, h, e) => Native.dfc_ffi_credential_parse_text(p, n, h, e));
+        try
+        {
+            return Read(bytes, static (p, n, h, e) => Native.dfc_ffi_credential_parse_text(p, n, h, e));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
     }
 
     /// <summary>Decodes <c>.dfcb</c> octets.</summary>
@@ -36,7 +44,7 @@ public static unsafe class DfcCredentialCodec
 
     /// <summary>Encodes a credential as <c>.dfcb</c> octets.</summary>
     public static Result<byte[], DfcError> Encode(DfcCredential credential) =>
-        WithHandle(credential, static raw =>
+        WithHandle<byte[]>(credential, static raw =>
         {
             nuint length = 0;
             int st = Native.dfc_ffi_credential_encode(raw, null, 0, &length);
@@ -51,7 +59,13 @@ public static unsafe class DfcCredentialCodec
                 st = Native.dfc_ffi_credential_encode(raw, p, length, &length);
             }
 
-            return st == 0 ? Result.Success<byte[], DfcError>(output) : DfcError.FromStatus(st);
+            if (st == 0)
+            {
+                return output;
+            }
+
+            CryptographicOperations.ZeroMemory(output);
+            return DfcError.FromStatus(st);
         });
 
     /// <summary>Writes a credential as canonical <c>.dfc</c> text.</summary>
@@ -71,9 +85,16 @@ public static unsafe class DfcCredentialCodec
                 st = Native.dfc_ffi_credential_write_text(raw, p, length, &length);
             }
 
-            return st == 0
-                ? Result.Success<string, DfcError>(Encoding.UTF8.GetString(output, 0, (int)length))
-                : DfcError.FromStatus(st);
+            try
+            {
+                return st == 0
+                    ? Result.Success<string, DfcError>(Encoding.UTF8.GetString(output, 0, (int)length))
+                    : DfcError.FromStatus(st);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(output);
+            }
         });
 
     /// <summary>Checks every rule both encodings share, without encoding.</summary>

@@ -1273,6 +1273,14 @@ int main(void) {
     CHECK(snapshot.selected == 2);
     CHECK(memcmp(snapshot.selected_aid, aid, 3) == 0);
 
+    DfcFfiDiagnosticSnapshot diagnostic;
+    memset(&diagnostic, 0xA5, sizeof(diagnostic));
+    CHECK(dfc_ffi_picc_diagnostic_snapshot(NULL, &diagnostic) == DFC_FFI_INVALID_ARGUMENT);
+    CHECK(memcmp(&diagnostic, (uint8_t[sizeof(diagnostic)]){0}, sizeof(diagnostic)) == 0);
+    CHECK(dfc_ffi_picc_diagnostic_snapshot(picc, &diagnostic) == 0);
+    dfc_ffi_secure_zero(&diagnostic, sizeof(diagnostic));
+    CHECK(memcmp(&diagnostic, (uint8_t[sizeof(diagnostic)]){0}, sizeof(diagnostic)) == 0);
+
     DfcFfiCredential* exported = NULL;
     CHECK(dfc_ffi_picc_export(picc, &exported) == 0);
     CHECK(dfc_ffi_credential_validate(exported) == 0);

@@ -201,12 +201,33 @@ class VirtualPicc:
                 bool(s.ev2_active),
                 s.ev2_key_no,
                 s.ev2_command_counter,
-                bytes(s.ev2_transaction_identifier),
-                bytes(s.ev2_encryption_key),
-                bytes(s.ev2_mac_key),
                 bool(s.virtual_card_selected),
                 bool(s.proximity_verified),
             )
+
+    @contextmanager
+    def _diagnostic_snapshot(
+        self,
+    ) -> Iterator[tuple[bytearray, bytearray, bytearray]]:
+        """Yield secret state for conformance tests and clear every mutable copy."""
+        with self._lock, self._lease() as handle:
+            native = N.DiagnosticSnapshot()
+            values: tuple[bytearray, bytearray, bytearray] | None = None
+            try:
+                N.raise_status(
+                    N.library().dfc_ffi_picc_diagnostic_snapshot(handle, C.byref(native))
+                )
+                values = (
+                    bytearray(native.transaction_identifier),
+                    bytearray(native.encryption_key),
+                    bytearray(native.mac_key),
+                )
+                yield values
+            finally:
+                if values is not None:
+                    for value in values:
+                        value[:] = b"\0" * len(value)
+                N.library().dfc_ffi_secure_zero(C.byref(native), C.sizeof(native))
 
     def export(self) -> Credential:
         with self._lock, self._lease() as handle:

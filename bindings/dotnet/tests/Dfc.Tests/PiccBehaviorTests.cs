@@ -20,6 +20,24 @@ public sealed class PiccBehaviorTests
     private static int clockCreatorCalls;
 
     [Test]
+    public void DiagnosticSnapshot_DisposeClearsManagedBuffers()
+    {
+        var transactionIdentifier = Enumerable.Repeat((byte)0x11, 4).ToArray();
+        var encryptionKey = Enumerable.Repeat((byte)0x22, 16).ToArray();
+        var macKey = Enumerable.Repeat((byte)0x33, 16).ToArray();
+        var snapshot = new DfcDiagnosticSnapshot(transactionIdentifier, encryptionKey, macKey);
+
+        snapshot.Dispose();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transactionIdentifier, Is.All.EqualTo(0));
+            Assert.That(encryptionKey, Is.All.EqualTo(0));
+            Assert.That(macKey, Is.All.EqualTo(0));
+        });
+    }
+
+    [Test]
     public unsafe void Create_QueriesClockBeforeTakingNativeOwnership()
     {
         clockCreatorCalls = 0;

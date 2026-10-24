@@ -287,13 +287,20 @@ class Snapshot(C.Structure):
             for n in ["dirty", "auth_mode", "auth_key_no", "ev2_active", "ev2_key_no"]
         ]
         + [
-            ("ev2_transaction_identifier", C.c_uint8 * 4),
-            ("ev2_encryption_key", C.c_uint8 * 16),
-            ("ev2_mac_key", C.c_uint8 * 16),
             ("virtual_card_selected", C.c_uint8),
             ("proximity_verified", C.c_uint8),
         ]
     )
+
+
+class DiagnosticSnapshot(C.Structure):
+    """Secret-bearing native state. Keep this out of the public Python API."""
+
+    _fields_ = [
+        ("transaction_identifier", C.c_uint8 * 4),
+        ("encryption_key", C.c_uint8 * 16),
+        ("mac_key", C.c_uint8 * 16),
+    ]
 
 
 class ReaderState(C.Structure):
@@ -411,7 +418,11 @@ def _declare(lib: C.CDLL) -> None:
     ]
     # A void pointer permits NULL as well as a live CFUNCTYPE callback.
     lib.dfc_ffi_picc_create.argtypes = [Handle, C.c_void_p, C.c_void_p, C.POINTER(Handle)]
-    for name, typ in (("activate", Activation), ("snapshot", Snapshot)):
+    for name, typ in (
+        ("activate", Activation),
+        ("snapshot", Snapshot),
+        ("diagnostic_snapshot", DiagnosticSnapshot),
+    ):
         getattr(lib, f"dfc_ffi_picc_{name}").argtypes = [Handle, C.POINTER(typ)]
     for name in ("exchange", "frame_exchange"):
         getattr(lib, f"dfc_ffi_picc_{name}").argtypes = [

@@ -181,6 +181,7 @@ void dfc_ffi_struct_sizes(DfcFfiStructSizes* out) {
     out->key = sizeof(DfcFfiKey);
     out->activation = sizeof(DfcFfiActivation);
     out->snapshot = sizeof(DfcFfiSnapshot);
+    out->diagnostic_snapshot = sizeof(DfcFfiDiagnosticSnapshot);
     out->reader_state = sizeof(DfcFfiReaderState);
 }
 
@@ -1255,9 +1256,6 @@ int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out) {
     if(e->ev2_session_active) {
         out->ev2_key_no = e->ev2_authenticated_key_no;
         out->ev2_command_counter = e->ev2_command_counter;
-        memcpy(out->ev2_transaction_identifier, e->ev2_transaction_identifier, 4);
-        memcpy(out->ev2_encryption_key, e->ev2_session_encryption_key, 16);
-        memcpy(out->ev2_mac_key, e->ev2_session_mac_key, 16);
     }
 #endif
 #if DFC_ENABLE_VIRTUAL_CARD
@@ -1265,6 +1263,21 @@ int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out) {
 #endif
 #if DFC_ENABLE_PROXIMITY_CHECK
     out->proximity_verified = e->proximity_verified;
+#endif
+    return DfcVirtualPiccStatusOk;
+}
+
+int32_t dfc_ffi_picc_diagnostic_snapshot(const DfcFfiPicc* picc, DfcFfiDiagnosticSnapshot* out) {
+    if(!out) return DFC_FFI_INVALID_ARGUMENT;
+    memset(out, 0, sizeof(*out));
+    if(!picc) return DFC_FFI_INVALID_ARGUMENT;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    const DfcEmulator* e = picc->session->emulator;
+    if(e->ev2_session_active) {
+        memcpy(out->transaction_identifier, e->ev2_transaction_identifier, 4);
+        memcpy(out->encryption_key, e->ev2_session_encryption_key, 16);
+        memcpy(out->mac_key, e->ev2_session_mac_key, 16);
+    }
 #endif
     return DfcVirtualPiccStatusOk;
 }

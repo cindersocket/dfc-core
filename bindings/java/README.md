@@ -68,7 +68,9 @@ mkdir -p build-jni/java
 javac --release 17 -d build-jni/java \
   bindings/java/src/main/java/com/cindersocket/dfc/*.java \
   tests/java/DfcJniSmokeTest.java tests/java/DfcJniReplayRandomTest.java \
+  tests/java/DfcSecretLifetimeTest.java \
   examples/java/DfcTransceiveExample.java
+java -cp build-jni/java com.cindersocket.dfc.DfcSecretLifetimeTest
 java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
   examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
 java -Djava.library.path=build-jni -cp build-jni/java DfcJniReplayRandomTest \
@@ -82,3 +84,11 @@ platform loader. JNI compares the linked core's layout fingerprint with the
 layout compiled into JNI before constructing a handle. Java and Android
 initialization fails clearly if any shared field or binding-visible numeric
 constant differs.
+
+## Secret lifetime
+
+Card snapshots exclude session keys. JNI clears native snapshot, credential,
+and temporary output buffers on every exit. Java arrays cannot prevent copies
+made by the VM or application, so callers should close `DfcCredential` promptly
+and clear arrays they own. A cleaner clears owned credential and diagnostic
+buffers if explicit close is missed; its timing is intentionally unspecified.

@@ -504,6 +504,27 @@ JNIEXPORT jbyteArray JNICALL
     return result;
 }
 
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccDiagnosticSnapshot(
+    JNIEnv* env,
+    jclass type,
+    jlong handle) {
+    (void)type;
+    JniPicc* wrapper = picc_handle(env, handle);
+    if(wrapper == NULL) return NULL;
+    DfcFfiDiagnosticSnapshot snapshot = {0};
+    int32_t status = dfc_ffi_picc_diagnostic_snapshot(wrapper->picc, &snapshot);
+    if(status != DFC_FFI_OK) {
+        dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));
+        throw_dfc(env, status, 0, 0, "could not read diagnostic PICC state");
+        return NULL;
+    }
+    uint8_t packed[sizeof(snapshot)];
+    memcpy(packed, &snapshot, sizeof(packed));
+    jbyteArray result = make_array_and_wipe(env, packed, sizeof(packed), sizeof(packed));
+    dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));
+    return result;
+}
+
 JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccExchange(
     JNIEnv* env,
     jclass type,

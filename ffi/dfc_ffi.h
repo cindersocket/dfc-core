@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 // Raised whenever a struct below or a function's meaning changes.
-#define DFC_FFI_ABI_VERSION 6
+#define DFC_FFI_ABI_VERSION 7
 
 // Failures every function may report, alongside its own family's statuses:
 // credential functions return a DfcDerStatus, virtual-PICC functions a
@@ -143,6 +143,7 @@ typedef struct {
     uint32_t key;
     uint32_t activation;
     uint32_t snapshot;
+    uint32_t diagnostic_snapshot;
     uint32_t reader_state;
 } DfcFfiStructSizes;
 
@@ -439,12 +440,19 @@ typedef struct {
     uint8_t auth_key_no;
     uint8_t ev2_active;
     uint8_t ev2_key_no;
-    uint8_t ev2_transaction_identifier[4];
-    uint8_t ev2_encryption_key[16];
-    uint8_t ev2_mac_key[16];
     uint8_t virtual_card_selected;
     uint8_t proximity_verified;
 } DfcFfiSnapshot;
+
+// Sensitive session state for diagnostics and conformance testing. Keeping it
+// separate prevents an ordinary snapshot from copying keys. Any caller of this
+// diagnostic API must wipe the structure with dfc_ffi_secure_zero as soon as
+// it has finished inspecting it.
+typedef struct {
+    uint8_t transaction_identifier[4];
+    uint8_t encryption_key[16];
+    uint8_t mac_key[16];
+} DfcFfiDiagnosticSnapshot;
 
 // The PICC answers from its own copy of `credential`.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_create(
@@ -486,6 +494,8 @@ DFC_FFI_EXPORT int32_t dfc_ffi_picc_reset_protocol(DfcFfiPicc* picc);
 // A timer expiry rolls back pending writes and requires a fresh scan.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_advance_time(DfcFfiPicc* picc, uint32_t elapsed_milliseconds);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out);
+DFC_FFI_EXPORT int32_t
+    dfc_ffi_picc_diagnostic_snapshot(const DfcFfiPicc* picc, DfcFfiDiagnosticSnapshot* out);
 // A new credential holding the card's current state.
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_export(const DfcFfiPicc* picc, DfcFfiCredential** out);
 DFC_FFI_EXPORT int32_t dfc_ffi_picc_mark_persisted(DfcFfiPicc* picc);

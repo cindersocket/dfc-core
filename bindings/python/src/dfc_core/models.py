@@ -172,9 +172,6 @@ class Snapshot:
     ev2_active: bool
     ev2_key_no: int
     ev2_command_counter: int
-    ev2_transaction_identifier: bytes
-    ev2_encryption_key: bytes = field(repr=False)
-    ev2_mac_key: bytes = field(repr=False)
     virtual_card_selected: bool = False
     proximity_verified: bool = False
 

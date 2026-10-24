@@ -160,9 +160,6 @@ int32_t dfc_target_picc_snapshot(const DfcTargetPicc* picc, DfcTargetSnapshot* o
     if(emulator->ev2_session_active) {
         out->ev2_key_no = emulator->ev2_authenticated_key_no;
         out->ev2_command_counter = emulator->ev2_command_counter;
-        memcpy(out->ev2_transaction_identifier, emulator->ev2_transaction_identifier, 4);
-        memcpy(out->ev2_encryption_key, emulator->ev2_session_encryption_key, 16);
-        memcpy(out->ev2_mac_key, emulator->ev2_session_mac_key, 16);
     }
 #endif
 #if DFC_ENABLE_VIRTUAL_CARD

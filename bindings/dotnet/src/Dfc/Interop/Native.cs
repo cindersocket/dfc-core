@@ -44,6 +44,7 @@ internal static unsafe partial class Native
         Require(sizes.Key, sizeof(NativeKey), "key");
         Require(sizes.Activation, sizeof(NativeActivation), "activation");
         Require(sizes.Snapshot, sizeof(NativeSnapshot), "snapshot");
+        Require(sizes.DiagnosticSnapshot, sizeof(NativeDiagnosticSnapshot), "diagnostic snapshot");
         Require(sizes.ReaderState, sizeof(NativeReaderState), "reader state");
         return true;
     }
@@ -205,6 +206,12 @@ internal static unsafe partial class Native
 
     [LibraryImport(Library)]
     internal static partial int dfc_ffi_picc_snapshot(nint picc, NativeSnapshot* output);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_picc_diagnostic_snapshot(
+        nint picc,
+        NativeDiagnosticSnapshot* output
+    );
 
     [LibraryImport(Library)]
     internal static partial int dfc_ffi_picc_export(nint picc, nint* output);

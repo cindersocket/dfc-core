@@ -33,7 +33,12 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
   }
   public static DfcVirtualPicc create(DfcCredential credential) throws DfcException {
     Objects.requireNonNull(credential, "credential");
-    return new DfcVirtualPicc(DfcNative.piccCreate(credential.encode(), null));
+    byte[] encoded = credential.encode();
+    try {
+      return new DfcVirtualPicc(DfcNative.piccCreate(encoded, null));
+    } finally {
+      java.util.Arrays.fill(encoded, (byte) 0);
+    }
   }
   /**
    * Creates a card whose random requests consume the supplied script in order.
@@ -45,7 +50,12 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
       throws DfcException {
     Objects.requireNonNull(credential, "credential");
     Objects.requireNonNull(randomScript, "randomScript");
-    return new DfcVirtualPicc(DfcNative.piccCreate(credential.encode(), randomScript));
+    byte[] encoded = credential.encode();
+    try {
+      return new DfcVirtualPicc(DfcNative.piccCreate(encoded, randomScript));
+    } finally {
+      java.util.Arrays.fill(encoded, (byte) 0);
+    }
   }
   public synchronized DfcActivation activate() throws DfcException {
     ByteBuffer data = ByteBuffer.wrap(DfcNative.piccActivate(state.require()));
@@ -92,6 +102,10 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
     boolean proximityVerified = data.get() != 0;
     return new DfcPiccSnapshot(selected, applicationIndex, aid, dirty, authenticationMode,
         authenticationKeyNumber, ev2Counter, ev2Active, virtualCardSelected, proximityVerified);
+  }
+  /** Copies secret session state for diagnostics. Close the result promptly. */
+  public synchronized DfcDiagnosticSnapshot diagnosticSnapshot() throws DfcException {
+    return new DfcDiagnosticSnapshot(DfcNative.piccDiagnosticSnapshot(state.require()));
   }
   @Override
   public byte[] transceive(byte[] frame) throws IOException {

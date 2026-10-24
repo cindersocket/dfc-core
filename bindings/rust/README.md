@@ -110,3 +110,12 @@ a head length no larger than `DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH`.
 The native core refuses a larger value, and a value that does not fit the native
 `int32_t` is refused before the call, both as `Error::InvalidArgument`; the
 session stays usable.
+
+## Secret lifetime
+
+Ordinary card snapshots exclude session keys. `DiagnosticSnapshot` exists for
+diagnostics and conformance tests and wipes its native storage on drop. A caller
+that copies one of its slices owns and must clear that copy. `CredentialKey`
+similarly wipes key material returned from a credential when it is dropped, as
+do the PICC-settings and file wrappers. Encoded `Vec<u8>` values belong to the
+caller and must be cleared after use.

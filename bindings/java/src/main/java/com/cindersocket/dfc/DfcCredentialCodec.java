@@ -7,8 +7,12 @@ import java.util.Objects;
 public final class DfcCredentialCodec {
   private DfcCredentialCodec() {}
   public static DfcCredential parse(String text) throws DfcException {
-    return new DfcCredential(DfcNative.credentialParse(
-        Objects.requireNonNull(text, "text").getBytes(StandardCharsets.UTF_8)));
+    byte[] encoded = Objects.requireNonNull(text, "text").getBytes(StandardCharsets.UTF_8);
+    try {
+      return new DfcCredential(DfcNative.credentialParse(encoded));
+    } finally {
+      java.util.Arrays.fill(encoded, (byte) 0);
+    }
   }
   public static DfcCredential decode(byte[] binary) throws DfcException {
     Objects.requireNonNull(binary, "binary");
@@ -20,6 +24,11 @@ public final class DfcCredentialCodec {
     return new DfcCredential(DfcNative.credentialLoad(Objects.requireNonNull(content, "content")));
   }
   public static DfcCredential load(String text) throws DfcException {
-    return load(Objects.requireNonNull(text, "text").getBytes(StandardCharsets.UTF_8));
+    byte[] encoded = Objects.requireNonNull(text, "text").getBytes(StandardCharsets.UTF_8);
+    try {
+      return load(encoded);
+    } finally {
+      java.util.Arrays.fill(encoded, (byte) 0);
+    }
   }
 }
