@@ -781,6 +781,30 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
             }
         }
     }
+
+    // Zero-filled maximum payloads make every old padding candidate look
+    // plausible. Keep this worst-case shape in the correctness suite.
+    memset(plain, 0, DFC_MAX_FILE_DATA);
+    for(size_t cipher_index = 0; cipher_index < sizeof(ciphers) / sizeof(ciphers[0]);
+        cipher_index++) {
+        DfcSecureMessaging* reader =
+            alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
+        DfcSecureMessaging* card =
+            alloc_session(ciphers[cipher_index].cipher, ciphers[cipher_index].key_len);
+        munit_assert_not_null(reader);
+        munit_assert_not_null(card);
+        reader->pcd = true;
+
+        size_t wrapped_len = dfc_secure_messaging_wrap(
+            reader, DFC_COMM_ENCIPHERED, header, sizeof(header), plain, DFC_MAX_FILE_DATA, wrapped);
+        size_t recovered_len = dfc_secure_messaging_verify_command(
+            card, DFC_COMM_ENCIPHERED, header, sizeof(header), wrapped, wrapped_len, recovered);
+        munit_assert_size(recovered_len, ==, DFC_MAX_FILE_DATA);
+        munit_assert_memory_equal(DFC_MAX_FILE_DATA, recovered, plain);
+
+        dfc_secure_messaging_free(reader);
+        dfc_secure_messaging_free(card);
+    }
     free(recovered);
     free(wrapped);
     free(plain);
