@@ -463,7 +463,7 @@ static MunitResult test_growth_failure_is_atomic(const MunitParameter params[], 
     SnapshotFixture fixture;
     fixture_open(&fixture);
     begin_transaction(&fixture);
-    dfc_host_fail_allocation_after(DfcAllocEmulator, 1);
+    dfc_host_fail_next_allocation(DfcAllocEmulator);
     const uint8_t create[] = {
         0x90, DFC_CMD_CREATE_BACKUP_DATA_FILE, 0, 0, 7, 5, 0, 0xEE, 0xEE, 4, 0, 0, 0};
     exchange_status(fixture.session, create, sizeof(create), DFC_STATUS_OUT_OF_EEPROM);
