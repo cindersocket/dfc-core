@@ -4,6 +4,8 @@
 
 - Add Java and Android JNI bindings and an Android library.
 - Preserve JNI exception delivery in minified Android consumers (#141).
+- Keep minified Android instrumentation builds complete when AndroidX exposes
+  Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
   target builds, with ABI-layout checks and caller-owned target storage.
 - Use ABI 8 to verify the complete generated native layout and semantic-constant

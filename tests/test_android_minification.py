@@ -9,6 +9,7 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
     def test_native_exception_survives_minified_sample(self) -> None:
         consumer_rules = (ROOT / "bindings/android/dfc/consumer-rules.pro").read_text()
         sample_build = (ROOT / "examples/android/build.gradle.kts").read_text()
+        sample_rules = (ROOT / "examples/android/proguard-rules.pro").read_text()
         smoke_test = (
             ROOT
             / "examples/android/src/androidTest/java/com/cindersocket/dfc/sample/MinifiedExceptionTest.java"
@@ -27,6 +28,12 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
         self.assertIn("isMinifyEnabled = true", sample_build)
         self.assertNotIn("isDebuggable = true", sample_build)
         self.assertIn('testBuildType = "release"', sample_build)
+        self.assertIn(
+            'androidTestImplementation("com.google.errorprone:error_prone_annotations:2.30.0")',
+            sample_build,
+        )
+        self.assertIn('testProguardFiles("proguard-rules.pro")', sample_build)
+        self.assertIn("-dontwarn javax.lang.model.element.Modifier", sample_rules)
         self.assertIn('DfcCredentialCodec.parse("not a credential")', smoke_test)
         self.assertIn(
             "script: bindings/android/gradlew --no-daemon -p bindings/android "
