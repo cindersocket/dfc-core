@@ -195,27 +195,6 @@ cleanup:
     return ok;
 }
 
-static uint16_t crc16(const uint8_t* data, size_t len) {
-    uint16_t crc = 0x6363;
-    for(size_t i = 0; i < len; i++) {
-        uint8_t byte = data[i] ^ (crc & 0xFF);
-        byte ^= byte << 4;
-        crc = (crc >> 8) ^ ((uint16_t)byte << 8) ^ ((uint16_t)byte << 3) ^ ((uint16_t)byte >> 4);
-    }
-    return crc;
-}
-
-static uint32_t crc32_extend(uint32_t crc, const uint8_t* data, size_t len) {
-    for(size_t i = 0; i < len; i++) {
-        crc ^= data[i];
-        for(size_t bit = 0; bit < 8; bit++) {
-            uint32_t mask = 0u - (crc & 1u);
-            crc = (crc >> 1) ^ (0xEDB88320u & mask);
-        }
-    }
-    return crc;
-}
-
 static void put_le32(uint8_t* out, uint32_t value) {
     out[0] = (uint8_t)value;
     out[1] = (uint8_t)(value >> 8);
@@ -1862,11 +1841,11 @@ DfcReaderStatus dfc_reader_change_key_cryptogram(
     cursor = key_len;
 
     if(session->auth_mode == DFC_CMD_AUTHENTICATE_LEGACY) {
-        uint16_t crc = crc16(clear, key_len);
+        uint16_t crc = dfc_crc16_iso14443(clear, key_len);
         clear[cursor++] = (uint8_t)crc;
         clear[cursor++] = (uint8_t)(crc >> 8);
         if(different) {
-            uint16_t new_crc = crc16(stored, key_len);
+            uint16_t new_crc = dfc_crc16_iso14443(stored, key_len);
             clear[cursor++] = (uint8_t)new_crc;
             clear[cursor++] = (uint8_t)(new_crc >> 8);
         }
@@ -1887,12 +1866,12 @@ DfcReaderStatus dfc_reader_change_key_cryptogram(
     if(!session_is_ev1(session)) goto cleanup;
     if(aes_key) clear[cursor++] = new_version;
     uint8_t crc_head[2] = {DFC_CMD_CHANGE_KEY, (uint8_t)(key_no & 0x3F)};
-    uint32_t crc = crc32_extend(0xFFFFFFFFu, crc_head, sizeof(crc_head));
-    crc = crc32_extend(crc, clear, cursor);
+    uint32_t crc = dfc_crc32_extend(0xFFFFFFFFu, crc_head, sizeof(crc_head));
+    crc = dfc_crc32_extend(crc, clear, cursor);
     put_le32(clear + cursor, crc);
     cursor += 4;
     if(different) {
-        put_le32(clear + cursor, crc32_extend(0xFFFFFFFFu, stored, key_len));
+        put_le32(clear + cursor, dfc_crc32(stored, key_len));
         cursor += 4;
     }
     size_t block = block_size(session->sm.cipher);
@@ -1958,7 +1937,7 @@ DfcReaderStatus dfc_reader_change_key_ev2_command(
     }
     clear[len++] = new_version;
     if(!same) {
-        put_le32(clear + len, crc32_extend(0xFFFFFFFFu, new_key, DFC_AES_KEY_LENGTH));
+        put_le32(clear + len, dfc_crc32(new_key, DFC_AES_KEY_LENGTH));
         len += 4;
     }
     DfcCommandStatus st = dfc_command_change_key_ev2(command, key_set_no, key_no, clear, len);
