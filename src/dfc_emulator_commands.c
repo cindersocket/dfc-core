@@ -790,13 +790,55 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
 }
 
 static void handle_get_card_uid(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
-    if(!dfc_emulator_native_authentication_active(emulator)) {
+    bool authenticated = dfc_emulator_native_authentication_active(emulator);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    authenticated = authenticated || emulator->ev2_session_active;
+#endif
+    if(!authenticated) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
 
+    uint8_t response[DFC_SM_MAX_CIPHER_BLOCK_SIZE];
+    size_t uid_len = emulator->credential->uid_len;
+    size_t response_len = uid_len;
+    size_t uid_offset = 0;
+    if(uid_len != DFC_DESFIRE_UID_LEN) {
+        response[0] = 0x00;
+        response[1] = (uint8_t)uid_len;
+        uid_offset = 2;
+        response_len += 2;
+    }
+    memcpy(response + uid_offset, emulator->credential->uid, uid_len);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(emulator->ev2_session_active) {
+        // The transport layer applies EV2 Full protection after dispatch.
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+        dfc_bytebuf_append_bytes(tx_buffer, response, response_len);
+        dfc_secure_wipe(response, sizeof(response));
+        return;
+    }
+#endif
+
+    response_len = dfc_secure_messaging_generate_response(
+        emulator->secure_messaging,
+        DFC_COMM_ENCIPHERED,
+        DFC_STATUS_OK,
+        response,
+        response_len,
+        response,
+        sizeof(response));
+    if(response_len == 0) {
+        dfc_secure_wipe(response, sizeof(response));
+        dfc_emulator_reset_session(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        return;
+    }
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-    dfc_bytebuf_append_bytes(tx_buffer, emulator->credential->uid, emulator->credential->uid_len);
+    dfc_bytebuf_append_bytes(tx_buffer, response, response_len);
+    emulator->response_secured = true;
+    dfc_secure_wipe(response, sizeof(response));
 }
 
 static void handle_format_picc(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
@@ -5434,6 +5476,19 @@ static bool dispatch_native_command(
         handle_get_version(emulator, tx_buffer);
         return true;
     case DFC_CMD_GET_CARD_UID:
+        if(buffer_len != 1) {
+            // EV1 and EV2 terminal errors retire their chained state before
+            // the plain error is emitted. Legacy sessions keep their old rule.
+            bool retires_session = dfc_emulator_native_authentication_active(emulator) &&
+                                   emulator->secure_messaging->cipher !=
+                                       DFC_CMD_AUTHENTICATE_LEGACY;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+            retires_session = retires_session || emulator->ev2_session_active;
+#endif
+            if(retires_session) dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+            return true;
+        }
         handle_get_card_uid(emulator, tx_buffer);
         return true;
     case DFC_CMD_SELECT_APPLICATION:

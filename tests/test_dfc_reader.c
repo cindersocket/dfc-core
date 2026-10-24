@@ -3367,6 +3367,136 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static void assert_get_card_uid(Link* link) {
+    DfcCommand command;
+    DfcReaderExchange exchange;
+    munit_assert_int(dfc_command_get_card_uid(&command), ==, DfcCommandOk);
+    // GetCardUID chooses Full response protection itself. Callers do not need
+    // to duplicate that rule in the per-command options.
+    DfcReaderOptions options = {.comm_mode = DFC_COMM_PLAIN};
+    munit_assert_int(
+        dfc_reader_exchange_begin(&exchange, &link->session, link->framing, &command, &options),
+        ==,
+        DfcReaderOk);
+
+    uint8_t request[DFC_COMMAND_MAX_APDU];
+    size_t request_len = 0;
+    munit_assert_int(
+        dfc_reader_step(&exchange, NULL, 0, request, sizeof(request), &request_len),
+        ==,
+        DfcReaderPending);
+    uint8_t response[64];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link->picc, request, request_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    for(size_t offset = 0; offset + link->credential.uid_len <= response_len; offset++) {
+        munit_assert_int(
+            memcmp(response + offset, link->credential.uid, link->credential.uid_len), !=, 0);
+    }
+
+    // A damaged ciphertext must not publish even a partial result, and must
+    // retire the reader-side copy of the session.
+    DfcReaderSession corrupt_session = link->session;
+    DfcReaderExchange corrupt_exchange = exchange;
+    corrupt_exchange.session = &corrupt_session;
+    uint8_t corrupt_response[sizeof(response)];
+    memcpy(corrupt_response, response, response_len);
+    corrupt_response[0] ^= 0x01;
+    size_t ignored_len = 0;
+    munit_assert_int(
+        dfc_reader_step(
+            &corrupt_exchange,
+            corrupt_response,
+            response_len,
+            request,
+            sizeof(request),
+            &ignored_len),
+        ==,
+        DfcReaderIntegrityError);
+    munit_assert_size(ignored_len, ==, 0);
+    munit_assert_false(dfc_reader_session_is_authenticated(&corrupt_session));
+
+    munit_assert_int(
+        dfc_reader_step(&exchange, response, response_len, request, sizeof(request), &request_len),
+        ==,
+        DfcReaderOk);
+
+    size_t uid_len = 0;
+    const uint8_t* uid = dfc_reader_result_data(&exchange, &uid_len);
+    munit_assert_size(uid_len, ==, link->credential.uid_len);
+    munit_assert_memory_equal(uid_len, uid, link->credential.uid);
+}
+
+static void assert_malformed_get_card_uid_session(Link* link, bool retires_session) {
+    const uint8_t unexpected_data = 0x00;
+    DfcCommand command;
+    DfcReaderExchange exchange;
+    munit_assert_int(
+        dfc_command_encode_raw(
+            &command, DFC_CMD_GET_CARD_UID, &unexpected_data, sizeof(unexpected_data)),
+        ==,
+        DfcCommandOk);
+    munit_assert_int(link_send(link, &command, DFC_COMM_PLAIN, &exchange), ==, DfcReaderCardError);
+    munit_assert_uint8(dfc_reader_result_status(&exchange), ==, DFC_STATUS_LENGTH_ERROR);
+    size_t response_len = SIZE_MAX;
+    (void)dfc_reader_result_data(&exchange, &response_len);
+    munit_assert_size(response_len, ==, 0);
+    munit_assert_int(dfc_reader_session_is_authenticated(&link->session), ==, !retires_session);
+}
+
+static MunitResult
+    test_get_card_uid_uses_full_response_protection(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 1, AES_KEY_1, sizeof(AES_KEY_1)),
+        ==,
+        DfcReaderOk);
+    assert_get_card_uid(&link);
+    assert_malformed_get_card_uid_session(&link, true);
+    link_close(&link);
+
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    select_app(&link, AID_ISO);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_ISO, 0, TDES_KEY_0, sizeof(TDES_KEY_0)),
+        ==,
+        DfcReaderOk);
+    assert_get_card_uid(&link);
+    assert_malformed_get_card_uid_session(&link, true);
+    link_close(&link);
+
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    select_app(&link, AID_D40);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_LEGACY, 0, DES_KEY_0, sizeof(DES_KEY_0)),
+        ==,
+        DfcReaderOk);
+    assert_get_card_uid(&link);
+    assert_malformed_get_card_uid_session(&link, false);
+    link_close(&link);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 1, AES_KEY_1), ==, DfcReaderOk);
+    assert_get_card_uid(&link);
+    munit_assert_uint16(link.session.ev2_command_counter, ==, 1);
+    munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 1);
+    assert_malformed_get_card_uid_session(&link, true);
+    link_close(&link);
+#endif
+
+    return MUNIT_OK;
+}
+
 static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -3991,6 +4121,12 @@ static MunitTest tests[] = {
      NULL},
     {"/change-key", test_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/d40-change-key", test_d40_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/get-card-uid-uses-full-response-protection",
+     test_get_card_uid_uses_full_response_protection,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     {"/authenticated-errors-are-plain-terminal",
      test_authenticated_errors_are_plain_terminal,

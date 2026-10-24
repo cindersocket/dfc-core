@@ -384,6 +384,38 @@ static MunitResult
     dfc_secure_messaging_free(oracle);
     dfc_virtual_picc_session_free(session);
 
+    session = dfc_virtual_picc_session_alloc(&credential);
+    munit_assert_not_null(session);
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    oracle = install_known_ev1_session(session);
+    const uint8_t get_card_uid[] = {0x90, DFC_CMD_GET_CARD_UID, 0, 0, 0};
+    // Fixed AES-CBC result for the known session, including the command CMAC
+    // state that supplies this response's IV.
+    static const uint8_t uid_response[] = {
+        0x5B,
+        0x3D,
+        0xEE,
+        0x92,
+        0x00,
+        0xF4,
+        0x97,
+        0x4D,
+        0x2E,
+        0x4D,
+        0x09,
+        0x83,
+        0x92,
+        0x0C,
+        0x31,
+        0x18,
+        0x91,
+        0x00};
+    expect_fixed_wire_response(
+        session, oracle, get_card_uid, sizeof(get_card_uid), uid_response, sizeof(uid_response));
+    dfc_secure_messaging_free(oracle);
+    dfc_virtual_picc_session_free(session);
+
     load_standard_credential(&credential);
     session = dfc_virtual_picc_session_alloc(&credential);
     munit_assert_not_null(session);

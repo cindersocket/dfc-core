@@ -943,8 +943,12 @@ static bool is_file_read(uint8_t ins) {
            ins == DFC_CMD_READ_RECORDS_ISO || ins == DFC_CMD_GET_VALUE;
 }
 
+static bool response_is_always_full(uint8_t ins) {
+    return ins == DFC_CMD_GET_CARD_UID;
+}
+
 static bool command_requires_response_data(const DfcCommand* command) {
-    if(command->ins == DFC_CMD_GET_VALUE) return true;
+    if(command->ins == DFC_CMD_GET_VALUE || response_is_always_full(command->ins)) return true;
     if((command->ins == DFC_CMD_READ_DATA || command->ins == DFC_CMD_READ_RECORDS ||
         command->ins == DFC_CMD_READ_RECORDS_ISO) &&
        command->data_len >= FILE_HEADER_LENGTH) {
@@ -1143,7 +1147,8 @@ static DfcReaderStatus
         return prepare_wrapped_file_write(ex, command, ex->comm_mode, header_len);
     }
     if(is_file_read(ins) && ex->comm_mode == DFC_COMM_MAC) ex->response_plan = PlanD40Mac;
-    if(is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED) {
+    if(response_is_always_full(ins) ||
+       (is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED)) {
         ex->response_plan = PlanD40Decrypt;
     }
     return set_frame(ex, command->data, command->data_len, NULL, 0) ? DfcReaderOk :
@@ -1195,7 +1200,8 @@ static DfcReaderStatus
         dfc_secure_wipe(full, sizeof(full));
         return framed ? DfcReaderOk : DfcReaderInvalid;
     }
-    if(is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED) {
+    if(response_is_always_full(ins) ||
+       (is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED)) {
         ex->response_plan = PlanEv1Decrypt;
     }
     dfc_secure_wipe(full, sizeof(full));
@@ -1261,8 +1267,10 @@ static DfcReaderStatus
     if(encrypted_header == SIZE_MAX && ex->comm_mode == DFC_COMM_ENCIPHERED) {
         encrypted_header = header_len;
     }
-    ex->response_plan =
-        is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED ? PlanEv2MacDecrypt : PlanEv2Mac;
+    ex->response_plan = response_is_always_full(ins) ||
+                                (is_file_read(ins) && ex->comm_mode == DFC_COMM_ENCIPHERED) ?
+                            PlanEv2MacDecrypt :
+                            PlanEv2Mac;
 
     uint8_t* secured = ex->frame;
     size_t secured_len = 0;

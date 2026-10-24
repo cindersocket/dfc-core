@@ -314,9 +314,12 @@ bool dfc_ev2_protect_response(
     DfcFile* file = NULL;
     uint8_t comm = command_file_comm(emulator, clear_command, clear_command_len, &file);
     uint8_t base_command = dfc_record_command_base(clear_command[0]);
-    bool encrypt = file && comm == DFC_COMM_ENCIPHERED &&
-                   (base_command == DFC_CMD_READ_DATA || base_command == DFC_CMD_READ_RECORDS ||
-                    base_command == DFC_CMD_GET_VALUE);
+    // GetCardUID is Full regardless of file settings; file reads inherit Full
+    // from the selected file's effective communication mode.
+    bool encrypt = base_command == DFC_CMD_GET_CARD_UID ||
+                   (file && comm == DFC_COMM_ENCIPHERED &&
+                    (base_command == DFC_CMD_READ_DATA || base_command == DFC_CMD_READ_RECORDS ||
+                     base_command == DFC_CMD_GET_VALUE));
 
     size_t protected_data_len = response_data_len;
     if(encrypt) {

@@ -80,6 +80,7 @@ DfcCommandStatus dfc_command_get_application_ids(DfcCommand* command);
 DfcCommandStatus dfc_command_get_df_names(DfcCommand* command);
 DfcCommandStatus dfc_command_get_file_ids(DfcCommand* command);
 DfcCommandStatus dfc_command_get_iso_file_ids(DfcCommand* command);
+// The response is always encrypted and authenticated by the active session.
 DfcCommandStatus dfc_command_get_card_uid(DfcCommand* command);
 DfcCommandStatus dfc_command_read_signature(DfcCommand* command, uint8_t signature_id);
 DfcCommandStatus dfc_command_get_key_version(DfcCommand* command, uint8_t key_no);
