@@ -1103,18 +1103,17 @@ size_t dfc_der_length(const uint8_t* data, size_t capacity) {
 #define MAX_COMPONENTS 16
 
 typedef struct {
-    uint8_t tags[MAX_COMPONENTS];
+    const uint8_t* order;
     Slice bodies[MAX_COMPONENTS];
-    bool present[MAX_COMPONENTS];
-    size_t count;
+    uint16_t present;
+    uint8_t count;
 } Fields;
 
 static bool r_fields(Slice body, const uint8_t* order, size_t order_len, Fields* out) {
     memset(out, 0, sizeof(*out));
     if(order_len > MAX_COMPONENTS) return false;
-    out->count = order_len;
-    for(size_t i = 0; i < order_len; i++)
-        out->tags[i] = order[i];
+    out->order = order;
+    out->count = (uint8_t)order_len;
 
     size_t cursor = 0;
     Tlv tlv = {0};
@@ -1128,10 +1127,11 @@ static bool r_fields(Slice body, const uint8_t* order, size_t order_len, Fields*
             }
         }
         if(idx == order_len) return false; // unknown tag: no extensions in v3
-        if(out->present[idx]) return false; // duplicate
+        uint16_t bit = (uint16_t)(1u << idx);
+        if(out->present & bit) return false; // duplicate
         if(idx < cursor) return false; // out of declaration order
         cursor = idx + 1;
-        out->present[idx] = true;
+        out->present |= bit;
         out->bodies[idx] = tlv.body;
     }
     return true;
@@ -1139,7 +1139,7 @@ static bool r_fields(Slice body, const uint8_t* order, size_t order_len, Fields*
 
 static const Slice* f_get(const Fields* f, uint8_t tag) {
     for(size_t i = 0; i < f->count; i++) {
-        if(f->tags[i] == tag && f->present[i]) return &f->bodies[i];
+        if(f->order[i] == tag && (f->present & (uint16_t)(1u << i))) return &f->bodies[i];
     }
     return NULL;
 }
