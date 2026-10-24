@@ -1355,9 +1355,8 @@ static void assert_mac_wrap_failure(uint8_t cipher, size_t key_len, size_t plain
         uint8_t output[64];
         memset(output, 0xA5, sizeof(output));
 
-        size_t result =
-            dfc_secure_messaging_wrap(
-                &sm, DFC_COMM_MAC, NULL, 0, plain, plain_len, output, sizeof(output));
+        size_t result = dfc_secure_messaging_wrap(
+            &sm, DFC_COMM_MAC, NULL, 0, plain, plain_len, output, sizeof(output));
 
         munit_assert_size(result, ==, 0);
         munit_assert_memory_equal(sizeof(before_iv), sm.iv, before_iv);
@@ -1501,14 +1500,7 @@ static void assert_cbc_failure_is_atomic(uint8_t cipher, size_t key_len) {
         fail_cbc = cipher != DFC_CMD_AUTHENTICATE_LEGACY;
         munit_assert_size(
             dfc_secure_messaging_wrap(
-                &sm,
-                DFC_COMM_ENCIPHERED,
-                NULL,
-                0,
-                plain,
-                sizeof(plain),
-                wrapped,
-                sizeof(wrapped)),
+                &sm, DFC_COMM_ENCIPHERED, NULL, 0, plain, sizeof(plain), wrapped, sizeof(wrapped)),
             ==,
             0);
         munit_assert_memory_equal(sizeof(before_iv), sm.iv, before_iv);
@@ -1560,13 +1552,7 @@ static void
     fail_cbc = false;
     uint8_t wrapped[48];
     size_t wrapped_len = dfc_secure_messaging_generate_response(
-        &writer,
-        DFC_COMM_MAC,
-        DFC_STATUS_OK,
-        plain,
-        sizeof(plain),
-        wrapped,
-        sizeof(wrapped));
+        &writer, DFC_COMM_MAC, DFC_STATUS_OK, plain, sizeof(plain), wrapped, sizeof(wrapped));
     munit_assert_size(wrapped_len, >, sizeof(plain));
 
     for(size_t position = 1; position <= positions; position++) {

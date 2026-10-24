@@ -726,13 +726,7 @@ static MunitResult
     uint8_t plain[] = {0x30, 0x2F, 0x81, 0x02, 0x0C};
     uint8_t wrapped[DFC_SM_MAX_SIZE];
     size_t wrapped_len = dfc_secure_messaging_generate_response(
-        sm,
-        DFC_COMM_ENCIPHERED,
-        DFC_STATUS_OK,
-        plain,
-        sizeof(plain),
-        wrapped,
-        sizeof(wrapped));
+        sm, DFC_COMM_ENCIPHERED, DFC_STATUS_OK, plain, sizeof(plain), wrapped, sizeof(wrapped));
 
     munit_assert_size(wrapped_len, ==, 16);
 
@@ -945,7 +939,8 @@ static MunitResult test_configured_max_boundaries(const MunitParameter params[],
 }
 
 static MunitResult test_initialization_rejects_invalid_cipher_key_pairs(
-    const MunitParameter params[], void* data) {
+    const MunitParameter params[],
+    void* data) {
     (void)params;
     (void)data;
     static const struct {
@@ -963,8 +958,8 @@ static MunitResult test_initialization_rejects_invalid_cipher_key_pairs(
     for(size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         DfcSecureMessaging sm;
         memset(&sm, 0xA5, sizeof(sm));
-        munit_assert_false(dfc_secure_messaging_init(
-            &sm, invalid[i].cipher, key, invalid[i].key_len, NULL));
+        munit_assert_false(
+            dfc_secure_messaging_init(&sm, invalid[i].cipher, key, invalid[i].key_len, NULL));
         uint8_t cleared[sizeof(sm)];
         memset(cleared, 0, sizeof(cleared));
         munit_assert_memory_equal(sizeof(sm), &sm, cleared);
@@ -975,8 +970,9 @@ static MunitResult test_initialization_rejects_invalid_cipher_key_pairs(
     return MUNIT_OK;
 }
 
-static MunitResult
-    test_output_capacity_fails_before_writes_or_state_changes(const MunitParameter params[], void* data) {
+static MunitResult test_output_capacity_fails_before_writes_or_state_changes(
+    const MunitParameter params[],
+    void* data) {
     (void)params;
     (void)data;
     static const uint8_t header[] = {DFC_CMD_WRITE_DATA, 1};
