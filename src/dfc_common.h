@@ -349,9 +349,9 @@ uint32_t dfc_crc32(const uint8_t* data, size_t length);
 #ifndef DFC_PICC_ATS_MAX
 #define DFC_PICC_ATS_MAX 20
 #endif
-#define DFC_AES_KEY_LENGTH                          16
-#define DFC_AES_CMAC_LENGTH                         16
-#define DFC_WIRE_MAC_LENGTH                         8
+#define DFC_AES_KEY_LENGTH  16
+#define DFC_AES_CMAC_LENGTH 16
+#define DFC_WIRE_MAC_LENGTH 8
 void dfc_truncate_aes_wire_mac(
     const uint8_t full[DFC_AES_CMAC_LENGTH],
     uint8_t wire[DFC_WIRE_MAC_LENGTH]);
