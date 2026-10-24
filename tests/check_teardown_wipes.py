@@ -69,8 +69,8 @@ def main() -> None:
     ]
     if native_missing:
         raise SystemExit("missing native-exchange wipe coverage: " + ", ".join(native_missing))
-    if native_exchange.count("dfc_bytebuf_free(tx)") != 1:
-        raise SystemExit("native exchange must release its response through one cleanup path")
+    if "dfc_bytebuf_free(tx)" in native_exchange:
+        raise SystemExit("native exchange must not free the emulator-owned response buffer")
     native_cleanup = native_exchange[native_exchange.index("cleanup:") :]
     if any(expression not in native_cleanup for expression in native_required.values()):
         raise SystemExit("native exchange must wipe all owned buffers through cleanup")
