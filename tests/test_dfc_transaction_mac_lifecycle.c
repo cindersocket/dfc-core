@@ -204,8 +204,8 @@ static size_t build_create_transaction_mac(uint8_t file_number, uint8_t apdu[64]
     DfcCommandTransactionMacFile file = {
         .file_no = file_number,
         .comm_settings = DFC_COMM_PLAIN,
-        .access_rights = 0xEEEE,
-        .key_type = DFC_KEY_TYPE_AES,
+        .access_rights = 0xEFEE,
+        .key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES,
         .key_version = 1,
     };
     memset(file.key, 0x5A, sizeof(file.key));
@@ -219,6 +219,9 @@ static void create_transaction_mac(LifecycleFixture* fixture) {
     uint8_t apdu[64];
     size_t apdu_len = build_create_transaction_mac(5, apdu);
     exchange_status(fixture->session, apdu, apdu_len, DFC_STATUS_OK);
+    DfcFile* file = dfc_credential_find_file_in_app(&fixture->credential, 0, 5);
+    munit_assert_not_null(file);
+    munit_assert_uint8(file->transaction_mac_key_type, ==, DFC_TRANSACTION_MAC_KEY_TYPE_AES);
 }
 
 static MunitResult test_lifecycle_retires_family(const MunitParameter params[], void* data) {
@@ -396,6 +399,7 @@ static MunitResult test_create_prevalidation(const MunitParameter params[], void
         apdu[4]--;
         apdu_len -= 2;
     }
+    if(strcmp(failure, "invalid-key-option") == 0) apdu[9] = DFC_KEY_TYPE_AES;
     if(strcmp(failure, "file-count") == 0) expected = DFC_STATUS_COUNT_ERROR;
     if(strcmp(failure, "pool-full") == 0) expected = DFC_STATUS_OUT_OF_EEPROM;
     if(strcmp(failure, "unauthorized") == 0) expected = DFC_STATUS_AUTHENTICATION_ERR;
@@ -492,6 +496,7 @@ static MunitParameterEnum lifecycle_params[] = {
 };
 static char* create_failure_values[] = {
     "malformed",
+    "invalid-key-option",
     "existing-transaction-mac",
     "duplicate-number",
     "invalid-number",

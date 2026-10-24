@@ -166,6 +166,7 @@ typedef struct {
     uint8_t file_no;
     uint8_t comm_settings;
     uint16_t access_rights;
+    // TMKeyOption uses DFC_TRANSACTION_MAC_KEY_TYPE_* values.
     uint8_t key_type;
     uint8_t key[DFC_COMMAND_TMAC_KEY_LENGTH];
     uint8_t key_version;
