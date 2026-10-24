@@ -276,9 +276,8 @@ def test_reader_preserves_card_status_after_growing_command_buffer() -> None:
             return bytes((0x91, 0x1C))
 
     transport = RejectingTransport()
-    with Reader(transport) as reader:
-        with pytest.raises(CardError) as caught:
-            reader.exchange(Command(0x3D, bytes(200)))
+    with Reader(transport) as reader, pytest.raises(CardError) as caught:
+        reader.exchange(Command(0x3D, bytes(200)))
 
     assert caught.value.card_status == 0x1C
     assert len(transport.command) > 64
