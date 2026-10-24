@@ -1433,8 +1433,9 @@ static DfcVirtualPiccStatus handle_native_exchange(
     if(invalid_command) {
         dfc_emulator_reset_session(session->emulator);
     } else {
-        tx = dfc_bytebuf_alloc(DFC_WORKER_MAX_BUFFER_SIZE);
+        tx = session->emulator->tx_buffer;
         if(!tx) goto cleanup;
+        dfc_bytebuf_reset(tx);
         bool handled = dfc_emulator_handle_transport_command(
             session->emulator, clear_command, clear_command_len, tx);
         DFC_UNUSED(handled);
@@ -1544,7 +1545,7 @@ cleanup:
     dfc_secure_wipe(secured_response, sizeof(secured_response));
     if(tx) {
         dfc_secure_wipe(tx, sizeof(*tx));
-        dfc_bytebuf_free(tx);
+        dfc_bytebuf_reset(tx);
     }
     return status;
 }

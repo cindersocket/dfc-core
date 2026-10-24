@@ -456,7 +456,7 @@ static MunitResult test_delete_prevalidation(const MunitParameter params[], void
 }
 
 static MunitResult
-    test_transport_allocation_failure_is_atomic(const MunitParameter params[], void* data) {
+    test_transport_reuses_session_buffer(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     LifecycleFixture fixture;
@@ -473,12 +473,13 @@ static MunitResult
         dfc_virtual_picc_iso_dep_exchange(
             fixture.session, apdu, apdu_len, response, sizeof(response), &response_len),
         ==,
-        DfcVirtualPiccStatusProtocolError);
-    munit_assert_size(fixture.credential.num_files, ==, files_before);
-    munit_assert_size(fixture.credential.file_pool_used, ==, pool_before);
-    munit_assert_null(dfc_credential_find_file_in_app(&fixture.credential, 0, 5));
-    munit_assert_true(fixture.session->emulator->transaction_snapshot_active);
-    munit_assert_size(fixture.session->emulator->transaction_input_len, ==, 17);
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_OK}));
+    munit_assert_size(fixture.credential.num_files, ==, files_before + 1);
+    DfcFile* created = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
+    munit_assert_not_null(created);
+    munit_assert_size(
+        fixture.credential.file_pool_used, ==, pool_before + created->data_len);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -554,8 +555,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      delete_failure_params},
-    {"/transport-allocation-failure",
-     test_transport_allocation_failure_is_atomic,
+    {"/transport-reuses-session-buffer",
+     test_transport_reuses_session_buffer,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
