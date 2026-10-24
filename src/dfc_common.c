@@ -38,14 +38,14 @@ bool dfc_transaction_mac_access_rights_are_valid(uint16_t rights, size_t key_cou
 }
 
 bool dfc_sdm_access_rights_are_valid(uint16_t rights, size_t key_count) {
-    uint8_t meta_read = (uint8_t)(rights >> 12);
-    uint8_t file_read = (uint8_t)(rights >> 8) & 0x0F;
-    uint8_t reserved = (uint8_t)(rights >> 4) & 0x0F;
+    uint8_t reserved = (uint8_t)(rights >> 12);
+    uint8_t meta_read = (uint8_t)(rights >> 8) & 0x0F;
+    uint8_t file_read = (uint8_t)(rights >> 4) & 0x0F;
     uint8_t counter_read = (uint8_t)rights & 0x0F;
-    // Free is not a FileRead key, and the middle nibble is reserved.
-    return access_nibble_is_valid(meta_read, key_count) &&
+    // The high nibble is reserved; Free is not a FileRead key.
+    return reserved == DFC_ACCESS_DENY && access_nibble_is_valid(meta_read, key_count) &&
            (file_read == DFC_ACCESS_DENY || file_read < key_count) &&
-           reserved == DFC_ACCESS_DENY && access_nibble_is_valid(counter_read, key_count);
+           access_nibble_is_valid(counter_read, key_count);
 }
 
 bool dfc_transaction_mac_key_type_is_valid(uint8_t value) {
