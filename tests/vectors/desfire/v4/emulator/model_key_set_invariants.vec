@@ -1,0 +1,26 @@
+# PROVENANCE: Synthetic malformed-model and mixed-key-type regression cases.
+name: Key-set storage bounds and mixed-type roll invariants
+origin: synthetic
+binding-applicability: core-model-only
+case-id: key-set-model-invariants
+requires: ev2,key-sets
+source: deterministic model regression
+issues: https://github.com/cindersocket/dfc-core/issues/15, https://github.com/cindersocket/dfc-core/issues/16
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+scan
+exchange native-apdu 90CA00000AE2E2E20F91010102180000 => 9100
+set-model apps[0].key_set_types[1] = 1
+set-model apps[0].key_set_initialized[1] = 1
+set-model apps[0].key_set_versions[1] = 2
+set-model apps[0].has_auth_commands = 0
+set-model apps[0].has_preferred_auth_command = 0
+roll-model-key-set 0 1
+assert apps[0].key_len = 24
+assert apps[0].key_settings_2 = 81
+assert apps[0].key_set_types[0] = 1
+assert credential.model_status = ok
+set-model apps[0].max_key_size = 16
+assert credential.model_status = malformed
+field-off

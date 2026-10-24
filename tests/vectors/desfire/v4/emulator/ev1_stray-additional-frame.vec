@@ -1,0 +1,18 @@
+# AdditionalFrame with nothing in progress.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /stray-additional-frame by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all 2 literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+
+name: ev1 conformance: stray-additional-frame
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /stray-additional-frame
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90AF000000 => 1C

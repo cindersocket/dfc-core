@@ -1,0 +1,55 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 4K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_ev1_4k*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 045704EA916F80, hardware 1.0, software 1.4, storage 4K. The same
+# physical card as hardware_genuine_ev1_4k.vec, formatted and provisioned with
+# a synthetic structure whose every key is the all-zero test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the all-zero test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: a read larger than one frame under an
+# authenticated EV1 session. Two things are measured at once - where the
+# card puts the frame boundaries, and where it puts the response CMAC -
+# and we differ from it on both, which is the divergence recorded below.
+
+name: genuine EV1 4K, chained read under an AES session
+origin: physical-card
+requires: auth-aes
+uid: 045704EA916F80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+# An AES application with one 128-octet Standard Data file under plain
+# communication, which is more than a single native frame can carry.
+status   90CA000005B3B2B10F8400 => 00
+status   905A000003B3B2B100 => 00
+status   90CD0000070500111180000000 => 00
+#
+# Authenticate as key 1 and fill the file in 32-octet writes.
+inject-random 08B016B8139CA8FEF69D6175C4C8337D
+exchange native-apdu 90AA0000010100 => A5E4410D2F57547023B0AB16C75D1F8791AF
+exchange native-apdu 90AF000020A84C98CF36C7585FADB67430A97F73929E3029B34B70BCD2C868F7622BF5AC9F00 => 3C65DF76FD4A66203CFFC20C253D56759100
+exchange native-apdu 903D00002705000000200000030A11181F262D343B424950575E656C737A81888F969DA4ABB2B9C0C7CED5DC00 => 9DDD465525B092039100
+exchange native-apdu 903D00002705200000200000E3EAF1F8FF060D141B222930373E454C535A61686F767D848B9299A0A7AEB5BC00 => 5EA37CBE6A24D3169100
+exchange native-apdu 903D00002705400000200000C3CAD1D8DFE6EDF4FB020910171E252C333A41484F565D646B727980878E959C00 => 81C799881137DD479100
+exchange native-apdu 903D00002705600000200000A3AAB1B8BFC6CDD4DBE2E9F0F7FE050C131A21282F363D444B525960676E757C00 => 6BDB885A1C827D209100
+#
+# Read all 128 octets in one command. The card splits the answer, so
+# each frame below is one measured exchange and the frame boundaries
+# are part of the measurement.
+exchange native-apdu 90BD0000070500000080000000 => 030A11181F262D343B424950575E656C737A81888F969DA4ABB2B9C0C7CED5DCE3EAF1F8FF060D141B222930373E454C91AF
+exchange native-apdu 90AF000000 => 535A61686F767D848B9299A0A7AEB5BCC3CAD1D8DFE6EDF4FB020910171E252C333A41484F565D646B727980878E959C91AF
+exchange native-apdu 90AF000000 => A3AAB1B8BFC6CDD4DBE2E9F0F7FE050C131A21282F363D444B525960676E757C1F6D62FE68FD2FB89100

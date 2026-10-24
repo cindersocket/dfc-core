@@ -1,0 +1,27 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: Transaction MAC creation and commit modes on genuine EV3
+origin: physical-card
+requires: ev2,transaction-mac
+source: captured hardware behavior with default AES application key
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+# CreateTransactionMACFile uses a five-byte clear header before encrypted key data.
+# Commit option 01 returns the four-byte counter and eight-byte transaction MAC.
+exchange native-apdu 90CA000005E3E3E30F8100 => 9100
+exchange native-apdu 905A000003E3E3E300 => 9100
+exchange native-apdu 90CC0000110500EEEE00000000640000000A0000000100 => 9100
+inject-random E348512B587A79D8CCCE7F2216F025FE
+inject-random F7EB14BF
+exchange native-apdu 9071000002000000 => 5E9C724AAE7284DDD334BDCA59B0144491AF
+exchange native-apdu 90AF000020FBEE76EE11DE1FBF27785C252183ED52438096CFAECB2C519EF291608F801ADB00 => F42F6B3F937CA1BE4B27D16C1B57E20BB3AA8C2CBC5F1F1848611C53616511F89100
+exchange native-apdu 90CE00002D0B00FEFF023EF5C1FF3F04E63F5B3D72B21E453841539184099CFCB08B15011BD0366B6A240861B47A60AD354A00 => 0B9064D66391BEF39100
+field-off
+scan
+exchange native-apdu 905A000003E3E3E300 => 9100
+exchange native-apdu 900C000005050100000000 => 9100
+exchange native-apdu 90C70000010100 => 01000000352E57ADDA911EDC9100
+exchange native-apdu 90DC000005050100000000 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BD0000070B00000000000000 => 919D
+exchange native-apdu 90EE000000 => 911C

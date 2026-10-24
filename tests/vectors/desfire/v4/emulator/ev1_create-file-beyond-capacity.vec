@@ -1,0 +1,20 @@
+# CreateStdDataFile of 8193 bytes exceeds the 8 KiB capacity.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /create-file-beyond-capacity by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all 6 literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+
+name: ev1 conformance: create-file-beyond-capacity
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /create-file-beyond-capacity
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050102030F0100 => 00
+status   905A00000301020300 => 00
+status   90CD0000070100EEEE01200000 => 0E

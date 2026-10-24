@@ -1,0 +1,43 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: genuine EV3 native, ISO-wrapped native, and standard ISO commands
+origin: physical-card
+source: captured hardware behavior
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+scan
+exchange native 6A => 00
+exchange native 6D => 00
+exchange native 6E => 00001400
+exchange native 45 => 000F01
+exchange native 6400 => 0000
+field-off
+scan
+exchange native-apdu 906A000000 => 9100
+exchange native-apdu 906D000000 => 9100
+exchange native-apdu 906E000000 => 0014009100
+exchange native-apdu 9045000000 => 0F019100
+exchange native-apdu 90640000010000 => 009100
+field-off
+scan
+exchange iso-apdu 00A4000C023F00 => 9000
+field-off
+scan
+exchange iso-apdu 00A4040007D276000085010000 => 9000
+field-off
+scan
+exchange native CAE3E3E30FA113E1D2760000850102 => 00
+exchange native 5AE3E3E3 => 00
+exchange native CD0114E100E0EE100000 => 00
+exchange native 3D0100000010000000112233445566778899AABBCCDDEEFF => 00
+field-off
+scan
+exchange iso-apdu 00A4000002E11300 => 9000
+exchange iso-apdu 00A4000002E11400 => 9000
+exchange iso-apdu 00B0000000 => 00112233445566778899AABBCCDDEEFF9000
+exchange iso-apdu 00D6000010FFEEDDCCBBAA99887766554433221100 => 9000
+field-off
+scan
+exchange native 5AE3E3E3 => 00
+exchange native BD01000000000000 => 00FFEEDDCCBBAA99887766554433221100
+field-off

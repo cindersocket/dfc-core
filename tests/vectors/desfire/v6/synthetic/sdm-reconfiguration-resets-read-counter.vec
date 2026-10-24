@@ -1,0 +1,35 @@
+# PROVENANCE: Synthetic SDM counter lifecycle regression for dfc-core #79.
+name: SDM reconfiguration resets the read counter
+case-id: ev3-sdm-reconfiguration-resets-read-counter
+origin: synthetic
+feature-version: 6
+source: generated SDM counter lifecycle regression
+requires: ev3,sdm
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+
+scan
+exchange native-apdu 90CA000005A1A1A10F8100 => 9100
+exchange native-apdu 905A000003A1A1A100 => 9100
+exchange native-apdu 90CD0000070100EEEE06000000 => 9100
+exchange native-apdu 905F00000A0140EEEE41FEEF00000000 => 9100
+exchange native-apdu 90F60000010100 => 00000000009100
+exchange native-apdu 90BD0000070100000006000000 => 3030303030319100
+# A rejected reconfiguration leaves the incremented counter observable.
+exchange native-apdu 905F0000070140EEEE00FFFF00 => 919E
+exchange native-apdu 90F50000010100 => 0040EEEE0600009100
+exchange native-apdu 90F60000010100 => 01000000009100
+exchange native-apdu 90BD0000070100000006000000 => 3030303030329100
+exchange native-apdu 90F60000010100 => 02000000009100
+exchange native-apdu 905F00000A0140EEEE41FEEF00000000 => 9100
+exchange native-apdu 90F60000010100 => 00000000009100
+exchange native-apdu 90BD0000070100000006000000 => 3030303030319100
+exchange native-apdu 90F60000010100 => 01000000009100
+exchange native-apdu 905F0000040100EEEE00 => 9100
+exchange native-apdu 905F00000A0140EEEE41FEEF00000000 => 9100
+exchange native-apdu 90F60000010100 => 00000000009100
+field-off

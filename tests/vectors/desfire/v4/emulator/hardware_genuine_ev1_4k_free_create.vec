@@ -1,0 +1,77 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 4K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_ev1_4k*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 045704EA916F80, hardware 1.0, software 1.4, storage 4K. The same
+# physical card as hardware_genuine_ev1_4k.vec, formatted and provisioned with
+# a synthetic structure whose every key is the all-zero test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the all-zero test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: settling the suspicion left open in
+# hardware_genuine_ev1_4k_issued.vec, which could not be measured because
+# the reader disconnected. That note reported our engine refusing an
+# unauthenticated CreateStdDataFile in an application whose key settings
+# were 0B, and read it as our engine not honouring the free-create bit.
+#
+# It does honour it. The bit was misidentified: 0B has bit 1 set and bit 2
+# clear, and it is bit 2 that grants free create and delete. Measured on
+# the card, one bit at a time:
+#
+#   KS1 0F -> 91 00
+#   KS1 02 -> 91 AE
+#   KS1 04 -> 91 00
+#   KS1 01 -> 91 AE
+#
+# so the free-create bit is bit 2, which is what our engine already
+# uses (DFC_KS1_FREE_CREATE_DELETE 0x04). An application with KS1 0B
+# therefore does require an authentication to create a file, and the
+# refusal the issued vector saw was correct. No engine change is needed;
+# the suspicion is closed as unfounded.
+
+name: genuine EV1 4K, application-level free file creation
+origin: physical-card
+uid: 045704EA916F80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+# The same CreateStdDataFile, with no session open, against four
+# applications whose key settings differ only in the low nibble. Which
+# bit of the nibble actually gates file creation is the question, so
+# each candidate bit is isolated rather than tested inside 0F.
+#
+#   0F  every bit set
+#   02  bit 1 alone
+#   04  bit 2 alone
+#   01  neither
+#
+# KS2 is 04 throughout, so the key type is not a variable. The file is
+# the same 32-octet Standard Data file in each application.
+status   905A00000300000000 => 00
+status   90CA000005A3A2A10F0400 => 00
+status   905A000003A3A2A100 => 00
+exchange native-apdu 90CD0000070100111120000000 => 9100
+status   905A00000300000000 => 00
+status   90CA000005B3B2B1020400 => 00
+status   905A000003B3B2B100 => 00
+exchange native-apdu 90CD0000070100111120000000 => 91AE
+status   905A00000300000000 => 00
+status   90CA000005C3C2C1040400 => 00
+status   905A000003C3C2C100 => 00
+exchange native-apdu 90CD0000070100111120000000 => 9100
+status   905A00000300000000 => 00
+status   90CA000005D3D2D1010400 => 00
+status   905A000003D3D2D100 => 00
+exchange native-apdu 90CD0000070100111120000000 => 91AE

@@ -71,6 +71,15 @@ CORE_SRC := $(wildcard $(CORE)/*.c)
 HOST_SRC := $(HOST)/dfc_port_host.c $(HOST)/dfc_bytebuf_host.c
 COMMON   := $(CORE_SRC) $(HOST_SRC) $(CRYPTO_SRC) munit/munit.c
 
+VECTOR_DIRS := $(wildcard vectors/desfire/v*/emulator vectors/desfire/v*/hardware \
+	vectors/desfire/v*/synthetic)
+DFC_VECTORS := $(sort $(foreach directory,$(VECTOR_DIRS),$(wildcard $(directory)/*.vec)))
+CONFORMANCE_RUNNER := test_dfc_conformance_vectors
+CONFORMANCE_PROFILES := minimal_ev1 full_ev1 full_ev2 minimal_ev3
+CONFORMANCE_PROFILE_RUNNERS := $(addprefix $(CONFORMANCE_RUNNER)_,$(CONFORMANCE_PROFILES))
+CONFORMANCE_COMMON := $(CORE_SRC) dfc_vector_replay_random.c \
+	$(HOST)/dfc_bytebuf_host.c $(CRYPTO_SRC)
+
 TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging test_dfc_desfire_protocol \
 	test_dfc_virtual_picc_core test_dfc_virtual_picc_secure \
 	test_dfc_transaction_selection \
@@ -125,7 +134,8 @@ FUZZ_DIR  ?= ../build-fuzz
 FUZZ_TIME ?= 300
 FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
-.PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds \
+.PHONY: test test-backends vectors vector-profiles test-ev2-profile test-auth-profile \
+	profile-builds role-builds \
 	codecs-disabled-link check-constant-time-auth check-teardown-wipes check-jni-wipes \
 	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
 	check-secure-messaging-policy \
@@ -181,7 +191,7 @@ test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpe
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
@@ -191,6 +201,22 @@ test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-snapsh
 	./$(REDUCED_PROFILE_TEST)
 	./$(REDUCED_READER_TEST)
 	./$(REDUCED_FORMAT_TEST)
+
+$(CONFORMANCE_RUNNER): test_dfc_conformance_vectors.c $(CONFORMANCE_COMMON)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(CONFORMANCE_RUNNER)_%: test_dfc_conformance_vectors.c $(CONFORMANCE_COMMON)
+	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_$(shell echo $* | tr a-z A-Z) \
+		-o $@ $^ $(LDFLAGS)
+
+vectors: $(CONFORMANCE_RUNNER)
+	@test -n "$(DFC_VECTORS)" || (echo "no DESFire conformance vectors found"; exit 1)
+	./$(CONFORMANCE_RUNNER) $(DFC_VECTORS)
+
+vector-profiles: $(CONFORMANCE_PROFILE_RUNNERS)
+	@for runner in $(CONFORMANCE_PROFILE_RUNNERS); do \
+		./$$runner $(DFC_VECTORS) || exit 1; \
+	done
 
 check-constant-time-auth:
 	python3 check_constant_time_auth.py
@@ -289,4 +315,4 @@ codecs-disabled-link:
 	echo "  target, no codecs ok"
 
 clean:
-	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(TOOLS) $(CONFORMANCE_RUNNER) $(CONFORMANCE_PROFILE_RUNNERS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)

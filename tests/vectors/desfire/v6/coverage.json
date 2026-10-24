@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "features": [
+    {
+      "id": "iso7816-mutual-authentication-2tdea",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_picc-2tdea.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_app-2tdea.vec"
+      ]
+    },
+    {
+      "id": "iso7816-mutual-authentication-3tdea",
+      "evidence": ["hardware/hardware_physical_ev3_4k_iso_auth_app-3tdea.vec"]
+    },
+    {
+      "id": "iso7816-mutual-authentication-aes",
+      "evidence": ["hardware/hardware_physical_ev3_4k_iso_auth_app-aes.vec"]
+    },
+    {
+      "id": "ev2-first-and-nonfirst",
+      "evidence": ["hardware/hardware_physical_ev3_4k_ev2_first_nonfirst.vec"]
+    },
+    {
+      "id": "iso7816-parameter-and-phase-errors",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-without-challenge.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_internal-without-external.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-length.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-p1.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-cryptogram.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-algorithm.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-key-reference.vec"
+      ]
+    },
+    {
+      "id": "special-authentication-key-state",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_originality-aes.vec",
+        "hardware/hardware_physical_ev3_4k_originality-ev2-first.vec",
+        "hardware/hardware_physical_ev3_4k_originality-ev2-nonfirst-without-first.vec",
+        "hardware/hardware_physical_ev3_4k_dam-auth-disabled.vec",
+        "hardware/hardware_physical_ev3_4k_vc-config-disabled.vec"
+      ]
+    },
+    {
+      "id": "random-failure-atomicity",
+      "evidence": [
+        "synthetic/random-failure-preserves-activation.vec",
+        "synthetic/random-failure-preserves-ev1-ev2-first.vec",
+        "synthetic/random-failure-preserves-ev1-prepare-pc.vec"
+      ]
+    },
+    {
+      "id": "iso-authentication-phase-abort",
+      "evidence": ["synthetic/rejected-internal-auth-aborts-handshake.vec"]
+    },
+    {
+      "id": "finite-random-replay-semantics",
+      "evidence": [
+        "synthetic/finite-random-reset.vec",
+        "synthetic/replay-random-exhaustion.vec"
+      ]
+    },
+    {
+      "id": "native-chain-command-boundary",
+      "evidence": ["synthetic/iso-command-aborts-native-chain.vec"]
+    },
+    {
+      "id": "authentication-rejection-retires-session",
+      "evidence": [
+        "synthetic/rejected-native-authentication-retires-session.vec",
+        "synthetic/rejected-ev2-authentication-retires-session.vec"
+      ]
+    },
+    {
+      "id": "authenticated-terminal-error-state",
+      "evidence": [
+        "synthetic/d40-terminal-command-error-retains-session.vec",
+        "synthetic/ev1-terminal-command-error-rolls-back.vec",
+        "synthetic/ev1-terminal-error-families.vec",
+        "synthetic/ev2-full-command-error-rolls-back.vec"
+      ]
+    },
+    {
+      "id": "sdm-counter-reconfiguration",
+      "evidence": ["synthetic/sdm-reconfiguration-resets-read-counter.vec"]
+    },
+    {
+      "id": "sdm-reserved-access-rights",
+      "evidence": ["synthetic/sdm-reserved-access-rights-are-atomic.vec"]
+    }
+  ]
+}

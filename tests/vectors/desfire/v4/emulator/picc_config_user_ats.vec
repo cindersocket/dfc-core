@@ -1,0 +1,24 @@
+# A credential carrying its own ATS answers RATS with it, not with the
+# engine's built-in default.
+#
+# Recorded from the reference engine and cross-checked against the
+# expectations the recorder asserts; see tests/vectors/desfire/README.md.
+
+name: picc config: user ats
+origin: synthetic
+source: recorded from the reference engine, see tests/vectors/desfire/README.md
+uid: 04112233445566
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 8
+picc-ats: 067500810280
+
+scan
+assert   activation.ats           = 067500810280
+
+# RATS over the wire answers the same octets.
+frame-exchange E080                         => 067500810280
+
+# The session is selected, so the engine answers I-blocks after it.
+frame-exchange 0A009045000000               => 0A000F019100

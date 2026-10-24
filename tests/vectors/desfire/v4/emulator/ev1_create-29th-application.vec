@@ -1,0 +1,46 @@
+# The 29th CreateApplication exceeds the 28-application limit.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /create-29th-application by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all 58 literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+
+name: ev1 conformance: create-29th-application
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /create-29th-application
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050100000F0100 => 00
+status   90CA0000050200000F0100 => 00
+status   90CA0000050300000F0100 => 00
+status   90CA0000050400000F0100 => 00
+status   90CA0000050500000F0100 => 00
+status   90CA0000050600000F0100 => 00
+status   90CA0000050700000F0100 => 00
+status   90CA0000050800000F0100 => 00
+status   90CA0000050900000F0100 => 00
+status   90CA0000050A00000F0100 => 00
+status   90CA0000050B00000F0100 => 00
+status   90CA0000050C00000F0100 => 00
+status   90CA0000050D00000F0100 => 00
+status   90CA0000050E00000F0100 => 00
+status   90CA0000050F00000F0100 => 00
+status   90CA0000051000000F0100 => 00
+status   90CA0000051100000F0100 => 00
+status   90CA0000051200000F0100 => 00
+status   90CA0000051300000F0100 => 00
+status   90CA0000051400000F0100 => 00
+status   90CA0000051500000F0100 => 00
+status   90CA0000051600000F0100 => 00
+status   90CA0000051700000F0100 => 00
+status   90CA0000051800000F0100 => 00
+status   90CA0000051900000F0100 => 00
+status   90CA0000051A00000F0100 => 00
+status   90CA0000051B00000F0100 => 00
+status   90CA0000051C00000F0100 => 00
+status   90CA0000051D00000F0100 => CE

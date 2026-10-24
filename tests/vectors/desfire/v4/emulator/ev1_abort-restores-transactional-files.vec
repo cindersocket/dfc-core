@@ -1,0 +1,27 @@
+# PROVENANCE: Generated regression vector for transactional file rollback.
+name: abort restores backup and record file state
+origin: synthetic
+case-id: ev1-abort-restores-transactional-files
+requires: ev1,backup-files,record-files
+source: generated behavioral regression
+uid: 04112233445566
+picc-generation: EV1
+picc-storage: 4096
+scan
+exchange native-apdu 90CA000005A1A2A30F0100 => 9100
+exchange native-apdu 905A000003A1A2A300 => 9100
+exchange native-apdu 90CB0000070100EEEE04000000 => 9100
+exchange native-apdu 903D00000B010000000400001122334400 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BD0000070100000004000000 => 112233449100
+exchange native-apdu 903D00000B01000000040000AABBCCDD00 => 9100
+exchange native-apdu 90A7000000 => 9100
+exchange native-apdu 90BD0000070100000004000000 => 112233449100
+exchange native-apdu 90C100000A0200EEEE04000002000000 => 9100
+exchange native-apdu 903B00000B020000000400001020304000 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BB0000070200000000000000 => 102030409100
+exchange native-apdu 903B00000B020000000400005060708000 => 9100
+exchange native-apdu 90A7000000 => 9100
+exchange native-apdu 90BB0000070200000000000000 => 102030409100
+field-off

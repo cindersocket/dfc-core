@@ -1,0 +1,122 @@
+{
+  "features": [
+    {
+      "evidence": [
+        "emulator/lifecycle.vec",
+        "emulator/multi_app.vec"
+      ],
+      "id": "desfire:ev1-application-and-file-lifecycle"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_wire_dialects.vec",
+        "emulator/hardware_genuine_ev3_4k_iso_select_file_types.vec"
+      ],
+      "id": "desfire:native-wrapped-and-standard-iso"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_ev2_auth.vec",
+        "emulator/hardware_genuine_ev3_4k_ev2_nonfirst.vec"
+      ],
+      "id": "desfire:ev2-authentication"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_handshakes.vec",
+        "emulator/hardware_genuine_ev1_4k_handshakes.vec"
+      ],
+      "id": "desfire:native-authentication-and-key-type-mismatch"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_ev2_comm_modes.vec"
+      ],
+      "id": "desfire:ev2-secure-messaging"
+    },
+    {
+      "evidence": [
+        "emulator/modeled_ev2_key_set_lifecycle.vec",
+        "emulator/hardware_genuine_ev3_4k_change-key-ev2-success.vec",
+        "emulator/modeled_ev2_change-key-ev2-errors.vec"
+      ],
+      "id": "desfire:ev2-key-sets"
+    },
+    {
+      "evidence": [
+        "emulator/modeled_ev2_delegated-command-boundaries.vec",
+        "emulator/hardware_genuine_ev3_4k_delegated-application-lifecycle.vec"
+      ],
+      "id": "desfire:ev2-delegated-applications"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_transaction_mac_modes.vec",
+        "hardware/hardware_genuine_ev3_4k_transaction_mac_reader_id.vec"
+      ],
+      "id": "desfire:transaction-mac-and-reader-id"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_virtual_card.vec",
+        "emulator/modeled_ev3_virtual_card_authenticated.vec"
+      ],
+      "id": "desfire:virtual-card"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_sdm_counter.vec",
+        "hardware/hardware_genuine_ev3_sdm_picc_native_iso.vec",
+        "hardware/hardware_genuine_ev3_sdm_encrypted_file_native_iso.vec"
+      ],
+      "id": "desfire:secure-dynamic-messaging"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_proximity_check.vec",
+        "hardware/hardware_genuine_ev3_4k_proximity_check_split.vec"
+      ],
+      "id": "desfire:proximity-check"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_transaction_timer.vec"
+      ],
+      "id": "desfire:transaction-timer"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_transaction_timer.vec"
+      ],
+      "id": "desfire:application-capability-data"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_identity.vec",
+        "emulator/hardware_ev2_4k_identity_issue1.vec"
+      ],
+      "id": "desfire:identity-and-static-signature"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_value_modes.vec",
+        "emulator/ev3_record-order-update-clear.vec",
+        "emulator/ev1_abort-restores-transactional-files.vec"
+      ],
+      "id": "desfire:all-data-file-families-and-transactions"
+    },
+    {
+      "id": "desfire:ev2-capture-directory-and-file-settings",
+      "evidence": [
+        "emulator/hardware_ev2_4k_directory_issue1.vec"
+      ]
+    },
+    {
+      "id": "desfire:ev2-capability-exchange",
+      "evidence": [
+        "emulator/modeled_ev2_capability_exchange.vec"
+      ]
+    }
+  ],
+  "schema": 1
+}

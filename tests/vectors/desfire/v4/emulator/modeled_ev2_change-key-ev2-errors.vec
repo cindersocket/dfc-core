@@ -1,0 +1,16 @@
+# PROVENANCE: Modeled from independently replayable EV2 command behavior.
+name: EV2 ChangeKeyEV2 rejects malformed and unauthenticated updates
+origin: synthetic
+case-id: ev2-change-key-ev2-errors
+requires: ev2,key-sets
+source: deterministic command validation regression
+uid: 04112233445566
+picc-generation: EV2
+picc-storage: 4096
+scan
+exchange native-apdu 90CA00000AD1D2D30F91010102100000 => 9100
+exchange native-apdu 905A000003D1D2D300 => 9100
+exchange native-apdu 90C6000002010000 => 917E
+exchange native-apdu 90C60000220100000000000000000000000000000000000000000000000000000000000000000000 => 91AE
+assert apps[0].key_versions[0] = 0
+field-off

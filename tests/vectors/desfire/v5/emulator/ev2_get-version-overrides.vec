@@ -1,0 +1,18 @@
+# Synthetic overrides use non-default major/minor bytes to prove the engine
+# returns stored frames without rewriting them.
+name: synthetic EV2 GetVersion frame overrides
+origin: synthetic
+feature-version: 5
+description: explicit raw frames take precedence over smart defaults
+source: synthetic
+case-id: dfc-v5-ev2-get-version-overrides
+uid: 0442381AD31090
+picc-generation: EV2
+picc-storage: 4096
+picc-hardware-version: 0401017AB31805
+picc-software-version: 0401016D421805
+
+scan
+exchange native-apdu 9060000000 => 0401017AB3180591AF
+exchange native-apdu 90AF000000 => 0401016D42180591AF
+exchange native-apdu 90AF000000 => 0442381AD31090000000000001249100

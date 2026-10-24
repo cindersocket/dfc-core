@@ -1,0 +1,17 @@
+{
+  "features": [
+    {
+      "evidence": [
+        "emulator/ev1_get-version-defaults.vec",
+        "emulator/ev1_storage-capacity.vec",
+        "emulator/ev2_get-version-defaults.vec",
+        "emulator/ev3_get-version-defaults.vec",
+        "emulator/ev3_get-version-length.vec",
+        "emulator/ev3_unsupported-storage.vec",
+        "emulator/ev2_get-version-overrides.vec"
+      ],
+      "id": "desfire:all-generation-get-version-defaults-and-overrides"
+    }
+  ],
+  "schema": 1
+}

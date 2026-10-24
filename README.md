@@ -61,6 +61,11 @@ make -C tests test CC=clang SANITIZE=memory
 The test command builds and runs every unit suite and checks that each
 reduced build profile compiles.
 
+The test suite also replays the public DESFire conformance-vector corpus. The
+corpus includes byte-exact physical-card captures and synthetic protocol cases.
+See [DESFire conformance vectors](tests/vectors/desfire/README.md) for the
+format, provenance, and focused test commands.
+
 Fuzz accepted text and binary credentials through validation, copying, and
 both canonical round trips with Clang's address and undefined-behavior
 sanitizers:

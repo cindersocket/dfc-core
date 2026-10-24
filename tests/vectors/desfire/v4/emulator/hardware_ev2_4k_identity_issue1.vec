@@ -1,0 +1,17 @@
+# PROVENANCE: Physical EV2 4K card capture attached to dfc-core issue 1.
+name: captured EV2 identity, version chain, and static signature
+origin: physical-card
+requires: ev2,static-signature
+source: dfc-core issue 1 card capture
+uid: 0442381AD31090
+picc-generation: EV2
+picc-storage: 4096
+picc-static-signature: 48DF9BF3CBC1F63D2614A02A2004AC9AD6887EC38BC1454C307FA77B6E0AB84C9E922845A3916AC1E968B1E1D5989F70AAE212BECE409D45
+scan
+exchange native-apdu 9060000000 => 0401011200180591AF
+exchange native-apdu 90AF000000 => 0401010201180591AF
+exchange native-apdu 90AF000000 => 0442381AD31090 ?? ?? ?? ?? ?? ?? ?? 9100
+field-off
+scan
+exchange native-apdu 903C0000010000 => 48DF9BF3CBC1F63D2614A02A2004AC9AD6887EC38BC1454C307FA77B6E0AB84C9E922845A3916AC1E968B1E1D5989F70AAE212BECE409D459190
+field-off

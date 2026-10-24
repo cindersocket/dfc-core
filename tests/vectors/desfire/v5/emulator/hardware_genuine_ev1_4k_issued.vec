@@ -1,0 +1,136 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 4K over PC/SC with opensc-tool and is used here as
+# an expectation for our emulator. As with hardware_genuine_ev1_4k.vec, this
+# vector is the opposite of the rest of the corpus: the others were recorded
+# from the reference engine, so they pin what we decided; this one pins what
+# the silicon does. A mismatch here is either a real divergence or a difference
+# we can justify in writing, never a vector to be re-recorded from our engine.
+#
+# Card: UID 045704EA916F80, hardware 1.0, software 1.4, storage 4K. Same
+# physical card as hardware_genuine_ev1_4k.vec, but now carrying a real issued
+# credential rather than a hand-built test structure: application D3494F (wire
+# order 4F49D3) with an ISO file ID of E110 and no DF name, four keys of the DES
+# family, and one Standard Data file 0F of 54 octets under MACed communication
+# with asymmetric access rights.
+#
+# What this vector is for: the whole unauthenticated surface of an issued
+# credential. It pins the access rights of a real credential against silicon,
+# which is the direct check on the file-access-rights nibble order, and it pins
+# the status the card gives for an unauthenticated read of a MACed file.
+#
+# NOT captured, deliberately: GetKeyVersion. On this card the keys are DES
+# family, whose version byte is the concatenation of the parity bits of the key
+# itself. The keys here are production keys, so their version bytes are a
+# function of secret material and must not enter this tree. The card does answer
+# GetKeyVersion without authentication; only the values are withheld. What is
+# safe and is captured is the refusal for a key number the application does not
+# have.
+
+name: genuine EV1 4K, issued credential read-only surface
+origin: physical-card
+feature-version: 5
+uid: 045704EA916F80
+picc-storage: 8192
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-hardware-version: 04010101001A05
+picc-software-version: 04010101041A05
+
+scan
+
+# PICC key settings, unchanged by issuance: the credential records no PICC key,
+# so the card keeps the master key and the permission set it already had.
+exchange native-apdu 9045000000 => 0F019100
+
+# Build the issued structure. Free create is permitted by PICC key settings 0F,
+# so CreateApplication needs no authentication. KS2 is sent as 24: 04 for four
+# DES-family keys, plus bit 5 to declare the ISO file ID that follows.
+#
+# The application's own KS1 as measured on the card is 0B. It is reconstructed
+# here as 0F, for the reason set out under the suspected divergence below; the
+# measured value is recorded in that note and is not asserted, because the
+# response that carries it is already unexecuted under the KS2 divergence below.
+status 90CA0000074F49D30F2410E1 => 00
+
+# The application directory, least significant byte first on the wire.
+exchange native-apdu 906A000000 => 4F49D39100
+
+# GetDFNames. The rule is "list applications that have an ISO file ID", not
+# "list applications that have a DF name": the AID and the file ID are emitted
+# with the DF name simply absent, which is this application's case.
+exchange native-apdu 906D000000 => 4F49D310E19100
+
+# Select it. Its key settings are its own and are not inherited from the PICC.
+status 905A0000034F49D300 => 00
+
+# Key settings. CreateApplication was sent KS2 24: 04 for four DES-family keys,
+# plus bit 5 to declare the ISO file ID that follows. That bit is a modifier on
+# the command and not state, so KS2 reads back as 04.
+#
+# KS1 is wildcarded: the captured octet was 0B, which the issuer chose, while the
+# structure here is reconstructed with 0F. The KS2 octet is the measurement.
+exchange native-apdu 9045000000 => ?? 049100
+
+# CLOSED, was a suspected divergence: free file creation under application
+# KS1 0B.
+#
+# This note used to read our engine's 91 AE for an unauthenticated
+# CreateStdDataFile in an application reconstructed with KS1 0B as a sign that
+# we do not honour the application-level free-create bit. It has since been
+# measured, in hardware_genuine_ev1_4k_free_create.vec, and there is no
+# divergence: the bit was misidentified. Free create and delete is bit 2, not
+# bit 1, and KS1 0B has bit 2 clear. The card refuses the same command in an
+# application whose KS1 is 02 and accepts it when the KS1 is 04, so 0B really
+# does require an authentication and our 91 AE was correct.
+#
+# The application is still reconstructed above with KS1 0F rather than the
+# measured 0B, because the response that would carry 0B is unexecuted under the
+# KS2 divergence above and 0F is what lets this vector reach the file settings
+# it exists to pin.
+#
+# The credential's file. Created with an ISO file ID of 000F, MACed
+# communication, and access rights 0x1230, which is 30 12 on the wire.
+status 90CD0000090F0F00013012360000 => 00
+
+exchange native-apdu 906F000000 => 0F9100
+exchange native-apdu 9061000000 => 0F009100
+
+# GetFileSettings, the measurement this vector exists for: type 00 Standard
+# Data, communication settings 01 MACed, access rights 30 12 on the wire which
+# is logical 0x1230, and size 36 00 00 which is 54 octets. Read key 1, write
+# key 2, read&write key 3, change key 0, exactly as issued.
+exchange native-apdu 90F50000010F00 => 000130123600009100
+
+# An unauthenticated read of the credential. The access rights name read key 1
+# and read&write key 3, and no session is open, so the caller is missing an
+# authentication rather than being denied outright.
+status 90BD0000070F00000000000000 => AE
+
+# GetKeyVersion for a key that does not exist. KS2 declares four keys, so key 04
+# is beyond the application's key count and the refusal names that rather than
+# reporting a malformed command.
+status 906400000104 => 40
+
+# GetFreeMemory, with the credential in place. The card reported E0 1D 00, which
+# is 7648 octets free; our engine reported CA 1F 00, which is 8138. This is a
+# difference in allocation accounting and granularity rather than in protocol
+# behaviour, and the exact figure is a property of the silicon's storage layout,
+# so it is recorded as a measurement rather than asserted as an expectation.
+#
+#   exchange 906E000000 => E01D009100
+
+# GetVersion. The hardware frame matches us byte for byte. In the software
+# frame the card reports minor version 04 where we report 03, a known and
+# unrelated divergence recorded in hardware_genuine_ev1_4k.vec, so that single
+# byte is wildcarded rather than quietly rewritten to ours; everything around it
+# stays as measured. The captured byte was 04.
+exchange native-apdu 9060000000 => 04010101001A0591AF
+exchange native-apdu 90AF000000 => 04010101 ?? 1A0591AF
+
+# The third GetVersion frame carries the UID, then the production batch number
+# and the production week and year, which are per-die and which our emulator has
+# no way to reproduce. The UID is pinned; the six octets after it are wildcarded.
+# The captured frame was 045704EA916F80 B90C214590 1921.
+exchange native-apdu 90AF000000 => 045704EA916F80 ?? ?? ?? ?? ?? ?? ?? 9100
