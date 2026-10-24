@@ -31,10 +31,10 @@ for file in $staged; do
             rustfmt --edition 2024 --config skip_children=true "$file"
             ;;
         bindings/dotnet/*.cs|bindings/dotnet/**/*.cs)
-            dotnet format bindings/dotnet/Dfc.sln --include "$file"
+            dotnet format whitespace bindings/dotnet/Dfc.sln --include "$file"
             ;;
         examples/dotnet/*.cs)
-            dotnet format examples/dotnet/Dfc.TransceiveExample.csproj --include "$file"
+            dotnet format whitespace examples/dotnet/Dfc.TransceiveExample.csproj --include "$file"
             ;;
     esac
     git add -- "$file"
