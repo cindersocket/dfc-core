@@ -135,7 +135,7 @@ FUZZ_DIR  ?= ../build-fuzz
 FUZZ_TIME ?= 300
 FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
-.PHONY: test test-backends vectors vector-profiles test-ev2-profile test-auth-profile \
+.PHONY: test test-backends vectors vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile \
 	profile-builds role-builds \
 	codecs-disabled-link check-constant-time-auth check-teardown-wipes check-jni-wipes \
 	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
@@ -192,7 +192,7 @@ test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpe
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors vector-profiles $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
@@ -211,6 +211,9 @@ $(CONFORMANCE_RUNNER)_%: test_dfc_conformance_vectors.c $(CONFORMANCE_COMMON)
 vectors: $(CONFORMANCE_RUNNER)
 	@test -n "$(DFC_VECTORS)" || (echo "no DESFire conformance vectors found"; exit 1)
 	./$(CONFORMANCE_RUNNER) $(DFC_VECTORS)
+
+vector-parser-regressions: $(CONFORMANCE_RUNNER)
+	python3 check_vector_parser.py ./$(CONFORMANCE_RUNNER)
 
 vector-profiles: $(CONFORMANCE_PROFILE_RUNNERS)
 	@for runner in $(CONFORMANCE_PROFILE_RUNNERS); do \

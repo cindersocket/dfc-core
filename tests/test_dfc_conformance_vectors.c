@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include "dfc_vector_replay_random.h"
 #include <stdbool.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +51,41 @@ static void fail(VectorState* st, const char* fmt, ...) {
     st->failed = true;
 }
 
+typedef enum {
+    VectorLineEof,
+    VectorLineOk,
+    VectorLineTooLong,
+} VectorLineResult;
+
+/* Consume a whole physical line so no caller can execute a truncated prefix. */
+static VectorLineResult read_vector_line(FILE* file, char* line, size_t capacity) {
+    if(!fgets(line, (int)capacity, file)) return VectorLineEof;
+    if(strpbrk(line, "\r\n") || strlen(line) < capacity - 1) return VectorLineOk;
+
+    int next = fgetc(file);
+    if(next == EOF) return VectorLineOk;
+    if(next == '\n') return VectorLineOk;
+    if(next == '\r') {
+        next = fgetc(file);
+        if(next != '\n' && next != EOF) ungetc(next, file);
+        return VectorLineOk;
+    }
+    while(next != '\n' && next != EOF)
+        next = fgetc(file);
+    return VectorLineTooLong;
+}
+
+static bool parse_unsigned(const char* text, int base, uint64_t maximum, uint64_t* value) {
+    if(!text || !*text || *text == '+' || *text == '-' || *text == ' ' || *text == '\t')
+        return false;
+    errno = 0;
+    char* end = NULL;
+    unsigned long long parsed = strtoull(text, &end, base);
+    if(errno == ERANGE || end == text || *end != '\0' || parsed > maximum) return false;
+    *value = (uint64_t)parsed;
+    return true;
+}
+
 // Hex with optional "??" wildcard bytes. Returns byte count, or -1.
 // mask[i] is false where the byte is a wildcard.
 static int parse_hex(const char* s, uint8_t* out, bool* mask, size_t cap) {
@@ -61,15 +97,30 @@ static int parse_hex(const char* s, uint8_t* out, bool* mask, size_t cap) {
         if(!s[1]) return -1;
         if(n >= cap) return -1;
         if(s[0] == '?' && s[1] == '?') {
+            if(!mask) return -1;
             out[n] = 0;
-            if(mask) mask[n] = false;
+            mask[n] = false;
             n++;
         } else {
-            char buf[3] = {s[0], s[1], 0};
-            char* end = NULL;
-            long v = strtol(buf, &end, 16);
-            if(end != buf + 2) return -1;
-            out[n] = (uint8_t)v;
+            unsigned high;
+            unsigned low;
+            if(s[0] >= '0' && s[0] <= '9')
+                high = (unsigned)(s[0] - '0');
+            else if(s[0] >= 'a' && s[0] <= 'f')
+                high = (unsigned)(s[0] - 'a' + 10);
+            else if(s[0] >= 'A' && s[0] <= 'F')
+                high = (unsigned)(s[0] - 'A' + 10);
+            else
+                return -1;
+            if(s[1] >= '0' && s[1] <= '9')
+                low = (unsigned)(s[1] - '0');
+            else if(s[1] >= 'a' && s[1] <= 'f')
+                low = (unsigned)(s[1] - 'a' + 10);
+            else if(s[1] >= 'A' && s[1] <= 'F')
+                low = (unsigned)(s[1] - 'A' + 10);
+            else
+                return -1;
+            out[n] = (uint8_t)((high << 4) | low);
             if(mask) mask[n] = true;
             n++;
         }
@@ -105,23 +156,46 @@ static uint64_t read_le(const uint8_t* bytes, size_t length) {
 static int parse_tolerances(char* text, VectorTolerance* out, size_t cap) {
     char* clause = strstr(text, "tolerance");
     if(!clause) return 0;
+    if(clause == text || (clause[-1] != ' ' && clause[-1] != '\t') ||
+       (clause[strlen("tolerance")] != ' ' && clause[strlen("tolerance")] != '\t'))
+        return -1;
     *clause = 0;
     int n = 0;
     char* cursor = clause + strlen("tolerance");
     while(cursor && *cursor) {
-        unsigned long offset = 0, length = 0;
-        unsigned long long delta = 0;
-        int used = 0;
-        if(sscanf(cursor, " %lu+%lu %llu%n", &offset, &length, &delta, &used) != 3) return -1;
-        if(length < 1 || length > 4 || (size_t)n >= cap) return -1;
-        out[n].offset = offset;
-        out[n].length = length;
-        out[n].delta = delta;
-        n++;
-        cursor += used;
         while(*cursor == ' ' || *cursor == '\t')
             cursor++;
+        if(*cursor == '+' || *cursor == '-') return -1;
+        errno = 0;
+        char* end = NULL;
+        unsigned long long offset = strtoull(cursor, &end, 10);
+        if(errno == ERANGE || end == cursor || *end != '+') return -1;
+        cursor = end + 1;
+        if(*cursor == '+' || *cursor == '-') return -1;
+        errno = 0;
+        unsigned long long length = strtoull(cursor, &end, 10);
+        if(errno == ERANGE || end == cursor || (*end != ' ' && *end != '\t')) return -1;
+        cursor = end;
+        while(*cursor == ' ' || *cursor == '\t')
+            cursor++;
+        if(*cursor == '+' || *cursor == '-') return -1;
+        errno = 0;
+        unsigned long long delta = strtoull(cursor, &end, 10);
+        if(errno == ERANGE || end == cursor || offset > SIZE_MAX || length > SIZE_MAX) return -1;
+        if(length < 1 || length > 4 || (size_t)n >= cap) return -1;
+        out[n].offset = (size_t)offset;
+        out[n].length = (size_t)length;
+        out[n].delta = (uint64_t)delta;
+        n++;
+        if(*end != '\0' && *end != ' ' && *end != '\t') return -1;
+        cursor = end;
+        bool separated = false;
+        while(*cursor == ' ' || *cursor == '\t') {
+            separated = true;
+            cursor++;
+        }
         if(!*cursor) break;
+        if(!separated) return -1;
         if(strncmp(cursor, "tolerance", strlen("tolerance")) != 0) return -1;
         cursor += strlen("tolerance");
     }
@@ -130,7 +204,7 @@ static int parse_tolerances(char* text, VectorTolerance* out, size_t cap) {
 
 static bool tolerated(const VectorTolerance* tolerances, int count, size_t index) {
     for(int t = 0; t < count; t++) {
-        if(index >= tolerances[t].offset && index < tolerances[t].offset + tolerances[t].length)
+        if(index >= tolerances[t].offset && index - tolerances[t].offset < tolerances[t].length)
             return true;
     }
     return false;
@@ -146,6 +220,13 @@ static bool compare(
     const VectorTolerance* tolerances,
     int tolerance_count) {
     bool ok = got_len == want_len;
+    for(int t = 0; t < tolerance_count; t++) {
+        if(tolerances[t].offset > want_len ||
+           tolerances[t].length > want_len - tolerances[t].offset) {
+            fail(st, "tolerance clause extends past the response");
+            return false;
+        }
+    }
     if(ok) {
         for(size_t i = 0; i < want_len; i++) {
             if(tolerated(tolerances, tolerance_count, i)) continue;
@@ -189,6 +270,70 @@ static bool compare(
 }
 
 // ---------------------------------------------------------------- header ----
+
+static bool header_name_in(const char* key, const char* const* names, size_t count) {
+    for(size_t i = 0; i < count; i++) {
+        if(strcmp(key, names[i]) == 0) return true;
+    }
+    return false;
+}
+
+static bool header_value_valid(const char* key, const char* value) {
+    static const char* const hex_headers[] = {
+        "uid",
+        "picc-hardware-version",
+        "picc-software-version",
+        "picc-key-settings-1",
+        "picc-key-settings-2",
+        "picc-key-version",
+        "picc-key",
+        "picc-auth-commands",
+        "picc-ats",
+        "picc-sak",
+        "picc-atqa",
+        "picc-ev2-card-capabilities",
+        "picc-proximity-key",
+        "picc-proximity-option",
+        "picc-proximity-published-response-time",
+        "picc-proximity-bitrate",
+        "picc-static-signature",
+        "picc-dam-auth-key",
+        "picc-dam-mac-key",
+        "picc-dam-encryption-key",
+        "vc-iid",
+        "vc-info",
+        "vc-capabilities",
+        "vc-uid",
+        "vc-select-mac-key",
+        "vc-select-enc-key",
+        "delegated-default-key",
+        "new-key",
+    };
+    static const char* const unsigned_headers[] = {
+        "picc-storage",
+        "picc-key-len",
+        "picc-random-id",
+        "picc-format-disabled",
+        "vc-auth-mandatory",
+        "vc-pc-mandatory",
+        "delegated-default-key-version",
+        "feature-version",
+        "new-key-version",
+        "target-key-number",
+        "target-key-set",
+        "target-key-set-version",
+    };
+    if(header_name_in(key, hex_headers, sizeof(hex_headers) / sizeof(hex_headers[0]))) {
+        uint8_t bytes[VectorMaximumByteCount];
+        return parse_hex(value, bytes, NULL, sizeof(bytes)) >= 0;
+    }
+    if(header_name_in(
+           key, unsigned_headers, sizeof(unsigned_headers) / sizeof(unsigned_headers[0]))) {
+        uint64_t parsed = 0;
+        return parse_unsigned(value, 10, UINT32_MAX, &parsed);
+    }
+    return true;
+}
 
 static void apply_header(DfcCredential* c, const char* key, const char* value) {
     uint8_t buf[VectorMaximumByteCount];
@@ -410,11 +555,29 @@ static bool
     split_indexed(const char* path, const char* prefix, size_t* index, const char** field) {
     size_t plen = strlen(prefix);
     if(strncmp(path, prefix, plen) != 0 || path[plen] != '[') return false;
+    const char* digits = path + plen + 1;
+    if(!*digits || *digits == '+' || *digits == '-') return false;
+    errno = 0;
     char* end = NULL;
-    unsigned long n = strtoul(path + plen + 1, &end, 10);
-    if(!end || *end != ']' || end[1] != '.') return false;
+    unsigned long long n = strtoull(digits, &end, 10);
+    if(errno == ERANGE || end == digits || *end != ']' || end[1] != '.' || n > SIZE_MAX)
+        return false;
     *index = (size_t)n;
     *field = end + 2;
+    return true;
+}
+
+static bool split_index_leaf(const char* text, const char* prefix, size_t* index) {
+    size_t prefix_length = strlen(prefix);
+    if(strncmp(text, prefix, prefix_length) != 0 || text[prefix_length] != '[') return false;
+    const char* digits = text + prefix_length + 1;
+    if(!*digits || *digits == '+' || *digits == '-') return false;
+    errno = 0;
+    char* end = NULL;
+    unsigned long long parsed = strtoull(digits, &end, 10);
+    if(errno == ERANGE || end == digits || strcmp(end, "]") != 0 || parsed > SIZE_MAX)
+        return false;
+    *index = (size_t)parsed;
     return true;
 }
 
@@ -444,7 +607,12 @@ static bool cmp_bytes(
 }
 
 static bool cmp_num(VectorState* st, const char* path, unsigned long actual, const char* want) {
-    unsigned long expect = strtoul(want, NULL, 0);
+    uint64_t parsed = 0;
+    if(!parse_unsigned(want, 0, ULONG_MAX, &parsed)) {
+        fail(st, "assert %s: expected value is not an unsigned integer", path);
+        return false;
+    }
+    unsigned long expect = (unsigned long)parsed;
     if(actual != expect) {
         fail(st, "assert %s: expected %lu, got %lu", path, expect, actual);
         return false;
@@ -454,12 +622,12 @@ static bool cmp_num(VectorState* st, const char* path, unsigned long actual, con
 
 static bool
     set_model_path(VectorState* st, DfcCredential* c, const char* path, const char* value_text) {
-    char* end = NULL;
-    unsigned long value = strtoul(value_text, &end, 0);
-    if(!*value_text || !end || *end != '\0' || value > UINT32_MAX) {
+    uint64_t parsed = 0;
+    if(!parse_unsigned(value_text, 0, UINT32_MAX, &parsed)) {
         fail(st, "set-model %s: invalid value", path);
         return false;
     }
+    unsigned long value = (unsigned long)parsed;
     size_t i;
 #if DFC_ENABLE_KEY_SETS
     size_t k;
@@ -480,11 +648,11 @@ static bool
             app->key_storage_len = (size_t)value;
         else if(strcmp(field, "max_key_size") == 0)
             app->max_key_size = (uint8_t)value;
-        else if(sscanf(field, "key_set_types[%zu]", &k) == 1 && k < app->num_key_sets)
+        else if(split_index_leaf(field, "key_set_types", &k) && k < app->num_key_sets)
             app->key_set_types[k] = (uint8_t)value;
-        else if(sscanf(field, "key_set_versions[%zu]", &k) == 1 && k < app->num_key_sets)
+        else if(split_index_leaf(field, "key_set_versions", &k) && k < app->num_key_sets)
             app->key_set_versions[k] = (uint8_t)value;
-        else if(sscanf(field, "key_set_initialized[%zu]", &k) == 1 && k < app->num_key_sets)
+        else if(split_index_leaf(field, "key_set_initialized", &k) && k < app->num_key_sets)
             app->key_set_initialized[k] = value != 0;
 #endif
         else {
@@ -654,7 +822,7 @@ static bool assert_path(
         if(strcmp(field, "iso_file_id") == 0) return cmp_num(st, path, a->iso_file_id, want);
         if(strcmp(field, "iso_aid_len") == 0)
             return cmp_num(st, path, (unsigned long)a->iso_aid_len, want);
-        if(sscanf(field, "keys[%zu]", &k) == 1) {
+        if(split_index_leaf(field, "keys", &k)) {
             if(k >= a->num_keys) {
                 fail(st, "assert %s: only %zu keys", path, a->num_keys);
                 return false;
@@ -666,7 +834,7 @@ static bool assert_path(
             }
             return cmp_bytes(st, path, key, a->key_len, want);
         }
-        if(sscanf(field, "key_versions[%zu]", &k) == 1) {
+        if(split_index_leaf(field, "key_versions", &k)) {
             if(k >= a->num_keys) {
                 fail(st, "assert %s: only %zu keys", path, a->num_keys);
                 return false;
@@ -674,7 +842,7 @@ static bool assert_path(
             return cmp_num(st, path, a->key_versions[k], want);
         }
 #if DFC_ENABLE_KEY_SETS
-        if(sscanf(field, "key_set_types[%zu]", &k) == 1 && k < a->num_key_sets)
+        if(split_index_leaf(field, "key_set_types", &k) && k < a->num_key_sets)
             return cmp_num(st, path, a->key_set_types[k], want);
 #endif
     }
@@ -713,12 +881,14 @@ static bool assert_path(
 // -------------------------------------------------------------------- run ---
 
 // Reads feature requirements and replayability before running a vector.
-static bool vector_is_runnable(const char* path) {
+// Returns 1 to run, 0 to skip, and -1 for malformed input.
+static int vector_is_runnable(const char* path) {
     FILE* f = fopen(path, "r");
     if(!f) return true;
-    char line[1024];
+    char line[VectorMaximumLineLength];
     bool runnable = true;
-    while(fgets(line, sizeof(line), f)) {
+    VectorLineResult line_result;
+    while((line_result = read_vector_line(f, line, sizeof(line))) == VectorLineOk) {
         char* cursor = line;
         while(*cursor == ' ' || *cursor == '\t')
             cursor++;
@@ -742,7 +912,11 @@ static bool vector_is_runnable(const char* path) {
         runnable = runnable && requires_satisfied(value);
     }
     fclose(f);
-    return runnable;
+    if(line_result == VectorLineTooLong) {
+        fprintf(stderr, "  %s: line exceeds %d bytes\n", path, VectorMaximumLineLength - 1);
+        return -1;
+    }
+    return runnable ? 1 : 0;
 }
 
 static void use_empty_random_script(void) {
@@ -751,10 +925,11 @@ static void use_empty_random_script(void) {
     dfc_host_set_random_buffer(&empty_script, 0);
 }
 
-static bool vector_uses_scripted_random(FILE* f) {
+static bool vector_uses_scripted_random(FILE* f, bool* scripted) {
     char line[VectorMaximumLineLength];
-    bool scripted = false;
-    while(fgets(line, sizeof(line), f)) {
+    *scripted = false;
+    VectorLineResult line_result;
+    while((line_result = read_vector_line(f, line, sizeof(line))) == VectorLineOk) {
         char* cursor = line;
         while(*cursor == ' ' || *cursor == '\t')
             cursor++;
@@ -763,12 +938,12 @@ static bool vector_uses_scripted_random(FILE* f) {
         if(strcmp(cursor, "random-source finite") == 0 ||
            (strncmp(cursor, "inject-random", strlen("inject-random")) == 0 &&
             (cursor[strlen("inject-random")] == ' ' || cursor[strlen("inject-random")] == '\t'))) {
-            scripted = true;
+            *scripted = true;
             break;
         }
     }
     rewind(f);
-    return scripted;
+    return line_result != VectorLineTooLong;
 }
 
 static bool run_vector(const char* path) {
@@ -779,7 +954,12 @@ static bool run_vector(const char* path) {
         return false;
     }
 
-    bool finite_random_source = vector_uses_scripted_random(f);
+    bool finite_random_source = false;
+    if(!vector_uses_scripted_random(f, &finite_random_source)) {
+        fprintf(stderr, "  %s: line exceeds %d bytes\n", path, VectorMaximumLineLength - 1);
+        fclose(f);
+        return false;
+    }
     if(finite_random_source) use_empty_random_script();
 
     VectorState st = {.path = path, .line_no = 0, .steps_run = 0, .failed = false};
@@ -792,7 +972,8 @@ static bool run_vector(const char* path) {
     bool in_header = true;
     char line[VectorMaximumLineLength];
 
-    while(fgets(line, sizeof(line), f)) {
+    VectorLineResult line_result;
+    while((line_result = read_vector_line(f, line, sizeof(line))) == VectorLineOk) {
         st.line_no++;
         char* p = line;
         while(*p == ' ' || *p == '\t')
@@ -809,6 +990,10 @@ static bool run_vector(const char* path) {
             char* v = colon + 1;
             while(*v == ' ' || *v == '\t')
                 v++;
+            if(!header_value_valid(p, v)) {
+                fail(&st, "invalid header value for '%s'", p);
+                break;
+            }
             apply_header(&credential, p, v);
             continue;
         }
@@ -819,6 +1004,10 @@ static bool run_vector(const char* path) {
         st.steps_run++;
 
         if(strcmp(verb, "scan") == 0) {
+            if(strtok(NULL, " \t")) {
+                fail(&st, "scan takes no arguments");
+                break;
+            }
             if(!session) session = dfc_virtual_picc_session_alloc(&credential);
             if(dfc_virtual_picc_scan_iso14443a(session, &activation) != DfcVirtualPiccStatusOk) {
                 fail(&st, "scan refused: credential not detectable");
@@ -828,11 +1017,19 @@ static bool run_vector(const char* path) {
             continue;
         }
         if(strcmp(verb, "field-off") == 0) {
+            if(strtok(NULL, " \t")) {
+                fail(&st, "field-off takes no arguments");
+                break;
+            }
             if(session) dfc_virtual_picc_field_off(session);
             have_activation = false;
             continue;
         }
         if(strcmp(verb, "clear-dirty") == 0) {
+            if(strtok(NULL, " \t")) {
+                fail(&st, "clear-dirty takes no arguments");
+                break;
+            }
             dfc_credential_clear_dirty(&credential);
             continue;
         }
@@ -851,23 +1048,26 @@ static bool run_vector(const char* path) {
             char* model_path = strtok(NULL, " \t");
             char* eq = strtok(NULL, " \t");
             char* value = strtok(NULL, " \t");
-            if(!model_path || !eq || strcmp(eq, "=") != 0 || !value ||
-               !set_model_path(&st, &credential, model_path, value))
+            char* extra = strtok(NULL, " \t");
+            if(!model_path || !eq || strcmp(eq, "=") != 0 || !value || extra) {
+                fail(&st, "set-model syntax: set-model <path> = <value>");
                 break;
+            }
+            if(!set_model_path(&st, &credential, model_path, value)) break;
             continue;
         }
         if(strcmp(verb, "roll-model-key-set") == 0) {
 #if DFC_ENABLE_KEY_SETS
             char* app_text = strtok(NULL, " \t");
             char* set_text = strtok(NULL, " \t");
-            char* app_end = NULL;
-            char* set_end = NULL;
-            unsigned long app_index = app_text ? strtoul(app_text, &app_end, 0) : ULONG_MAX;
-            unsigned long key_set = set_text ? strtoul(set_text, &set_end, 0) : ULONG_MAX;
-            if(!app_text || !set_text || !app_end || *app_end || !set_end || *set_end ||
+            char* extra = strtok(NULL, " \t");
+            uint64_t app_index = 0;
+            uint64_t key_set = 0;
+            if(!parse_unsigned(app_text, 0, SIZE_MAX, &app_index) ||
+               !parse_unsigned(set_text, 0, SIZE_MAX, &key_set) || extra ||
                app_index >= credential.num_apps ||
                !dfc_credential_roll_key_set(
-                   &credential, &credential.apps[app_index], (size_t)key_set)) {
+                   &credential, &credential.apps[(size_t)app_index], (size_t)key_set)) {
                 fail(&st, "roll-model-key-set needs valid application and key-set indexes");
                 break;
             }
@@ -897,11 +1097,9 @@ static bool run_vector(const char* path) {
         }
         if(strcmp(verb, "advance-time") == 0) {
             char* milliseconds_text = strtok(NULL, " \t");
-            char* end = NULL;
-            unsigned long milliseconds = milliseconds_text ? strtoul(milliseconds_text, &end, 10) :
-                                                             0;
-            if(!milliseconds_text || !*milliseconds_text || !end || *end != '\0' ||
-               milliseconds > UINT32_MAX) {
+            char* extra = strtok(NULL, " \t");
+            uint64_t milliseconds = 0;
+            if(!parse_unsigned(milliseconds_text, 10, UINT32_MAX, &milliseconds) || extra) {
                 fail(&st, "advance-time needs milliseconds");
                 break;
             }
@@ -913,7 +1111,8 @@ static bool run_vector(const char* path) {
             char* apath = strtok(NULL, " \t");
             char* eq = strtok(NULL, " \t");
             char* val = strtok(NULL, " \t");
-            if(!apath || !eq || strcmp(eq, "=") != 0 || !val) {
+            char* extra = strtok(NULL, " \t");
+            if(!apath || !eq || strcmp(eq, "=") != 0 || !val || extra) {
                 fail(&st, "assert syntax: assert <path> = <value>");
                 break;
             }
@@ -1081,15 +1280,16 @@ static bool run_vector(const char* path) {
             }
             bool bad_tolerance = false;
             for(int t = 0; t < tolerance_count; t++) {
-                if(tolerances[t].offset + tolerances[t].length > (size_t)want_len)
+                if(tolerances[t].offset > (size_t)want_len ||
+                   tolerances[t].length > (size_t)want_len - tolerances[t].offset)
                     bad_tolerance = true;
                 for(size_t i = tolerances[t].offset;
-                    !bad_tolerance && i < tolerances[t].offset + tolerances[t].length;
+                    !bad_tolerance && i - tolerances[t].offset < tolerances[t].length;
                     i++) {
                     if(!mask[i]) bad_tolerance = true;
                     for(int u = t + 1; u < tolerance_count; u++) {
                         if(i >= tolerances[u].offset &&
-                           i < tolerances[u].offset + tolerances[u].length)
+                           i - tolerances[u].offset < tolerances[u].length)
                             bad_tolerance = true;
                     }
                 }
@@ -1124,6 +1324,9 @@ static bool run_vector(const char* path) {
             break;
     }
 
+    if(line_result == VectorLineTooLong)
+        fail(&st, "line exceeds %d bytes", VectorMaximumLineLength - 1);
+
     if(session) dfc_virtual_picc_session_free(session);
     dfc_host_clear_random_buffer();
     fclose(f);
@@ -1138,7 +1341,8 @@ static bool compile_vector(const char* path, const char* output_path) {
     DfcCredential credential;
     dfc_credential_clear(&credential);
     char line[VectorMaximumLineLength];
-    while(fgets(line, sizeof(line), input)) {
+    VectorLineResult line_result;
+    while((line_result = read_vector_line(input, line, sizeof(line))) == VectorLineOk) {
         char* p = line;
         while(*p == ' ' || *p == '\t')
             p++;
@@ -1152,9 +1356,14 @@ static bool compile_vector(const char* path, const char* output_path) {
         char* value = colon + 1;
         while(*value == ' ' || *value == '\t')
             value++;
+        if(!header_value_valid(p, value)) {
+            fclose(input);
+            return false;
+        }
         apply_header(&credential, p, value);
     }
     fclose(input);
+    if(line_result == VectorLineTooLong) return false;
 
     size_t encoded_length = 0;
     if(dfc_der_encoded_size(&credential, &encoded_length) != DfcDerOk) {
@@ -1188,7 +1397,12 @@ int main(int argc, char** argv) {
     int skipped = 0;
     printf("conformance vectors:\n");
     for(int i = 1; i < argc; i++) {
-        if(!vector_is_runnable(argv[i])) {
+        int runnable = vector_is_runnable(argv[i]);
+        if(runnable < 0) {
+            failed++;
+            continue;
+        }
+        if(runnable == 0) {
             skipped++;
             continue;
         }
