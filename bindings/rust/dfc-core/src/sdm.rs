@@ -6,11 +6,11 @@ use dfc_core_sys as sys;
 use crate::{Error, ensure_abi};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Byte range within the ASCII SDM message.
+/// Location and slot-specific length of a field in an ASCII SDM message.
 pub struct SdmField {
-    /// Zero-based byte offset from the start of the message.
+    /// Zero-based ASCII byte offset from the start of the message.
     pub offset: usize,
-    /// Field length in ASCII bytes.
+    /// Length in the unit documented by the [`SdmConfig`] slot using this field.
     pub length: usize,
 }
 
@@ -21,13 +21,15 @@ pub struct SdmConfig {
     pub mac_input_offset: usize,
     /// First byte of the 16-character hexadecimal MAC field.
     pub mac_offset: usize,
-    /// Optional plaintext UID field, expressed as decoded-byte length.
+    /// Optional plaintext UID field. Its length is 7 or 10 decoded UID octets,
+    /// occupying twice that many ASCII bytes.
     pub plain_uid: Option<SdmField>,
     /// Optional six-character hexadecimal read-counter field.
     pub plain_read_counter_offset: Option<usize>,
-    /// Optional encrypted PICC-data field in ASCII bytes.
+    /// Optional encrypted PICC-data field. Its length is 32 or 64 ASCII bytes.
     pub encrypted_picc_data: Option<SdmField>,
-    /// Optional encrypted file-data field in ASCII bytes.
+    /// Optional encrypted file-data field. Its length is a nonzero multiple of
+    /// 32 ASCII bytes.
     pub encrypted_file_data: Option<SdmField>,
 }
 
@@ -91,12 +93,24 @@ pub fn verify_sdm(
         && config
             .encrypted_file_data
             .is_none_or(|field| field.length % 2 == 0);
+    let uid_length_is_valid = config
+        .plain_uid
+        .is_none_or(|field| field.length == 7 || field.length == 10);
+    let picc_length_is_valid = config
+        .encrypted_picc_data
+        .is_none_or(|field| field.length == 32 || field.length == 64);
+    let file_length_is_valid = config
+        .encrypted_file_data
+        .is_none_or(|field| field.length != 0 && field.length % 32 == 0);
     if !mac_is_valid
         || !counter_is_valid
         || !field_is_valid(config.plain_uid, message.len(), 2)
         || !field_is_valid(config.encrypted_picc_data, message.len(), 1)
         || !field_is_valid(config.encrypted_file_data, message.len(), 1)
         || !encrypted_lengths_are_even
+        || !uid_length_is_valid
+        || !picc_length_is_valid
+        || !file_length_is_valid
     {
         return Err(SdmError::InvalidConfig);
     }

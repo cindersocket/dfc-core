@@ -1,4 +1,5 @@
 import com.cindersocket.dfc.DfcKeyDiversification;
+import com.cindersocket.dfc.DfcException;
 import com.cindersocket.dfc.DfcReader;
 import com.cindersocket.dfc.DfcResponses;
 import com.cindersocket.dfc.DfcSdm;
@@ -51,6 +52,18 @@ public final class DfcAdvancedApiTest {
       throw new AssertionError(message + ": wrong exception", other);
     }
     throw new AssertionError(message);
+  }
+
+  private static void requireConfigurationAccepted(CheckedOperation operation, String message) {
+    try {
+      operation.run();
+    } catch (IllegalArgumentException invalid) {
+      throw new AssertionError(message, invalid);
+    } catch (DfcException expectedAuthenticationFailure) {
+      // The synthetic input has no valid MAC; reaching native verification is the assertion.
+    } catch (Exception other) {
+      throw new AssertionError(message + ": wrong exception", other);
+    }
   }
 
   private static void testReaderAuthenticationValidation() throws Exception {
@@ -207,6 +220,60 @@ public final class DfcAdvancedApiTest {
                 new DfcSdm.Config(20, 52, null, null, null, new DfcSdm.Field(0, Integer.MAX_VALUE)),
                 new byte[16], null),
         "oversized SDM field accepted");
+
+    byte[] synthetic = new byte[128];
+    Arrays.fill(synthetic, (byte) '0');
+    for (int length : new int[] {7, 10})
+      requireConfigurationAccepted(
+          ()
+              -> DfcSdm.verify(synthetic,
+                  new DfcSdm.Config(80, 96, new DfcSdm.Field(0, length), null, null, null),
+                  new byte[16], null),
+          "valid plain UID length rejected");
+    requireIllegalArgument(
+        ()
+            -> DfcSdm.verify(synthetic,
+                new DfcSdm.Config(80, 96, new DfcSdm.Field(0, 14), null, null, null), new byte[16],
+                null),
+        "plain UID ASCII span was accepted as decoded length");
+    requireConfigurationAccepted(
+        ()
+            -> DfcSdm.verify(synthetic,
+                new DfcSdm.Config(80, 96, new DfcSdm.Field(108, 10), null, null, null),
+                new byte[16], null),
+        "scaled plain UID range rejected");
+    requireIllegalArgument(
+        ()
+            -> DfcSdm.verify(synthetic,
+                new DfcSdm.Config(80, 96, new DfcSdm.Field(109, 10), null, null, null),
+                new byte[16], null),
+        "out-of-bounds scaled plain UID range accepted");
+    for (int length : new int[] {32, 64}) {
+      requireConfigurationAccepted(
+          ()
+              -> DfcSdm.verify(synthetic,
+                  new DfcSdm.Config(80, 96, null, null, new DfcSdm.Field(0, length), null),
+                  new byte[16], new byte[16]),
+          "valid encrypted PICC-data length rejected");
+      requireConfigurationAccepted(
+          ()
+              -> DfcSdm.verify(synthetic,
+                  new DfcSdm.Config(0, 96, null, null, null, new DfcSdm.Field(0, length)),
+                  new byte[16], null),
+          "valid encrypted file-data length rejected");
+    }
+    requireIllegalArgument(
+        ()
+            -> DfcSdm.verify(synthetic,
+                new DfcSdm.Config(80, 96, null, null, new DfcSdm.Field(0, 16), null), new byte[16],
+                new byte[16]),
+        "short encrypted PICC-data field accepted");
+    requireIllegalArgument(
+        ()
+            -> DfcSdm.verify(synthetic,
+                new DfcSdm.Config(0, 96, null, null, null, new DfcSdm.Field(0, 16)), new byte[16],
+                null),
+        "short encrypted file-data field accepted");
   }
 
   private static DfcTransactionMacVerifier verifier(int capacity) throws Exception {

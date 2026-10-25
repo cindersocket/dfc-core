@@ -13,12 +13,26 @@ class SdmVerificationError(DfcError):
 
 @dataclass(frozen=True)
 class SdmField:
+    """A field location whose length unit is defined by its ``SdmConfig`` slot.
+
+    ``offset`` always counts ASCII message bytes. ``length`` counts decoded UID
+    octets for ``plain_uid`` and ASCII message bytes for encrypted fields.
+    """
+
     offset: int
     length: int
 
 
 @dataclass(frozen=True)
 class SdmConfig:
+    """Locations of authenticated fields in an ASCII SDM message.
+
+    ``plain_uid.length`` is 7 or 10 decoded UID octets and occupies twice that
+    many ASCII bytes. ``encrypted_picc_data.length`` is 32 or 64 ASCII bytes.
+    ``encrypted_file_data.length`` is a nonzero multiple of 32 ASCII bytes.
+    A configured plain read counter occupies six ASCII bytes.
+    """
+
     mac_input_offset: int
     mac_offset: int
     plain_uid: SdmField | None = None
@@ -56,6 +70,14 @@ def _validate_config(message_length: int, config: SdmConfig) -> None:
             raise ValueError("counter lies outside the message")
     _validate_field("encrypted PICC data", config.encrypted_picc_data, message_length)
     _validate_field("encrypted file data", config.encrypted_file_data, message_length)
+    if config.plain_uid is not None and config.plain_uid.length not in (7, 10):
+        raise ValueError("plain UID length must be 7 or 10 decoded bytes")
+    if config.encrypted_picc_data is not None and config.encrypted_picc_data.length not in (32, 64):
+        raise ValueError("encrypted PICC data length must be 32 or 64 ASCII bytes")
+    if config.encrypted_file_data is not None and (
+        config.encrypted_file_data.length == 0 or config.encrypted_file_data.length % 32
+    ):
+        raise ValueError("encrypted file data length must be a nonzero multiple of 32 ASCII bytes")
     for name, field in (
         ("encrypted PICC data", config.encrypted_picc_data),
         ("encrypted file data", config.encrypted_file_data),

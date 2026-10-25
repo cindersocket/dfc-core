@@ -212,8 +212,12 @@ DFC_FFI_EXPORT int32_t dfc_ffi_response_decode_key_version(
     size_t response_len,
     uint8_t* key_version);
 
-// fields is a DFC_FFI_SDM_* bitmask. Absent field offsets and lengths are
-// ignored. If result and decrypted_file_data describe valid writable buffers,
+// fields is a DFC_FFI_SDM_* bitmask. Offsets for absent fields are ignored,
+// but the lengths of absent plain-UID, encrypted-PICC-data, and
+// encrypted-file-data fields must be zero. plain_uid_len counts decoded UID
+// octets (7 or 10); encrypted data lengths count ASCII message bytes. A plain
+// read counter occupies six ASCII bytes, and the MAC occupies 16 ASCII bytes.
+// If result and decrypted_file_data describe valid writable buffers,
 // both are zeroed before processing and remain zeroed on every failure.
 // Output buffers must not overlap each other or the message; overlap is rejected
 // before either buffer is changed.

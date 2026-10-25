@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from dfc_core import (
     AccessKind,
     DiversificationAlgorithm,
@@ -101,6 +100,46 @@ def test_captured_sdm_and_transaction_receipts() -> None:
 
     with pytest.raises(ValueError):
         TransactionMacVerifier(bytes(16), bytes.fromhex("0483B4F2CF1890"), counter=1 << 32)
+
+
+def _assert_sdm_config_reaches_native(config: SdmConfig, meta_key: bytes | None = None) -> None:
+    try:
+        verify_sdm(b"0" * 128, config, bytes(16), meta_key)
+    except SdmVerificationError:
+        pass
+    except ValueError as error:
+        pytest.fail(f"valid SDM configuration was rejected before native verification: {error}")
+
+
+def test_sdm_field_lengths_use_slot_specific_units() -> None:
+    for length in (7, 10):
+        _assert_sdm_config_reaches_native(SdmConfig(80, 96, plain_uid=SdmField(0, length)))
+    with pytest.raises(ValueError):
+        verify_sdm(b"0" * 128, SdmConfig(80, 96, plain_uid=SdmField(0, 14)), bytes(16))
+
+    _assert_sdm_config_reaches_native(SdmConfig(80, 96, plain_uid=SdmField(108, 10)))
+    with pytest.raises(ValueError):
+        verify_sdm(b"0" * 128, SdmConfig(80, 96, plain_uid=SdmField(109, 10)), bytes(16))
+
+    for length in (32, 64):
+        _assert_sdm_config_reaches_native(
+            SdmConfig(80, 96, encrypted_picc_data=SdmField(0, length)), bytes(16)
+        )
+        _assert_sdm_config_reaches_native(SdmConfig(0, 96, encrypted_file_data=SdmField(0, length)))
+    with pytest.raises(ValueError):
+        verify_sdm(
+            b"0" * 128,
+            SdmConfig(80, 96, encrypted_picc_data=SdmField(0, 16)),
+            bytes(16),
+            bytes(16),
+        )
+    for length in (0, 16):
+        with pytest.raises(ValueError):
+            verify_sdm(
+                b"0" * 128,
+                SdmConfig(0, 96, encrypted_file_data=SdmField(0, length)),
+                bytes(16),
+            )
 
 
 def test_transaction_input_helpers_validate_before_native_narrowing() -> None:

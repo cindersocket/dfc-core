@@ -874,6 +874,61 @@ static void check_standalone_api_failure_outputs(void) {
     CHECK(memcmp(version, (uint8_t[sizeof(version)]){0}, sizeof(version)) == 0);
 }
 
+typedef struct {
+    size_t plain_uid_offset;
+    size_t plain_uid_len;
+    size_t encrypted_picc_data_offset;
+    size_t encrypted_picc_data_len;
+    size_t encrypted_file_data_offset;
+    size_t encrypted_file_data_len;
+} SdmOptionalFields;
+
+static int32_t verify_sdm_optional_fields(const SdmOptionalFields* fields) {
+    static const uint8_t message[] =
+        "0483B4F2CF1890000001163F0AC4319102F37F4B61FE6BFDE1469CF53E287D682A2E";
+    static const uint8_t key[16] = {0};
+    uint8_t result[DFC_FFI_SDM_RESULT_SIZE];
+    size_t required = SIZE_MAX;
+    return dfc_ffi_sdm_verify_ascii(
+        message,
+        sizeof(message) - 1,
+        0,
+        fields->plain_uid_offset,
+        fields->plain_uid_len,
+        SIZE_MAX,
+        fields->encrypted_picc_data_offset,
+        fields->encrypted_picc_data_len,
+        fields->encrypted_file_data_offset,
+        fields->encrypted_file_data_len,
+        20,
+        52,
+        NULL,
+        key,
+        NULL,
+        0,
+        &required,
+        result,
+        sizeof(result));
+}
+
+static void check_sdm_absent_field_contract(void) {
+    SdmOptionalFields fields = {
+        .plain_uid_offset = SIZE_MAX,
+        .encrypted_picc_data_offset = SIZE_MAX,
+        .encrypted_file_data_offset = SIZE_MAX,
+    };
+    CHECK(verify_sdm_optional_fields(&fields) != DFC_FFI_SDM_MALFORMED);
+
+    fields.plain_uid_len = 7;
+    CHECK(verify_sdm_optional_fields(&fields) == DFC_FFI_SDM_MALFORMED);
+    fields.plain_uid_len = 0;
+    fields.encrypted_picc_data_len = 32;
+    CHECK(verify_sdm_optional_fields(&fields) == DFC_FFI_SDM_MALFORMED);
+    fields.encrypted_picc_data_len = 0;
+    fields.encrypted_file_data_len = 32;
+    CHECK(verify_sdm_optional_fields(&fields) == DFC_FFI_SDM_MALFORMED);
+}
+
 static void check_standalone_api_success_and_boundaries(void) {
     const uint8_t master[16] = {
         0x00,
@@ -1080,6 +1135,7 @@ static void check_standalone_api_success_and_boundaries(void) {
 
 int main(void) {
     check_standalone_api_failure_outputs();
+    check_sdm_absent_field_contract();
     check_standalone_api_success_and_boundaries();
     check_rejected_card_and_picc_updates();
     check_application_creation_rollback();

@@ -13,15 +13,16 @@ public final class DfcSdm {
   private static final int FIELD_ENCRYPTED_FILE_DATA = 1 << 3;
 
   /**
-   * Byte range in the ASCII message.
-   * @param offset zero-based byte offset
-   * @param length byte length
+   * Field location whose length unit is defined by the {@link Config} slot using it.
+   * @param offset zero-based ASCII-message byte offset
+   * @param length decoded UID octets for {@code plainUid}, or ASCII-message bytes for encrypted
+   *     fields
    */
   public record Field(int offset, int length) {
     /**
      * Validates a non-negative range.
-     * @param offset zero-based byte offset
-     * @param length byte length
+     * @param offset zero-based ASCII-message byte offset
+     * @param length slot-specific field length
      * @throws IllegalArgumentException if either value is negative
      */
     public Field {
@@ -33,10 +34,12 @@ public final class DfcSdm {
    * Locations of authenticated and mirrored fields in an ASCII message.
    * @param macInputOffset first byte covered by the MAC
    * @param macOffset first ASCII byte of the transmitted MAC
-   * @param plainUid clear UID range, or null
-   * @param plainReadCounterOffset clear counter offset, or null
-   * @param encryptedPiccData encrypted PICC-data range, or null
-   * @param encryptedFileData encrypted file-data range, or null
+   * @param plainUid clear UID range whose length is 7 or 10 decoded UID octets and whose ASCII span
+   *     is twice that length, or null
+   * @param plainReadCounterOffset offset of the six-ASCII-byte clear counter, or null
+   * @param encryptedPiccData encrypted PICC-data range of 32 or 64 ASCII bytes, or null
+   * @param encryptedFileData encrypted file-data range whose ASCII-byte length is a nonzero
+   *     multiple of 32, or null
    */
   public record Config(int macInputOffset, int macOffset, Field plainUid,
       Integer plainReadCounterOffset, Field encryptedPiccData, Field encryptedFileData) {
@@ -45,7 +48,7 @@ public final class DfcSdm {
      * @param macInputOffset first byte covered by the MAC
      * @param macOffset first ASCII byte of the transmitted MAC
      * @param plainUid clear UID range, or null
-     * @param plainReadCounterOffset clear counter offset, or null
+     * @param plainReadCounterOffset offset of the six-ASCII-byte clear counter, or null
      * @param encryptedPiccData encrypted PICC-data range, or null
      * @param encryptedFileData encrypted file-data range, or null
      * @throws IllegalArgumentException if either mandatory MAC offset is negative
@@ -92,6 +95,31 @@ public final class DfcSdm {
 
   private DfcSdm() {}
 
+  private static void validateFieldRange(int messageLength, Field field, int scale, String name) {
+    if (field == null)
+      return;
+    long end = field.offset() + (long) field.length() * scale;
+    if (end > messageLength)
+      throw new IllegalArgumentException(name + " lies outside the message");
+  }
+
+  private static void validateConfig(int messageLength, Config config) {
+    if (config.plainUid() != null && config.plainUid().length() != 7
+        && config.plainUid().length() != 10)
+      throw new IllegalArgumentException("plain UID length must be 7 or 10 decoded bytes");
+    if (config.encryptedPiccData() != null && config.encryptedPiccData().length() != 32
+        && config.encryptedPiccData().length() != 64)
+      throw new IllegalArgumentException("encrypted PICC data length must be 32 or 64 ASCII bytes");
+    if (config.encryptedFileData() != null
+        && (config.encryptedFileData().length() == 0
+            || config.encryptedFileData().length() % 32 != 0))
+      throw new IllegalArgumentException(
+          "encrypted file data length must be a nonzero multiple of 32 ASCII bytes");
+    validateFieldRange(messageLength, config.plainUid(), 2, "plain UID");
+    validateFieldRange(messageLength, config.encryptedPiccData(), 1, "encrypted PICC data");
+    validateFieldRange(messageLength, config.encryptedFileData(), 1, "encrypted file data");
+  }
+
   /**
    * Authenticates one ASCII SDM message before publishing mirrored fields.
    * @param message complete ASCII message
@@ -100,7 +128,8 @@ public final class DfcSdm {
    * @param metaReadKey optional 16-byte metadata-read key
    * @return verified and decrypted fields
    * @throws DfcException if authentication, decoding, or range validation fails
-   * @throws IllegalArgumentException if either supplied key has a length other than 16 bytes
+   * @throws IllegalArgumentException if either supplied key has a length other than 16 bytes, a
+   *     field uses a length invalid for its slot, or a field lies outside {@code message}
    * @throws NullPointerException if {@code message}, {@code config}, or {@code fileReadKey} is null
    */
   public static Result verify(byte[] message, Config config, byte[] fileReadKey, byte[] metaReadKey)
@@ -110,6 +139,7 @@ public final class DfcSdm {
     Objects.requireNonNull(fileReadKey, "fileReadKey");
     if (fileReadKey.length != 16 || (metaReadKey != null && metaReadKey.length != 16))
       throw new IllegalArgumentException("SDM keys must be 16 bytes");
+    validateConfig(message.length, config);
     int fields = 0;
     if (config.plainUid() != null)
       fields |= FIELD_PLAIN_UID;

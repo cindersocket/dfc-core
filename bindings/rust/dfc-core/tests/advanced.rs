@@ -166,3 +166,130 @@ fn captured_sdm_and_transaction_receipts_verify() {
             .is_err()
     );
 }
+
+fn assert_sdm_config_reaches_native(config: SdmConfig, meta_key: Option<&[u8; 16]>) {
+    let result = verify_sdm(&[b'0'; 128], config, &[0; 16], meta_key);
+    assert_ne!(result, Err(SdmError::InvalidConfig));
+}
+
+#[test]
+fn sdm_field_lengths_use_slot_specific_units() {
+    let base = SdmConfig {
+        mac_input_offset: 80,
+        mac_offset: 96,
+        plain_uid: None,
+        plain_read_counter_offset: None,
+        encrypted_picc_data: None,
+        encrypted_file_data: None,
+    };
+    for length in [7, 10] {
+        assert_sdm_config_reaches_native(
+            SdmConfig {
+                plain_uid: Some(SdmField { offset: 0, length }),
+                ..base
+            },
+            None,
+        );
+    }
+    assert_eq!(
+        verify_sdm(
+            &[b'0'; 128],
+            SdmConfig {
+                plain_uid: Some(SdmField {
+                    offset: 0,
+                    length: 14,
+                }),
+                ..base
+            },
+            &[0; 16],
+            None,
+        ),
+        Err(SdmError::InvalidConfig)
+    );
+    assert_sdm_config_reaches_native(
+        SdmConfig {
+            plain_uid: Some(SdmField {
+                offset: 108,
+                length: 10,
+            }),
+            ..base
+        },
+        None,
+    );
+    assert_eq!(
+        verify_sdm(
+            &[b'0'; 128],
+            SdmConfig {
+                plain_uid: Some(SdmField {
+                    offset: 109,
+                    length: 10,
+                }),
+                ..base
+            },
+            &[0; 16],
+            None,
+        ),
+        Err(SdmError::InvalidConfig)
+    );
+
+    for length in [32, 64] {
+        assert_sdm_config_reaches_native(
+            SdmConfig {
+                encrypted_picc_data: Some(SdmField { offset: 0, length }),
+                ..base
+            },
+            Some(&[0; 16]),
+        );
+    }
+    assert_eq!(
+        verify_sdm(
+            &[b'0'; 128],
+            SdmConfig {
+                encrypted_picc_data: Some(SdmField {
+                    offset: 0,
+                    length: 16,
+                }),
+                ..base
+            },
+            &[0; 16],
+            Some(&[0; 16]),
+        ),
+        Err(SdmError::InvalidConfig)
+    );
+    for length in [32, 64] {
+        assert_sdm_config_reaches_native(
+            SdmConfig {
+                mac_input_offset: 0,
+                mac_offset: 96,
+                encrypted_file_data: Some(SdmField { offset: 0, length }),
+                ..base
+            },
+            None,
+        );
+    }
+    for field in [
+        SdmField {
+            offset: 0,
+            length: 16,
+        },
+        SdmField {
+            offset: 0,
+            length: 0,
+        },
+    ] {
+        assert_eq!(
+            verify_sdm(
+                &[b'0'; 128],
+                SdmConfig {
+                    mac_input_offset: 0,
+                    mac_offset: 96,
+                    encrypted_file_data: Some(field),
+                    ..base
+                },
+                &[0; 16],
+                None,
+            ),
+            Err(SdmError::InvalidConfig)
+        );
+    }
+}
