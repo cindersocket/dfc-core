@@ -3,28 +3,38 @@
 
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent.parent
 LINK = re.compile(r"(?<!!)\[[^]]*]\(([^)]+)\)")
+IGNORED_DIRECTORIES = {
+    ".cxx",
+    ".git",
+    ".pytest_cache",
+    ".venv",
+    "build",
+    "dist",
+    "node_modules",
+    "target",
+}
 
 
-def tracked_markdown(root: Path) -> list[Path]:
-    result = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],
-        check=True,
-        stdout=subprocess.PIPE,
+def repository_markdown(root: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in root.rglob("*.md")
+        if not any(
+            part in IGNORED_DIRECTORIES or part.startswith("build-")
+            for part in path.relative_to(root).parts
+        )
     )
-    return sorted(root / os.fsdecode(path) for path in result.stdout.split(b"\0") if path)
 
 
 def broken_links(root: Path) -> list[str]:
     failures: list[str] = []
-    for document in tracked_markdown(root):
+    for document in repository_markdown(root):
         for number, line in enumerate(document.read_text(encoding="utf-8").splitlines(), 1):
             for raw in LINK.findall(line):
                 destination = raw.split("#", 1)[0].strip().strip("<>")

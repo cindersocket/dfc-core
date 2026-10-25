@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,16 +16,14 @@ SPEC.loader.exec_module(CHECK_DOCS)
 
 
 class CheckDocsTests(unittest.TestCase):
-    def test_only_tracked_markdown_affects_the_gate(self) -> None:
+    def test_generated_markdown_does_not_affect_the_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
-            subprocess.run(["git", "init", "--quiet"], cwd=repository, check=True)
 
             docs = repository / "docs"
             docs.mkdir()
             (docs / "target.md").write_text("# Target\n", encoding="utf-8")
             (docs / "guide.md").write_text("[target](target.md)\n", encoding="utf-8")
-            subprocess.run(["git", "add", "docs"], cwd=repository, check=True)
 
             generated = repository / "build-native" / "_deps" / "library"
             generated.mkdir(parents=True)
@@ -34,12 +31,10 @@ class CheckDocsTests(unittest.TestCase):
 
             self.assertEqual(CHECK_DOCS.broken_links(repository), [])
 
-    def test_tracked_broken_link_fails(self) -> None:
+    def test_broken_link_fails_without_git_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
-            subprocess.run(["git", "init", "--quiet"], cwd=repository, check=True)
             (repository / "README.md").write_text("[missing](missing.md)\n", encoding="utf-8")
-            subprocess.run(["git", "add", "README.md"], cwd=repository, check=True)
 
             self.assertEqual(
                 CHECK_DOCS.broken_links(repository),
