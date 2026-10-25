@@ -108,6 +108,85 @@ def main() -> None:
         if helper.index("dfc_secure_wipe(block, sizeof(block))") > helper.index("return"):
             raise SystemExit(f"{name} returns before wiping its local block")
 
+    reader_auth_functions = {
+        "ISO": reader[
+            reader.index("static DfcReaderStatus step_authenticate_iso7816(") : reader.index(
+                "static DfcReaderStatus step_authenticate("
+            )
+        ],
+        "native": reader[
+            reader.index("static DfcReaderStatus step_authenticate(") : reader.index(
+                "static DfcReaderStatus step_authenticate_ev2("
+            )
+        ],
+        "EV2": reader[
+            reader.index("static DfcReaderStatus step_authenticate_ev2(") : reader.index(
+                "// ----------------------------------------------------------- command ---"
+            )
+        ],
+    }
+    reader_auth_cleanups = {
+        "ISO external authentication": (
+            "ISO",
+            "uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];",
+            "iso_external_cleanup:",
+            1,
+            ("clear", "apdu", "iv"),
+        ),
+        "native authentication challenge": (
+            "native",
+            "uint8_t token[32];",
+            "auth_challenge_cleanup:",
+            2,
+            ("token", "encrypted", "chain", "iv"),
+        ),
+        "EV2 authentication challenge": (
+            "EV2",
+            "uint8_t token[2 * DFC_EV2_RANDOM_LENGTH];",
+            "ev2_challenge_cleanup:",
+            1,
+            ("token", "encrypted", "iv"),
+        ),
+        "EV2 authentication confirmation": (
+            "EV2",
+            "uint8_t transaction[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];",
+            "ev2_confirmation_cleanup:",
+            1,
+            (
+                "encryption_key",
+                "mac_key",
+                "clear",
+                "expected",
+                "transaction",
+                "card_caps",
+                "reader_caps",
+                "iv",
+            ),
+        ),
+    }
+    for name, (
+        function_name,
+        first_secret,
+        label,
+        expected_gotos,
+        locals_,
+    ) in reader_auth_cleanups.items():
+        function = reader_auth_functions[function_name]
+        goto = f"goto {label[:-1]};"
+        if function.count(label) != 1 or function.count(goto) != expected_gotos:
+            raise SystemExit(f"{name} does not route every failure through one cleanup")
+        cleanup_start = function.index(label)
+        region_start = function.index(first_secret)
+        cleanup_end = function.index("return result;", cleanup_start) + len("return result;")
+        region = function[region_start:cleanup_end]
+        if region[: region.index(label)].count("return") != 0:
+            raise SystemExit(f"{name} bypasses cleanup with an early return")
+        cleanup = region[region.index(label) :]
+        for local in locals_:
+            expression = f"dfc_secure_wipe({local}, sizeof({local}))"
+            if expression not in cleanup:
+                raise SystemExit(f"{name} cleanup does not wipe {local}")
+
     change_key = reader[
         reader.index("DfcReaderStatus dfc_reader_change_key_cryptogram(") : reader.index(
             "static bool wire_mac_8("

@@ -567,6 +567,7 @@ static DfcReaderStatus step_authenticate_iso7816(
         apdu[3] = ex->auth_reference;
         apdu[4] = (uint8_t)(challenge * 2);
         uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+        DfcReaderStatus result;
         if(!cbc_encrypt(
                ex->auth_cipher,
                ex->auth_key,
@@ -575,15 +576,14 @@ static DfcReaderStatus step_authenticate_iso7816(
                clear,
                challenge * 2,
                apdu + IsoApduHeaderLength)) {
-            dfc_secure_wipe(clear, sizeof(clear));
-            dfc_secure_wipe(apdu, sizeof(apdu));
-            dfc_secure_wipe(iv, sizeof(iv));
-            return fail_auth(ex, DfcReaderProtocolError);
+            result = fail_auth(ex, DfcReaderProtocolError);
+            goto iso_external_cleanup;
         }
         memcpy(ex->auth_iv, apdu + IsoApduHeaderLength + challenge * 2 - block, block);
         ex->status = status;
         ex->phase = PhaseAuthExternal;
-        DfcReaderStatus result = emit_iso_auth_apdu(apdu, apdu_len, out, cap, out_len);
+        result = emit_iso_auth_apdu(apdu, apdu_len, out, cap, out_len);
+    iso_external_cleanup:
         dfc_secure_wipe(clear, sizeof(clear));
         dfc_secure_wipe(apdu, sizeof(apdu));
         dfc_secure_wipe(iv, sizeof(iv));
@@ -696,31 +696,26 @@ static DfcReaderStatus step_authenticate(
 
         uint8_t encrypted[32];
         uint8_t chain[16] = {0};
+        DfcReaderStatus result;
         if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
             if(!d40_send(ex->auth_key, ex->auth_key_len, token, challenge * 2, encrypted)) {
-                dfc_secure_wipe(token, sizeof(token));
-                dfc_secure_wipe(encrypted, sizeof(encrypted));
-                dfc_secure_wipe(chain, sizeof(chain));
-                dfc_secure_wipe(iv, sizeof(iv));
-                return fail_auth(ex, DfcReaderProtocolError);
+                result = fail_auth(ex, DfcReaderProtocolError);
+                goto auth_challenge_cleanup;
             }
         } else {
             // The card chains from the last block of its own challenge.
             memcpy(chain, data + challenge - block, block);
             if(!cbc_encrypt(
                    cipher, ex->auth_key, ex->auth_key_len, chain, token, challenge * 2, encrypted)) {
-                dfc_secure_wipe(token, sizeof(token));
-                dfc_secure_wipe(encrypted, sizeof(encrypted));
-                dfc_secure_wipe(chain, sizeof(chain));
-                dfc_secure_wipe(iv, sizeof(iv));
-                return fail_auth(ex, DfcReaderProtocolError);
+                result = fail_auth(ex, DfcReaderProtocolError);
+                goto auth_challenge_cleanup;
             }
             memcpy(ex->auth_iv, encrypted + challenge * 2 - block, block);
         }
         ex->status = status;
         ex->phase = PhaseAuthConfirmation;
-        DfcReaderStatus result =
-            emit(ex, DFC_CMD_ADDITIONAL_FRAME, encrypted, challenge * 2, out, cap, out_len);
+        result = emit(ex, DFC_CMD_ADDITIONAL_FRAME, encrypted, challenge * 2, out, cap, out_len);
+    auth_challenge_cleanup:
         dfc_secure_wipe(token, sizeof(token));
         dfc_secure_wipe(encrypted, sizeof(encrypted));
         dfc_secure_wipe(chain, sizeof(chain));
@@ -842,18 +837,18 @@ static DfcReaderStatus step_authenticate_ev2(
         memcpy(token, ex->auth_random_a, DFC_EV2_RANDOM_LENGTH);
         dfc_ev2_rotate_left(ex->auth_random_b, token + DFC_EV2_RANDOM_LENGTH);
         uint8_t encrypted[sizeof(token)];
+        DfcReaderStatus result;
         memset(iv, 0, sizeof(iv));
         if(!dfc_worker_aes_cbc_encrypt(
                ex->auth_key, DFC_AES_KEY_LENGTH, iv, sizeof(token), token, encrypted)) {
-            dfc_secure_wipe(token, sizeof(token));
-            dfc_secure_wipe(encrypted, sizeof(encrypted));
-            dfc_secure_wipe(iv, sizeof(iv));
-            return fail_auth(ex, DfcReaderProtocolError);
+            result = fail_auth(ex, DfcReaderProtocolError);
+            goto ev2_challenge_cleanup;
         }
         ex->status = status;
         ex->phase = PhaseAuthConfirmation;
-        DfcReaderStatus result =
+        result =
             emit(ex, DFC_CMD_ADDITIONAL_FRAME, encrypted, sizeof(encrypted), out, cap, out_len);
+    ev2_challenge_cleanup:
         dfc_secure_wipe(token, sizeof(token));
         dfc_secure_wipe(encrypted, sizeof(encrypted));
         dfc_secure_wipe(iv, sizeof(iv));
@@ -908,17 +903,11 @@ static DfcReaderStatus step_authenticate_ev2(
 
     uint8_t encryption_key[DFC_AES_KEY_LENGTH];
     uint8_t mac_key[DFC_AES_KEY_LENGTH];
+    DfcReaderStatus result;
     if(!dfc_ev2_derive_session_keys(
            ex->auth_key, ex->auth_random_a, ex->auth_random_b, encryption_key, mac_key)) {
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(expected, sizeof(expected));
-        dfc_secure_wipe(transaction, sizeof(transaction));
-        dfc_secure_wipe(card_caps, sizeof(card_caps));
-        dfc_secure_wipe(reader_caps, sizeof(reader_caps));
-        dfc_secure_wipe(encryption_key, sizeof(encryption_key));
-        dfc_secure_wipe(mac_key, sizeof(mac_key));
-        dfc_secure_wipe(iv, sizeof(iv));
-        return fail_auth(ex, DfcReaderIntegrityError);
+        result = fail_auth(ex, DfcReaderIntegrityError);
+        goto ev2_confirmation_cleanup;
     }
     bool selected_application_is_picc = session->selected_application_is_picc;
     dfc_reader_session_init(session);
@@ -931,6 +920,8 @@ static DfcReaderStatus step_authenticate_ev2(
     memcpy(session->ev2_mac_key, mac_key, sizeof(mac_key));
     memcpy(session->ev2_card_capabilities, card_caps, sizeof(card_caps));
     memcpy(session->ev2_reader_capabilities, reader_caps, sizeof(reader_caps));
+    result = finish_auth(ex, DfcReaderOk);
+ev2_confirmation_cleanup:
     dfc_secure_wipe(encryption_key, sizeof(encryption_key));
     dfc_secure_wipe(mac_key, sizeof(mac_key));
     dfc_secure_wipe(clear, sizeof(clear));
@@ -939,7 +930,7 @@ static DfcReaderStatus step_authenticate_ev2(
     dfc_secure_wipe(card_caps, sizeof(card_caps));
     dfc_secure_wipe(reader_caps, sizeof(reader_caps));
     dfc_secure_wipe(iv, sizeof(iv));
-    return finish_auth(ex, DfcReaderOk);
+    return result;
 }
 #endif
 

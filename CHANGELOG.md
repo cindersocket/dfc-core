@@ -42,6 +42,8 @@
   snapshots distinct allocation tags for static-storage ports (#175).
 - Compact DER field indexes to reduce peak credential-decoder stack use
   (#173).
+- Consolidate reader authentication cleanup paths to reduce target code size
+  while keeping secret wipes structurally enforced (#177).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
