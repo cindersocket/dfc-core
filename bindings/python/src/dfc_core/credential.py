@@ -7,7 +7,16 @@ from typing import Self
 
 from . import _native as N
 from .errors import CredentialError
-from .models import Application, Card, CredentialModel, File, Key, PiccSettings
+from .models import (
+    Application,
+    Card,
+    CommunicationMode,
+    CredentialModel,
+    File,
+    FileType,
+    Key,
+    PiccSettings,
+)
 
 
 def _take(a: object, length: int) -> bytes:
@@ -44,8 +53,8 @@ def _file_model(f: N.File, data: bytes) -> File:
     return File(
         owner=f.owner,
         number=f.number,
-        type=f.type,
-        comm_settings=f.comm_settings,
+        type=FileType(f.type),
+        comm_settings=CommunicationMode(f.comm_settings),
         access_rights=f.access_rights,
         data=data,
         declared_size=f.declared_size,

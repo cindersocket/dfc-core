@@ -133,19 +133,34 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
    */
   public synchronized DfcPiccSnapshot snapshot() throws DfcException {
     ByteBuffer data = ByteBuffer.wrap(DfcNative.piccSnapshot(state.require()));
-    int selected = data.get() & 0xff;
+    DfcPiccSnapshot.Selection selected = switch (data.get() & 0xff) {
+      case 0 -> DfcPiccSnapshot.Selection.NONE;
+      case 1 -> DfcPiccSnapshot.Selection.PICC;
+      case 2 -> DfcPiccSnapshot.Selection.APPLICATION;
+      default -> throw new AssertionError("native PICC returned an invalid selection state");
+    };
     int applicationIndex = data.getInt();
     byte[] aid = new byte[3];
     data.get(aid);
     boolean dirty = data.get() != 0;
-    int authenticationMode = data.get() & 0xff;
+    int rawAuthenticationMode = data.get() & 0xff;
+    DfcPiccSnapshot.AuthenticationMode authenticationMode = switch (rawAuthenticationMode) {
+      case 0 -> null;
+      case (int) DfcLayout.DFC_FFI_AUTH_LEGACY -> DfcPiccSnapshot.AuthenticationMode.LEGACY;
+      case (int) DfcLayout.DFC_FFI_AUTH_ISO -> DfcPiccSnapshot.AuthenticationMode.ISO;
+      case (int) DfcLayout.DFC_FFI_AUTH_AES -> DfcPiccSnapshot.AuthenticationMode.AES;
+      default -> throw new AssertionError("native PICC returned an invalid authentication mode");
+    };
     int authenticationKeyNumber = data.get() & 0xff;
     int ev2Counter = data.getInt();
     boolean ev2Active = data.get() != 0;
     boolean virtualCardSelected = data.get() != 0;
     boolean proximityVerified = data.get() != 0;
-    return new DfcPiccSnapshot(selected, applicationIndex, aid, dirty, authenticationMode,
-        authenticationKeyNumber, ev2Counter, ev2Active, virtualCardSelected, proximityVerified);
+    boolean applicationSelected = selected == DfcPiccSnapshot.Selection.APPLICATION;
+    return new DfcPiccSnapshot(selected, applicationSelected ? applicationIndex : null,
+        applicationSelected ? aid : new byte[0], dirty, authenticationMode,
+        authenticationMode == null ? null : authenticationKeyNumber, ev2Active ? ev2Counter : null,
+        virtualCardSelected, proximityVerified);
   }
   /**
    * Copies secret session state for diagnostics. Close the result promptly.

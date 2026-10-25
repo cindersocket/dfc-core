@@ -151,14 +151,21 @@ public final class DfcAdvancedApiTest {
         "file IDs mismatch");
 
     var standard = DfcResponses.decodeFileSettings(hex("00013012360000"));
-    require(standard.size() == 54 && standard.access().read().keyNumber() == 1,
+    require(standard.type() == DfcResponses.FileType.STANDARD_DATA
+            && standard.communicationMode() == DfcReader.Communication.MAC && standard.size() == 54
+            && standard.access().read().keyNumber() == 1,
         "standard file settings mismatch");
     var value = DfcResponses.decodeFileSettings(hex("0200EEEE9CFFFFFF640000000B00000001"));
-    require(value.lowerLimit() == -100 && value.upperLimit() == 100 && value.limitedCreditEnabled(),
+    require(value.type() == DfcResponses.FileType.VALUE
+            && value.communicationMode() == DfcReader.Communication.PLAIN
+            && value.lowerLimit() == -100 && value.upperLimit() == 100
+            && value.limitedCreditEnabled(),
         "value file settings mismatch");
     var records = DfcResponses.decodeFileSettings(hex("0301EF12200000100000070000"));
-    require(
-        records.recordSize() == 32 && records.maxRecords() == 16 && records.currentRecords() == 7,
+    require(records.type() == DfcResponses.FileType.LINEAR_RECORD
+            && records.communicationMode() == DfcReader.Communication.MAC
+            && records.recordSize() == 32 && records.maxRecords() == 16
+            && records.currentRecords() == 7,
         "record file settings mismatch");
     requireFailure(
         () -> DfcResponses.decodeFileSettings(hex("7F000000")), "unknown file type accepted");

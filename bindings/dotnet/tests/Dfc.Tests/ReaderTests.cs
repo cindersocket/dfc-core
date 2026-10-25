@@ -12,6 +12,24 @@ using NUnit.Framework;
 [TestFixture]
 public sealed class ReaderTests
 {
+    [Test]
+    public void InactiveSession_UsesNullForFieldsWithoutMeaning()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        using var reader = new DfcReader(picc);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reader.Session.Kind, Is.EqualTo(DfcSessionKind.None));
+            Assert.That(reader.Session.KeyNo, Is.Null);
+            Assert.That(reader.Session.Ev2CommandCounter, Is.Null);
+            Assert.That(reader.Session.Ev2TransactionIdentifier, Is.Null);
+            Assert.That(reader.Session.Ev2CardCapabilities, Is.Null);
+            Assert.That(reader.Session.Ev2ReaderCapabilities, Is.Null);
+            Assert.That(picc.Snapshot().AuthenticatedKeyNo, Is.Null);
+        });
+    }
+
     private static async Task ExerciseFilesAsync(DfcReader reader)
     {
         foreach (var (file, mode) in new[]

@@ -8,15 +8,19 @@ import java.util.Objects;
 
 /** Typed decoders for clear DESFire response payloads. */
 public final class DfcResponses {
-  private static final int STANDARD_DATA_FILE = 0;
-  private static final int BACKUP_DATA_FILE = 1;
-  private static final int VALUE_FILE = 2;
-
   /** Decoded access-right form. */
   public enum AccessKind {
     /** Access requires a numbered key. */ KEY,
     /** Access requires no authentication. */ FREE,
     /** Access is denied. */ DENIED
+  }
+  /** File storage and update semantics returned by GetFileSettings. */
+  public enum FileType {
+    /** Standard data file. */ STANDARD_DATA,
+    /** Transactional backup data file. */ BACKUP_DATA,
+    /** Signed value file. */ VALUE,
+    /** Linear record file. */ LINEAR_RECORD,
+    /** Cyclic record file. */ CYCLIC_RECORD
   }
   /**
    * One decoded access-right nibble.
@@ -88,8 +92,8 @@ public final class DfcResponses {
   }
   /**
    * Decoded file settings. Fields that do not apply to the file type are null.
-   * @param type unsigned native file type
-   * @param communicationMode unsigned communication-mode value
+   * @param type file storage and update semantics
+   * @param communicationMode communication protection configured for the file
    * @param accessRightsRaw unsigned packed access-right word
    * @param access decoded access rights
    * @param size data-file size in bytes
@@ -101,10 +105,10 @@ public final class DfcResponses {
    * @param maxRecords record capacity
    * @param currentRecords current record count
    */
-  public record FileSettings(int type, int communicationMode, int accessRightsRaw,
-      AccessRights access, Integer size, Integer lowerLimit, Integer upperLimit,
-      Integer limitedCreditValue, Boolean limitedCreditEnabled, Integer recordSize,
-      Integer maxRecords, Integer currentRecords) {}
+  public record FileSettings(FileType type, DfcReader.Communication communicationMode,
+      int accessRightsRaw, AccessRights access, Integer size, Integer lowerLimit,
+      Integer upperLimit, Integer limitedCreditValue, Boolean limitedCreditEnabled,
+      Integer recordSize, Integer maxRecords, Integer currentRecords) {}
   /**
    * Decoded application or PICC key settings.
    * @param settings1 first settings byte
@@ -175,21 +179,22 @@ public final class DfcResponses {
     return new Access(kind, kind == AccessKind.KEY ? value[offset + 1] & 0xff : null);
   }
 
-  private static FileSettings dataFileSettings(
-      int type, int communicationMode, int rawRights, AccessRights rights, int size) {
+  private static FileSettings dataFileSettings(FileType type,
+      DfcReader.Communication communicationMode, int rawRights, AccessRights rights, int size) {
     return new FileSettings(
         type, communicationMode, rawRights, rights, size, null, null, null, null, null, null, null);
   }
 
-  private static FileSettings valueFileSettings(int type, int communicationMode, int rawRights,
-      AccessRights rights, int lowerLimit, int upperLimit, int limitedCredit,
-      boolean limitedCreditEnabled) {
+  private static FileSettings valueFileSettings(FileType type,
+      DfcReader.Communication communicationMode, int rawRights, AccessRights rights, int lowerLimit,
+      int upperLimit, int limitedCredit, boolean limitedCreditEnabled) {
     return new FileSettings(type, communicationMode, rawRights, rights, null, lowerLimit,
         upperLimit, limitedCredit, limitedCreditEnabled, null, null, null);
   }
 
-  private static FileSettings recordFileSettings(int type, int communicationMode, int rawRights,
-      AccessRights rights, int recordSize, int maxRecords, int currentRecords) {
+  private static FileSettings recordFileSettings(FileType type,
+      DfcReader.Communication communicationMode, int rawRights, AccessRights rights, int recordSize,
+      int maxRecords, int currentRecords) {
     return new FileSettings(type, communicationMode, rawRights, rights, null, null, null, null,
         null, recordSize, maxRecords, currentRecords);
   }
@@ -204,14 +209,26 @@ public final class DfcResponses {
     Objects.requireNonNull(response, "response");
     byte[] value = DfcNative.responseDecodeFileSettings(response);
     ByteBuffer little = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN);
-    int type = value[0] & 0xff;
-    int communicationMode = value[1] & 0xff;
+    FileType type = switch (value[0] & 0xff) {
+      case 0 -> FileType.STANDARD_DATA;
+      case 1 -> FileType.BACKUP_DATA;
+      case 2 -> FileType.VALUE;
+      case 3 -> FileType.LINEAR_RECORD;
+      case 4 -> FileType.CYCLIC_RECORD;
+      default -> throw new AssertionError("native decoder returned an invalid file type");
+    };
+    DfcReader.Communication communicationMode = switch (value[1] & 0xff) {
+      case 0 -> DfcReader.Communication.PLAIN;
+      case 1 -> DfcReader.Communication.MAC;
+      case 3 -> DfcReader.Communication.ENCIPHERED;
+      default -> throw new AssertionError("native decoder returned an invalid communication mode");
+    };
     int rawRights = little.getShort(4) & 0xffff;
     AccessRights rights =
         new AccessRights(access(value, 6), access(value, 8), access(value, 10), access(value, 12));
-    if (type == STANDARD_DATA_FILE || type == BACKUP_DATA_FILE)
+    if (type == FileType.STANDARD_DATA || type == FileType.BACKUP_DATA)
       return dataFileSettings(type, communicationMode, rawRights, rights, little.getInt(14));
-    if (type == VALUE_FILE)
+    if (type == FileType.VALUE)
       return valueFileSettings(type, communicationMode, rawRights, rights, little.getInt(14),
           little.getInt(18), little.getInt(22), value[26] != 0);
     return recordFileSettings(type, communicationMode, rawRights, rights, little.getInt(14),

@@ -26,11 +26,12 @@ public final class DfcJniReplayRandomTest {
   }
 
   private static void checkSameState(DfcPiccSnapshot before, DfcPiccSnapshot after) {
-    check(before.selected() == after.selected(), "selection must not change");
+    check(before.selection() == after.selection(), "selection must not change");
     check(Arrays.equals(before.selectedAid(), after.selectedAid()), "AID must not change");
     check(before.authenticationMode() == after.authenticationMode(),
         "authentication must not change");
-    check(before.ev2Active() == after.ev2Active(), "EV2 state must not change");
+    check((before.ev2CommandCounter() != null) == (after.ev2CommandCounter() != null),
+        "EV2 state must not change");
     check(
         before.proximityVerified() == after.proximityVerified(), "proximity state must not change");
   }

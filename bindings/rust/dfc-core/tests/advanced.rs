@@ -1,7 +1,7 @@
 use dfc_core::{
-    Access, DecodeError, DiversificationAlgorithm, FileSettingsKind, SdmConfig, SdmError, SdmField,
-    TransactionMacVerifier, decode_application_ids, decode_file_settings, decode_version,
-    diversify_key, verify_sdm,
+    Access, CommunicationMode, DecodeError, DiversificationAlgorithm, FileSettingsKind, FileType,
+    SdmConfig, SdmError, SdmField, TransactionMacVerifier, decode_application_ids,
+    decode_file_settings, decode_version, diversify_key, verify_sdm,
 };
 
 #[test]
@@ -26,6 +26,8 @@ fn diversification_and_response_decoding_use_native_core() {
         [[1, 2, 3], [0xaa, 0xbb, 0xcc]]
     );
     let settings = decode_file_settings(&[0, 3, 0x12, 0xef, 0x80, 0, 0]).unwrap();
+    assert_eq!(settings.file_type, FileType::StandardData);
+    assert_eq!(settings.communication_mode, CommunicationMode::Enciphered);
     assert_eq!(settings.read, Access::Free);
     assert_eq!(settings.write, Access::Denied);
     assert_eq!(settings.kind, FileSettingsKind::Data { size: 128 });

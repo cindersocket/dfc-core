@@ -11,7 +11,7 @@ from typing import Any, Self
 from . import _native as N
 from .credential import Credential
 from .errors import RandomSourceError
-from .models import Activation, Snapshot
+from .models import Activation, PiccAuthenticationMode, Selection, Snapshot
 
 _INITIAL_RESPONSE_CAPACITY = 256
 
@@ -207,16 +207,19 @@ class VirtualPicc:
         with self._lock, self._lease() as handle:
             s = N.Snapshot()
             N.raise_status(N.library().dfc_ffi_picc_snapshot(handle, C.byref(s)))
+            selection = Selection(s.selected)
+            authentication = PiccAuthenticationMode(s.auth_mode) if s.auth_mode else None
+            application_selected = selection is Selection.APPLICATION
+            ev2_active = bool(s.ev2_active)
             return Snapshot(
-                s.selected,
-                s.selected_application_index,
-                bytes(s.selected_aid),
+                selection,
+                s.selected_application_index if application_selected else None,
+                bytes(s.selected_aid) if application_selected else b"",
                 bool(s.dirty),
-                s.auth_mode,
-                s.auth_key_no,
-                bool(s.ev2_active),
-                s.ev2_key_no,
-                s.ev2_command_counter,
+                authentication,
+                s.auth_key_no if authentication is not None else None,
+                s.ev2_key_no if ev2_active else None,
+                s.ev2_command_counter if ev2_active else None,
                 bool(s.virtual_card_selected),
                 bool(s.proximity_verified),
             )

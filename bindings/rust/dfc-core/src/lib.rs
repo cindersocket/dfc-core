@@ -43,13 +43,14 @@ pub use credential::{Credential, CredentialFile, CredentialKey, CredentialPiccSe
 pub use crypto::{DiversificationAlgorithm, diversify_key};
 #[cfg(not(feature = "role-target"))]
 pub use reader::{
-    Command, CommunicationMode, Framing, Reader, ReaderError, ReaderState, Response, Transport,
+    AuthenticationMode, Command, CommunicationMode, Framing, Reader, ReaderError, ReaderState,
+    Response, Transport,
 };
 #[cfg(not(feature = "role-target"))]
 pub use responses::{
-    Access, DecodeError, FileSettings, FileSettingsKind, KeySettings, Version, VersionPart,
-    decode_application_ids, decode_file_ids, decode_file_settings, decode_key_settings,
-    decode_key_version, decode_version,
+    Access, DecodeError, FileSettings, FileSettingsKind, FileType, KeySettings, Version,
+    VersionPart, decode_application_ids, decode_file_ids, decode_file_settings,
+    decode_key_settings, decode_key_version, decode_version,
 };
 #[cfg(not(feature = "role-target"))]
 pub use sdm::{SdmConfig, SdmError, SdmField, SdmResult, verify_sdm};
@@ -257,7 +258,91 @@ fn output(mut call: impl FnMut(*mut u8, usize, *mut usize) -> i32) -> Result<Vec
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "role-target"))]
 /// Feature and capacity report for the linked native build.
-pub struct Capabilities(pub sys::DfcFfiCapabilities);
+pub struct Capabilities(sys::DfcFfiCapabilities);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(not(feature = "role-target"))]
+/// Code included in the linked native build.
+pub enum BuildRole {
+    /// Card-side emulator and binary codec.
+    Target,
+    /// Reader-side client and credential codecs.
+    Host,
+    /// Combined emulator and reader build.
+    Simulator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(not(feature = "role-target"))]
+/// Card-generation feature set selected for the native build.
+pub enum BuildProfile {
+    /// Small EV1-compatible feature set.
+    MinimalEv1,
+    /// Complete EV1-compatible feature set.
+    FullEv1,
+    /// Complete EV2-compatible feature set.
+    FullEv2,
+    /// Complete EV3-compatible feature set.
+    FullEv3,
+    /// Small EV3-compatible feature set.
+    MinimalEv3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(not(feature = "role-target"))]
+/// Optional native capability queried through [`Capabilities::supports`].
+pub enum Capability {
+    /// EV1 behavior.
+    GenerationEv1,
+    /// EV2 behavior.
+    GenerationEv2,
+    /// EV3 behavior.
+    GenerationEv3,
+    /// Two-kilobyte card models.
+    Storage2k,
+    /// Four-kilobyte card models.
+    Storage4k,
+    /// Eight-kilobyte card models.
+    Storage8k,
+    /// EV2 secure messaging.
+    Ev2SecureMessaging,
+    /// ISO 7816 commands.
+    Iso7816,
+    /// Transaction MAC files.
+    TransactionMac,
+    /// Secure Dynamic Messaging.
+    SecureDynamicMessaging,
+    /// Proximity checks.
+    ProximityCheck,
+    /// Virtual Card selection.
+    VirtualCard,
+    /// Multiple application key sets.
+    KeySets,
+    /// Delegated applications.
+    DelegatedApplications,
+    /// Transaction timers.
+    TransactionTimer,
+    /// Application capability data.
+    ApplicationCapabilityData,
+    /// Static card signatures.
+    StaticSignature,
+    /// Legacy D40 authentication.
+    AuthD40,
+    /// ISO authentication.
+    AuthIso,
+    /// AES authentication.
+    AuthAes,
+    /// Virtual-card emulator APIs.
+    Emulator,
+    /// Reader APIs.
+    Reader,
+    /// Binary credential decoding.
+    DerDecoder,
+    /// Binary credential encoding.
+    DerEncoder,
+    /// Text credential codec.
+    TextCodec,
+}
 
 #[cfg(not(feature = "role-target"))]
 impl Capabilities {
@@ -268,14 +353,200 @@ impl Capabilities {
         unsafe { sys::dfc_ffi_capabilities(value.as_mut_ptr()) };
         Ok(Self(unsafe { value.assume_init() }))
     }
+
+    /// Returns the native ABI version.
+    pub fn abi_version(&self) -> u32 {
+        self.0.abi_version
+    }
+
+    /// Returns the native build role.
+    pub fn build_role(&self) -> BuildRole {
+        match self.0.build_role {
+            1 => BuildRole::Target,
+            2 => BuildRole::Host,
+            3 => BuildRole::Simulator,
+            _ => unreachable!("native ABI returned an invalid build role"),
+        }
+    }
+
+    /// Returns the native build profile.
+    pub fn build_profile(&self) -> BuildProfile {
+        match self.0.build_profile {
+            1 => BuildProfile::MinimalEv1,
+            2 => BuildProfile::FullEv1,
+            3 => BuildProfile::FullEv2,
+            4 => BuildProfile::FullEv3,
+            5 => BuildProfile::MinimalEv3,
+            _ => unreachable!("native ABI returned an invalid build profile"),
+        }
+    }
+
+    /// Reports whether the native build includes one optional capability.
+    pub fn supports(&self, capability: Capability) -> bool {
+        let value = match capability {
+            Capability::GenerationEv1 => self.0.generation_ev1,
+            Capability::GenerationEv2 => self.0.generation_ev2,
+            Capability::GenerationEv3 => self.0.generation_ev3,
+            Capability::Storage2k => self.0.storage_2k,
+            Capability::Storage4k => self.0.storage_4k,
+            Capability::Storage8k => self.0.storage_8k,
+            Capability::Ev2SecureMessaging => self.0.ev2_secure_messaging,
+            Capability::Iso7816 => self.0.iso7816,
+            Capability::TransactionMac => self.0.transaction_mac,
+            Capability::SecureDynamicMessaging => self.0.secure_dynamic_messaging,
+            Capability::ProximityCheck => self.0.proximity_check,
+            Capability::VirtualCard => self.0.virtual_card,
+            Capability::KeySets => self.0.key_sets,
+            Capability::DelegatedApplications => self.0.delegated_applications,
+            Capability::TransactionTimer => self.0.transaction_timer,
+            Capability::ApplicationCapabilityData => self.0.application_capability_data,
+            Capability::StaticSignature => self.0.static_signature,
+            Capability::AuthD40 => self.0.auth_d40,
+            Capability::AuthIso => self.0.auth_iso,
+            Capability::AuthAes => self.0.auth_aes,
+            Capability::Emulator => self.0.emulator,
+            Capability::Reader => self.0.reader,
+            Capability::DerDecoder => self.0.der_decoder,
+            Capability::DerEncoder => self.0.der_encoder,
+            Capability::TextCodec => self.0.text_codec,
+        };
+        value != 0
+    }
+
+    /// Reports whether virtual-card emulator APIs are available.
+    pub fn has_emulator(&self) -> bool {
+        self.supports(Capability::Emulator)
+    }
+
+    /// Reports whether reader APIs are available.
+    pub fn has_reader(&self) -> bool {
+        self.supports(Capability::Reader)
+    }
+
+    /// Returns the maximum number of applications in a credential.
+    pub fn max_applications(&self) -> u32 {
+        self.0.max_applications
+    }
+
+    /// Returns the maximum number of files in a credential.
+    pub fn max_files(&self) -> u32 {
+        self.0.max_files
+    }
+
+    /// Returns the maximum number of keys in a credential.
+    pub fn max_keys(&self) -> u32 {
+        self.0.max_keys
+    }
+
+    /// Returns the credential file-data pool size in bytes.
+    pub fn file_pool_size(&self) -> u32 {
+        self.0.file_pool_size
+    }
+
+    /// Returns the credential key-data pool size in bytes.
+    pub fn key_pool_size(&self) -> u32 {
+        self.0.key_pool_size
+    }
 }
 
 #[cfg(not(feature = "role-target"))]
 /// RF activation parameters returned by a virtual card.
 pub struct Activation(pub sys::DfcFfiActivation);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Selection level reported by a virtual card.
+pub enum Selection {
+    /// No application is selected.
+    None,
+    /// The PICC master application is selected.
+    Picc,
+    /// A credential-model application is selected.
+    Application,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+/// Native authentication cipher reported by a virtual card.
+pub enum PiccAuthenticationMode {
+    /// Legacy D40 authentication.
+    Legacy = 0x0a,
+    /// ISO authentication.
+    Iso = 0x1a,
+    /// AES authentication. [`Snapshot::ev2_command_counter`] distinguishes EV2.
+    Aes = 0xaa,
+}
+
 #[cfg(not(feature = "role-target"))]
 /// Public, non-secret virtual-card state snapshot.
-pub struct Snapshot(pub sys::DfcFfiSnapshot);
+pub struct Snapshot(sys::DfcFfiSnapshot);
+
+#[cfg(not(feature = "role-target"))]
+impl Snapshot {
+    /// Returns the current selection level.
+    pub fn selection(&self) -> Selection {
+        match self.0.selected {
+            0 => Selection::None,
+            1 => Selection::Picc,
+            2 => Selection::Application,
+            _ => unreachable!("native PICC returned an invalid selection state"),
+        }
+    }
+
+    /// Returns the selected model index and AID, or `None` outside application selection.
+    ///
+    /// The AID is in credential-model order, most-significant octet first.
+    pub fn selected_application(&self) -> Option<(u32, &[u8; 3])> {
+        (self.selection() == Selection::Application)
+            .then_some((self.0.selected_application_index, &self.0.selected_aid))
+    }
+
+    /// Returns whether persistent card state has changed since export.
+    pub fn is_dirty(&self) -> bool {
+        self.0.dirty != 0
+    }
+
+    /// Returns the active native authentication cipher, or `None` while unauthenticated.
+    pub fn authentication(&self) -> Option<PiccAuthenticationMode> {
+        match self.0.auth_mode {
+            0 => None,
+            value if value == PiccAuthenticationMode::Legacy as u8 => {
+                Some(PiccAuthenticationMode::Legacy)
+            }
+            value if value == PiccAuthenticationMode::Iso as u8 => {
+                Some(PiccAuthenticationMode::Iso)
+            }
+            value if value == PiccAuthenticationMode::Aes as u8 => {
+                Some(PiccAuthenticationMode::Aes)
+            }
+            _ => unreachable!("native PICC returned an invalid authentication mode"),
+        }
+    }
+
+    /// Returns the authenticated key number, or `None` while unauthenticated.
+    pub fn authenticated_key_number(&self) -> Option<u8> {
+        self.authentication().map(|_| self.0.auth_key_no)
+    }
+
+    /// Returns the EV2 command counter, or `None` outside EV2.
+    pub fn ev2_command_counter(&self) -> Option<u32> {
+        (self.0.ev2_active != 0).then_some(self.0.ev2_command_counter)
+    }
+
+    /// Returns the EV2 key number, or `None` outside EV2.
+    pub fn ev2_key_number(&self) -> Option<u8> {
+        (self.0.ev2_active != 0).then_some(self.0.ev2_key_no)
+    }
+
+    /// Returns whether virtual-card selection completed.
+    pub fn virtual_card_selected(&self) -> bool {
+        self.0.virtual_card_selected != 0
+    }
+
+    /// Returns whether proximity verification completed.
+    pub fn proximity_verified(&self) -> bool {
+        self.0.proximity_verified != 0
+    }
+}
 
 /// Secret-bearing state for diagnostics and conformance tests.
 ///
@@ -562,9 +833,9 @@ mod tests {
     #[test]
     fn native_layout_and_capabilities_are_compatible() {
         let capabilities = Capabilities::get().expect("compatible native ABI");
-        assert_eq!(capabilities.0.abi_version, sys::DFC_FFI_ABI_VERSION);
-        assert_ne!(capabilities.0.emulator, 0);
-        assert_ne!(capabilities.0.reader, 0);
+        assert_eq!(capabilities.abi_version(), sys::DFC_FFI_ABI_VERSION);
+        assert!(capabilities.has_emulator());
+        assert!(capabilities.has_reader());
     }
 
     #[test]

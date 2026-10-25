@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import pytest
+
 from dfc_core import (
     AccessKind,
+    CommunicationMode,
     DiversificationAlgorithm,
+    FileType,
     ResponseDecodeError,
     SdmConfig,
     SdmField,
@@ -28,6 +31,8 @@ def test_diversification_and_typed_decoders() -> None:
         bytes.fromhex("AABBCC"),
     )
     settings = decode_file_settings(bytes.fromhex("000312EF800000"))
+    assert settings.type is FileType.STANDARD_DATA
+    assert settings.communication_mode is CommunicationMode.ENCIPHERED
     assert settings.size == 128
     assert settings.access.read.kind is AccessKind.FREE
     assert settings.access.write.kind is AccessKind.DENIED

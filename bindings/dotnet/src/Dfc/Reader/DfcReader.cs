@@ -51,13 +51,19 @@ public enum DfcIso7816AuthAlgorithm : byte
 }
 
 /// <summary>A reader session's state.</summary>
+/// <param name="Kind">The active authentication family, or None.</param>
+/// <param name="KeyNo">The authenticated key number, or null when unauthenticated.</param>
+/// <param name="Ev2CommandCounter">The command counter, or null outside EV2.</param>
+/// <param name="Ev2TransactionIdentifier">The transaction identifier, or null outside EV2.</param>
+/// <param name="Ev2CardCapabilities">The card capabilities, or null outside EV2.</param>
+/// <param name="Ev2ReaderCapabilities">The reader capabilities, or null outside EV2.</param>
 public sealed record DfcReaderSession(
     DfcSessionKind Kind,
-    byte KeyNo,
-    ushort Ev2CommandCounter,
-    byte[] Ev2TransactionIdentifier,
-    byte[] Ev2CardCapabilities,
-    byte[] Ev2ReaderCapabilities
+    byte? KeyNo,
+    ushort? Ev2CommandCounter,
+    byte[]? Ev2TransactionIdentifier,
+    byte[]? Ev2CardCapabilities,
+    byte[]? Ev2ReaderCapabilities
 );
 
 /// <summary>The card's final status and its clear answer.</summary>
@@ -132,13 +138,15 @@ public sealed class DfcReader : IDisposable
             using var handles = this.AcquireHandles();
             NativeReaderState state;
             _ = Native.dfc_ffi_reader_session_state(handles.Session, &state);
+            var authenticated = state.AuthMode != 0;
+            var ev2 = state.AuthMode == Native.DFC_FFI_AUTH_EV2;
             return new DfcReaderSession(
                 (DfcSessionKind)state.AuthMode,
-                state.KeyNo,
-                (ushort)state.Ev2CommandCounter,
-                new ReadOnlySpan<byte>(state.Ev2TransactionIdentifier, 4).ToArray(),
-                new ReadOnlySpan<byte>(state.Ev2CardCapabilities, 6).ToArray(),
-                new ReadOnlySpan<byte>(state.Ev2ReaderCapabilities, 6).ToArray()
+                authenticated ? state.KeyNo : null,
+                ev2 ? (ushort)state.Ev2CommandCounter : null,
+                ev2 ? new ReadOnlySpan<byte>(state.Ev2TransactionIdentifier, 4).ToArray() : null,
+                ev2 ? new ReadOnlySpan<byte>(state.Ev2CardCapabilities, 6).ToArray() : null,
+                ev2 ? new ReadOnlySpan<byte>(state.Ev2ReaderCapabilities, 6).ToArray() : null
             );
         }
     }

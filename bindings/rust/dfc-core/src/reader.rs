@@ -73,11 +73,17 @@ fn grow_after_response(apdu: &mut ApduBuffer, incoming: &mut [u8]) -> Result<(),
     }
 }
 
-/// Transport used by [`Reader`] to exchange complete APDUs with a card.
+/// Transport used by [`Reader`] to exchange one card frame.
+///
+/// [`Framing::Iso7816`] supplies complete ISO 7816 command and response APDUs.
+/// [`Framing::Native`] supplies `INS || data` and receives `status || data`.
 pub trait Transport {
     /// Transport-specific failure.
     type Error;
-    /// Sends one command and returns the complete card response.
+    /// Exchanges one frame in the reader's selected framing.
+    ///
+    /// ISO framing uses complete APDUs. Native framing uses `INS || data` for
+    /// the command and `status || data` for the response.
     fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
@@ -131,8 +137,65 @@ pub struct Response {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+/// Authentication family active in a reader session.
+pub enum AuthenticationMode {
+    /// The reader is unauthenticated.
+    None = 0,
+    /// Legacy D40 authentication.
+    Legacy = crate::PiccAuthenticationMode::Legacy as u8,
+    /// ISO authentication.
+    Iso = crate::PiccAuthenticationMode::Iso as u8,
+    /// AES authentication with EV1 secure messaging.
+    Aes = crate::PiccAuthenticationMode::Aes as u8,
+    /// EV2 secure messaging.
+    Ev2 = 0x71,
+}
+
 /// Snapshot of the reader's authentication and chaining state.
-pub struct ReaderState(pub sys::DfcFfiReaderState);
+pub struct ReaderState(sys::DfcFfiReaderState);
+
+impl ReaderState {
+    /// Returns the active authentication family.
+    pub fn authentication(&self) -> AuthenticationMode {
+        match self.0.auth_mode {
+            0 => AuthenticationMode::None,
+            value if value == AuthenticationMode::Legacy as u8 => AuthenticationMode::Legacy,
+            value if value == AuthenticationMode::Iso as u8 => AuthenticationMode::Iso,
+            value if value == AuthenticationMode::Aes as u8 => AuthenticationMode::Aes,
+            value if value == AuthenticationMode::Ev2 as u8 => AuthenticationMode::Ev2,
+            _ => unreachable!("native reader returned an invalid authentication mode"),
+        }
+    }
+
+    /// Returns the authenticated key number, or `None` while unauthenticated.
+    pub fn key_number(&self) -> Option<u8> {
+        (self.authentication() != AuthenticationMode::None).then_some(self.0.key_no)
+    }
+
+    /// Returns the EV2 command counter, or `None` outside EV2.
+    pub fn ev2_command_counter(&self) -> Option<u32> {
+        (self.authentication() == AuthenticationMode::Ev2).then_some(self.0.ev2_command_counter)
+    }
+
+    /// Returns the EV2 transaction identifier, or `None` outside EV2.
+    pub fn ev2_transaction_identifier(&self) -> Option<&[u8; 4]> {
+        (self.authentication() == AuthenticationMode::Ev2)
+            .then_some(&self.0.ev2_transaction_identifier)
+    }
+
+    /// Returns the card capabilities negotiated by EV2, or `None` outside EV2.
+    pub fn ev2_card_capabilities(&self) -> Option<&[u8; 6]> {
+        (self.authentication() == AuthenticationMode::Ev2).then_some(&self.0.ev2_card_capabilities)
+    }
+
+    /// Returns the reader capabilities negotiated by EV2, or `None` outside EV2.
+    pub fn ev2_reader_capabilities(&self) -> Option<&[u8; 6]> {
+        (self.authentication() == AuthenticationMode::Ev2)
+            .then_some(&self.0.ev2_reader_capabilities)
+    }
+}
 
 #[derive(Debug)]
 /// Error from reader processing, the card, or the supplied transport.

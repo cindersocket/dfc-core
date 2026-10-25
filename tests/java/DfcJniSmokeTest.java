@@ -2,7 +2,9 @@ import com.cindersocket.dfc.DfcCommand;
 import com.cindersocket.dfc.DfcCredential;
 import com.cindersocket.dfc.DfcCredentialCodec;
 import com.cindersocket.dfc.DfcLibrary;
+import com.cindersocket.dfc.DfcPiccSnapshot;
 import com.cindersocket.dfc.DfcReader;
+import com.cindersocket.dfc.DfcReaderSession;
 import com.cindersocket.dfc.DfcResponse;
 import com.cindersocket.dfc.DfcVirtualPicc;
 
@@ -36,7 +38,8 @@ public final class DfcJniSmokeTest {
     try (DfcVirtualPicc picc = DfcVirtualPicc.createForReplay(credential, new byte[64]);
         DfcReader reader = new DfcReader(picc)) {
       check(picc.activate().uid().length > 0, "activation UID");
-      check(picc.snapshot().selected() == 1, "activated PICC snapshot");
+      check(
+          picc.snapshot().selection() == DfcPiccSnapshot.Selection.PICC, "activated PICC snapshot");
       DfcResponse version = reader.exchange(
           DfcCommand.getVersion(), DfcReader.Framing.ISO_7816, DfcReader.Communication.PLAIN);
       check(version.successful(), "GetVersion status");
@@ -47,7 +50,8 @@ public final class DfcJniSmokeTest {
       Arrays.fill(randomA, (byte) 0x5a);
       reader.authenticateForReplay(
           DfcReader.Cipher.ISO, 0, key, DfcReader.Framing.ISO_7816, randomA);
-      check(reader.session().authenticationMode() == 0x1a, "ISO reader session");
+      check(reader.session().authenticationMode() == DfcReaderSession.AuthenticationMode.ISO,
+          "ISO reader session");
       check(DfcReader.Communication.ENCIPHERED.ordinal() == 2,
           "test must distinguish native values from enum ordinals");
       for (DfcReader.Communication communication : DfcReader.Communication.values()) {
@@ -95,8 +99,9 @@ public final class DfcJniSmokeTest {
       picc.activate();
       reader.authenticateEv2ForReplay(
           true, 0, ev2Key, new byte[0], DfcReader.Framing.ISO_7816, new byte[16]);
-      check(reader.session().authenticationMode() == 0x71, "EV2 reader session");
-      check(picc.snapshot().ev2Active(), "EV2 PICC session");
+      check(reader.session().authenticationMode() == DfcReaderSession.AuthenticationMode.EV2,
+          "EV2 reader session");
+      check(picc.snapshot().ev2CommandCounter() != null, "EV2 PICC session");
     }
 
     DfcReader[] callbackReader = new DfcReader[1];

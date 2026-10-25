@@ -3,6 +3,8 @@ use core::{alloc::Layout, mem::MaybeUninit, ptr::NonNull};
 
 use dfc_core_sys as sys;
 
+use crate::{PiccAuthenticationMode, Selection};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Error returned by the allocation-free target-facing API.
 pub enum TargetError {
@@ -112,7 +114,74 @@ impl Drop for TargetCredential {
 /// Activation parameters produced by the target virtual card.
 pub struct TargetActivation(pub sys::DfcTargetActivation);
 /// Public state snapshot produced by the target virtual card.
-pub struct TargetSnapshot(pub sys::DfcTargetSnapshot);
+pub struct TargetSnapshot(sys::DfcTargetSnapshot);
+
+impl TargetSnapshot {
+    /// Returns the current selection level.
+    pub fn selection(&self) -> Selection {
+        match self.0.selected {
+            0 => Selection::None,
+            1 => Selection::Picc,
+            2 => Selection::Application,
+            _ => unreachable!("native PICC returned an invalid selection state"),
+        }
+    }
+
+    /// Returns the selected model index and AID, or `None` outside application selection.
+    ///
+    /// The AID is in credential-model order, most-significant octet first.
+    pub fn selected_application(&self) -> Option<(u32, &[u8; 3])> {
+        (self.selection() == Selection::Application)
+            .then_some((self.0.selected_application_index, &self.0.selected_aid))
+    }
+
+    /// Returns whether persistent card state has changed since export.
+    pub fn is_dirty(&self) -> bool {
+        self.0.dirty != 0
+    }
+
+    /// Returns the active native authentication cipher, or `None` while unauthenticated.
+    pub fn authentication(&self) -> Option<PiccAuthenticationMode> {
+        match self.0.auth_mode {
+            0 => None,
+            value if value == PiccAuthenticationMode::Legacy as u8 => {
+                Some(PiccAuthenticationMode::Legacy)
+            }
+            value if value == PiccAuthenticationMode::Iso as u8 => {
+                Some(PiccAuthenticationMode::Iso)
+            }
+            value if value == PiccAuthenticationMode::Aes as u8 => {
+                Some(PiccAuthenticationMode::Aes)
+            }
+            _ => unreachable!("native PICC returned an invalid authentication mode"),
+        }
+    }
+
+    /// Returns the authenticated key number, or `None` while unauthenticated.
+    pub fn authenticated_key_number(&self) -> Option<u8> {
+        self.authentication().map(|_| self.0.auth_key_no)
+    }
+
+    /// Returns the EV2 command counter, or `None` outside EV2.
+    pub fn ev2_command_counter(&self) -> Option<u32> {
+        (self.0.ev2_active != 0).then_some(self.0.ev2_command_counter)
+    }
+
+    /// Returns the EV2 key number, or `None` outside EV2.
+    pub fn ev2_key_number(&self) -> Option<u8> {
+        (self.0.ev2_active != 0).then_some(self.0.ev2_key_no)
+    }
+
+    /// Returns whether virtual-card selection completed.
+    pub fn virtual_card_selected(&self) -> bool {
+        self.0.virtual_card_selected != 0
+    }
+
+    /// Returns whether proximity verification completed.
+    pub fn proximity_verified(&self) -> bool {
+        self.0.proximity_verified != 0
+    }
+}
 
 /// Virtual card backed by Rust-owned native storage for `role-target` builds.
 ///

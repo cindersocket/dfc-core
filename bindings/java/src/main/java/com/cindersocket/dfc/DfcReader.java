@@ -117,7 +117,15 @@ public final class DfcReader implements AutoCloseable {
    */
   public synchronized DfcReaderSession session() throws DfcException {
     java.nio.ByteBuffer data = java.nio.ByteBuffer.wrap(DfcNative.readerState(state.require()));
-    int mode = data.get() & 0xff;
+    int rawMode = data.get() & 0xff;
+    DfcReaderSession.AuthenticationMode mode = switch (rawMode) {
+      case 0 -> DfcReaderSession.AuthenticationMode.NONE;
+      case (int) DfcLayout.DFC_FFI_AUTH_LEGACY -> DfcReaderSession.AuthenticationMode.LEGACY;
+      case (int) DfcLayout.DFC_FFI_AUTH_ISO -> DfcReaderSession.AuthenticationMode.ISO;
+      case (int) DfcLayout.DFC_FFI_AUTH_AES -> DfcReaderSession.AuthenticationMode.AES;
+      case (int) DfcLayout.DFC_FFI_AUTH_EV2 -> DfcReaderSession.AuthenticationMode.EV2;
+      default -> throw new AssertionError("native reader returned an invalid authentication mode");
+    };
     int keyNumber = data.get() & 0xff;
     int counter = data.getInt();
     byte[] transactionIdentifier = new byte[EV2_TRANSACTION_IDENTIFIER_LENGTH];
@@ -126,8 +134,11 @@ public final class DfcReader implements AutoCloseable {
     data.get(cardCapabilities);
     byte[] readerCapabilities = new byte[EV2_CAPABILITIES_LENGTH];
     data.get(readerCapabilities);
-    return new DfcReaderSession(
-        mode, keyNumber, counter, transactionIdentifier, cardCapabilities, readerCapabilities);
+    boolean authenticated = mode != DfcReaderSession.AuthenticationMode.NONE;
+    boolean ev2 = mode == DfcReaderSession.AuthenticationMode.EV2;
+    return new DfcReaderSession(mode, authenticated ? keyNumber : null, ev2 ? counter : null,
+        ev2 ? transactionIdentifier : new byte[0], ev2 ? cardCapabilities : new byte[0],
+        ev2 ? readerCapabilities : new byte[0]);
   }
   /**
    * Runs one command with its instruction-specific encrypted clear-header length.

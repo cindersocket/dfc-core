@@ -30,12 +30,20 @@ public enum DfcSelection
 }
 
 /// <summary>The card's state between exchanges.</summary>
+/// <param name="Selection">The selected card level.</param>
+/// <param name="SelectedAid">The selected application AID, or zeroes outside an application.</param>
+/// <param name="Dirty">Whether persistent card state changed.</param>
+/// <param name="Authentication">The active cipher, or null when unauthenticated.</param>
+/// <param name="AuthenticatedKeyNo">The authenticated key number, or null when unauthenticated.</param>
+/// <param name="Ev2Session">EV2 state, or null outside an EV2 session.</param>
+/// <param name="VirtualCardSelected">Whether virtual-card selection completed.</param>
+/// <param name="ProximityVerified">Whether proximity verification completed.</param>
 public sealed record DfcPiccSnapshot(
     DfcSelection Selection,
     byte[] SelectedAid,
     bool Dirty,
     DfcAuthenticationMode? Authentication,
-    byte AuthenticatedKeyNo,
+    byte? AuthenticatedKeyNo,
     DfcEv2SessionSnapshot? Ev2Session,
     bool VirtualCardSelected,
     bool ProximityVerified
@@ -371,7 +379,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
             new ReadOnlySpan<byte>(s.SelectedAid, 3).ToArray(),
             s.Dirty != 0,
             s.AuthMode != 0 ? (DfcAuthenticationMode)s.AuthMode : null,
-            s.AuthKeyNo,
+            s.AuthMode != 0 ? s.AuthKeyNo : null,
             ev2,
             s.VirtualCardSelected != 0,
             s.ProximityVerified != 0

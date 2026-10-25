@@ -3,31 +3,35 @@ package com.cindersocket.dfc;
 /**
  * Public reader-session state. Session keys remain inside the native core.
  *
- * @param authenticationMode active authentication instruction: 0 for none, 0x0A for legacy, 0x1A
- *     for ISO, 0xAA for AES, or 0x71 for EV2
- * @param keyNumber active key number; meaningful only when {@code authenticationMode != 0}, and
- *     zero otherwise
- * @param ev2CommandCounter current EV2 command counter; meaningful only when {@code
- *     authenticationMode == 0x71}
- * @param ev2TransactionIdentifier defensive copy of the four-byte transaction identifier; valid
- *     only for authentication mode 0x71
- * @param ev2CardCapabilities defensive copy of the six-byte card capabilities; valid only for
- *     authentication mode 0x71
- * @param ev2ReaderCapabilities defensive copy of the six-byte reader capabilities; valid only for
- *     authentication mode 0x71
+ * @param authenticationMode active authentication family
+ * @param keyNumber active key number, or null while unauthenticated
+ * @param ev2CommandCounter current EV2 command counter, or null outside EV2
+ * @param ev2TransactionIdentifier defensive copy of the four-byte transaction identifier, or an
+ *     empty array outside EV2
+ * @param ev2CardCapabilities defensive copy of the six-byte card capabilities, or an empty array
+ *     outside EV2
+ * @param ev2ReaderCapabilities defensive copy of the six-byte reader capabilities, or an empty
+ *     array outside EV2
  */
-public record DfcReaderSession(int authenticationMode, int keyNumber, int ev2CommandCounter,
-    byte[] ev2TransactionIdentifier, byte[] ev2CardCapabilities, byte[] ev2ReaderCapabilities) {
+public record DfcReaderSession(AuthenticationMode authenticationMode, Integer keyNumber,
+    Integer ev2CommandCounter, byte[] ev2TransactionIdentifier, byte[] ev2CardCapabilities,
+    byte[] ev2ReaderCapabilities) {
+  /** Authentication family active in a reader session. */
+  public enum AuthenticationMode {
+    /** The reader is unauthenticated. */ NONE,
+    /** Legacy D40 authentication. */ LEGACY,
+    /** ISO authentication. */ ISO,
+    /** AES authentication with EV1 secure messaging. */ AES,
+    /** EV2 secure messaging. */ EV2
+  }
   /**
    * Defensively copies the exported session values.
-   * @param authenticationMode active authentication instruction: 0 for none, 0x0A for legacy, 0x1A
-   *     for ISO, 0xAA for AES, or 0x71 for EV2
-   * @param keyNumber active key number; meaningful only when {@code authenticationMode != 0}, and
-   *     zero otherwise
-   * @param ev2CommandCounter current EV2 command counter, active only for mode 0x71
-   * @param ev2TransactionIdentifier four-byte transaction identifier, active only for mode 0x71
-   * @param ev2CardCapabilities six-byte card capabilities, active only for mode 0x71
-   * @param ev2ReaderCapabilities six-byte reader capabilities, active only for mode 0x71
+   * @param authenticationMode active authentication family
+   * @param keyNumber active key number, or null while unauthenticated
+   * @param ev2CommandCounter current EV2 command counter, or null outside EV2
+   * @param ev2TransactionIdentifier four-byte transaction identifier, or empty outside EV2
+   * @param ev2CardCapabilities six-byte card capabilities, or empty outside EV2
+   * @param ev2ReaderCapabilities six-byte reader capabilities, or empty outside EV2
    */
   public DfcReaderSession {
     ev2TransactionIdentifier = ev2TransactionIdentifier.clone();

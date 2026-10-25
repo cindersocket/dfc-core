@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use dfc_core_sys as sys;
 
-use crate::{Error, ensure_abi};
+use crate::{Error, ensure_abi, reader::CommunicationMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Failure returned when a clear command response cannot be decoded.
@@ -156,6 +156,42 @@ pub enum Access {
     Denied,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+/// File type returned by GetFileSettings.
+pub enum FileType {
+    /// Standard data file.
+    StandardData = 0,
+    /// Transactional backup data file.
+    BackupData = 1,
+    /// Signed value file.
+    Value = 2,
+    /// Linear record file.
+    LinearRecord = 3,
+    /// Cyclic record file.
+    CyclicRecord = 4,
+}
+
+fn file_type(value: u8) -> Result<FileType, DecodeError> {
+    match value {
+        0 => Ok(FileType::StandardData),
+        1 => Ok(FileType::BackupData),
+        2 => Ok(FileType::Value),
+        3 => Ok(FileType::LinearRecord),
+        4 => Ok(FileType::CyclicRecord),
+        _ => Err(DecodeError::Unsupported),
+    }
+}
+
+fn communication_mode(value: u8) -> Result<CommunicationMode, DecodeError> {
+    match value {
+        0 => Ok(CommunicationMode::Plain),
+        1 => Ok(CommunicationMode::Mac),
+        3 => Ok(CommunicationMode::Enciphered),
+        _ => Err(DecodeError::Unsupported),
+    }
+}
+
 fn access(bytes: &[u8]) -> Result<Access, DecodeError> {
     match bytes[0] {
         0 => Ok(Access::Key(bytes[1])),
@@ -198,10 +234,10 @@ pub enum FileSettingsKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Decoded GetFileSettings response.
 pub struct FileSettings {
-    /// Native file-type byte.
-    pub file_type: u8,
-    /// Native communication-mode byte.
-    pub communication_mode: u8,
+    /// File storage and update semantics.
+    pub file_type: FileType,
+    /// Communication protection configured for the file.
+    pub communication_mode: CommunicationMode,
     /// Unmodified 16-bit access-right field.
     pub access_rights_raw: u16,
     /// Read access requirement.
@@ -253,8 +289,8 @@ pub fn decode_file_settings(response: &[u8]) -> Result<FileSettings, DecodeError
         },
     };
     Ok(FileSettings {
-        file_type: bytes[0],
-        communication_mode: bytes[1],
+        file_type: file_type(bytes[0])?,
+        communication_mode: communication_mode(bytes[1])?,
         access_rights_raw: u16::from_le_bytes([bytes[4], bytes[5]]),
         read: access(&bytes[6..8])?,
         write: access(&bytes[8..10])?,

@@ -59,11 +59,11 @@ public final class DfcJniNarrowingTest {
     try (DfcVirtualPicc publicPicc = DfcVirtualPicc.create(credential)) {
       publicPicc.activate();
       publicPicc.advanceTime(0xffff_ffffL);
-      int selected = publicPicc.snapshot().selected();
+      DfcPiccSnapshot.Selection selected = publicPicc.snapshot().selection();
       for (long bad : new long[] {-1, 1L << 32, Long.MIN_VALUE, Long.MAX_VALUE}) {
         publiclyRefused("public milliseconds " + bad, () -> publicPicc.advanceTime(bad));
       }
-      check(publicPicc.snapshot().selected() == selected,
+      check(publicPicc.snapshot().selection() == selected,
           "public PICC usable after elapsed-time refusals");
     }
 

@@ -135,7 +135,13 @@ fn d40_reader(forge_empty: bool) -> Reader<CorruptD40MacTransport> {
     reader
         .authenticate(0x0a, 0, &[0; 8], &[0; 8])
         .expect("D40 authentication");
-    assert_ne!(reader.state().expect("authenticated state").0.auth_mode, 0);
+    assert_ne!(
+        reader
+            .state()
+            .expect("authenticated state")
+            .authentication(),
+        dfc_core::AuthenticationMode::None
+    );
     reader
         .exchange(
             &Command {
@@ -171,7 +177,10 @@ fn d40_integrity_failure_is_terminal_and_retires_session() {
         "{result:?}"
     );
     assert_eq!(reader.transport_mut().calls, calls + 1);
-    assert_eq!(reader.state().expect("retired state").0.auth_mode, 0);
+    assert_eq!(
+        reader.state().expect("retired state").authentication(),
+        dfc_core::AuthenticationMode::None
+    );
 }
 
 #[test]
@@ -198,7 +207,10 @@ fn d40_empty_mac_forge_is_terminal_and_retires_session() {
         "{result:?}"
     );
     assert_eq!(reader.transport_mut().calls, calls + 1);
-    assert_eq!(reader.state().expect("retired state").0.auth_mode, 0);
+    assert_eq!(
+        reader.state().expect("retired state").authentication(),
+        dfc_core::AuthenticationMode::None
+    );
 }
 
 fn assert_d40_read_all_records_empty_mac_is_terminal(instruction: u8) {
@@ -234,7 +246,10 @@ fn assert_d40_read_all_records_empty_mac_is_terminal(instruction: u8) {
         "instruction {instruction:#04x}: {result:?}"
     );
     assert_eq!(reader.transport_mut().calls, calls + 1);
-    assert_eq!(reader.state().expect("retired state").0.auth_mode, 0);
+    assert_eq!(
+        reader.state().expect("retired state").authentication(),
+        dfc_core::AuthenticationMode::None
+    );
 }
 
 #[test]

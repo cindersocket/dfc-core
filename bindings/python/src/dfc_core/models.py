@@ -14,18 +14,69 @@ class BuildRole(IntEnum):
 
 class BuildProfile(IntEnum):
     UNKNOWN = 0
-    MINIMAL = 1
-    EV1 = 2
-    EV2 = 3
+    MINIMAL_EV1 = 1
+    FULL_EV1 = 2
+    FULL_EV2 = 3
     FULL_EV3 = 4
-    CUSTOM = 5
+    MINIMAL_EV3 = 5
+
+
+class Framing(IntEnum):
+    """Wire framing used by a reader transport."""
+
+    ISO_7816 = 0
+    NATIVE = 1
+
+
+class CommunicationMode(IntEnum):
+    """Secure-messaging protection requested for a command or configured file."""
+
+    PLAIN = 0
+    MAC = 1
+    ENCIPHERED = 3
+
+
+class FileType(IntEnum):
+    """Type-specific storage and command behavior of a file."""
+
+    STANDARD_DATA = 0
+    BACKUP_DATA = 1
+    VALUE = 2
+    LINEAR_RECORD = 3
+    CYCLIC_RECORD = 4
+    TRANSACTION_MAC = 5
+
+
+class Selection(IntEnum):
+    """Selected card level reported by a virtual PICC."""
+
+    NONE = 0
+    PICC = 1
+    APPLICATION = 2
+
+
+class PiccAuthenticationMode(IntEnum):
+    """Native authentication cipher active in a PICC session."""
+
+    LEGACY = 0x0A
+    ISO = 0x1A
+    AES = 0xAA
+
+
+class ReaderAuthenticationMode(IntEnum):
+    """Authentication family active in a reader session."""
+
+    LEGACY = 0x0A
+    ISO = 0x1A
+    AES = 0xAA
+    EV2 = 0x71
 
 
 @dataclass(frozen=True, slots=True)
 class Capabilities:
     abi_version: int
-    build_role: int
-    build_profile: int
+    build_role: BuildRole
+    build_profile: BuildProfile
     features: frozenset[str]
     max_applications: int
     max_files: int
@@ -111,8 +162,8 @@ class Application:
 class File:
     owner: int
     number: int
-    type: int
-    comm_settings: int
+    type: FileType
+    comm_settings: CommunicationMode
     access_rights: int
     data: bytes = field(default=b"", repr=False)
     declared_size: int = 0
@@ -164,24 +215,23 @@ class Activation:
 
 @dataclass(frozen=True, slots=True)
 class Snapshot:
-    selected: int
-    selected_application_index: int
+    selection: Selection
+    selected_application_index: int | None
     selected_aid: bytes
     dirty: bool
-    auth_mode: int
-    auth_key_no: int
-    ev2_active: bool
-    ev2_key_no: int
-    ev2_command_counter: int
+    authentication: PiccAuthenticationMode | None
+    authenticated_key_no: int | None
+    ev2_key_no: int | None
+    ev2_command_counter: int | None
     virtual_card_selected: bool = False
     proximity_verified: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ReaderState:
-    auth_mode: int
-    key_no: int
-    ev2_command_counter: int
+    authentication: ReaderAuthenticationMode | None
+    key_no: int | None
+    ev2_command_counter: int | None
     ev2_transaction_identifier: bytes
     ev2_card_capabilities: bytes
     ev2_reader_capabilities: bytes
@@ -195,4 +245,10 @@ class Response:
 
 @runtime_checkable
 class Transport(Protocol):
+    """Exchange one card frame.
+
+    ISO framing carries complete command and response APDUs. Native framing
+    carries ``INS || data`` and returns ``status || data``.
+    """
+
     def transceive(self, command: bytes) -> bytes: ...

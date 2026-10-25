@@ -11,13 +11,16 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+
 from dfc_core import (
     CardError,
     Command,
     Credential,
     InvalidArgumentError,
+    PiccAuthenticationMode,
     RandomSourceError,
     Reader,
+    ReaderAuthenticationMode,
     VirtualPicc,
     _native,
     capabilities,
@@ -376,7 +379,8 @@ def test_reader_authenticate_reaches_the_native_begin_function() -> None:
             response = reader.authenticate(0x1A, 0, bytes(16), random_a=bytes(8))
 
             assert response.status == 0
-            assert reader.state.auth_mode == 0x1A
+            assert reader.state.authentication is ReaderAuthenticationMode.ISO
+            assert picc.snapshot().authentication is PiccAuthenticationMode.ISO
 
 
 def test_reader_preserves_card_status_after_growing_command_buffer() -> None:

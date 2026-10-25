@@ -8,13 +8,29 @@ from dataclasses import dataclass
 from typing import Self
 
 from . import _native as N
-from .errors import CardError
-from .models import ReaderState, Response, Transport
+from .errors import CardError, InvalidArgumentError
+from .models import (
+    CommunicationMode,
+    Framing,
+    ReaderAuthenticationMode,
+    ReaderState,
+    Response,
+    Transport,
+)
 
 READER_PENDING = 1
 READER_BUFFER_TOO_SMALL = 3
 READER_CARD_ERROR = 6
 INITIAL_OUTPUT_CAPACITY = 64
+
+
+def _closed_enum(value: int, enum_type: type[Framing | CommunicationMode], name: str) -> int:
+    """Validate a closed wire-domain value without changing binding error behavior."""
+    narrowed = N.unsigned(value, 8, name)
+    try:
+        return int(enum_type(narrowed))
+    except ValueError as error:
+        raise InvalidArgumentError(-1, f"{name} is not supported") from error
 
 
 def _validate_challenge(value: bytes | None, length: int, name: str) -> None:
@@ -95,8 +111,8 @@ class Command:
 
 
 class Reader:
-    def __init__(self, transport: Transport, framing: int = 0) -> None:
-        self.transport, self.framing = transport, framing
+    def __init__(self, transport: Transport, framing: Framing | int = Framing.ISO_7816) -> None:
+        self.transport, self.framing = transport, Framing(framing)
         self._lock = threading.RLock()
         self._in_transport_callback = False
         self._session, self._exchange = N.Handle(), N.Handle()
@@ -121,7 +137,7 @@ class Reader:
             raise RuntimeError("reader is closed")
 
     def _native_framing(self) -> int:
-        return N.unsigned(self.framing, 32, "framing")
+        return _closed_enum(self.framing, Framing, "framing")
 
     def close(self) -> None:
         with self._lock:
@@ -142,13 +158,15 @@ class Reader:
             self._open()
             s = N.ReaderState()
             N.raise_status(N.library().dfc_ffi_reader_session_state(self._session, C.byref(s)))
+            authentication = ReaderAuthenticationMode(s.auth_mode) if s.auth_mode else None
+            ev2 = authentication is ReaderAuthenticationMode.EV2
             return ReaderState(
-                s.auth_mode,
-                s.key_no,
-                s.ev2_command_counter,
-                bytes(s.ev2_transaction_identifier),
-                bytes(s.ev2_card_capabilities),
-                bytes(s.ev2_reader_capabilities),
+                authentication,
+                s.key_no if authentication is not None else None,
+                s.ev2_command_counter if ev2 else None,
+                bytes(s.ev2_transaction_identifier) if ev2 else b"",
+                bytes(s.ev2_card_capabilities) if ev2 else b"",
+                bytes(s.ev2_reader_capabilities) if ev2 else b"",
             )
 
     def clear(self) -> None:
@@ -193,14 +211,19 @@ class Reader:
                 data = N.variable_output(N.library().dfc_ffi_reader_result_data, self._exchange)
                 return Response(N.library().dfc_ffi_reader_result_status(self._exchange), data)
 
-    def exchange(self, command: Command, comm_mode: int = 0, header_len: int = -1) -> Response:
+    def exchange(
+        self,
+        command: Command,
+        comm_mode: CommunicationMode | int = CommunicationMode.PLAIN,
+        header_len: int = -1,
+    ) -> Response:
         """Exchange one command.
 
         ``header_len`` is -1 to derive the clear header, or a non-negative
         length accepted by the native reader.
         """
         clear_header_length = N.signed(header_len, 32, "header_len")
-        comm = N.unsigned(comm_mode, 8, "comm_mode")
+        comm = _closed_enum(comm_mode, CommunicationMode, "comm_mode")
         framing = self._native_framing()
         with self._lock:
             self._open()
@@ -419,13 +442,13 @@ class Reader:
         file_number: int,
         offset: int,
         data: bytes,
-        comm_mode: int,
+        comm_mode: CommunicationMode | int,
         record_number: int | None = None,
     ) -> Response:
         file_no = N.unsigned(file_number, 8, "file_number")
         position = N.unsigned(offset, 32, "offset")
         record = None if record_number is None else N.unsigned(record_number, 32, "record_number")
-        comm = N.unsigned(comm_mode, 8, "comm_mode")
+        comm = _closed_enum(comm_mode, CommunicationMode, "comm_mode")
         framing = self._native_framing()
         _raw, pointer = N.byte_pointer(data)
         with self._lock:
@@ -443,16 +466,29 @@ class Reader:
             return self._run()
 
     def write_data(
-        self, file_number: int, offset: int, data: bytes, comm_mode: int = 0
+        self,
+        file_number: int,
+        offset: int,
+        data: bytes,
+        comm_mode: CommunicationMode | int = CommunicationMode.PLAIN,
     ) -> Response:
         return self._write("write_data", file_number, offset, data, comm_mode)
 
     def write_record(
-        self, file_number: int, offset: int, data: bytes, comm_mode: int = 0
+        self,
+        file_number: int,
+        offset: int,
+        data: bytes,
+        comm_mode: CommunicationMode | int = CommunicationMode.PLAIN,
     ) -> Response:
         return self._write("write_record", file_number, offset, data, comm_mode)
 
     def update_record(
-        self, file_number: int, record_number: int, offset: int, data: bytes, comm_mode: int = 0
+        self,
+        file_number: int,
+        record_number: int,
+        offset: int,
+        data: bytes,
+        comm_mode: CommunicationMode | int = CommunicationMode.PLAIN,
     ) -> Response:
         return self._write("update_record", file_number, offset, data, comm_mode, record_number)

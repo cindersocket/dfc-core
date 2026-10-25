@@ -6,6 +6,7 @@ from enum import IntEnum
 
 from . import _native
 from .errors import DfcError
+from .models import CommunicationMode, FileType
 
 
 class ResponseDecodeError(DfcError):
@@ -55,8 +56,8 @@ class Version:
 
 @dataclass(frozen=True)
 class FileSettings:
-    type: int
-    communication_mode: int
+    type: FileType
+    communication_mode: CommunicationMode
     access_rights_raw: int
     access: AccessRights
     size: int | None = None
@@ -145,11 +146,11 @@ def decode_file_settings(response: bytes) -> FileSettings:
     )
     _ = raw
     data = bytes(output)
-    file_type = data[0]
-    communication_mode = data[1]
+    file_type = FileType(data[0])
+    communication_mode = CommunicationMode(data[1])
     access_rights_raw = int.from_bytes(data[4:6], "little")
     access_rights = AccessRights(*(_access(data[index : index + 2]) for index in range(6, 14, 2)))
-    if data[0] in (0, 1):
+    if file_type in (FileType.STANDARD_DATA, FileType.BACKUP_DATA):
         return FileSettings(
             file_type,
             communication_mode,
@@ -157,7 +158,7 @@ def decode_file_settings(response: bytes) -> FileSettings:
             access_rights,
             size=int.from_bytes(data[14:18], "little"),
         )
-    if data[0] == 2:
+    if file_type is FileType.VALUE:
         return FileSettings(
             file_type,
             communication_mode,
