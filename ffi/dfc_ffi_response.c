@@ -83,10 +83,12 @@ int32_t dfc_ffi_response_decode_file_ids(
 #endif
 }
 
+#if DFC_ENABLE_READER
 static void ffi_pack_access(uint8_t* out, DfcResponseAccess access) {
     out[0] = (uint8_t)access.kind;
     out[1] = access.key_number;
 }
+#endif
 
 int32_t dfc_ffi_response_decode_file_settings(
     const uint8_t* response,

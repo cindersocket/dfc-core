@@ -49,6 +49,11 @@ class MakefileContractTests(unittest.TestCase):
         _dependencies, recipe = target(text, "clean")
         self.assertIn("$(REDUCED_TESTS)", recipe)
 
+    def test_reduced_ffi_suite_compiles_the_target_role(self) -> None:
+        _dependencies, recipe = target(makefile_text(), "test_dfc_ffi_reduced_profile")
+
+        self.assertIn("-DDFC_BUILD_ROLE=DFC_ROLE_TARGET", recipe)
+
 
 if __name__ == "__main__":
     unittest.main()

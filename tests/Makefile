@@ -192,6 +192,7 @@ test_dfc_ffi_reduced_profile: test_dfc_ffi_reduced_profile.c $(CORE_SRC) \
 		../ffi/dfc_ffi_sdm.c ../ffi/dfc_ffi_transaction_mac.c \
 		../port/ffi/dfc_port_ffi.c ../port/host/dfc_bytebuf_host.c $(CRYPTO_SRC)
 	$(CC) $(CFLAGS) -I../ffi -I../port/ffi \
+		-DDFC_BUILD_ROLE=DFC_ROLE_TARGET \
 		-DDFC_BUILD_PROFILE=DFC_PROFILE_MINIMAL_EV1 -DDFC_ENABLE_FFI=1 \
 		-o $@ $^ $(LDFLAGS)
 
