@@ -2,6 +2,7 @@
 #include "dfc_credential_i.h"
 #include "dfc_ev2.h"
 #include "dfc_ev2_crypto.h"
+#include "dfc_sdm_i.h"
 
 #if DFC_ENABLE_EMULATOR
 
@@ -24,35 +25,20 @@ static bool sdm_derive_key(
     const DfcFile* file,
     uint32_t counter,
     uint8_t output[DFC_AES_KEY_LENGTH]) {
-    uint8_t vector[DFC_AES_KEY_LENGTH * 2] = {0};
-    size_t length = 0;
-    const uint8_t prefix[] = {
-        label_high,
-        label_low,
-        DFC_DERIVATION_COUNTER_HIGH,
-        DFC_DERIVATION_COUNTER_LOW,
-        DFC_DERIVED_AES_KEY_LENGTH_HIGH,
-        DFC_DERIVED_AES_KEY_LENGTH_LOW,
-    };
-    memcpy(vector, prefix, sizeof(prefix));
-    length += sizeof(prefix);
-    if((file->sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0) {
-        memcpy(vector + length, credential->uid, credential->uid_len);
-        length += credential->uid_len;
-    }
+    bool includes_uid = (file->sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0;
     uint8_t meta_read = (uint8_t)(file->sdm_access_rights >> DFC_SDM_META_READ_SHIFT);
     bool includes_counter = (file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 &&
                             (meta_read != DFC_SDM_FREE_ACCESS || file->sdm_has_counter_offset);
-    if(includes_counter) {
-        vector[length++] = (uint8_t)counter;
-        vector[length++] = (uint8_t)(counter >> 8);
-        vector[length++] = (uint8_t)(counter >> 16);
-    }
-    length = ((length + DFC_AES_KEY_LENGTH - 1) / DFC_AES_KEY_LENGTH) * DFC_AES_KEY_LENGTH;
-    bool success = aes_cmac((uint8_t*)static_key, DFC_AES_KEY_LENGTH, vector, length, output);
-    dfc_secure_wipe(vector, sizeof(vector));
-    if(!success && output) dfc_secure_wipe(output, DFC_AES_KEY_LENGTH);
-    return success;
+    return dfc_sdm_derive_session_key(
+        static_key,
+        label_high,
+        label_low,
+        credential->uid,
+        credential->uid_len,
+        includes_uid,
+        counter,
+        includes_counter,
+        output);
 }
 
 static bool sdm_range_fits(const DfcFile* file, uint32_t offset, size_t length) {
