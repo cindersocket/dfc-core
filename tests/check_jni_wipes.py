@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
 """Keep JNI-owned credential, session, and plaintext buffers on wiped exits."""
 
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 SOURCE = Path(__file__).parents[1] / "bindings" / "jni" / "dfc_jni.c"
 
@@ -16,9 +14,7 @@ def problems(source: str) -> list[str]:
         if re.search(r"\bfree\(", line) and line.strip() != "free(buffer);"
     ]
     if raw_frees:
-        failures.append(
-            "JNI heap buffer bypasses wipe-before-free:\n" + "\n".join(raw_frees)
-        )
+        failures.append("JNI heap buffer bypasses wipe-before-free:\n" + "\n".join(raw_frees))
 
     required = {
         "central heap cleanup": "static void secure_free(void* buffer, size_t length)",
@@ -27,9 +23,7 @@ def problems(source: str) -> list[str]:
         "reader state stack": "dfc_ffi_secure_zero(&state, sizeof(state))",
         "stack array cleanup": "make_array_and_wipe",
     }
-    missing = [
-        name for name, expression in required.items() if expression not in source
-    ]
+    missing = [name for name, expression in required.items() if expression not in source]
     if missing:
         failures.append("missing JNI wipe family: " + ", ".join(missing))
 
@@ -40,8 +34,7 @@ def problems(source: str) -> list[str]:
     ]
     if direct_array_returns:
         failures.append(
-            "JNI stack or heap result bypasses post-copy wipe:\n"
-            + "\n".join(direct_array_returns)
+            "JNI stack or heap result bypasses post-copy wipe:\n" + "\n".join(direct_array_returns)
         )
     return failures
 

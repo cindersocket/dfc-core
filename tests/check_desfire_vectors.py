@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Validate the public DESFire conformance-vector corpus."""
 
 from __future__ import annotations
@@ -8,7 +7,6 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parent
 VECTOR_ROOT = ROOT / "vectors" / "desfire"
@@ -55,9 +53,10 @@ def validate_vector(path: Path, vocabulary: dict[str, object]) -> tuple[str, int
         words = line.split()
         if words[0] not in steps:
             raise ValueError(f"{location}: unknown step {words[0]!r}")
-        if words[0] == "exchange":
-            if len(words) < 4 or words[1] not in dialects or "=>" not in words:
-                raise ValueError(f"{location}: malformed exchange")
+        if words[0] == "exchange" and (
+            len(words) < 4 or words[1] not in dialects or "=>" not in words
+        ):
+            raise ValueError(f"{location}: malformed exchange")
         if words[0] == "frame-exchange" and (len(words) < 3 or "=>" not in words):
             raise ValueError(f"{location}: malformed frame exchange")
         step_count += 1

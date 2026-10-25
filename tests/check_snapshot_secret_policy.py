@@ -152,32 +152,21 @@ def main() -> None:
             if marker not in text:
                 failures.append(f"{relative}: secret lifetime contract lacks {marker}")
 
-    python_credential = (
-        ROOT / "bindings/python/src/dfc_core/credential.py"
-    ).read_text()
+    python_credential = (ROOT / "bindings/python/src/dfc_core/credential.py").read_text()
     for native_type in ("picc", "f"):
         start = python_credential.find(f"{native_type} = N.")
         finish = python_credential.find(f"_wipe_native({native_type})", start)
         guarded = python_credential[start:finish]
-        if (
-            start < 0
-            or finish < 0
-            or "try:" not in guarded
-            or "finally:" not in guarded
-        ):
+        if start < 0 or finish < 0 or "try:" not in guarded or "finally:" not in guarded:
             failures.append(
                 f"bindings/python/src/dfc_core/credential.py: {native_type} is not exception-safe"
             )
 
     rust_sys = (ROOT / "bindings/rust/dfc-core-sys/src/bindings.rs").read_text()
     if not rust_diagnostic_is_noncopying(rust_sys):
-        failures.append(
-            "Rust diagnostic snapshot must not derive copying or debug traits"
-        )
+        failures.append("Rust diagnostic snapshot must not derive copying or debug traits")
 
-    dotnet_marshaller = (
-        ROOT / "bindings/dotnet/src/Dfc/Interop/CredentialHandle.cs"
-    ).read_text()
+    dotnet_marshaller = (ROOT / "bindings/dotnet/src/Dfc/Interop/CredentialHandle.cs").read_text()
     if not dotnet_marshalling_is_by_reference(dotnet_marshaller):
         failures.append(".NET secret-bearing native marshalling is not caller-owned")
 

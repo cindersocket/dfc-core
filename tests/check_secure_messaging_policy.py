@@ -131,9 +131,7 @@ def self_test() -> None:
 def main() -> None:
     self_test()
     root = Path(__file__).resolve().parents[1]
-    commands = set(
-        COMMAND.findall((root / "src/dfc_common.h").read_text(encoding="utf-8"))
-    )
+    commands = set(COMMAND.findall((root / "src/dfc_common.h").read_text(encoding="utf-8")))
     policies = EV1_BYPASS | EV1_TRANSMITTED_MAC | EV1_CHAINED_CMAC
     overlaps = (
         (EV1_BYPASS & EV1_TRANSMITTED_MAC)
@@ -145,9 +143,7 @@ def main() -> None:
 
     source = (root / "src/dfc_secure_messaging.c").read_text(encoding="utf-8")
     transmitted = set(
-        CASE.findall(
-            function_body(source, "dfc_secure_messaging_ev1_transmits_command_mac")
-        )
+        CASE.findall(function_body(source, "dfc_secure_messaging_ev1_transmits_command_mac"))
     )
     mismatched = sorted(transmitted ^ EV1_TRANSMITTED_SWITCH_CASES)
     applies_body = function_body(source, "dfc_secure_messaging_applies_ev1")
@@ -155,9 +151,7 @@ def main() -> None:
 
     errors = [f"command lacks secure-messaging policy: {name}" for name in missing]
     errors += [f"stale secure-messaging policy: {name}" for name in stale]
-    errors += [
-        f"overlapping secure-messaging policy: {name}" for name in sorted(overlaps)
-    ]
+    errors += [f"overlapping secure-messaging policy: {name}" for name in sorted(overlaps)]
     errors += [f"EV1 transmitted-MAC policy mismatch: {name}" for name in mismatched]
     errors += [f"EV1 bypass policy mismatch: {name}" for name in mismatched_bypass]
     for path in sorted((root / "src").glob("*.c")):

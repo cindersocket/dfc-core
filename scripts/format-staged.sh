@@ -23,8 +23,8 @@ for file in $staged; do
             uvx --from clang-format==21.1.7 clang-format -i "$file"
             ;;
         *.py)
-            uv run --project bindings/python --frozen --extra test \
-                ruff format --config bindings/python/pyproject.toml "$file"
+            uvx --from ruff==0.17.1 ruff format \
+                --config bindings/python/pyproject.toml "$file"
             ;;
         *.rs)
             # A crate root normally makes rustfmt recurse into every module.

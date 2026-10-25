@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
 """Keep authenticator comparisons on the constant-time helper."""
 
 from pathlib import Path
-
 
 SOURCE = Path(__file__).parents[1] / "src" / "dfc_emulator_commands.c"
 
