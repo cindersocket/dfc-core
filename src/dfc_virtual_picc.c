@@ -1484,7 +1484,7 @@ static DfcVirtualPiccStatus handle_native_exchange(
        !session->emulator->command_chain_active && command_len <= DFC_EMULATOR_CHAIN_BUFFER_SIZE) {
         if(!session->emulator->command_chain)
             session->emulator->command_chain =
-                dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocEmulator);
+                dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocCommandChain);
         if(!session->emulator->command_chain) goto cleanup;
         clear_command = session->emulator->command_chain;
         clear_capacity = DFC_EMULATOR_CHAIN_BUFFER_SIZE;
@@ -1718,7 +1718,7 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
             native_command = session->emulator->command_chain;
             if(!native_command) {
                 native_command =
-                    dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocEmulator);
+                    dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocCommandChain);
                 session->emulator->command_chain = native_command;
             }
             if(!native_command) return DfcVirtualPiccStatusProtocolError;
@@ -1858,7 +1858,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
                                         header[1] == DFC_CMD_WRITE_RECORD_ISO)))
                     return DfcVirtualPiccStatusBufferTooSmall;
                 session->emulator->command_chain =
-                    dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocEmulator);
+                    dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocCommandChain);
                 if(!session->emulator->command_chain) return DfcVirtualPiccStatusProtocolError;
                 memcpy(
                     session->emulator->command_chain,

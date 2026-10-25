@@ -463,7 +463,7 @@ static MunitResult
     munit_assert_not_null(emulator);
 
     const size_t command_length = 37;
-    emulator->command_chain = dfc_platform_alloc(command_length, DfcAllocEmulator);
+    emulator->command_chain = dfc_platform_alloc(command_length, DfcAllocCommandChain);
     munit_assert_not_null(emulator->command_chain);
     emulator->command_chain_len = command_length;
     emulator->command_chain_expected = command_length;
@@ -512,7 +512,8 @@ static MunitResult
 
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
     const size_t snapshot_length = 43;
-    emulator->transaction_snapshot_pool = dfc_platform_alloc(snapshot_length, DfcAllocEmulator);
+    emulator->transaction_snapshot_pool =
+        dfc_platform_alloc(snapshot_length, DfcAllocTransactionSnapshot);
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     emulator->transaction_snapshot_pool_length = snapshot_length;
     emulator->transaction_snapshot_pool_capacity = snapshot_length;
@@ -555,7 +556,7 @@ static MunitResult
     DfcEmulator* emulator = dfc_emulator_alloc(&credential);
     munit_assert_not_null(emulator);
     const size_t command_length = 29;
-    emulator->command_chain = dfc_platform_alloc(command_length, DfcAllocEmulator);
+    emulator->command_chain = dfc_platform_alloc(command_length, DfcAllocCommandChain);
     munit_assert_not_null(emulator->command_chain);
     emulator->command_chain_active = true;
     emulator->command_chain_len = command_length;
@@ -669,14 +670,15 @@ static MunitResult test_activation_reset_wipes_retained_and_released_storage(
     DfcEmulator* emulator = dfc_emulator_alloc(&credential);
     munit_assert_not_null(emulator);
     const size_t command_length = 31;
-    emulator->command_chain = dfc_platform_alloc(command_length, DfcAllocEmulator);
+    emulator->command_chain = dfc_platform_alloc(command_length, DfcAllocCommandChain);
     munit_assert_not_null(emulator->command_chain);
     emulator->command_chain_len = command_length;
     memset(emulator->command_chain, 0xA5, command_length);
 
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
     const size_t snapshot_length = 41;
-    emulator->transaction_snapshot_pool = dfc_platform_alloc(snapshot_length, DfcAllocEmulator);
+    emulator->transaction_snapshot_pool =
+        dfc_platform_alloc(snapshot_length, DfcAllocTransactionSnapshot);
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     emulator->transaction_snapshot_pool_length = snapshot_length;
     emulator->transaction_snapshot_pool_capacity = snapshot_length;

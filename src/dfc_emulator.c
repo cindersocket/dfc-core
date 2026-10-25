@@ -93,7 +93,7 @@ bool dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t
         return false;
 
     if(inserted_len) {
-        uint8_t* grown = dfc_platform_alloc(old_len + inserted_len, DfcAllocEmulator);
+        uint8_t* grown = dfc_platform_alloc(old_len + inserted_len, DfcAllocTransactionSnapshot);
         if(!grown) return false;
         memcpy(grown, emulator->transaction_snapshot_pool, inserted_offset);
         memcpy(grown + inserted_offset, credential->file_pool + inserted_offset, inserted_len);

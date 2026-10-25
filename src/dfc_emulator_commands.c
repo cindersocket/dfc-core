@@ -1302,7 +1302,7 @@ static bool begin_or_reject_command_chain(
         return true;
     }
     if(buffer_len == expected) return false;
-    emulator->command_chain = dfc_platform_alloc(expected, DfcAllocEmulator);
+    emulator->command_chain = dfc_platform_alloc(expected, DfcAllocCommandChain);
     if(!emulator->command_chain) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return true;

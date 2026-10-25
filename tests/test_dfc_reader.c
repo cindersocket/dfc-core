@@ -4163,17 +4163,17 @@ static MunitResult test_delegated_application(const MunitParameter params[], voi
             0x03),
         ==,
         DfcReaderOk);
-    const size_t allocations_before = dfc_host_allocation_count(DfcAllocEmulator);
+    const size_t allocations_before = dfc_host_allocation_count(DfcAllocByteBuf);
     // No storage is needed after the two long-lived emulator allocations. If a
     // command-local allocation returns, this injection makes the exchange fail.
-    dfc_host_fail_next_allocation(DfcAllocEmulator);
+    dfc_host_fail_next_allocation(DfcAllocByteBuf);
     DfcReaderStatus st = link_run(&link, &ex);
     if(st != DfcReaderOk)
         munit_logf(MUNIT_LOG_WARNING, "status %02X", dfc_reader_result_status(&ex));
     munit_assert_int(st, ==, DfcReaderOk);
-    munit_assert_size(dfc_host_allocation_count(DfcAllocEmulator), ==, allocations_before);
+    munit_assert_size(dfc_host_allocation_count(DfcAllocByteBuf), ==, allocations_before);
     // Prove that the injected failure was not consumed by the delegated command.
-    munit_assert_null(dfc_platform_alloc(1, DfcAllocEmulator));
+    munit_assert_null(dfc_platform_alloc(1, DfcAllocByteBuf));
     munit_assert_uint16(link.session.ev2_command_counter, ==, 1);
 
     const uint8_t aid[3] = {0x0C, 0x0B, 0x0A};

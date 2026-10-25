@@ -502,7 +502,7 @@ static MunitResult test_write_data_preparation_failures_preserve_transcript(
     memcpy(original, dfc_file_data_const(&fixture.credential, file), sizeof(original));
     DfcByteBuf* response = dfc_bytebuf_alloc(8);
     munit_assert_not_null(response);
-    dfc_host_fail_next_allocation(DfcAllocEmulator);
+    dfc_host_fail_next_allocation(DfcAllocTransactionSnapshot);
     assert_direct_write_status(
         emulator, write, sizeof(write), response, DFC_STATUS_PERMISSION_DENIED);
     munit_assert_memory_equal(
@@ -1045,7 +1045,7 @@ static MunitResult
     size_t apdu_len = build_create_transaction_mac(5, apdu);
     uint8_t response[2];
     size_t response_len = 0;
-    dfc_host_fail_next_allocation(DfcAllocEmulator);
+    dfc_host_fail_next_allocation(DfcAllocByteBuf);
     munit_assert_int(
         dfc_virtual_picc_iso_dep_exchange(
             fixture.session, apdu, apdu_len, response, sizeof(response), &response_len),
@@ -1056,6 +1056,7 @@ static MunitResult
     DfcFile* created = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
     munit_assert_not_null(created);
     munit_assert_size(fixture.credential.file_pool_used, ==, pool_before + created->data_len);
+    munit_assert_null(dfc_platform_alloc(1, DfcAllocByteBuf));
     fixture_close(&fixture);
     return MUNIT_OK;
 }

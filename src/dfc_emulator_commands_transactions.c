@@ -603,7 +603,7 @@ bool dfc_emulator_command_transaction_snapshot_begin(DfcEmulator* emulator) {
     }
 
     size_t length = emulator->credential->file_pool_used;
-    uint8_t* snapshot = dfc_platform_alloc(length ? length : 1, DfcAllocEmulator);
+    uint8_t* snapshot = dfc_platform_alloc(length ? length : 1, DfcAllocTransactionSnapshot);
     if(!snapshot) return false;
     emulator->transaction_snapshot_pool = snapshot;
     emulator->transaction_snapshot_active = true;

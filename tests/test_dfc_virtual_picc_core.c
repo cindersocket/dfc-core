@@ -261,6 +261,8 @@ static MunitResult test_iso_command_aborts_incoming_native_write_chain(
     DfcCredential* credential_before = dfc_credential_alloc();
     munit_assert_not_null(credential_before);
     dfc_credential_copy_model(credential_before, &credential);
+    const size_t emulator_allocations = dfc_host_allocation_count(DfcAllocEmulator);
+    const size_t chain_allocations = dfc_host_allocation_count(DfcAllocCommandChain);
     uint8_t first[6 + DFC_EV1_MAX_FRAME_PAYLOAD] = {0};
     first[0] = DFC_ISO7816_CLA_WRAPPER;
     first[1] = DFC_CMD_WRITE_DATA;
@@ -275,6 +277,8 @@ static MunitResult test_iso_command_aborts_incoming_native_write_chain(
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_CMD_ADDITIONAL_FRAME}));
+    munit_assert_size(dfc_host_allocation_count(DfcAllocEmulator), ==, emulator_allocations);
+    munit_assert_size(dfc_host_allocation_count(DfcAllocCommandChain), ==, chain_allocations + 1);
     munit_assert_true(session->emulator->command_chain_active);
     munit_assert_memory_equal(sizeof(credential), &credential, credential_before);
 

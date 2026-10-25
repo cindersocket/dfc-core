@@ -320,7 +320,7 @@ static MunitResult test_create_publish_matrix(const MunitParameter params[], voi
             failure.session->emulator->transaction_snapshot_pool_length =
                 failure.credential.file_pool_used + 1;
         } else {
-            dfc_host_fail_next_allocation(DfcAllocEmulator);
+            dfc_host_fail_next_allocation(DfcAllocTransactionSnapshot);
         }
         exchange_status(failure.session, command, command_len, DFC_STATUS_OUT_OF_EEPROM);
         munit_assert_false(failure.session->emulator->transaction_snapshot_active);
@@ -523,7 +523,7 @@ static MunitResult test_growth_failure_is_atomic(const MunitParameter params[], 
     SnapshotFixture fixture;
     fixture_open(&fixture);
     begin_transaction(&fixture);
-    dfc_host_fail_next_allocation(DfcAllocEmulator);
+    dfc_host_fail_next_allocation(DfcAllocTransactionSnapshot);
     const uint8_t create[] = {
         0x90, DFC_CMD_CREATE_BACKUP_DATA_FILE, 0, 0, 7, 5, 0, 0xEE, 0xEE, 4, 0, 0, 0};
     exchange_status(fixture.session, create, sizeof(create), DFC_STATUS_OUT_OF_EEPROM);
