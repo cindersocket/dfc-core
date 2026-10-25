@@ -10,6 +10,8 @@
   including encrypted PICC and file data from captured card responses (#21).
 - Add structured Transaction MAC receipt verification with helpers for the
   supported transaction inputs and Reader ID handling (#22).
+- Stream Transaction MAC input through a bounded accumulator so transactions at
+  the configured file-data limit remain verifiable (#159).
 - Expose the new diversification, decoder, SDM, and Transaction MAC APIs through
   the Python, Rust, Java, Android, and .NET bindings.
 - Add installable native and binding packages with one verified release
@@ -18,6 +20,8 @@
   and document private security reporting (#155, #157, #158).
 - Add Java and Android JNI bindings and an Android library.
 - Preserve JNI exception delivery in minified Android consumers (#141).
+- Avoid undefined behavior in parameterized tests with empty parameter sets
+  (#160).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
