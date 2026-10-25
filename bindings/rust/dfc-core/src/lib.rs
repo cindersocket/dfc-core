@@ -13,9 +13,17 @@ pub use target::{
 #[cfg(not(feature = "role-target"))]
 mod credential;
 #[cfg(not(feature = "role-target"))]
+mod crypto;
+#[cfg(not(feature = "role-target"))]
 mod layout;
 #[cfg(not(feature = "role-target"))]
 mod reader;
+#[cfg(not(feature = "role-target"))]
+mod responses;
+#[cfg(not(feature = "role-target"))]
+mod sdm;
+#[cfg(not(feature = "role-target"))]
+mod transaction_mac;
 
 #[cfg(not(feature = "role-target"))]
 use core::{
@@ -30,9 +38,21 @@ use dfc_core_sys as sys;
 #[cfg(not(feature = "role-target"))]
 pub use credential::{Credential, CredentialFile, CredentialKey, CredentialPiccSettings};
 #[cfg(not(feature = "role-target"))]
+pub use crypto::{DiversificationAlgorithm, diversify_key};
+#[cfg(not(feature = "role-target"))]
 pub use reader::{
     Command, CommunicationMode, Framing, Reader, ReaderError, ReaderState, Response, Transport,
 };
+#[cfg(not(feature = "role-target"))]
+pub use responses::{
+    Access, DecodeError, FileSettings, FileSettingsKind, KeySettings, Version, VersionPart,
+    decode_application_ids, decode_file_ids, decode_file_settings, decode_key_settings,
+    decode_key_version, decode_version,
+};
+#[cfg(not(feature = "role-target"))]
+pub use sdm::{SdmConfig, SdmError, SdmField, SdmResult, verify_sdm};
+#[cfg(not(feature = "role-target"))]
+pub use transaction_mac::{TransactionMacError, TransactionMacVerifier};
 
 #[cfg(not(feature = "role-target"))]
 static ABI_STATE: AtomicU8 = AtomicU8::new(0);

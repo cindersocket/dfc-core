@@ -33,7 +33,7 @@ assert_eq!(&response[response.len() - 2..], &[0x91, 0xAF]);
 # Ok::<(), dfc_core::Error>(())
 ```
 
-The complete [virtual PICC example](../../examples/rust-virtual-picc/README.md)
+The complete [virtual PICC example](https://github.com/cindersocket/dfc-core/tree/master/examples/rust-virtual-picc)
 loads the checked-in synthetic credential, activates it, performs the
 three-frame `GetVersion` exchange, parses the returned card information, and
 turns the RF field off. Run it from the repository root:
@@ -85,6 +85,21 @@ rustup target add thumbv7em-none-eabihf
 cargo check --package dfc-core --target thumbv7em-none-eabihf \
   --no-default-features \
   --features bundled,role-target,profile-minimal-ev3
+```
+
+## Backend verification
+
+The hosted crate exposes `diversify_key`, typed response decoders, `verify_sdm`,
+and `TransactionMacVerifier`. Verified SDM fields are returned only after the
+MAC succeeds. The transaction verifier accepts structured operations in card
+order and clears its native key and transcript on drop. Applications still own
+replay detection and counter persistence.
+
+Run the backend example, which also transceives a virtual-card transaction and
+verifies the returned commit receipt, with:
+
+```sh
+cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml --bin verify_backend
 ```
 
 ## Development checks

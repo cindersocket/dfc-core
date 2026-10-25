@@ -376,12 +376,92 @@ def _library_candidates() -> list[Path | str]:
 
 def _declare(lib: C.CDLL) -> None:
     lib.dfc_ffi_abi_version.restype = C.c_uint32
+    lib.dfc_ffi_secure_zero.argtypes = [C.c_void_p, C.c_size_t]
+    lib.dfc_ffi_secure_zero.restype = None
     try:
         lib.dfc_ffi_layout_fingerprint.restype = C.c_uint64
     except AttributeError as error:
         raise ImportError("dfc native library has no layout fingerprint") from error
     lib.dfc_ffi_struct_sizes.argtypes = [C.POINTER(StructSizes)]
     lib.dfc_ffi_capabilities.argtypes = [C.POINTER(Capabilities)]
+    lib.dfc_ffi_an10922_diversify.argtypes = [
+        C.c_uint32,
+        P8,
+        C.c_size_t,
+        P8,
+        C.c_size_t,
+        P8,
+        C.c_size_t,
+        C.POINTER(C.c_size_t),
+    ]
+    for name in ("version", "file_settings", "key_settings"):
+        function = getattr(lib, f"dfc_ffi_response_decode_{name}")
+        function.argtypes = [P8, C.c_size_t, P8, C.c_size_t]
+        function.restype = C.c_int32
+    for name in ("application_ids", "file_ids"):
+        function = getattr(lib, f"dfc_ffi_response_decode_{name}")
+        function.argtypes = [P8, C.c_size_t, P8, C.c_size_t, C.POINTER(C.c_size_t)]
+        function.restype = C.c_int32
+    lib.dfc_ffi_response_decode_key_version.argtypes = [P8, C.c_size_t, P8]
+    lib.dfc_ffi_sdm_verify_ascii.argtypes = [
+        P8,
+        C.c_size_t,
+        C.c_uint32,
+        C.c_size_t,
+        C.c_size_t,
+        C.c_size_t,
+        C.c_size_t,
+        C.c_size_t,
+        C.c_size_t,
+        C.c_size_t,
+        C.c_size_t,
+        C.c_size_t,
+        P8,
+        P8,
+        P8,
+        C.c_size_t,
+        C.POINTER(C.c_size_t),
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_transaction_mac_verifier_new.argtypes = [
+        C.c_size_t,
+        P8,
+        P8,
+        C.c_size_t,
+        C.c_uint32,
+        C.POINTER(Handle),
+    ]
+    lib.dfc_ffi_transaction_mac_verifier_free.argtypes = [Handle]
+    lib.dfc_ffi_transaction_mac_verifier_free.restype = None
+    lib.dfc_ffi_transaction_mac_add_data.argtypes = [
+        Handle,
+        C.c_uint8,
+        C.c_uint8,
+        C.c_uint32,
+        C.c_uint32,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_transaction_mac_add_record_update.argtypes = [
+        Handle,
+        C.c_uint8,
+        C.c_uint8,
+        C.c_uint32,
+        C.c_uint32,
+        C.c_uint32,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_transaction_mac_add_value.argtypes = [
+        Handle,
+        C.c_uint8,
+        C.c_uint8,
+        C.c_uint32,
+    ]
+    lib.dfc_ffi_transaction_mac_add_clear_record.argtypes = [Handle, C.c_uint8]
+    lib.dfc_ffi_transaction_mac_add_reader_id.argtypes = [Handle, P8, P8]
+    lib.dfc_ffi_transaction_mac_verify.argtypes = [Handle, P8, P8]
     for name in ("credential_free", "picc_free"):
         getattr(lib, f"dfc_ffi_{name}").argtypes = [Handle]
     # Pointer-heavy calls use explicit signatures where ctypes conversion matters.
@@ -615,6 +695,11 @@ def byte_pointer(data: bytes | bytearray | memoryview) -> tuple[C.Array[C.c_uint
     if raw:
         C.memmove(array, raw, len(raw))
     return array, C.cast(array, P8)
+
+
+def secure_zero(value: C.Array[C.c_uint8]) -> None:
+    """Wipe a temporary native byte array owned by the Python binding."""
+    library().dfc_ffi_secure_zero(C.cast(value, C.c_void_p), C.sizeof(value))
 
 
 def variable_output(call: object, *args: object) -> bytes:

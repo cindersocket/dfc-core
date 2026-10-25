@@ -433,10 +433,13 @@ jobs:
             pytest bindings/python/tests
           DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
             python examples/python/virtual_card.py
+          DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
+            python examples/python/verify_backend.py
       - name: Check Python types and formatting
         working-directory: bindings/python
         run: |
-          uv run --frozen --extra test mypy src ../../examples/python/virtual_card.py
+          uv run --frozen --extra test mypy src ../../examples/python/virtual_card.py \
+            ../../examples/python/verify_backend.py
           uv run --frozen --extra test ruff format --check src tests ../../examples/python
           uv run --frozen --extra test ruff check src tests ../../examples/python
 
@@ -463,6 +466,7 @@ jobs:
           cargo test --manifest-path examples/rust-virtual-picc/Cargo.toml
           cargo clippy --manifest-path examples/rust-virtual-picc/Cargo.toml --all-targets -- -D warnings
           cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- examples/credentials/v6-minimal.dfcb
+          cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml --bin verify_backend
           DFC_LIB_DIR="$PWD/mismatch" LD_LIBRARY_PATH="$PWD/mismatch" \
             DFC_EXPECT_LAYOUT_MISMATCH=1 cargo test -p dfc-core \
             --no-default-features \

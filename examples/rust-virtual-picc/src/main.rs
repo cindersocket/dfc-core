@@ -1,4 +1,4 @@
-use dfc_core::{Credential, Error, VirtualPicc};
+use dfc_core::{Credential, Error, VirtualPicc, decode_version};
 
 const GET_VERSION: &[u8] = &[0x90, 0x60, 0x00, 0x00, 0x00];
 const ADDITIONAL_FRAME: &[u8] = &[0x90, 0xAF, 0x00, 0x00, 0x00];
@@ -78,16 +78,22 @@ fn inspect_virtual_card(credential_bytes: &[u8]) -> Result<VersionReport, Exampl
     }
 
     let raw = transceive_version(&mut picc)?;
+    let decoded = decode_version(&raw)
+        .map_err(|_| ExampleError::Protocol("GetVersion response could not be decoded"))?;
     let report = VersionReport {
-        hardware_version: (raw[3], raw[4]),
-        software_version: (raw[10], raw[11]),
-        storage_size_code: raw[5],
-        uid: raw[14..21].try_into().expect("fixed GetVersion UID slice"),
-        production_batch: raw[21..26]
-            .try_into()
-            .expect("fixed GetVersion batch slice"),
-        production_week: raw[26],
-        production_year: raw[27],
+        hardware_version: (
+            decoded.hardware.major_version,
+            decoded.hardware.minor_version,
+        ),
+        software_version: (
+            decoded.software.major_version,
+            decoded.software.minor_version,
+        ),
+        storage_size_code: decoded.hardware.storage_size,
+        uid: decoded.uid,
+        production_batch: decoded.batch_number,
+        production_week: decoded.production_week,
+        production_year: decoded.production_year,
         raw,
     };
 

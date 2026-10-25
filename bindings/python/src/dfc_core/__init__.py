@@ -6,6 +6,7 @@ import ctypes as C
 
 from . import _native
 from .credential import Credential
+from .crypto import DiversificationAlgorithm, diversify_key
 from .errors import (
     BufferTooSmallError,
     CardError,
@@ -35,6 +36,24 @@ from .models import (
 )
 from .picc import VirtualPicc
 from .reader import Command, Reader
+from .responses import (
+    Access,
+    AccessKind,
+    AccessRights,
+    FileSettings,
+    KeySettings,
+    ResponseDecodeError,
+    Version,
+    VersionPart,
+    decode_application_ids,
+    decode_file_ids,
+    decode_file_settings,
+    decode_key_settings,
+    decode_key_version,
+    decode_version,
+)
+from .sdm import SdmConfig, SdmField, SdmResult, SdmVerificationError, verify_sdm
+from .transaction_mac import TransactionMacError, TransactionMacVerifier
 
 
 def capabilities() -> Capabilities:
@@ -71,6 +90,9 @@ def fixed_time_equal(left: bytes, right: bytes) -> bool:
 
 
 __all__ = [
+    "Access",
+    "AccessKind",
+    "AccessRights",
     "Activation",
     "Application",
     "BufferTooSmallError",
@@ -85,20 +107,40 @@ __all__ = [
     "CredentialModel",
     "DfcError",
     "DfcMemoryError",
+    "DiversificationAlgorithm",
     "File",
+    "FileSettings",
     "InvalidArgumentError",
     "Key",
+    "KeySettings",
     "PiccSettings",
     "ProtocolError",
     "RandomSourceError",
     "Reader",
     "ReaderState",
     "Response",
+    "ResponseDecodeError",
+    "SdmConfig",
+    "SdmField",
+    "SdmResult",
+    "SdmVerificationError",
     "Snapshot",
+    "TransactionMacError",
+    "TransactionMacVerifier",
     "Transport",
     "UnsupportedError",
+    "Version",
+    "VersionPart",
     "VirtualPicc",
     "capabilities",
+    "decode_application_ids",
+    "decode_file_ids",
+    "decode_file_settings",
+    "decode_key_settings",
+    "decode_key_version",
+    "decode_version",
+    "diversify_key",
     "fixed_time_equal",
     "random_bytes",
+    "verify_sdm",
 ]
