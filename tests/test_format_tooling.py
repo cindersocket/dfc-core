@@ -33,6 +33,11 @@ class FormatToolingTests(unittest.TestCase):
         self.assertEqual(script.count("$python_paths"), 2)
         self.assertEqual(script.count("src = ['bindings/python/src']"), 2)
 
+    def test_java_format_paths_include_native_binding_tests(self) -> None:
+        script = (ROOT / "scripts/check-format.sh").read_text(encoding="utf-8")
+
+        self.assertIn("'tests/java/*.java'", script)
+
 
 if __name__ == "__main__":
     unittest.main()
