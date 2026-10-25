@@ -1,0 +1,48 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 8K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 04304622216A80, hardware 1.0, software 1.4, storage 8K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: GetVersion, key settings, the empty
+# application directory and the free memory a formatted card reports,
+# 7936 octets here.
+
+name: genuine EV1 8K, read-only surface after FormatPICC
+case-id: hardware-genuine-ev1-8k-identity
+origin: physical-card
+source: captured hardware trace
+uid: 04304622216A80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV1
+picc-storage: 8192
+
+scan
+# The read-only surface of a freshly formatted card.
+exchange native-apdu 9060000000 => 04010101001A0591AF
+exchange native-apdu 90AF000000 => 04010101??1A0591AF
+#   (?? above: the software minor version differs between EV1 cards; the engine defaults it)
+exchange native-apdu 90AF000000 => 04304622216A80??????????????9100
+#   (?? above: the batch number and production week and year belong to this one card)
+exchange native-apdu 9045000000 => 0F019100
+exchange native-apdu 906A000000 => 9100
+exchange native-apdu 906E000000 => 001F009100 tolerance 0+3 512
+#   (tolerance above: free space after a format is the chip's own layout; see the free-memory vector)
+exchange native-apdu 9051000000 => 91AE
+# GetCardUID without a session is refused with AE.

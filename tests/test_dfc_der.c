@@ -62,6 +62,97 @@ static DfcFile* add_data_file(
     return f;
 }
 
+static void downgrade_v6_auth_fields(uint8_t* encoded, size_t length, uint8_t version) {
+    bool changed_version = false;
+    bool changed_picc_auth = false;
+    bool changed_app_auth = false;
+    for(size_t i = 0; i + 2 < length; i++) {
+        if(!changed_version && encoded[i] == 0x80 && encoded[i + 1] == 0x01 &&
+           encoded[i + 2] == DFC_FORMAT_VERSION) {
+            encoded[i + 2] = version;
+            changed_version = true;
+        } else if(
+            !changed_picc_auth && encoded[i] == 0x82 && encoded[i + 1] == 0x01 &&
+            encoded[i + 2] == (DFC_AUTH_COMMAND_D40 | DFC_AUTH_COMMAND_ISO_NATIVE)) {
+            encoded[i + 2] = 0;
+            changed_picc_auth = true;
+        } else if(
+            !changed_app_auth && encoded[i] == 0x85 && encoded[i + 1] == 0x01 &&
+            encoded[i + 2] == DFC_AUTH_COMMAND_AES) {
+            encoded[i + 2] = 2;
+            changed_app_auth = true;
+        }
+    }
+    munit_assert_true(changed_version);
+    munit_assert_true(changed_picc_auth);
+    munit_assert_true(changed_app_auth);
+}
+
+static MunitResult test_v6_configuration_fields(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential src = {0};
+    build_basic(&src);
+    src.picc_random_id_legacy = true;
+    uint8_t encoded[DFC_DER_MAX_SIZE];
+    size_t length = 0;
+    munit_assert_int(dfc_der_encode(&src, encoded, sizeof(encoded), &length), ==, DfcDerOk);
+    static const uint8_t legacy_prefix[] = {0x90, 0x01, 0xFF};
+    bool found_legacy_prefix = false;
+    for(size_t i = 0; i + sizeof(legacy_prefix) <= length; i++) {
+        if(memcmp(encoded + i, legacy_prefix, sizeof(legacy_prefix)) == 0) {
+            found_legacy_prefix = true;
+            break;
+        }
+    }
+    munit_assert_true(found_legacy_prefix);
+
+    // Tag 16 has a one-octet identifier. Its high-tag-number spelling is
+    // non-canonical and must not be accepted as a different field.
+    static const uint8_t noncanonical_tag[] = {0x9F, 0x10};
+    bool found_noncanonical_tag = false;
+    for(size_t i = 0; i + sizeof(noncanonical_tag) <= length; i++) {
+        if(memcmp(encoded + i, noncanonical_tag, sizeof(noncanonical_tag)) == 0) {
+            found_noncanonical_tag = true;
+            break;
+        }
+    }
+    munit_assert_false(found_noncanonical_tag);
+
+    DfcCredential decoded = {0};
+    munit_assert_int(dfc_der_decode(&decoded, encoded, length), ==, DfcDerOk);
+    munit_assert_true(decoded.picc_random_id);
+    munit_assert_true(decoded.picc_random_id_legacy);
+    uint8_t old_version[DFC_DER_MAX_SIZE];
+    memcpy(old_version, encoded, length);
+    downgrade_v6_auth_fields(old_version, length, 5);
+    munit_assert_int(dfc_der_decode(&decoded, old_version, length), ==, DfcDerMalformed);
+
+    src.picc_random_id = false;
+    munit_assert_int(dfc_der_validate_model(&src), ==, DfcDerMalformed);
+
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+    build_basic(&src);
+    src.card.generation = DfcGenerationEv2;
+    src.apps[0].has_auth_commands = true;
+    src.apps[0].auth_commands = DFC_AUTH_COMMAND_AES;
+    src.apps[0].delegated = true;
+    src.apps[0].delegated_slot_number = 7;
+    src.apps[0].delegated_slot_version = 1;
+    src.apps[0].delegated_quota_limit = 32;
+    src.apps[0].delegated_free_blocks = 16;
+    src.apps[0].delegated_format_disabled = true;
+    munit_assert_int(dfc_der_encode(&src, encoded, sizeof(encoded), &length), ==, DfcDerOk);
+    memset(&decoded, 0, sizeof(decoded));
+    munit_assert_int(dfc_der_decode(&decoded, encoded, length), ==, DfcDerOk);
+    munit_assert_true(decoded.apps[0].delegated_format_disabled);
+    memcpy(old_version, encoded, length);
+    downgrade_v6_auth_fields(old_version, length, 5);
+    munit_assert_int(dfc_der_decode(&decoded, old_version, length), ==, DfcDerMalformed);
+#endif
+    return MUNIT_OK;
+}
+
 static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -79,6 +170,7 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     value->value_upper_limit = 1000;
     value->value = 42;
     value->limited_credit = 0x03;
+    value->limited_credit_value = 17;
 
     DfcFile* rec = dfc_credential_create_file(&src, 0, 0x04);
     munit_assert_not_null(rec);
@@ -139,6 +231,7 @@ static MunitResult test_round_trip(const MunitParameter params[], void* data) {
     munit_assert_int32(d1->value_upper_limit, ==, 1000);
     munit_assert_int32(d1->value, ==, 42);
     munit_assert_uint8(d1->limited_credit, ==, 0x03);
+    munit_assert_int32(d1->limited_credit_value, ==, 17);
 
     const DfcFile* d2 = dfc_credential_find_file_in_app(&dst, 0, 0x04);
     munit_assert_not_null(d2);
@@ -288,6 +381,8 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     munit_assert_int(dfc_der_encode(&src, good, sizeof(good), &good_len), ==, DfcDerOk);
 
     DfcCredential dst;
+    static DfcCredential empty_credential;
+    dfc_credential_clear(&empty_credential);
     memset(&dst, 0, sizeof(dst));
 
     // Wrong outer tag.
@@ -304,6 +399,32 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     memcpy(trailing, good, good_len);
     trailing[good_len] = 0x00;
     munit_assert_int(dfc_der_decode(&dst, trailing, good_len + 1), ==, DfcDerMalformed);
+
+    static const uint8_t file_prefix[] = {
+        0x80, 0x01, 0x01, 0x81, 0x01, 0x00, 0x82, 0x01, 0x00, 0x83, 0x02, 0xEE, 0xEE};
+    const uint8_t* encoded_file = NULL;
+    for(size_t i = 0; i + sizeof(file_prefix) <= good_len; i++) {
+        if(memcmp(good + i, file_prefix, sizeof(file_prefix)) == 0) {
+            encoded_file = good + i;
+            break;
+        }
+    }
+    munit_assert_not_null(encoded_file);
+    size_t file_offset = (size_t)(encoded_file - good);
+
+    uint8_t bad_comm[DFC_DER_MAX_SIZE];
+    memcpy(bad_comm, good, good_len);
+    bad_comm[file_offset + 8] = 0x02;
+    memset(&dst, 0xA5, sizeof(dst));
+    munit_assert_int(dfc_der_decode(&dst, bad_comm, good_len), ==, DfcDerMalformed);
+    munit_assert_memory_equal(sizeof(dst), &dst, &empty_credential);
+
+    uint8_t bad_rights[DFC_DER_MAX_SIZE];
+    memcpy(bad_rights, good, good_len);
+    bad_rights[file_offset + 11] = 0x2E;
+    memset(&dst, 0xA5, sizeof(dst));
+    munit_assert_int(dfc_der_decode(&dst, bad_rights, good_len), ==, DfcDerMalformed);
+    munit_assert_memory_equal(sizeof(dst), &dst, &empty_credential);
 
     // Version 6 is later than this implementation, so unsupported rather than malformed.
     uint8_t v6[DFC_DER_MAX_SIZE];
@@ -343,9 +464,10 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     DfcFile* f = dfc_credential_create_file(&tmac, 0, 0x05);
     munit_assert_not_null(f);
     f->type = 0x05;
+    f->access_rights = 0xEFEF;
     f->transaction_counter = 9;
     memcpy(f->transaction_mac, "\x01\x23\x45\x67\x89\xAB\xCD\xEF", 8);
-    f->transaction_mac_key_type = 2;
+    f->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
     f->transaction_mac_key_version = 3;
     for(size_t i = 0; i < sizeof(f->transaction_mac_key); i++) {
         f->transaction_mac_key[i] = (uint8_t)(0xB0 + i);
@@ -360,7 +482,7 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     munit_assert_uint8(g->type, ==, 0x05);
     munit_assert_uint32(g->transaction_counter, ==, 9);
     munit_assert_memory_equal(8, g->transaction_mac, f->transaction_mac);
-    munit_assert_uint8(g->transaction_mac_key_type, ==, 2);
+    munit_assert_uint8(g->transaction_mac_key_type, ==, DFC_TRANSACTION_MAC_KEY_TYPE_AES);
     munit_assert_uint8(g->transaction_mac_key_version, ==, 3);
     munit_assert_memory_equal(
         sizeof(g->transaction_mac_key), g->transaction_mac_key, f->transaction_mac_key);
@@ -482,6 +604,13 @@ static MunitResult test_model_validation(const MunitParameter params[], void* da
     v->value_lower_limit = 0;
     v->value_upper_limit = 100;
     v->value = 500;
+    munit_assert_int(dfc_der_encode(&bad_value, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+    v->value = 50;
+    v->limited_credit = 0;
+    v->limited_credit_value = 1;
+    munit_assert_int(dfc_der_encode(&bad_value, buf, sizeof(buf), &len), ==, DfcDerMalformed);
+    v->limited_credit = 1;
+    v->limited_credit_value = -1;
     munit_assert_int(dfc_der_encode(&bad_value, buf, sizeof(buf), &len), ==, DfcDerMalformed);
 
     // A reserved ISO file ID.
@@ -607,6 +736,12 @@ static MunitResult test_padded_length(const MunitParameter params[], void* data)
 static MunitTest tests[] = {
     {"/padded-length", test_padded_length, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/round-trip", test_round_trip, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/v6-configuration-fields",
+     test_v6_configuration_fields,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/version-override-round-trip",
      test_version_override_round_trip,
      NULL,

@@ -1,0 +1,52 @@
+# Access control on value files: missing files answer 0xF0, a standard data
+# file rejects value commands with 0x9D because they do not apply to that kind
+# of object at all, and a file whose access rights require key 0 answers 0xAE
+# until the session is authenticated with it.
+#
+# Generated from tests/test_dfc_virtual_picc_value_vectors.c (/access) by
+# recording the exchanges the reference engine performed, then
+# cross-checked: all 23 byte expectations asserted by that test matched
+# the recording exactly.
+#
+# Re-recorded when access-rights refusals were split from wrong-object
+# refusals. Only the two file 0x0B steps moved, from 0x9D to 0x9D's
+# authentication counterpart 0xAE; the other 23 recorded steps were
+# byte-identical to the previous recording.
+#
+# The two extra steps are the D40 authentication handshake, which the source
+# performs via a helper and asserts only by status. RndB is pinned so the
+# vector does not inherit the engine default generator.
+
+name: value file access rights
+case-id: value-access
+origin: synthetic
+source: tests/test_dfc_virtual_picc_value_vectors.c#/access
+uid: 0476616C756531
+
+scan
+status   90CA000005A1B2C30F0100 => 00
+status   905A000003A1B2C300 => 00
+status   906C0000011E00 => F0
+status   900C0000051E0100000000 => F0
+status   90DC0000051E0100000000 => F0
+status   901C0000051E0100000000 => F0
+status   90CD0000070A00EEEE04000000 => 00
+status   906C0000010A00 => 9D
+status   900C0000050A0100000000 => 9D
+status   90DC0000050A0100000000 => 9D
+status   901C0000050A0100000000 => 9D
+status   90CC0000110B00000000000000640000000A0000000100 => 00
+status   906C0000010B00 => AE
+status   900C0000050B0100000000 => AE
+inject-random 0001020304050607
+exchange native-apdu 900A0000010000 => 491E890DE9ACE93291AF
+exchange native-apdu 90AF000010491E890DE9ACE932E9416AD3B58C583700 => B7D1DA7CE0DD986B9100
+exchange native-apdu 906C0000010B00 => 0A0000009100
+status   900C0000050B0100000000 => 00
+status   90C7000000 => 00
+exchange native-apdu 906C0000010B00 => 0B0000009100
+status   905A00000300000000 => 00
+status   906C0000010B00 => 9D
+status   900C0000050B0100000000 => 9D
+status   90C7000000 => 9D
+status   90A7000000 => 9D

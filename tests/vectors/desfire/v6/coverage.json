@@ -1,0 +1,197 @@
+{
+  "schema": 1,
+  "features": [
+    {
+      "id": "iso7816-mutual-authentication-2tdea",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_picc-2tdea.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_app-2tdea.vec"
+      ]
+    },
+    {
+      "id": "iso7816-mutual-authentication-3tdea",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_app-3tdea.vec"
+      ]
+    },
+    {
+      "id": "iso7816-mutual-authentication-aes",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_app-aes.vec"
+      ]
+    },
+    {
+      "id": "ev2-first-and-nonfirst",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_ev2_first_nonfirst.vec"
+      ]
+    },
+    {
+      "id": "iso7816-parameter-and-phase-errors",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-without-challenge.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_internal-without-external.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-length.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-p1.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-cryptogram.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-algorithm.vec",
+        "hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-key-reference.vec"
+      ]
+    },
+    {
+      "id": "special-authentication-key-state",
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_originality-aes.vec",
+        "hardware/hardware_physical_ev3_4k_originality-ev2-first.vec",
+        "hardware/hardware_physical_ev3_4k_originality-ev2-nonfirst-without-first.vec",
+        "hardware/hardware_physical_ev3_4k_dam-auth-disabled.vec",
+        "hardware/hardware_physical_ev3_4k_vc-config-disabled.vec"
+      ]
+    },
+    {
+      "id": "random-failure-atomicity",
+      "evidence": [
+        "synthetic/authentication-random-retry-aes.vec",
+        "synthetic/authentication-random-retry-d40-iso.vec",
+        "synthetic/random-failure-preserves-activation.vec",
+        "synthetic/random-failure-preserves-ev1-ev2-first.vec",
+        "synthetic/random-failure-preserves-ev1-prepare-pc.vec"
+      ]
+    },
+    {
+      "id": "iso-authentication-phase-abort",
+      "evidence": [
+        "synthetic/rejected-internal-auth-aborts-handshake.vec"
+      ]
+    },
+    {
+      "id": "finite-random-replay-semantics",
+      "evidence": [
+        "synthetic/finite-random-reset.vec",
+        "synthetic/replay-random-exhaustion.vec"
+      ]
+    },
+    {
+      "id": "native-chain-command-boundary",
+      "evidence": [
+        "synthetic/iso-command-aborts-native-chain.vec"
+      ]
+    },
+    {
+      "id": "authentication-rejection-retires-session",
+      "evidence": [
+        "synthetic/rejected-native-authentication-retires-session.vec",
+        "synthetic/rejected-ev2-authentication-retires-session.vec"
+      ]
+    },
+    {
+      "id": "authenticated-terminal-error-state",
+      "evidence": [
+        "synthetic/d40-terminal-command-error-retains-session.vec",
+        "synthetic/ev1-terminal-command-error-rolls-back.vec",
+        "synthetic/ev1-terminal-error-families.vec",
+        "synthetic/ev2-full-command-error-rolls-back.vec"
+      ]
+    },
+    {
+      "id": "authenticated-change-file-settings-protection",
+      "evidence": [
+        "synthetic/authenticated-change-file-settings-requires-protection.vec"
+      ]
+    },
+    {
+      "id": "session-family-command-mac-rejection",
+      "evidence": [
+        "synthetic/corrupted-d40-command-mac.vec",
+        "synthetic/corrupted-ev1-command-mac.vec",
+        "synthetic/corrupted-ev2-command-mac.vec"
+      ]
+    },
+    {
+      "id": "get-card-uid-full-response-protection",
+      "evidence": [
+        "synthetic/get-card-uid-10-byte-format.vec",
+        "synthetic/get-card-uid-d40-full.vec",
+        "synthetic/get-card-uid-ev1-full.vec",
+        "synthetic/get-card-uid-ev2-full.vec",
+        "synthetic/get-card-uid-iso-full.vec"
+      ]
+    },
+    {
+      "id": "binding-picc-response-capacity-retry",
+      "evidence": [
+        "synthetic/binding-picc-response-capacity-retry.vec"
+      ]
+    },
+    {
+      "id": "limited-credit-transaction-semantics",
+      "evidence": [
+        "synthetic/limited-credit-transaction-semantics.vec"
+      ]
+    },
+    {
+      "id": "get-file-settings-limited-credit-limit",
+      "evidence": [
+        "synthetic/get-file-settings-limited-credit-limit.vec"
+      ]
+    },
+    {
+      "id": "get-file-counters-access-and-full",
+      "evidence": [
+        "synthetic/get-file-counters-access-and-full.vec"
+      ]
+    },
+    {
+      "id": "read-data-file-type-matrix",
+      "evidence": [
+        "synthetic/read-data-file-type-matrix.vec"
+      ]
+    },
+    {
+      "id": "ev1-terminal-frame-mac",
+      "evidence": [
+        "synthetic/ev1-get-version-terminal-mac.vec"
+      ]
+    },
+    {
+      "id": "format-scope-and-disable-controls",
+      "evidence": [
+        "synthetic/delegated-format-disabled.vec",
+        "synthetic/delegated-format-scope.vec",
+        "synthetic/format-application-boundaries.vec",
+        "synthetic/picc-format-disabled-boundaries.vec",
+        "synthetic/picc-set-configuration-format-disabled.vec"
+      ]
+    },
+    {
+      "id": "protected-change-key-settings",
+      "evidence": [
+        "synthetic/protected-change-key-settings-ev1.vec",
+        "synthetic/protected-change-key-settings-ev2.vec"
+      ]
+    },
+    {
+      "id": "sdm-counter-reconfiguration",
+      "evidence": [
+        "synthetic/sdm-reconfiguration-resets-read-counter.vec"
+      ]
+    },
+    {
+      "id": "sdm-reserved-access-rights",
+      "evidence": [
+        "synthetic/sdm-reserved-access-rights-are-atomic.vec"
+      ]
+    },
+    {
+      "id": "desfire:v6-regression-corpus",
+      "evidence": [
+        "synthetic/iso-update-binary-publishes-transaction.vec",
+        "synthetic/transaction-mac-lifecycle-retires-transaction.vec",
+        "synthetic/transaction-rollback-preserves-standard-write.vec",
+        "synthetic/transaction-snapshot-create-rebases.vec",
+        "synthetic/transaction-snapshot-delete-commit.vec",
+        "synthetic/transaction-snapshot-delete-rebases.vec"
+      ]
+    }
+  ]
+}

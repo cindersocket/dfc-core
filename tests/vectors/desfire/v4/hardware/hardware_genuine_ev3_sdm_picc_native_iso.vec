@@ -1,0 +1,19 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: EV3 encrypted PICC data through native and ISO reads
+case-id: hardware-genuine-ev3-sdm-picc-native-iso
+origin: physical-card
+requires: ev3,sdm
+source: captured hardware setup and unauthenticated reads
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+exchange native-apdu 90CA00000FE8E8E80FB1043812D276000085010400 => 9100
+exchange native-apdu 905A000003E8E8E800 => 9100
+exchange native-apdu 90CD00000902030140EEEE80000000 => 9100
+exchange native-apdu 905F0000100240EEEEC1FE0000000000000020000000 => 9100
+inject-random A3CCC80D86
+exchange native-apdu 90BD0000070200000030000000 => 3334324646434346393143324230373330453246343733354130303941363636413633323539433346443035304336459100
+exchange iso-apdu 00A4040007D276000085010400 => 9000
+exchange iso-apdu 00A4020002010300 => 9000
+inject-random 980FAD25BF
+exchange iso-apdu 00B0000030 => 3131453344313232364635443345333846413742303331384145303037343837343334444132334232453538463235369000

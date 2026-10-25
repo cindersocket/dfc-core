@@ -61,7 +61,9 @@ static MunitResult check_example(const char* name, size_t expected_apps, size_t 
     memset(&from_binary, 0, sizeof(from_binary));
     munit_assert_int(dfc_der_decode(&from_binary, binary_input, binary_len), ==, DfcDerOk);
     munit_assert_int(
-        dfc_der_encode(&from_binary, binary_output, sizeof(binary_output), &written), ==, DfcDerOk);
+        dfc_der_encode(&from_binary, binary_output, sizeof(binary_output), &written),
+        ==,
+        DfcDerOk);
     munit_assert_size(written, ==, binary_len);
     munit_assert_memory_equal(binary_len, binary_output, binary_input);
     munit_assert_int(
@@ -80,9 +82,10 @@ static MunitResult check_example(const char* name, size_t expected_apps, size_t 
     size_t response_len = 0;
     const uint8_t get_version[] = {0x90, 0x60, 0x00, 0x00, 0x00};
     munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(session, get_version, sizeof(get_version), response,
-                                           sizeof(response), &response_len),
-        ==, DfcVirtualPiccStatusOk);
+        dfc_virtual_picc_iso_dep_exchange(
+            session, get_version, sizeof(get_version), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 9);
     munit_assert_memory_equal(2, response + 7, ((uint8_t[]){0x91, 0xAF}));
     if(from_binary.card.has_hardware_version) {
@@ -91,17 +94,19 @@ static MunitResult check_example(const char* name, size_t expected_apps, size_t 
     const uint8_t next_frame[] = {0x90, 0xAF, 0x00, 0x00, 0x00};
     for(size_t frame = 0; frame < 3 && response[response_len - 1] == 0xAF; frame++) {
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(session, next_frame, sizeof(next_frame), response,
-                                               sizeof(response), &response_len),
-            ==, DfcVirtualPiccStatusOk);
+            dfc_virtual_picc_iso_dep_exchange(
+                session, next_frame, sizeof(next_frame), response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
     }
     munit_assert_memory_equal(2, response + response_len - 2, ((uint8_t[]){0x91, 0x00}));
 
     const uint8_t get_app_ids[] = {0x90, 0x6A, 0x00, 0x00, 0x00};
     munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(session, get_app_ids, sizeof(get_app_ids), response,
-                                           sizeof(response), &response_len),
-        ==, DfcVirtualPiccStatusOk);
+        dfc_virtual_picc_iso_dep_exchange(
+            session, get_app_ids, sizeof(get_app_ids), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, expected_apps * 3 + 2);
     munit_assert_memory_equal(2, response + response_len - 2, ((uint8_t[]){0x91, 0x00}));
     for(size_t i = 0; i < expected_apps; i++) {
@@ -112,19 +117,27 @@ static MunitResult check_example(const char* name, size_t expected_apps, size_t 
 
     if(expected_apps > 0) {
         uint8_t select_app[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0, 0, 0, 0x00};
-        for(size_t j = 0; j < 3; j++) select_app[5 + j] = from_binary.apps[0].aid[2 - j];
+        for(size_t j = 0; j < 3; j++)
+            select_app[5 + j] = from_binary.apps[0].aid[2 - j];
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(session, select_app, sizeof(select_app), response,
-                                               sizeof(response), &response_len),
-            ==, DfcVirtualPiccStatusOk);
+            dfc_virtual_picc_iso_dep_exchange(
+                session, select_app, sizeof(select_app), response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
         munit_assert_size(response_len, ==, 2);
         munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, 0x00}));
 
         const uint8_t get_file_ids[] = {0x90, 0x6F, 0x00, 0x00, 0x00};
         munit_assert_int(
-            dfc_virtual_picc_iso_dep_exchange(session, get_file_ids, sizeof(get_file_ids),
-                                               response, sizeof(response), &response_len),
-            ==, DfcVirtualPiccStatusOk);
+            dfc_virtual_picc_iso_dep_exchange(
+                session,
+                get_file_ids,
+                sizeof(get_file_ids),
+                response,
+                sizeof(response),
+                &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
         size_t app_files = 0;
         for(size_t i = 0; i < from_binary.num_files; i++) {
             if(from_binary.files[i].app_index != 0) continue;
@@ -139,18 +152,21 @@ static MunitResult check_example(const char* name, size_t expected_apps, size_t 
             size_t settings_len = 0;
             uint8_t settings[128];
             munit_assert_int(
-                dfc_virtual_picc_iso_dep_exchange(session, get_file_settings,
-                                                   sizeof(get_file_settings), settings,
-                                                   sizeof(settings), &settings_len),
-                ==, DfcVirtualPiccStatusOk);
+                dfc_virtual_picc_iso_dep_exchange(
+                    session,
+                    get_file_settings,
+                    sizeof(get_file_settings),
+                    settings,
+                    sizeof(settings),
+                    &settings_len),
+                ==,
+                DfcVirtualPiccStatusOk);
             munit_assert_size(settings_len, >=, 3);
             munit_assert_uint8(settings[0], ==, from_binary.files[i].type);
-            munit_assert_memory_equal(2, settings + settings_len - 2,
-                                      ((uint8_t[]){0x91, 0x00}));
+            munit_assert_memory_equal(2, settings + settings_len - 2, ((uint8_t[]){0x91, 0x00}));
         }
         munit_assert_size(response_len, ==, app_files + 2);
-        munit_assert_memory_equal(2, response + response_len - 2,
-                                  ((uint8_t[]){0x91, 0x00}));
+        munit_assert_memory_equal(2, response + response_len - 2, ((uint8_t[]){0x91, 0x00}));
     }
 
     dfc_virtual_picc_session_free(session);
@@ -211,10 +227,12 @@ static MunitResult test_reordered_fields_fail(const MunitParameter params[], voi
     memcpy(reordered, text_input, prefix);
     memcpy(reordered + prefix, storage, storage_len);
     memcpy(reordered + prefix + storage_len, generation, generation_len);
-    memcpy(reordered + prefix + storage_len + generation_len,
-           storage + storage_len, original_len - prefix - storage_len - generation_len);
-    munit_assert_int(dfc_text_parse(&from_text, reordered, original_len, &detail), ==,
-                     DfcTextMalformed);
+    memcpy(
+        reordered + prefix + storage_len + generation_len,
+        storage + storage_len,
+        original_len - prefix - storage_len - generation_len);
+    munit_assert_int(
+        dfc_text_parse(&from_text, reordered, original_len, &detail), ==, DfcTextMalformed);
     munit_assert_not_null(strstr(detail.message, "out of order"));
 
     munit_assert_int(check_example("v6-maximal", 4, 7), ==, MUNIT_OK);
@@ -232,10 +250,12 @@ static MunitResult test_reordered_fields_fail(const MunitParameter params[], voi
     memcpy(reordered, text_input, prefix);
     memcpy(reordered + prefix, sm, sm_len);
     memcpy(reordered + prefix + sm_len, capability, (size_t)(sm - capability));
-    memcpy(reordered + prefix + sm_len + (size_t)(sm - capability), sm_end,
-           original_len - (size_t)(sm_end - text_input));
-    munit_assert_int(dfc_text_parse(&from_text, reordered, original_len, &detail), ==,
-                     DfcTextMalformed);
+    memcpy(
+        reordered + prefix + sm_len + (size_t)(sm - capability),
+        sm_end,
+        original_len - (size_t)(sm_end - text_input));
+    munit_assert_int(
+        dfc_text_parse(&from_text, reordered, original_len, &detail), ==, DfcTextMalformed);
     munit_assert_not_null(strstr(detail.message, "out of order"));
     return MUNIT_OK;
 }
@@ -244,8 +264,7 @@ static MunitTest tests[] = {
     {"/minimal", test_minimal, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/auth-commands", test_auth_commands, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/maximal", test_maximal, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
-    {"/reordered-fields-fail", test_reordered_fields_fail, NULL, NULL,
-     MUNIT_TEST_OPTION_NONE, NULL},
+    {"/reordered-fields-fail", test_reordered_fields_fail, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

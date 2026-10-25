@@ -1,0 +1,65 @@
+# Exercises ReadData's file-type gate before bounds processing, while retaining
+# the supported data-file and Transaction-MAC response shapes.
+name: ReadData accepts only byte-oriented file types
+case-id: read-data-file-type-matrix
+origin: synthetic
+feature-version: 6
+source: tests/test_dfc_virtual_picc_secure.c#/read-data-type-errors-retire-ev1-session
+issues: https://github.com/cindersocket/dfc-core/issues/129
+requires: ev3,backup-files,record-files,transaction-mac
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+
+scan
+exchange native-apdu 90CA0000050102030F8100 => 9100
+exchange native-apdu 905A00000301020300 => 9100
+
+# Positive controls: StandardData and BackupData accept whole-file, exact-edge,
+# and reject oversized reads without changing their committed contents.
+exchange native-apdu 90CD0000070100EEEE04000000 => 9100
+exchange native-apdu 903D00000B010000000400001112131400 => 9100
+exchange native-apdu 90BD0000070100000000000000 => 111213149100
+exchange native-apdu 90BD0000070103000001000000 => 149100
+exchange native-apdu 90BD0000070100000005000000 => 91BE
+
+exchange native-apdu 90CB0000070200EEEE04000000 => 9100
+exchange native-apdu 903D00000B020000000400002122232400 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BD0000070200000000000000 => 212223249100
+exchange native-apdu 90BD0000070203000001000000 => 249100
+exchange native-apdu 90BD0000070200000005000000 => 91BE
+
+# Value and record files reject every length class as a command-permission
+# error. The file type is checked before offsets and lengths are interpreted.
+exchange native-apdu 90CC0000110300EEEE00000000640000000A0000000100 => 9100
+exchange native-apdu 90C100000A0400EEEE04000003000000 => 9100
+exchange native-apdu 90C000000A0500EEEE04000003000000 => 9100
+
+exchange native-apdu 90BD0000070300000000000000 => 919D
+exchange native-apdu 90BD0000070303000001000000 => 919D
+exchange native-apdu 90BD0000070300000005000000 => 919D
+exchange native-apdu 90BD0000070400000000000000 => 919D
+exchange native-apdu 90BD0000070403000001000000 => 919D
+exchange native-apdu 90BD0000070400000005000000 => 919D
+exchange native-apdu 90BD0000070500000000000000 => 919D
+exchange native-apdu 90BD0000070503000001000000 => 919D
+exchange native-apdu 90BD0000070500000005000000 => 919D
+
+# A rejected read is an unsuccessful command and therefore rolls back pending
+# transactional data without touching the committed file image.
+exchange native-apdu 903D00000B02000000040000B1B2B3B400 => 9100
+exchange native-apdu 90BD0000070300000000000000 => 919D
+exchange native-apdu 90A7000000 => 910C
+exchange native-apdu 90BD0000070200000004000000 => 212223249100
+
+# Transaction-MAC files retain their fixed twelve-byte ReadData shape and the
+# same boundary behavior as a twelve-byte BackupData file.
+exchange native-apdu 90CE0000160600EEEF025A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A0100 => 9100
+exchange native-apdu 90BD0000070600000000000000 => 0000000000000000000000009100
+exchange native-apdu 90BD000007060B000001000000 => 009100
+exchange native-apdu 90BD000007060000000D000000 => 91BE

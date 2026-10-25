@@ -1,0 +1,41 @@
+# Reader trace: ISO SELECT probes, native SELECT, GetKeySettings, MFP probe.
+#
+# Generated from tests/test_dfc_virtual_picc_probe_vectors.c
+# (/trace-reader-sequence-handles-get-key-settings-and-mfp-probe) by recording
+# the exchanges the reference engine performed, then cross-checked: all 6 byte
+# expectations asserted by that test matched the recording exactly, as did the
+# selected-application assertion (kept below as an assert step).
+#
+# This test drives the frame-level API, so the steps are frame-exchange and the
+# expected responses carry the ISO-DEP PCB prefix.
+#
+# The vector header cannot declare an application, so the application the
+# original suite preloaded is created on the wire first, with the same AID and
+# key settings. Re-recording the suite against that construction produced a
+# byte-identical frame log, including the GetKeySettings response the original
+# builds from the live application's key settings (0F 02).
+
+name: reader probe sequence
+case-id: probe-reader-sequence
+origin: synthetic
+source: tests/test_dfc_virtual_picc_probe_vectors.c
+uid: 04112233445566
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 8
+
+scan
+
+# preamble: create the application the original suite preloaded
+status   90CA0000054F49D30F0200 => 00
+
+# recorded reader trace
+frame-exchange E080 => 0565810280
+frame-exchange 0A0000A4040010A000000440000101000100004705 => 0A006A82
+frame-exchange 0B0000A404000AA000000440000101000100 => 0B006A82
+frame-exchange 0A00905A000003E384F400 => 0A0091A0
+assert   emulator.selected_application = 1
+frame-exchange 0B00905A0000034F49D300 => 0B009100
+frame-exchange 0A009045000000 => 0A000F029100
+frame-exchange 0B0070004000 => 0B001C

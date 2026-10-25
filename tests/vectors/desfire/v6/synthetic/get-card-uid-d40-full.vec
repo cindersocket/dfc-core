@@ -1,0 +1,27 @@
+# PROVENANCE: Synthetic regression for authenticated legacy GetCardUID response protection.
+name: D40 GetCardUID uses Full response protection
+case-id: d40-get-card-uid-full-response
+origin: synthetic
+feature-version: 6
+source: generated GetCardUID response-protection regression
+issues: https://github.com/cindersocket/dfc-core/issues/126
+requires: ev1
+uid: 045704EA916F80
+picc-generation: EV1
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+scan
+
+inject-random CCF53270570A7669
+exchange native-apdu 900A0000010000 => DF6AB29AAE46BA2791AF
+exchange native-apdu 90AF00001005EEC31F1E6A0CC31FEF8398A662137000 => 26ACED3C771EF9A09100
+exchange native-apdu 9051000000 => F3DFFE176077616669E94D2BA32CAEE99100
+
+# Legacy authentication remains usable after a malformed management command.
+exchange native-apdu 90510000010000 => 917E
+assert emulator.secure_messaging = present
+exchange native-apdu 9051000000 => F3DFFE176077616669E94D2BA32CAEE99100
+field-off

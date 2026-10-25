@@ -33,19 +33,29 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
   }
   public static DfcVirtualPicc create(DfcCredential credential) throws DfcException {
     Objects.requireNonNull(credential, "credential");
-    return new DfcVirtualPicc(DfcNative.piccCreate(credential.encode(), null));
+    byte[] encoded = credential.encode();
+    try {
+      return new DfcVirtualPicc(DfcNative.piccCreate(encoded, null));
+    } finally {
+      java.util.Arrays.fill(encoded, (byte) 0);
+    }
   }
   /**
    * Creates a card whose random requests consume the supplied script in order.
    *
-   * <p>The script must not be empty. If a request cannot be satisfied in full, that operation and
-   * every later operation on the card fail. Create a new card with a complete script to continue.
+   * <p>If a request cannot be satisfied in full, it consumes no script bytes and that operation
+   * fails with status {@code -5}. Later operations may continue, including a smaller random draw.
    */
   public static DfcVirtualPicc createForReplay(DfcCredential credential, byte[] randomScript)
       throws DfcException {
     Objects.requireNonNull(credential, "credential");
     Objects.requireNonNull(randomScript, "randomScript");
-    return new DfcVirtualPicc(DfcNative.piccCreate(credential.encode(), randomScript));
+    byte[] encoded = credential.encode();
+    try {
+      return new DfcVirtualPicc(DfcNative.piccCreate(encoded, randomScript));
+    } finally {
+      java.util.Arrays.fill(encoded, (byte) 0);
+    }
   }
   public synchronized DfcActivation activate() throws DfcException {
     ByteBuffer data = ByteBuffer.wrap(DfcNative.piccActivate(state.require()));
@@ -57,6 +67,18 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
     byte[] ats = new byte[data.get() & 0xff];
     data.get(ats);
     return new DfcActivation(uid, atqa, sak, ats);
+  }
+  /** Appends bytes to this replay card's random queue without exposing future events early. */
+  public synchronized void appendReplayRandom(byte[] bytes) throws DfcException {
+    DfcNative.piccAppendReplayRandom(state.require(), Objects.requireNonNull(bytes, "bytes"));
+  }
+  /** Discards and wipes every unread byte in this replay card's random queue. */
+  public synchronized void clearReplayRandom() throws DfcException {
+    DfcNative.piccClearReplayRandom(state.require());
+  }
+  /** Returns the number of bytes currently available in this replay card's random queue. */
+  public synchronized int replayRandomRemaining() throws DfcException {
+    return DfcNative.piccReplayRandomRemaining(state.require());
   }
   public synchronized byte[] exchange(byte[] command) throws DfcException {
     return DfcNative.piccExchange(
@@ -80,6 +102,10 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
     boolean proximityVerified = data.get() != 0;
     return new DfcPiccSnapshot(selected, applicationIndex, aid, dirty, authenticationMode,
         authenticationKeyNumber, ev2Counter, ev2Active, virtualCardSelected, proximityVerified);
+  }
+  /** Copies secret session state for diagnostics. Close the result promptly. */
+  public synchronized DfcDiagnosticSnapshot diagnosticSnapshot() throws DfcException {
+    return new DfcDiagnosticSnapshot(DfcNative.piccDiagnosticSnapshot(state.require()));
   }
   @Override
   public byte[] transceive(byte[] frame) throws IOException {

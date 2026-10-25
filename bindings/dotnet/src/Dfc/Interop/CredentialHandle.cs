@@ -57,45 +57,59 @@ internal static unsafe class CredentialMarshaller
     internal static DfcCredential Read(nint credential)
     {
         NativeCard card;
-        NativePicc picc;
+        NativePicc picc = default;
         Check(Native.dfc_ffi_credential_get_card(credential, &card));
-        Check(Native.dfc_ffi_credential_get_picc(credential, &picc));
-
-        uint appCount = Native.dfc_ffi_credential_application_count(credential);
-        var appFiles = new List<DfcFile>[appCount];
-        for (var i = 0; i < appCount; i++)
+        try
         {
-            appFiles[i] = [];
-        }
+            Check(Native.dfc_ffi_credential_get_picc(credential, &picc));
 
-        var piccFiles = new List<DfcFile>();
-        uint fileCount = Native.dfc_ffi_credential_file_count(credential);
-        for (uint i = 0; i < fileCount; i++)
-        {
-            NativeFile file;
-            Check(Native.dfc_ffi_credential_get_file(credential, i, &file));
-            var known = ReadFileData(credential, i);
-            var managed = ToFile(file, known);
-            if (file.Owner == Native.OwnerPicc)
+            uint appCount = Native.dfc_ffi_credential_application_count(credential);
+            var appFiles = new List<DfcFile>[appCount];
+            for (var i = 0; i < appCount; i++)
             {
-                piccFiles.Add(managed);
+                appFiles[i] = [];
             }
-            else
+
+            var piccFiles = new List<DfcFile>();
+            uint fileCount = Native.dfc_ffi_credential_file_count(credential);
+            for (uint i = 0; i < fileCount; i++)
             {
-                appFiles[file.Owner].Add(managed);
+                NativeFile file = default;
+                try
+                {
+                    Check(Native.dfc_ffi_credential_get_file(credential, i, &file));
+                    var known = ReadFileData(credential, i);
+                    var managed = ToFile(&file, known);
+                    if (file.Owner == Native.OwnerPicc)
+                    {
+                        piccFiles.Add(managed);
+                    }
+                    else
+                    {
+                        appFiles[file.Owner].Add(managed);
+                    }
+                }
+                finally
+                {
+                    Native.dfc_ffi_secure_zero((byte*)&file, (nuint)sizeof(NativeFile));
+                }
             }
-        }
 
-        var applications = new List<DfcApplication>((int)appCount);
-        for (uint i = 0; i < appCount; i++)
+            var applications = new List<DfcApplication>((int)appCount);
+            for (uint i = 0; i < appCount; i++)
+            {
+                NativeApplication app;
+                Check(Native.dfc_ffi_credential_get_application(credential, i, &app));
+                applications.Add(ToApplication(credential, (int)i, app, appFiles[i]));
+            }
+
+            var piccKeys = ReadKeys(credential, Native.OwnerPicc, 0, picc.NumKeys);
+            return new DfcCredential(ToCard(card), ToPicc(&picc, piccKeys, piccFiles), applications);
+        }
+        finally
         {
-            NativeApplication app;
-            Check(Native.dfc_ffi_credential_get_application(credential, i, &app));
-            applications.Add(ToApplication(credential, (int)i, app, appFiles[i]));
+            Native.dfc_ffi_secure_zero((byte*)&picc, (nuint)sizeof(NativePicc));
         }
-
-        var piccKeys = ReadKeys(credential, Native.OwnerPicc, 0, picc.NumKeys);
-        return new DfcCredential(ToCard(card), ToPicc(picc, piccKeys, piccFiles), applications);
     }
 
     private static byte[] ReadFileData(nint credential, uint index)
@@ -116,9 +130,16 @@ internal static unsafe class CredentialMarshaller
         var keys = new List<DfcKey>((int)count);
         for (uint slot = 0; slot < count; slot++)
         {
-            NativeKey key;
-            Check(Native.dfc_ffi_credential_get_key(credential, owner, keySet, slot, &key));
-            keys.Add(new DfcKey(Bytes(key.Value, (int)key.Len), key.Version));
+            NativeKey key = default;
+            try
+            {
+                Check(Native.dfc_ffi_credential_get_key(credential, owner, keySet, slot, &key));
+                keys.Add(new DfcKey(Bytes(key.Value, (int)key.Len), key.Version));
+            }
+            finally
+            {
+                Native.dfc_ffi_secure_zero((byte*)&key, (nuint)sizeof(NativeKey));
+            }
         }
 
         return keys;
@@ -132,21 +153,25 @@ internal static unsafe class CredentialMarshaller
             StaticSignature = c.HasStaticSignature != 0 ? Copy(c.StaticSignature, 56) : null,
         };
 
-    private static DfcPicc ToPicc(NativePicc p, List<DfcKey> keys, List<DfcFile> files) =>
+    private static DfcPicc ToPicc(NativePicc* source, List<DfcKey> keys, List<DfcFile> files) =>
+        ToPiccCore(ref *source, source, keys, files);
+
+    private static DfcPicc ToPiccCore(ref NativePicc p, NativePicc* source, List<DfcKey> keys, List<DfcFile> files) =>
         new(p.KeySettings1, p.KeySettings2, (DfcAuthenticationMode)p.AuthCommand, keys, files)
         {
             SupportedAuthenticationCommands = p.HasAuthCommands != 0 ? (DfcAuthenticationCommands)p.AuthCommands : null,
             PreferredAuthenticationCommand = p.HasPreferredAuthCommand != 0 ? (DfcAuthenticationCommands)p.PreferredAuthCommand : null,
             RandomId = p.RandomId != 0,
+            RandomIdLegacy = p.RandomIdLegacy != 0,
             FormatDisabled = p.FormatDisabled != 0,
-            Ats = p.AtsLen > 0 ? Copy(p.Ats, p.AtsLen) : null,
+            Ats = p.AtsLen > 0 ? Copy(source->Ats, p.AtsLen) : null,
             Sak = p.HasSak != 0 ? p.Sak : null,
-            Atqa = p.HasAtqa != 0 ? Copy(p.Atqa, 2) : null,
+            Atqa = p.HasAtqa != 0 ? Copy(source->Atqa, 2) : null,
             SmDisable = p.HasSmDisable != 0 ? p.SmDisable : null,
-            Ev2Capabilities = p.HasEv2Capabilities != 0 ? Copy(p.Ev2Capabilities, 6) : null,
+            Ev2Capabilities = p.HasEv2Capabilities != 0 ? Copy(source->Ev2Capabilities, 6) : null,
             ProximityCheck =
                 p.HasProximityKey != 0
-                    ? new DfcProximityConfiguration(Copy(p.ProximityKey, 16), p.ProximityOption, p.ProximityPublishedResponseTime)
+                    ? new DfcProximityConfiguration(Copy(source->ProximityKey, 16), p.ProximityOption, p.ProximityPublishedResponseTime)
                     {
                         Bitrate = p.HasProximityBitrate != 0 ? p.ProximityBitrate : null,
                     }
@@ -154,19 +179,19 @@ internal static unsafe class CredentialMarshaller
             VirtualCard =
                 p.VirtualCardConfigured != 0
                     ? new DfcVirtualCardConfiguration(
-                        Copy(p.VirtualCardInstallationId, p.VirtualCardInstallationIdLen),
+                        Copy(source->VirtualCardInstallationId, p.VirtualCardInstallationIdLen),
                         p.VirtualCardInformation,
-                        Copy(p.VirtualCardCapabilities, 2),
-                        Copy(p.VirtualCardUid, p.VirtualCardUidLen),
-                        Copy(p.VirtualCardSelectMacKey, 16),
-                        Copy(p.VirtualCardSelectEncryptionKey, 16),
+                        Copy(source->VirtualCardCapabilities, 2),
+                        Copy(source->VirtualCardUid, p.VirtualCardUidLen),
+                        Copy(source->VirtualCardSelectMacKey, 16),
+                        Copy(source->VirtualCardSelectEncryptionKey, 16),
                         p.VirtualCardAuthenticationMandatory != 0,
                         p.VirtualCardProximityMandatory != 0
                     )
                     : null,
             DamKeys =
                 p.HasDamKeys != 0
-                    ? new DfcDamKeys(Copy(p.DamAuthKey, 16), Copy(p.DamMacKey, 16), Copy(p.DamEncryptionKey, 16))
+                    ? new DfcDamKeys(Copy(source->DamAuthKey, 16), Copy(source->DamMacKey, 16), Copy(source->DamEncryptionKey, 16))
                     : null,
         };
 
@@ -212,29 +237,37 @@ internal static unsafe class CredentialMarshaller
                 a.Delegated != 0
                     ? new DfcDelegation(a.DelegatedSlotNumber, a.DelegatedSlotVersion, a.DelegatedQuotaLimit, a.DelegatedFreeBlocks)
                     : null,
+            DelegatedFormatDisabled = a.DelegatedFormatDisabled != 0,
         };
     }
 
-    private static DfcFile ToFile(NativeFile f, byte[] known)
+    private static DfcFile ToFile(NativeFile* source, byte[] known)
     {
+        ref var f = ref *source;
         DfcFileContents contents = f.Type switch
         {
             FileTypeStandard or FileTypeBackup => new DfcFileContents.Data(f.DeclaredSize, known, f.ContentsComplete != 0)
             {
                 TransactionPending = f.TransactionPending != 0,
             },
-            FileTypeValue => new DfcFileContents.Value(f.ValueLowerLimit, f.ValueUpperLimit, f.Value, f.LimitedCredit)
+            FileTypeValue => new DfcFileContents.Value(
+                f.ValueLowerLimit,
+                f.ValueUpperLimit,
+                f.Value,
+                f.LimitedCredit,
+                f.LimitedCreditValue
+            )
             {
                 Pending = f.ValuePending != 0,
                 PendingDelta = f.ValuePendingDelta,
             },
             FileTypeTransactionMac => new DfcFileContents.TransactionMac(
                 f.TransactionMacKeyType,
-                Copy(f.TransactionMacKey, 16),
+                Copy(source->TransactionMacKey, 16),
                 f.TransactionMacKeyVersion,
                 f.TransactionCounter,
-                Copy(f.TransactionMac, 8),
-                Copy(f.PreviousReaderId, 16)
+                Copy(source->TransactionMac, 8),
+                Copy(source->PreviousReaderId, 16)
             ),
             _ => new DfcFileContents.Records(f.RecordSize, f.MaxRecords, f.RecordCount, known, f.ContentsComplete != 0)
             {
@@ -305,17 +338,23 @@ internal static unsafe class CredentialMarshaller
             return DfcError.FromStatus(st, "the card cannot be represented");
         }
 
-        var picc = FromPicc(credential.Picc);
-        if (picc.IsFailure)
+        NativePicc piccValue = default;
+        try
         {
-            return picc.Error;
+            var piccError = FillPicc(credential.Picc, &piccValue);
+            if (piccError is not null)
+            {
+                return piccError;
+            }
+            st = Native.dfc_ffi_credential_set_picc(target, &piccValue);
+            if (st != 0)
+            {
+                return DfcError.FromStatus(st, "the PICC settings cannot be represented");
+            }
         }
-
-        var piccValue = picc.Value;
-        st = Native.dfc_ffi_credential_set_picc(target, &piccValue);
-        if (st != 0)
+        finally
         {
-            return DfcError.FromStatus(st, "the PICC settings cannot be represented");
+            Native.dfc_ffi_secure_zero((byte*)&piccValue, (nuint)sizeof(NativePicc));
         }
 
         var keyResult = WriteKeys(target, Native.OwnerPicc, 0, credential.Picc.Keys);
@@ -393,13 +432,20 @@ internal static unsafe class CredentialMarshaller
             }
 
             NativeKey key = default;
-            key.Len = (uint)value.Length;
-            key.Version = keys[slot].Version;
-            Fill(key.Value, value);
-            int st = Native.dfc_ffi_credential_set_key(target, owner, keySet, (uint)slot, &key);
-            if (st != 0)
+            try
             {
-                return DfcError.FromStatus(st, $"key {slot} does not fit its key type");
+                key.Len = (uint)value.Length;
+                key.Version = keys[slot].Version;
+                Fill(key.Value, value);
+                int st = Native.dfc_ffi_credential_set_key(target, owner, keySet, (uint)slot, &key);
+                if (st != 0)
+                {
+                    return DfcError.FromStatus(st, $"key {slot} does not fit its key type");
+                }
+            }
+            finally
+            {
+                Native.dfc_ffi_secure_zero((byte*)&key, (nuint)sizeof(NativeKey));
             }
         }
 
@@ -410,9 +456,19 @@ internal static unsafe class CredentialMarshaller
     {
         foreach (var file in files)
         {
-            var native = FromFile(owner, file, out var known);
+            NativeFile native = default;
+            byte[] known;
             uint index;
-            int st = Native.dfc_ffi_credential_add_file(target, &native, &index);
+            int st;
+            try
+            {
+                FillFile(owner, file, &native, out known);
+                st = Native.dfc_ffi_credential_add_file(target, &native, &index);
+            }
+            finally
+            {
+                Native.dfc_ffi_secure_zero((byte*)&native, (nuint)sizeof(NativeFile));
+            }
             if (st != 0)
             {
                 return DfcError.FromStatus(st, $"file {file.Number:X2} cannot be added");
@@ -458,60 +514,62 @@ internal static unsafe class CredentialMarshaller
         return c;
     }
 
-    private static Result<NativePicc, DfcError> FromPicc(DfcPicc picc)
+    private static DfcError? FillPicc(DfcPicc picc, NativePicc* output)
     {
-        NativePicc p = default;
-        p.NumKeys = (uint)picc.Keys.Count;
-        p.KeyLen = picc.Keys.Count > 0 ? (uint)picc.Keys[0].Value.Length : 16;
-        p.KeySettings1 = picc.KeySettings1;
-        p.KeySettings2 = picc.KeySettings2;
-        p.AuthCommand = (byte)picc.AuthenticationMode;
+        *output = default;
+        var p = output;
+        p->NumKeys = (uint)picc.Keys.Count;
+        p->KeyLen = picc.Keys.Count > 0 ? (uint)picc.Keys[0].Value.Length : 16;
+        p->KeySettings1 = picc.KeySettings1;
+        p->KeySettings2 = picc.KeySettings2;
+        p->AuthCommand = (byte)picc.AuthenticationMode;
         if (picc.SupportedAuthenticationCommands is { } commands)
         {
-            p.HasAuthCommands = 1;
-            p.AuthCommands = (byte)commands;
+            p->HasAuthCommands = 1;
+            p->AuthCommands = (byte)commands;
         }
         if (picc.PreferredAuthenticationCommand is { } preferred)
         {
-            p.HasPreferredAuthCommand = 1;
-            p.PreferredAuthCommand = (byte)preferred;
+            p->HasPreferredAuthCommand = 1;
+            p->PreferredAuthCommand = (byte)preferred;
         }
-        p.RandomId = Flag(picc.RandomId);
-        p.FormatDisabled = Flag(picc.FormatDisabled);
+        p->RandomId = Flag(picc.RandomId);
+        p->RandomIdLegacy = Flag(picc.RandomIdLegacy);
+        p->FormatDisabled = Flag(picc.FormatDisabled);
         var ok = true;
         if (picc.Ats is { } ats)
         {
             ok &= ats.Length <= 20;
             if (ok)
             {
-                p.AtsLen = (byte)ats.Length;
-                Fill(p.Ats, ats);
+                p->AtsLen = (byte)ats.Length;
+                Fill(p->Ats, ats);
             }
         }
 
         if (picc.Sak is { } sak)
         {
-            p.HasSak = 1;
-            p.Sak = sak;
+            p->HasSak = 1;
+            p->Sak = sak;
         }
 
-        ok &= Optional(picc.Atqa, 2, p.Atqa, ref p.HasAtqa);
+        ok &= Optional(picc.Atqa, 2, p->Atqa, ref p->HasAtqa);
         if (picc.SmDisable is { } smDisable)
         {
-            p.HasSmDisable = 1;
-            p.SmDisable = smDisable;
+            p->HasSmDisable = 1;
+            p->SmDisable = smDisable;
         }
 
-        ok &= Optional(picc.Ev2Capabilities, 6, p.Ev2Capabilities, ref p.HasEv2Capabilities);
+        ok &= Optional(picc.Ev2Capabilities, 6, p->Ev2Capabilities, ref p->HasEv2Capabilities);
         if (picc.ProximityCheck is { } proximity)
         {
-            ok &= Optional(proximity.Key, 16, p.ProximityKey, ref p.HasProximityKey);
-            p.ProximityOption = proximity.Option;
-            p.ProximityPublishedResponseTime = proximity.PublishedResponseTime;
+            ok &= Optional(proximity.Key, 16, p->ProximityKey, ref p->HasProximityKey);
+            p->ProximityOption = proximity.Option;
+            p->ProximityPublishedResponseTime = proximity.PublishedResponseTime;
             if (proximity.Bitrate is { } bitrate)
             {
-                p.HasProximityBitrate = 1;
-                p.ProximityBitrate = bitrate;
+                p->HasProximityBitrate = 1;
+                p->ProximityBitrate = bitrate;
             }
         }
 
@@ -521,17 +579,17 @@ internal static unsafe class CredentialMarshaller
                 && vc.SelectMacKey.Length == 16 && vc.SelectEncryptionKey.Length == 16;
             if (ok)
             {
-                p.VirtualCardConfigured = 1;
-                p.VirtualCardInstallationIdLen = (byte)vc.InstallationId.Length;
-                Fill(p.VirtualCardInstallationId, vc.InstallationId);
-                p.VirtualCardInformation = vc.Information;
-                Fill(p.VirtualCardCapabilities, vc.Capabilities);
-                p.VirtualCardUidLen = (byte)vc.Uid.Length;
-                Fill(p.VirtualCardUid, vc.Uid);
-                Fill(p.VirtualCardSelectMacKey, vc.SelectMacKey);
-                Fill(p.VirtualCardSelectEncryptionKey, vc.SelectEncryptionKey);
-                p.VirtualCardAuthenticationMandatory = Flag(vc.AuthenticationMandatory);
-                p.VirtualCardProximityMandatory = Flag(vc.ProximityMandatory);
+                p->VirtualCardConfigured = 1;
+                p->VirtualCardInstallationIdLen = (byte)vc.InstallationId.Length;
+                Fill(p->VirtualCardInstallationId, vc.InstallationId);
+                p->VirtualCardInformation = vc.Information;
+                Fill(p->VirtualCardCapabilities, vc.Capabilities);
+                p->VirtualCardUidLen = (byte)vc.Uid.Length;
+                Fill(p->VirtualCardUid, vc.Uid);
+                Fill(p->VirtualCardSelectMacKey, vc.SelectMacKey);
+                Fill(p->VirtualCardSelectEncryptionKey, vc.SelectEncryptionKey);
+                p->VirtualCardAuthenticationMandatory = Flag(vc.AuthenticationMandatory);
+                p->VirtualCardProximityMandatory = Flag(vc.ProximityMandatory);
             }
         }
 
@@ -540,14 +598,14 @@ internal static unsafe class CredentialMarshaller
             ok &= dam.AuthenticationKey.Length == 16 && dam.MacKey.Length == 16 && dam.EncryptionKey.Length == 16;
             if (ok)
             {
-                p.HasDamKeys = 1;
-                Fill(p.DamAuthKey, dam.AuthenticationKey);
-                Fill(p.DamMacKey, dam.MacKey);
-                Fill(p.DamEncryptionKey, dam.EncryptionKey);
+                p->HasDamKeys = 1;
+                Fill(p->DamAuthKey, dam.AuthenticationKey);
+                Fill(p->DamMacKey, dam.MacKey);
+                Fill(p->DamEncryptionKey, dam.EncryptionKey);
             }
         }
 
-        return ok ? p : new DfcError(DfcErrorClass.Malformed, "a PICC field has the wrong length");
+        return ok ? null : new DfcError(DfcErrorClass.Malformed, "a PICC field has the wrong length");
     }
 
     private static Result<NativeApplication, DfcError> FromApplication(DfcApplication app)
@@ -623,6 +681,7 @@ internal static unsafe class CredentialMarshaller
             a.DelegatedSlotVersion = delegation.SlotVersion;
             a.DelegatedQuotaLimit = delegation.QuotaLimit;
             a.DelegatedFreeBlocks = delegation.FreeBlocks;
+            a.DelegatedFormatDisabled = Flag(app.DelegatedFormatDisabled);
         }
 
         return ok ? a : new DfcError(DfcErrorClass.Malformed, "application capability data is ten octets");
@@ -630,9 +689,10 @@ internal static unsafe class CredentialMarshaller
 
     private static uint KeyLengthFor(byte keySettings2) => (keySettings2 & 0xC0) == 0x40 ? 24u : 16u;
 
-    private static NativeFile FromFile(int owner, DfcFile file, out byte[] known)
+    private static void FillFile(int owner, DfcFile file, NativeFile* output, out byte[] known)
     {
-        NativeFile f = default;
+        *output = default;
+        ref var f = ref *output;
         f.Owner = owner;
         f.Number = file.Number;
         f.Type = (byte)file.Type;
@@ -658,6 +718,7 @@ internal static unsafe class CredentialMarshaller
                 f.ValueUpperLimit = value.UpperLimit;
                 f.Value = value.Current;
                 f.LimitedCredit = value.LimitedCredit;
+                f.LimitedCreditValue = value.LimitedCreditValue;
                 f.ValuePending = Flag(value.Pending);
                 f.ValuePendingDelta = value.PendingDelta;
                 break;
@@ -671,11 +732,11 @@ internal static unsafe class CredentialMarshaller
                 break;
             case DfcFileContents.TransactionMac tmac:
                 f.TransactionMacKeyType = tmac.KeyType;
-                Fill(f.TransactionMacKey, tmac.Key);
+                Fill(output->TransactionMacKey, tmac.Key);
                 f.TransactionMacKeyVersion = tmac.KeyVersion;
                 f.TransactionCounter = tmac.Counter;
-                Fill(f.TransactionMac, tmac.Mac);
-                Fill(f.PreviousReaderId, tmac.PreviousReaderId);
+                Fill(output->TransactionMac, tmac.Mac);
+                Fill(output->PreviousReaderId, tmac.PreviousReaderId);
                 break;
         }
 
@@ -695,7 +756,6 @@ internal static unsafe class CredentialMarshaller
             f.SdmReadCounter = sdm.ReadCounter;
         }
 
-        return f;
     }
 
     // ---------------------------------------------------------- helpers ---

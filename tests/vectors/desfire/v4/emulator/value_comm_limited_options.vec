@@ -1,0 +1,47 @@
+# Value files work identically under plain, MAC and enciphered comm settings
+# when the session is not authenticated, LimitedCredit honours the
+# limited-credit flag, and Commit/AbortTransaction reject any payload.
+#
+# Generated from tests/test_dfc_virtual_picc_value_vectors.c (/comm-limited-options) by
+# recording the exchanges the reference engine performed, then
+# cross-checked: all 26 byte expectations asserted by that test matched
+# the recording exactly.
+#
+# Every file here has free access rights (0xEEEE), so the 0x9D on file 0x0E is
+# LimitedCredit being refused on a file created without the limited-credit
+# flag. That is a wrong-operation refusal, not an access-rights one, so it
+# stayed 0x9D when access-rights refusals moved to 0xAE.
+
+name: value file comm settings and LimitedCredit
+case-id: value-comm-limited-options
+origin: synthetic
+source: tests/test_dfc_virtual_picc_value_vectors.c#/comm-limited-options
+uid: 0476616C756531
+
+scan
+status   90CA000005A1B2C30F0100 => 00
+status   905A000003A1B2C300 => 00
+status   90CC0000110C01EEEE00000000640000000A0000000100 => 00
+exchange native-apdu 906C0000010C00 => 0A0000009100
+status   900C0000050C0100000000 => 00
+status   90C7000000 => 00
+exchange native-apdu 906C0000010C00 => 0B0000009100
+status   90CC0000110D03EEEE00000000640000000A0000000100 => 00
+exchange native-apdu 906C0000010D00 => 0A0000009100
+status   900C0000050D0100000000 => 00
+status   90C7000000 => 00
+exchange native-apdu 906C0000010D00 => 0B0000009100
+status   90CC0000110E00EEEE00000000640000000A0000000000 => 00
+status   901C0000050E0100000000 => 9D
+status   90CC0000110F00EEEE00000000640000000A0000000100 => 00
+status   901C0000050F0100000000 => BE
+status   90CC0000111000EEEE00000000640000000A0000000300 => 00
+status   901C000005100100000000 => BE
+status   900C0000050F0100000000 => 00
+status   90C70000010000 => 7E
+exchange native-apdu 906C0000010F00 => 0A0000009100
+status   90C7000000 => 0C
+status   900C0000050F0100000000 => 00
+status   90A70000010000 => 7E
+exchange native-apdu 906C0000010F00 => 0A0000009100
+status   90C7000000 => 0C

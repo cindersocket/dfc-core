@@ -1,0 +1,21 @@
+name: corrupted EV1 command CMAC is rejected
+origin: synthetic
+case-id: corrupted-ev1-command-mac
+feature-version: 6
+source: one-bit corruption of a captured physical-card exchange
+issues: https://github.com/cindersocket/dfc-core/issues/133
+requires: auth-iso
+uid: 045704EA916F80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA000005A3A2A10F0400 => 00
+status   905A000003A3A2A100 => 00
+status   90CD0000070201111120000000 => 00
+inject-random CB34442E770E4578
+exchange native-apdu 901A0000010100 => D93FCBDB26B1830391AF
+exchange native-apdu 90AF0000103BFACFCB7C11504EFD1B0D75124FCDC500 => 74E808A4A44C8DCB9100
+exchange native-apdu 903D00001F02000000100000202122232425262728292A2B2C2D2E2F972F7D6226C68CEA00 => 911E

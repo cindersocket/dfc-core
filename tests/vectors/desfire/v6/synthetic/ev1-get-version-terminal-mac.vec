@@ -1,0 +1,31 @@
+# PROVENANCE: Synthetic regression built from a captured AES authentication
+# exchange and deterministic GetVersion model data.
+name: EV1 GetVersion authenticates only the terminal frame
+case-id: ev1-get-version-terminal-mac
+origin: synthetic
+feature-version: 6
+source: captured AES authentication with generated GetVersion response checks
+issues: https://github.com/cindersocket/dfc-core/issues/121
+requires: ev1,auth-aes
+uid: 045704EA916F80
+picc-generation: EV1
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status 90CA000005B3B2B10F8400 => 00
+status 905A000003B3B2B100 => 00
+inject-random FE9CB362B535846C37214CC8DFEAE9CE
+exchange native-apdu 90AA0000010000 => 98A8C099F438C60DC06BE2CB3E42750891AF
+exchange native-apdu 90AF000020FDF466C43944F68391D9DDE54BE910AF9DDB06679C5A28E6343CF550668FE70600 => 0492D1FFBA340E120339490289FF1B079100
+
+# Intermediate frames remain plain. The terminal frame carries the response
+# CMAC and establishes the IV used by the next protected command.
+exchange native-apdu 9060000000 => 0401010100160591AF
+exchange native-apdu 90AF000000 => 0401010103160591AF
+exchange native-apdu 90AF000000 => 045704EA916F8000000000000124718AD9B253B14FC39100
+exchange native-apdu 9045000000 => 0F84041D06C49879643C9100
+field-off

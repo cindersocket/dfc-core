@@ -1,0 +1,33 @@
+# PROVENANCE: Generated regression vector for record ordering and transactions.
+# The ReadRecords answers list a range oldest first, matching what a genuine
+# EV1 returns in hardware_genuine_ev1_8k_records.vec; an earlier revision had
+# them newest first, which the silicon disproved.
+name: EV3 record files expose newest-first ordering and transactional update and clear
+origin: synthetic
+case-id: ev3-record-order-update-clear
+requires: ev3,record-files
+source: generated behavioral regression
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+scan
+exchange native-apdu 90CA000005B1B2B30F0100 => 9100
+exchange native-apdu 905A000003B1B2B300 => 9100
+exchange native-apdu 90C000000A0400EEEE04000003000000 => 9100
+exchange native-apdu 903B00000B040000000400001122334400 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 903B00000B040000000400005566778800 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BB0000070400000000000000 => 11223344556677889100
+exchange native-apdu 90DB00000C04000000010000020000AABB00 => 9100
+exchange native-apdu 90BB0000070400000000000000 => 11223344556677889100
+exchange native-apdu 90A7000000 => 9100
+exchange native-apdu 90BB0000070400000000000000 => 11223344556677889100
+exchange native-apdu 90EB0000010400 => 9100
+exchange native-apdu 90BB0000070400000000000000 => 11223344556677889100
+exchange native-apdu 90A7000000 => 9100
+exchange native-apdu 90BB0000070400000000000000 => 11223344556677889100
+exchange native-apdu 90EB0000010400 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BB0000070400000000000000 => 91BE
+field-off

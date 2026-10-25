@@ -1,0 +1,65 @@
+# An authenticated, protected SetConfiguration command can disable PICC
+# formatting. The following protected FormatPicc is refused without changing
+# the credential.
+name: PICC SetConfiguration disables formatting
+origin: synthetic
+case-id: picc-set-configuration-disables-format
+feature-version: 6
+requires: ev2
+source: dfc-core issue 130 regression coverage
+issues: https://github.com/cindersocket/dfc-core/issues/130
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-auth-commands: 0C
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+
+scan
+
+# Seed a neighboring application with distinctive data before changing PICC
+# configuration, so every preserved object is observable afterward.
+status   90CA0000050100000F8100 => 00
+status   905A00000301000000 => 00
+status   90CD0000070100EEEE04000000 => 00
+status   903D00000B01000000040000D1D2D3D400 => 00
+exchange native-apdu 90BD0000070100000004000000 => D1D2D3D49100
+clear-dirty
+status   905A00000300000000 => 00
+
+# Length validation is atomic and precedes authorization.
+status   90FC000001AA00 => 7E
+assert   credential.num_apps = 1
+assert   credential.num_files = 1
+assert   files[0].data = D1D2D3D4
+assert   credential.dirty = 0
+
+inject-random 202122232425262728292A2B2C2D2E2F30313233
+exchange native-apdu 9071000008000600000000000000 => 7AE4A1A54763EABCC73C42AECA94ED8191AF
+exchange native-apdu 90AF000020E7204FC0CF7EF9B13A44D549AAAC25BFE975A2E6139F5CAD7CE82C0A21B97D6A00 => 4FDD5EDB01533E61D924777681BD2A941F1E319511A1741096DEDD907AE1B47D9100
+
+exchange native-apdu 905C0000190037132BAF67B76D84DFC963C5ABD950D8010AA6655285178C00 => CCFEE84B9D959CF09100
+assert   credential.dirty = 1
+clear-dirty
+
+exchange native-apdu 90FC000008A57F4C1A27307D6800 => 911C
+assert   credential.num_apps = 1
+assert   credential.num_files = 1
+assert   credential.model_status = ok
+assert   apps[0].aid = 000001
+assert   apps[0].key_settings_1 = 15
+assert   apps[0].key_settings_2 = 129
+assert   apps[0].keys[0] = 00000000000000000000000000000000
+assert   files[0].app_index = 0
+assert   files[0].number = 1
+assert   files[0].data_len = 4
+assert   files[0].data = D1D2D3D4
+assert   credential.dirty = 0
+
+field-off
+scan
+status   905A00000301000000 => 00
+exchange native-apdu 90BD0000070100000004000000 => D1D2D3D49100

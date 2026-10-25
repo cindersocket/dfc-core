@@ -1,0 +1,95 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 4K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_ev1_4k*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 045704EA916F80, hardware 1.0, software 1.4, storage 4K. The same
+# physical card as hardware_genuine_ev1_4k.vec, formatted and provisioned with
+# a synthetic structure whose every key is the all-zero test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the all-zero test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: the same three communication modes as the AES
+# vector, but under the ISO (0x1A) handshake on a 2K3DES key. The session
+# is EV1 - CMAC secure messaging, 8-byte blocks - so it exercises the
+# DES-CMAC path rather than the AES one while keeping everything else
+# identical, which is what makes the two vectors comparable.
+
+name: genuine EV1 4K, ISO 2K3DES session read and write in every comm mode
+case-id: hardware-genuine-ev1-4k-iso-comm-modes
+origin: physical-card
+source: captured hardware trace
+requires: auth-iso
+uid: 045704EA916F80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+# The application. KS1 0F leaves create and delete of files free, so
+# the structure below is built without an application authentication;
+# whether silicon really honours that bit is what the free-create
+# vector measures separately.
+status   90CA000005A3A2A10F0400 => 00
+status   905A000003A3A2A100 => 00
+#
+# Three Standard Data files of 32 octets, one per communication mode:
+# 00 plain, 01 MACed, 03 enciphered. Access rights are logical 0x1111
+# throughout - read, write, read&write and change all name key 1 - so
+# the only variable between the three is the communication mode.
+status   90CD0000070100111120000000 => 00
+status   90CD0000070201111120000000 => 00
+status   90CD0000070303111120000000 => 00
+#
+# GetFileSettings for each, unauthenticated, so the communication mode
+# the card believes it stored is on the record before anything is
+# written through it.
+exchange native-apdu 90F50000010100 => 000011112000009100
+exchange native-apdu 90F50000010200 => 000111112000009100
+exchange native-apdu 90F50000010300 => 000311112000009100
+#
+# Authenticate as key 1, the key every access right above names.
+inject-random CB34442E770E4578
+exchange native-apdu 901A0000010100 => D93FCBDB26B1830391AF
+exchange native-apdu 90AF0000103BFACFCB7C11504EFD1B0D75124FCDC500 => 74E808A4A44C8DCB9100
+#
+# File 01, plain. Write 16 octets, then read them back.
+exchange native-apdu 903D00001701000000100000101112131415161718191A1B1C1D1E1F00 => CC2E36D6AADA907F9100
+exchange native-apdu 90BD0000070100000010000000 => 101112131415161718191A1B1C1D1E1FAED4F2752AA0CF009100
+#
+# File 02, MACed. Write 16 octets, then read them back.
+exchange native-apdu 903D00001F02000000100000202122232425262728292A2B2C2D2E2F972F7D6226C68CEB00 => 2E951BD2ACF07C8C9100
+exchange native-apdu 90BD0000070200000010000000 => 202122232425262728292A2B2C2D2E2F7E1FE2A867A7FDD69100
+#
+# How the card MACed the answers, measured rather than assumed:
+#   file 01 (plain): the write answer carried 8 octet(s) of MAC and it verified, the read answer 8.
+#   file 02 (MACed): the write answer carried 8 octet(s) of MAC and it verified, the read answer 8.
+#
+# File 03, enciphered. Before the round trip, which octets the
+# CRC32 inside the cryptogram covers, put to the card as two
+# candidate cryptograms over the same 16 octets of data.
+#
+# First candidate: CRC32 over Cmd||Data, which is what our engine
+# computes and verifies.
+exchange native-apdu 903D00001F03000000100000C3F72308F6BA6FC40A01A2A9D2C30360EEEA3B7238CA120100 => 911E
+#
+# A refused cryptogram ends the session, so authenticate again
+# before offering the second candidate.
+status   905A000003A3A2A100 => 00
+inject-random 2D699D821F8C664A
+exchange native-apdu 901A0000010100 => 325A6E4673174FE191AF
+exchange native-apdu 90AF0000103E6DEFAB3AEC7CB4C0C2B702F0141C0400 => 52EA1FD5FC485ED19100
+#
+# Second candidate: CRC32 over Cmd||FileNo||Offset||Length||Data,
+# the whole command as it appears on the wire.
+exchange native-apdu 903D00001F03000000100000DDB66A7A556AE59131F085E5541DF426DFAB1AF1C9A16DEF00 => 88257150E10F70FE9100
+exchange native-apdu 90BD0000070300000010000000 => 4F6DF71B53F45F0AD3350D495464C989D598F8949E46FBF69100

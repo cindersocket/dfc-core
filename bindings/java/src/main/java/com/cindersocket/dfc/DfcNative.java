@@ -3,20 +3,26 @@ package com.cindersocket.dfc;
 final class DfcNative {
   static {
     System.loadLibrary("dfc_jni");
-    if (abiVersion() != 4)
-      throw new UnsatisfiedLinkError("dfc JNI ABI mismatch: " + abiVersion());
+    DfcCompatibility.requireCompatible(
+        abiVersion(), layoutFingerprint(), expectedLayoutFingerprint());
   }
   private DfcNative() {}
   static native int abiVersion();
+  static native long layoutFingerprint();
+  static native long expectedLayoutFingerprint();
   static native long capabilities();
   static native byte[] credentialParse(byte[] text) throws DfcException;
   static native byte[] credentialLoad(byte[] content) throws DfcException;
   static native String credentialText(byte[] binary) throws DfcException;
   static native void credentialValidate(byte[] binary) throws DfcException;
   static native long piccCreate(byte[] binary, byte[] randomScript) throws DfcException;
+  static native void piccAppendReplayRandom(long handle, byte[] bytes) throws DfcException;
+  static native void piccClearReplayRandom(long handle) throws DfcException;
+  static native int piccReplayRandomRemaining(long handle) throws DfcException;
   static native void piccFree(long handle);
   static native byte[] piccActivate(long handle) throws DfcException;
   static native byte[] piccSnapshot(long handle) throws DfcException;
+  static native byte[] piccDiagnosticSnapshot(long handle) throws DfcException;
   static native byte[] piccExchange(long handle, byte[] command, boolean frame) throws DfcException;
   static native void piccFieldOff(long handle) throws DfcException;
   static native void piccResetProtocol(long handle) throws DfcException;

@@ -1,0 +1,42 @@
+# Random ID: anticollision presents a generated 4-octet NFCID1, GetVersion
+# reports zeros where it would report the UID, and the stored UID is not
+# readable without an authenticated session. A second activation presents a
+# different identifier.
+#
+# Recorded from the reference engine and cross-checked against the
+# expectations the recorder asserts; see tests/vectors/desfire/README.md.
+#
+# inject-random pins the three generated octets, which is what makes a
+# random identifier a literal byte string here.
+
+name: picc config: random id activation
+case-id: picc-random-id-activation
+origin: synthetic
+source: recorded from the reference engine, see tests/vectors/desfire/README.md
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-random-id: 1
+
+inject-random AABBCC
+scan
+assert   activation.uid           = 08AABBCC
+assert   activation.uid_len       = 4
+# The stored UID is untouched by any of this.
+assert   credential.uid           = 04A1B2C3D4E5F6
+
+# GetVersion: the third frame carries zeros in place of the UID.
+exchange native-apdu 9060000000                         => 0401010100160591AF
+exchange native-apdu 90AF000000                         => 0401010103160591AF
+exchange native-apdu 90AF000000                         => 00000000000000000000000001249100
+
+# The real UID needs an authenticated session, which there is not one of.
+status   9051000000                         => AE
+
+# A second activation presents a different identifier.
+field-off
+inject-random 112233
+scan
+assert   activation.uid           = 08112233

@@ -1,0 +1,20 @@
+name: corrupted D40 command MAC is rejected
+origin: synthetic
+case-id: corrupted-d40-command-mac
+feature-version: 6
+source: one-bit corruption of a captured physical-card exchange
+issues: https://github.com/cindersocket/dfc-core/issues/133
+uid: 045704EA916F80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA000005A3A2A10F0400 => 00
+status   905A000003A3A2A100 => 00
+status   90CD0000070201111120000000 => 00
+inject-random 78F9275C6099F975
+exchange native-apdu 900A0000010100 => 72479A0480598EE091AF
+exchange native-apdu 90AF00001005EEC31F1E6A0CC35EEB800257F3858700 => 26ACED3C771EF9A09100
+exchange native-apdu 903D00001B02000000100000202122232425262728292A2B2C2D2E2FEF9060E400 => 911E

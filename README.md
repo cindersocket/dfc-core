@@ -61,6 +61,11 @@ make -C tests test CC=clang SANITIZE=memory
 The test command builds and runs every unit suite and checks that each
 reduced build profile compiles.
 
+The test suite also replays the public DESFire conformance-vector corpus. The
+corpus includes byte-exact physical-card captures and synthetic protocol cases.
+See [DESFire conformance vectors](tests/vectors/desfire/README.md) for the
+format, provenance, and focused test commands.
+
 Fuzz accepted text and binary credentials through validation, copying, and
 both canonical round trips with Clang's address and undefined-behavior
 sanitizers:
@@ -107,7 +112,8 @@ It provides the credential records and codec, `DfcVirtualPicc` and
 command builders, and blocking reader secure messaging. `bindings/android`
 packages that API and the native core as a four-ABI AAR, adds an Android
 `IsoDep` transport, and includes a sample application. See the
-[Java and Android README](bindings/java/README.md).
+[Java README](bindings/java/README.md) and
+[Android README](bindings/android/README.md).
 
 ## Use it from Python
 
@@ -126,9 +132,11 @@ firmware protocol-session allocation. See the [Rust README](bindings/rust/README
 
 ## Check formatting and documentation
 
-Run `scripts/check-format.sh` to verify C/JNI, Java, C#, Python, and Rust
-formatting. Run `python3 scripts/check-docs.py` to verify repository-local links
-in the Markdown documentation.
+Run `scripts/check-format.sh` to verify Java, C#, Python, Rust, and the maintained
+C sources and headers under `src/`, `ffi/`, `port/`, `bindings/jni/`, and `tests/`.
+Vendored sources under `tests/munit/` and generated bindings are excluded. Run
+`python3 scripts/check-docs.py` to verify repository-local links in the Markdown
+documentation.
 
 ## License
 

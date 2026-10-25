@@ -1,0 +1,23 @@
+# A credential carrying SAK and ATQA has them presented in anticollision in
+# place of the defaults (which are SAK 20, ATQA 4403).
+#
+# Recorded from the reference engine and cross-checked against the
+# expectations the recorder asserts; see tests/vectors/desfire/README.md.
+
+name: picc config: sak and atqa
+case-id: picc-config-sak-atqa
+origin: synthetic
+source: recorded from the reference engine, see tests/vectors/desfire/README.md
+uid: 04112233445566
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 8
+picc-sak: 28
+picc-atqa: 0348
+
+scan
+assert   activation.sak           = 0x28
+assert   activation.atqa          = 0348
+# Overriding anticollision changes nothing about the command surface.
+exchange native-apdu 9045000000                         => 0F019100

@@ -1,0 +1,87 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV3 4K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 048222F2CF1890, hardware 51.0, software 3.0, storage 4K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: the D40 (0x0A), ISO (0x1A) and AES (0xAA)
+# three-pass handshakes, complete, against silicon. Each one is verified
+# in both directions by the recorder - the card proves it holds the
+# all-zero test key by returning RndA rotated left - so a byte here is a
+# measurement of a handshake that actually succeeded, not of one that
+# merely produced a plausible-looking frame.
+
+name: genuine EV3 4K, freshly captured D40 ISO and AES authentication
+case-id: hardware-genuine-ev3-4k-handshakes
+origin: physical-card
+source: captured hardware trace
+requires: auth-iso,auth-aes
+uid: 048222F2CF1890
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+# The two synthetic applications. KS2 selects the key type: 04 is
+# four DES/2K3DES keys, which accepts both the D40 (0x0A) and the ISO
+# (0x1A) handshake; 84 is four AES keys, which accepts only 0xAA.
+# Both are created without PICC authentication, which PICC key
+# settings 0F permit.
+status   90CA000005A3A2A10F0400 => 00
+status   90CA000005B3B2B10F8400 => 00
+#
+# D40 (0x0A) on a DES/2K3DES key. Legacy: the reader's token is
+# enciphered in the cipher's decrypt direction with an all-zero IV,
+# and the card's final frame is verified against RndA rotated left.
+status   905A000003A3A2A100 => 00
+inject-random D56D1A507808DC3E
+exchange native-apdu 900A0000010000 => 97E996DA669FCD5991AF
+exchange native-apdu 90AF00001005EEC31F1E6A0CC3BE18A2284E3DB36400 => 26ACED3C771EF9A09100
+#
+# ISO (0x1A) on the same key. The handshake is ordinary CBC and the
+# IV for the second pass is the card's first frame, so the session
+# that follows is EV1 rather than D40 even though the key is 2K3DES.
+status   905A000003A3A2A100 => 00
+inject-random 5C808E2AAF545E5D
+exchange native-apdu 901A0000010000 => 02D5209C532FA70391AF
+exchange native-apdu 90AF0000103FCA5636BC57B6A5ECE14E6CE13611F400 => F2788261BA7C401A9100
+#
+# AES (0xAA), 16-byte blocks throughout.
+status   905A000003B3B2B100 => 00
+inject-random A4A9EDCDDBABDB35FCA7DE803CC85514
+exchange native-apdu 90AA0000010000 => 029C26500778B271EE2B3CCC8987962291AF
+exchange native-apdu 90AF000020FC7BCDB1833091E4B4BB5273405691148729B204A64E8ACDD70C829CD1DFFA1000 => 615329DEF5FB33E3834948A9B6E2FD159100
+#
+# A handshake the application's key type does not support.
+#
+# Each application answers only the handshake its KS2 key type names,
+# and both directions of the mismatch were measured. The card refuses
+# with 91 AE, an authentication error, and keeps 91 40 for a key number
+# beyond the key count, so the two statuses say different things.
+#
+status   905A000003A3A2A100 => 00
+exchange native-apdu 90AA0000010000 => 91AE
+status   905A000003B3B2B100 => 00
+exchange native-apdu 900A0000010000 => 91AE
+exchange native-apdu 901A0000010000 => 91AE
+#
+# A key number beyond the application's key count, for contrast: this
+# is where the card does answer 91 40.
+status   905A000003A3A2A100 => 00
+exchange native-apdu 900A0000010400 => 9140

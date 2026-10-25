@@ -1,0 +1,200 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 8K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 04304622216A80, hardware 1.0, software 1.4, storage 8K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: the octets each CreateApplication consumed, measured:
+#    1. 1 DES/2K3DES key                     96 octets,  3 blocks
+#    2. 2 DES/2K3DES keys                    96 octets,  3 blocks
+#    3. 3 DES/2K3DES keys                    96 octets,  3 blocks
+#    4. 4 DES/2K3DES keys                   128 octets,  4 blocks
+#    5. 5 DES/2K3DES keys                   160 octets,  5 blocks
+#    6. 8 DES/2K3DES keys                   192 octets,  6 blocks
+#    7. 11 DES/2K3DES keys                  224 octets,  7 blocks
+#    8. 12 DES/2K3DES keys                  256 octets,  8 blocks
+#    9. 14 DES/2K3DES keys                  320 octets, 10 blocks
+#   10. 1 3K3DES key                         96 octets,  3 blocks
+#   11. 4 3K3DES keys                       160 octets,  5 blocks
+#   12. 5 3K3DES keys                       192 octets,  6 blocks
+#   13. 12 3K3DES keys                      384 octets, 12 blocks
+#   14. 14 3K3DES keys                      384 octets, 12 blocks
+#   15. 1 AES key                            96 octets,  3 blocks
+#   16. 2 AES keys                           96 octets,  3 blocks
+#   17. 3 AES keys                          160 octets,  5 blocks
+#   18. 4 AES keys                          128 octets,  4 blocks
+#   19. 5 AES keys                          160 octets,  5 blocks
+#   20. 8 AES keys                          192 octets,  6 blocks
+#   21. 11 AES keys                         288 octets,  9 blocks
+#   22. 12 AES keys                         256 octets,  8 blocks
+#   23. 14 AES keys                         288 octets,  9 blocks
+#   24. 1 DES/2K3DES key, iso-fid            96 octets,  3 blocks
+#   25. 1 DES/2K3DES key, iso-fid+df-name   128 octets,  4 blocks
+# An application with no keys was answered 9E.
+
+name: genuine EV1 8K, memory each application consumes, by key type and count
+case-id: hardware-genuine-ev1-8k-application-memory
+origin: physical-card
+source: captured hardware trace
+uid: 04304622216A80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV1
+picc-storage: 8192
+
+scan
+# Free memory after FormatPICC, the starting point for every delta below.
+exchange native-apdu 906E000000 => 001F009100 tolerance 0+3 512
+#   (tolerance above: free space after a format)
+#
+# OPEN DIVERGENCE, card versus engine: how free memory is accounted.
+#
+# Our engine charges an application nothing. The card charges each one
+# for its directory entry and keys, as the table in the header records,
+# so the difference grows past any tolerance within a few applications
+# and the steps below are recorded unexecuted. Restore them when the
+# engine accounts for application and key overhead.
+#
+#
+# An application with 1 DES/2K3DES key.
+#   exchange native-apdu 90CA0000051010E00F0100 => 9100
+#   exchange native-apdu 906E000000 => A01E009100 tolerance 0+3 512
+#   (tolerance above: 1 DES/2K3DES key consumed 96 octets)
+#
+# An application with 2 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051110E00F0200 => 9100
+#   exchange native-apdu 906E000000 => 401E009100 tolerance 0+3 512
+#   (tolerance above: 2 DES/2K3DES keys consumed 96 octets)
+#
+# An application with 3 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051210E00F0300 => 9100
+#   exchange native-apdu 906E000000 => E01D009100 tolerance 0+3 512
+#   (tolerance above: 3 DES/2K3DES keys consumed 96 octets)
+#
+# An application with 4 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051310E00F0400 => 9100
+#   exchange native-apdu 906E000000 => 601D009100 tolerance 0+3 512
+#   (tolerance above: 4 DES/2K3DES keys consumed 128 octets)
+#
+# An application with 5 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051410E00F0500 => 9100
+#   exchange native-apdu 906E000000 => C01C009100 tolerance 0+3 512
+#   (tolerance above: 5 DES/2K3DES keys consumed 160 octets)
+#
+# An application with 8 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051510E00F0800 => 9100
+#   exchange native-apdu 906E000000 => 001C009100 tolerance 0+3 512
+#   (tolerance above: 8 DES/2K3DES keys consumed 192 octets)
+#
+# An application with 11 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051610E00F0B00 => 9100
+#   exchange native-apdu 906E000000 => 201B009100 tolerance 0+3 512
+#   (tolerance above: 11 DES/2K3DES keys consumed 224 octets)
+#
+# An application with 12 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051710E00F0C00 => 9100
+#   exchange native-apdu 906E000000 => 201A009100 tolerance 0+3 512
+#   (tolerance above: 12 DES/2K3DES keys consumed 256 octets)
+#
+# An application with 14 DES/2K3DES keys.
+#   exchange native-apdu 90CA0000051810E00F0E00 => 9100
+#   exchange native-apdu 906E000000 => E018009100 tolerance 0+3 512
+#   (tolerance above: 14 DES/2K3DES keys consumed 320 octets)
+#
+# An application with 1 3K3DES key.
+#   exchange native-apdu 90CA0000051910E00F4100 => 9100
+#   exchange native-apdu 906E000000 => 8018009100 tolerance 0+3 512
+#   (tolerance above: 1 3K3DES key consumed 96 octets)
+#
+# An application with 4 3K3DES keys.
+#   exchange native-apdu 90CA0000051A10E00F4400 => 9100
+#   exchange native-apdu 906E000000 => E017009100 tolerance 0+3 512
+#   (tolerance above: 4 3K3DES keys consumed 160 octets)
+#
+# An application with 5 3K3DES keys.
+#   exchange native-apdu 90CA0000051B10E00F4500 => 9100
+#   exchange native-apdu 906E000000 => 2017009100 tolerance 0+3 512
+#   (tolerance above: 5 3K3DES keys consumed 192 octets)
+#
+# An application with 12 3K3DES keys.
+#   exchange native-apdu 90CA0000051C10E00F4C00 => 9100
+#   exchange native-apdu 906E000000 => A015009100 tolerance 0+3 512
+#   (tolerance above: 12 3K3DES keys consumed 384 octets)
+#
+# An application with 14 3K3DES keys.
+#   exchange native-apdu 90CA0000051D10E00F4E00 => 9100
+#   exchange native-apdu 906E000000 => 2014009100 tolerance 0+3 512
+#   (tolerance above: 14 3K3DES keys consumed 384 octets)
+#
+# An application with 1 AES key.
+#   exchange native-apdu 90CA0000051E10E00F8100 => 9100
+#   exchange native-apdu 906E000000 => C013009100 tolerance 0+3 512
+#   (tolerance above: 1 AES key consumed 96 octets)
+#
+# An application with 2 AES keys.
+#   exchange native-apdu 90CA0000051F10E00F8200 => 9100
+#   exchange native-apdu 906E000000 => 6013009100 tolerance 0+3 512
+#   (tolerance above: 2 AES keys consumed 96 octets)
+#
+# An application with 3 AES keys.
+#   exchange native-apdu 90CA0000052010E00F8300 => 9100
+#   exchange native-apdu 906E000000 => C012009100 tolerance 0+3 512
+#   (tolerance above: 3 AES keys consumed 160 octets)
+#
+# An application with 4 AES keys.
+#   exchange native-apdu 90CA0000052110E00F8400 => 9100
+#   exchange native-apdu 906E000000 => 4012009100 tolerance 0+3 512
+#   (tolerance above: 4 AES keys consumed 128 octets)
+#
+# An application with 5 AES keys.
+#   exchange native-apdu 90CA0000052210E00F8500 => 9100
+#   exchange native-apdu 906E000000 => A011009100 tolerance 0+3 512
+#   (tolerance above: 5 AES keys consumed 160 octets)
+#
+# An application with 8 AES keys.
+#   exchange native-apdu 90CA0000052310E00F8800 => 9100
+#   exchange native-apdu 906E000000 => E010009100 tolerance 0+3 512
+#   (tolerance above: 8 AES keys consumed 192 octets)
+#
+# An application with 11 AES keys.
+#   exchange native-apdu 90CA0000052410E00F8B00 => 9100
+#   exchange native-apdu 906E000000 => C00F009100 tolerance 0+3 512
+#   (tolerance above: 11 AES keys consumed 288 octets)
+#
+# An application with 12 AES keys.
+#   exchange native-apdu 90CA0000052510E00F8C00 => 9100
+#   exchange native-apdu 906E000000 => C00E009100 tolerance 0+3 512
+#   (tolerance above: 12 AES keys consumed 256 octets)
+#
+# An application with 14 AES keys.
+#   exchange native-apdu 90CA0000052610E00F8E00 => 9100
+#   exchange native-apdu 906E000000 => A00D009100 tolerance 0+3 512
+#   (tolerance above: 14 AES keys consumed 288 octets)
+#
+# An application with 1 DES/2K3DES key, iso-fid.
+#   exchange native-apdu 90CA0000072710E00F2117E100 => 9100
+#   exchange native-apdu 906E000000 => 400D009100 tolerance 0+3 512
+#   (tolerance above: 1 DES/2K3DES key, iso-fid consumed 96 octets)
+#
+# An application with 1 DES/2K3DES key, iso-fid+df-name.
+#   exchange native-apdu 90CA00000E2810E00F2118E1D276000085012800 => 9100
+#   exchange native-apdu 906E000000 => C00C009100 tolerance 0+3 512
+#   (tolerance above: 1 DES/2K3DES key, iso-fid+df-name consumed 128 octets)
+#
+# An application with no keys at all.
+#   exchange native-apdu 90CA0000050F10E00F0000 => 919E

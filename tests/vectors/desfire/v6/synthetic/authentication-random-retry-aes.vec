@@ -1,0 +1,23 @@
+# PROVENANCE: Synthetic cross-binding regression for authentication random-source retries.
+name: AES authentication random failure is retryable
+case-id: authentication-random-retry-aes
+origin: synthetic
+feature-version: 6
+source: generated authentication failure-atomicity regression
+issues: https://github.com/cindersocket/dfc-core/issues/131
+requires: ev1,auth-aes
+uid: 04112233445566
+picc-generation: EV1
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+random-source finite
+
+scan
+inject-random 0001020304050607
+expect-error random-source exchange native-apdu 90AA0000010000
+inject-random 08090A0B0C0D0E0F
+exchange native-apdu 90AA0000010000 => 7ACA0FD9BCD6EC7C9F97466616E6A28291AF
+field-off

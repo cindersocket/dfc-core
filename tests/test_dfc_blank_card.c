@@ -17,10 +17,9 @@
  * them. The AID is the one init_blank creates. */
 static const uint8_t select_app[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00};
 
-static MunitResult
-    test_blank_card_is_selectable_authenticable_and_writable(
-        const MunitParameter params[],
-        void* user_data) {
+static MunitResult test_blank_card_is_selectable_authenticable_and_writable(
+    const MunitParameter params[],
+    void* user_data) {
     (void)params;
     (void)user_data;
 
@@ -76,11 +75,22 @@ static MunitResult
 
     /* WriteData 4 bytes at offset 0 -- BOUNDARY_ERROR here is the bug. */
     const uint8_t write_data[] = {
-        0x90, 0x3D, 0x00, 0x00, 0x0B, /* Lc = file + offset(3) + len(3) + data(4) */
+        0x90,
+        0x3D,
+        0x00,
+        0x00,
+        0x0B, /* Lc = file + offset(3) + len(3) + data(4) */
         0x00, /* file 0 */
-        0x00, 0x00, 0x00, /* offset 0 */
-        0x04, 0x00, 0x00, /* length 4 */
-        0xDE, 0xAD, 0xBE, 0xEF,
+        0x00,
+        0x00,
+        0x00, /* offset 0 */
+        0x04,
+        0x00,
+        0x00, /* length 4 */
+        0xDE,
+        0xAD,
+        0xBE,
+        0xEF,
         0x00};
     munit_assert_int(
         dfc_virtual_picc_iso_dep_exchange(
@@ -123,12 +133,16 @@ static MunitResult test_factory_card(const MunitParameter params[], void* user_d
     munit_assert_uint8(credential.picc_key_settings_2, ==, 1);
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
     DfcVirtualPiccActivation activation;
-    munit_assert_int(dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
     const uint8_t list_apps[] = {0x90, 0x6A, 0, 0, 0};
     uint8_t response[16];
     size_t response_len = 0;
-    munit_assert_int(dfc_virtual_picc_iso_dep_exchange(
-        session, list_apps, sizeof(list_apps), response, sizeof(response), &response_len), ==, DfcVirtualPiccStatusOk);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, list_apps, sizeof(list_apps), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 2);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, 0}));
     dfc_virtual_picc_session_free(session);
@@ -169,7 +183,12 @@ static MunitResult test_random_failure_is_atomic(const MunitParameter params[], 
 
 static MunitTest tests[] = {
     {"/factory_card", test_factory_card, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
-    {"/random_failure_is_atomic", test_random_failure_is_atomic, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/random_failure_is_atomic",
+     test_random_failure_is_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/blank_card_selectable_authenticable_writable",
      test_blank_card_is_selectable_authenticable_and_writable,
      NULL,

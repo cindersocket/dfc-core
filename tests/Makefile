@@ -71,8 +71,20 @@ CORE_SRC := $(wildcard $(CORE)/*.c)
 HOST_SRC := $(HOST)/dfc_port_host.c $(HOST)/dfc_bytebuf_host.c
 COMMON   := $(CORE_SRC) $(HOST_SRC) $(CRYPTO_SRC) munit/munit.c
 
+VECTOR_DIRS := $(wildcard vectors/desfire/v*/emulator vectors/desfire/v*/hardware \
+	vectors/desfire/v*/synthetic)
+DFC_VECTORS := $(sort $(foreach directory,$(VECTOR_DIRS),$(wildcard $(directory)/*.vec)))
+CONFORMANCE_RUNNER := test_dfc_conformance_vectors
+CONFORMANCE_PROFILES := minimal_ev1 full_ev1 full_ev2 minimal_ev3
+CONFORMANCE_PROFILE_RUNNERS := $(addprefix $(CONFORMANCE_RUNNER)_,$(CONFORMANCE_PROFILES))
+CONFORMANCE_COMMON := $(CORE_SRC) dfc_vector_replay_random.c \
+	$(HOST)/dfc_bytebuf_host.c $(CRYPTO_SRC)
+
 TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging test_dfc_desfire_protocol \
 	test_dfc_virtual_picc_core test_dfc_virtual_picc_secure \
+	test_dfc_transaction_selection \
+	test_dfc_transaction_snapshot \
+	test_dfc_transaction_mac_lifecycle \
 	test_dfc_virtual_picc_probe_vectors test_dfc_virtual_picc_lifecycle_vectors \
 	test_dfc_virtual_picc_mutation_vectors test_dfc_virtual_picc_multi_app_vectors \
 	test_dfc_virtual_picc_value_vectors test_dfc_ev1_conformance \
@@ -80,10 +92,26 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_model \
 	test_dfc_teardown \
 	test_dfc_examples \
-	test_dfc_blank_card test_dfc_picc_config test_dfc_d40_capture \
-	test_dfc_command test_dfc_reader
+	test_dfc_blank_card test_dfc_picc_config test_dfc_format_picc \
+	test_dfc_format_configuration test_dfc_d40_capture \
+	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
+	test_dfc_iso_file_access \
+	test_dfc_ev1_response_policy \
+	test_dfc_iso_chained_records_secure test_dfc_iso_response_lifetime \
+	test_dfc_effective_comm test_dfc_get_file_counters \
+	test_dfc_reader_header_bounds test_dfc_decode_failure_atomicity
+
+READER_LINK_TESTS := test_dfc_reader test_dfc_reader_header_bounds test_dfc_format_configuration
 
 FAULT_TEST := test_cmac_failures
+SECURE_MESSAGING_FAULT_TEST := test_secure_messaging_failures
+AUTH_BACKEND_FAULT_TEST := test_dfc_auth_backend_failures
+EV2_RESPONSE_FAULT_TEST := test_dfc_ev2_response_atomicity
+KEY_SET_WIPE_TEST := test_dfc_roll_key_set_wipe
+REDUCED_PROFILE_TEST := test_dfc_ffi_reduced_profile
+REDUCED_READER_TEST := test_dfc_reader_reduced_command
+REDUCED_FORMAT_TEST := test_dfc_format_picc_reduced
+REDUCED_TESTS := $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST)
 
 TESTS += test_dfc_ev2_capabilities test_dfc_static_signature
 
@@ -107,32 +135,120 @@ FUZZ_DIR  ?= ../build-fuzz
 FUZZ_TIME ?= 300
 FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
-.PHONY: test test-backends test-ev2-profile test-auth-profile profile-builds role-builds \
-	codecs-disabled-link check-constant-time-auth check-teardown-wipes check-jni-wipes fuzz clean
+.PHONY: test test-backends vectors vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile \
+	profile-builds role-builds \
+	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes \
+	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
+	check-secure-messaging-policy \
+	check-ffi-layout-registry fuzz clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
 # cannot pass by omitting the translation unit it should have exercised.
 $(TESTS): %: %.c dfc_virtual_picc_test_helpers.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+# Suites that drive the reader against the virtual card share one fixture.
+$(READER_LINK_TESTS): dfc_reader_test_link.c
+
+# The decoder failure contract covers the target bridge's entry point too.
+test_dfc_decode_failure_atomicity: ../ffi/dfc_target_ffi.c
+test_dfc_decode_failure_atomicity: CFLAGS += -I../ffi
+
 test_cmac_failures: test_cmac_failures.c $(CORE)/aes_cmac.c $(CORE)/des_cmac.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+FAULT_CORE_SRC := $(filter-out $(CORE)/dfc_crypto.c,$(CORE_SRC))
+
+test_secure_messaging_failures: test_secure_messaging_failures.c \
+		dfc_virtual_picc_test_helpers.c $(FAULT_CORE_SRC) $(HOST)/dfc_bytebuf_host.c munit/munit.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_dfc_auth_backend_failures: test_dfc_auth_backend_failures.c auth_fault_test_support.c \
+		dfc_virtual_picc_test_helpers.c $(FAULT_CORE_SRC) $(HOST)/dfc_bytebuf_host.c munit/munit.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_dfc_ev2_response_atomicity: test_dfc_ev2_response_atomicity.c \
+		$(CORE)/dfc_ev2.c $(CORE)/dfc_emulator_access.c munit/munit.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_dfc_roll_key_set_wipe: test_dfc_roll_key_set_wipe.c $(CORE)/dfc_credential.c \
+		$(CORE)/dfc_common.c $(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c \
+		$(CRYPTO_SRC) munit/munit.c
+	$(CC) $(CFLAGS) -o $@ test_dfc_roll_key_set_wipe.c $(CORE)/dfc_common.c \
+		$(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c $(CRYPTO_SRC) munit/munit.c $(LDFLAGS)
+
+test_dfc_ffi_reduced_profile: test_dfc_ffi_reduced_profile.c $(CORE_SRC) \
+		../ffi/dfc_ffi.c ../port/ffi/dfc_port_ffi.c ../port/host/dfc_bytebuf_host.c $(CRYPTO_SRC)
+	$(CC) $(CFLAGS) -I../ffi -I../port/ffi \
+		-DDFC_BUILD_PROFILE=DFC_PROFILE_MINIMAL_EV1 -DDFC_ENABLE_FFI=1 \
+		-o $@ $^ $(LDFLAGS)
+
+test_dfc_reader_reduced_command: test_dfc_reader_reduced_command.c $(COMMON)
+	$(CC) $(CFLAGS) -DDFC_READER_MAX_COMMAND=16 -o $@ $^ $(LDFLAGS)
+
+test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpers.c $(COMMON)
+	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV1 -o $@ $^ $(LDFLAGS)
 
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-teardown-wipes check-jni-wipes $(TESTS) $(FAULT_TEST) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
+	./$(SECURE_MESSAGING_FAULT_TEST)
+	./$(AUTH_BACKEND_FAULT_TEST)
+	./$(EV2_RESPONSE_FAULT_TEST)
+	./$(KEY_SET_WIPE_TEST)
+	@for test in $(REDUCED_TESTS); do ./$$test || exit 1; done
+
+$(CONFORMANCE_RUNNER): test_dfc_conformance_vectors.c $(CONFORMANCE_COMMON)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(CONFORMANCE_RUNNER)_%: test_dfc_conformance_vectors.c $(CONFORMANCE_COMMON)
+	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_$(shell echo $* | tr a-z A-Z) \
+		-o $@ $^ $(LDFLAGS)
+
+vectors: $(CONFORMANCE_RUNNER)
+	@test -n "$(DFC_VECTORS)" || (echo "no DESFire conformance vectors found"; exit 1)
+	./$(CONFORMANCE_RUNNER) $(DFC_VECTORS)
+
+vector-parser-regressions: $(CONFORMANCE_RUNNER)
+	python3 check_vector_parser.py ./$(CONFORMANCE_RUNNER)
+
+vector-profiles: $(CONFORMANCE_PROFILE_RUNNERS)
+	@for runner in $(CONFORMANCE_PROFILE_RUNNERS); do \
+		./$$runner $(DFC_VECTORS) || exit 1; \
+	done
 
 check-constant-time-auth:
 	python3 check_constant_time_auth.py
+
+check-command-modules:
+	python3 check_command_modules.py
+
+check-command-registry:
+	python3 check_command_registry.py
 
 check-teardown-wipes:
 	python3 check_teardown_wipes.py
 
 check-jni-wipes:
 	python3 check_jni_wipes.py
+
+check-snapshot-secret-policy:
+	python3 check_snapshot_secret_policy.py
+
+check-decoder-registry:
+	python3 check_decoder_registry.py
+
+check-random-failure-registry:
+	python3 check_random_failure_registry.py
+
+check-secure-messaging-policy:
+	python3 check_secure_messaging_policy.py
+
+check-ffi-layout-registry:
+	python3 ../scripts/generate-ffi-layout.py --check
 
 test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
 	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV2 -o $@ $^ $(LDFLAGS)
@@ -207,4 +323,4 @@ codecs-disabled-link:
 	echo "  target, no codecs ok"
 
 clean:
-	rm -rf $(TESTS) $(FAULT_TEST) $(TOOLS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) $(CONFORMANCE_RUNNER) $(CONFORMANCE_PROFILE_RUNNERS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)

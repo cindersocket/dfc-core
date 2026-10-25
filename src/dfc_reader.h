@@ -57,7 +57,7 @@ typedef enum {
     DfcReaderPending,
     // An argument is out of range, or the operation does not fit the session.
     DfcReaderInvalid,
-    // A caller buffer, or one of the reader's own bounds, is too small.
+    // The caller-provided output buffer is too small; retry with more space.
     DfcReaderBufferTooSmall,
     // The card's answer is malformed or not the answer this step expects.
     DfcReaderProtocolError,
@@ -82,6 +82,8 @@ typedef struct {
     // DFC_READER_AUTH_EV2.
     uint8_t auth_mode;
     uint8_t key_no;
+    // SelectApplication updates the scope even though it retires authentication.
+    bool selected_application_is_picc;
     // Legacy and EV1 session key and chaining IV. `pcd` is always set.
     DfcSecureMessaging sm;
     uint8_t ev2_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
@@ -92,12 +94,20 @@ typedef struct {
     uint8_t ev2_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH];
 } DfcReaderSession;
 
+// Most octets after the instruction that may stay clear when a file write's
+// data field is encrypted: the head of UpdateRecord, the longest the reader
+// knows. Every bound on DfcReaderOptions.header_len, here and in each binding,
+// derives from the shared command layout, not from a number of its own.
+#define DFC_READER_MAX_CLEAR_HEADER_LENGTH (DFC_UPDATE_RECORD_HEADER_SIZE - 1)
+
 typedef struct {
     // DFC_COMM_PLAIN, DFC_COMM_MAC or DFC_COMM_ENCIPHERED: the communication
     // mode of the file the command addresses. A zeroed options value is plain.
     uint8_t comm_mode;
     // Octets after the instruction that stay clear when the data field is
-    // encrypted. Unset, it is derived from the instruction.
+    // encrypted, at most DFC_READER_MAX_CLEAR_HEADER_LENGTH; a longer value is
+    // refused with DfcReaderInvalid before the session is touched. Unset, it is
+    // derived from the instruction.
     bool has_header_len;
     uint8_t header_len;
 } DfcReaderOptions;
@@ -116,47 +126,51 @@ typedef struct {
 // One operation in flight. Treat the fields as private.
 typedef struct {
     DfcReaderSession* session;
+    size_t data_len;
     DfcReaderFraming framing;
     uint8_t kind;
     uint8_t phase;
     uint8_t ins;
     uint8_t comm_mode;
     uint8_t response_plan;
+    uint8_t status;
     bool invalidates_session;
+    bool selects_picc;
     bool special_success;
+    bool requires_response_data;
 
-    uint8_t frame[DFC_READER_MAX_COMMAND];
-    size_t frame_len;
-    size_t frame_offset;
-    // When set, the first frame carries only this many octets.
-    size_t first_frame_len;
-    // When set, every continuation carries at most this many octets.
-    size_t command_frame_len;
-    DfcReaderStream stream;
-    // Clear command head for an EV1 encrypted read's CRC, kept per exchange.
-    uint8_t command_head[16];
-    size_t command_head_len;
+    union {
+        struct {
+            size_t frame_len;
+            size_t frame_offset;
+            // When set, the first frame carries only this many octets.
+            size_t first_frame_len;
+            // When set, every continuation carries at most this many octets.
+            size_t command_frame_len;
+            DfcReaderStream stream;
+            uint8_t frame[DFC_READER_MAX_COMMAND];
+        };
+        struct {
+            // Authentication in progress.
+            size_t auth_key_len;
+            size_t auth_challenge_len;
+            uint8_t auth_key[DFC_MAX_KEY_LEN];
+            uint8_t auth_random_a[DFC_EV2_RANDOM_LENGTH];
+            uint8_t auth_random_b[DFC_EV2_RANDOM_LENGTH];
+#if DFC_ENABLE_ISO7816_AUTH
+            uint8_t auth_random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+            uint8_t auth_reference;
+            uint8_t auth_algorithm;
+#endif
+            uint8_t auth_iv[16];
+            uint8_t auth_capabilities[DFC_EV2_CAPABILITY_LENGTH];
+            uint8_t auth_cipher;
+            uint8_t auth_key_no;
+            bool auth_first;
+        };
+    };
 
     uint8_t data[DFC_READER_MAX_RESPONSE];
-    size_t data_len;
-    uint8_t status;
-
-    // Authentication in progress.
-    uint8_t auth_cipher;
-    uint8_t auth_key_no;
-    uint8_t auth_key[DFC_MAX_KEY_LEN];
-    size_t auth_key_len;
-    size_t auth_challenge_len;
-    uint8_t auth_random_a[DFC_EV2_RANDOM_LENGTH];
-    uint8_t auth_random_b[DFC_EV2_RANDOM_LENGTH];
-#if DFC_ENABLE_ISO7816_AUTH
-    uint8_t auth_random_second[DFC_ISO7816_AUTH_CHALLENGE_LONG];
-    uint8_t auth_reference;
-    uint8_t auth_algorithm;
-#endif
-    uint8_t auth_iv[16];
-    bool auth_first;
-    uint8_t auth_capabilities[DFC_EV2_CAPABILITY_LENGTH];
 } DfcReaderExchange;
 
 const char* dfc_reader_status_name(DfcReaderStatus status);
@@ -173,7 +187,8 @@ size_t dfc_reader_challenge_length(uint8_t cipher, size_t key_len);
 
 // Legacy (D40), ISO or AES three-pass authentication. `random_a` must hold
 // dfc_reader_challenge_length octets. The session is replaced when the card
-// accepts, and cleared when it refuses.
+// accepts. Once the first handshake frame is emitted, the previous session is
+// no longer authenticated; a terminal failure leaves the session clear.
 DfcReaderStatus dfc_reader_authenticate_begin(
     DfcReaderExchange* exchange,
     DfcReaderSession* session,
@@ -257,7 +272,9 @@ DfcReaderStatus dfc_reader_update_record_begin(
 
 // Advance an operation. Pass NULL and 0 on the first call, then each answer.
 // Returns DfcReaderPending with the next frame in `out`, DfcReaderOk when the
-// operation is complete, or the reason it failed.
+// operation is complete, or the reason it failed. DfcReaderBufferTooSmall does
+// not consume the input answer or advance the exchange; retry the same call
+// with a larger output buffer.
 DfcReaderStatus dfc_reader_step(
     DfcReaderExchange* exchange,
     const uint8_t* response,

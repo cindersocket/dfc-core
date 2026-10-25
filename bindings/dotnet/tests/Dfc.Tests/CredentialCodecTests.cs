@@ -72,6 +72,71 @@ public sealed class CredentialCodecTests
     }
 
     [Test]
+    public void DelegatedFormatSetting_RoundTripsThroughNativeLayout()
+    {
+        var application = Fixtures.Credential().Applications[0] with
+        {
+            Delegation = new DfcDelegation(1, 1, 64, 40),
+            DelegatedFormatDisabled = true,
+        };
+        var source = Fixtures.Credential() with { Applications = [application] };
+
+        var encoded = Fixtures.Ok(DfcCredentialCodec.Encode(source));
+        var decoded = Fixtures.Ok(DfcCredentialCodec.Decode(encoded));
+
+        Assert.That(decoded.Applications.Single().DelegatedFormatDisabled, Is.True);
+    }
+
+    [Test]
+    public void LegacyRandomIdPrefix_RoundTripsThroughNativeLayout()
+    {
+        var source = Fixtures.Credential() with
+        {
+            Picc = Fixtures.Credential().Picc with { RandomId = true, RandomIdLegacy = true },
+        };
+
+        var encoded = Fixtures.Ok(DfcCredentialCodec.Encode(source));
+        var decoded = Fixtures.Ok(DfcCredentialCodec.Decode(encoded));
+
+        Assert.That(decoded.Picc.RandomId, Is.True);
+        Assert.That(decoded.Picc.RandomIdLegacy, Is.True);
+    }
+
+    [Test]
+    public void LimitedCreditValue_RoundTripsThroughNativeLayout()
+    {
+        var source = Fixtures.Credential();
+        var application = source.Applications[0];
+        var files = application.Files.ToArray();
+        files[3] = files[3] with
+        {
+            Contents = new DfcFileContents.Value(0, 1000, 100, 1, 37),
+        };
+        source = source with { Applications = [application with { Files = files }, .. source.Applications.Skip(1)] };
+
+        var encoded = Fixtures.Ok(DfcCredentialCodec.Encode(source));
+        var decoded = Fixtures.Ok(DfcCredentialCodec.Decode(encoded));
+        var value = (DfcFileContents.Value)decoded.Applications[0].Files[3].Contents;
+
+        Assert.That(value.LimitedCreditValue, Is.EqualTo(37));
+    }
+
+    [Test]
+    public void LimitedCreditValue_IsRejectedWhenSupportIsDisabled()
+    {
+        var source = Fixtures.Credential();
+        var application = source.Applications[0];
+        var files = application.Files.ToArray();
+        files[3] = files[3] with
+        {
+            Contents = new DfcFileContents.Value(0, 1000, 100, 0, 37),
+        };
+        source = source with { Applications = [application with { Files = files }, .. source.Applications.Skip(1)] };
+
+        Assert.That(DfcCredentialCodec.Encode(source).IsFailure, Is.True);
+    }
+
+    [Test]
     public void BuiltRecords_EncodeLikeParsedOnes()
     {
         var credential = Fixtures.Credential();

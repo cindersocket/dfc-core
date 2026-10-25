@@ -1,0 +1,17 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: EV3 proximity check with one challenge round
+case-id: hardware-genuine-ev3-4k-proximity-check
+origin: physical-card
+requires: ev3,proximity-check
+source: captured hardware behavior with an enabled zero-value AES proximity key
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+picc-proximity-key: 00000000000000000000000000000000
+picc-proximity-option: 01
+picc-proximity-published-response-time: 0320
+picc-proximity-bitrate: 00
+inject-random B5E32EB4EB03E4D0
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F200000908001122334455667700 => B5E32EB4EB03E4D09190
+exchange native-apdu 90FD000008726DA962A27DDB5200 => 8284E65148B2E4A69190

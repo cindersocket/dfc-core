@@ -1,0 +1,20 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: EV3 hidden dynamic messaging counter continuation and limit
+case-id: hardware-genuine-ev3-sdm-hidden-counter-limit
+origin: physical-card
+requires: ev3,sdm
+source: captured hardware setup, counter queries, and boundary reads
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+exchange native-apdu 90CA00000FE8E8E80FB1043812D276000085010400 => 9100
+exchange native-apdu 905A000003E8E8E800 => 9100
+exchange native-apdu 90CD00000905060140EEEE20000000 => 9100
+exchange native-apdu 905F0000130540EEEE61FEE0FFFFFF00000000000002000000 => 9100
+exchange native-apdu 90F60000010500 => 00000000009100
+exchange native-apdu 90BD0000070500000010000000 => 424231353233353435423731384330379100
+exchange native-apdu 90BD0000070500000010000000 => 424231353233353435423731384330379100
+exchange native-apdu 90F60000010500 => 01000000009100
+exchange native-apdu 90BD0000070500000010000000 => 424231353233353435423731384330379100
+exchange native-apdu 90F60000010500 => 02000000009100
+exchange native-apdu 90BD0000070500000010000000 => 919D

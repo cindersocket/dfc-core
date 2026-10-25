@@ -1,0 +1,25 @@
+# PROVENANCE: Synthetic regression for first-frame EV2 authentication rejection.
+name: rejected EV2 authentication retires the active session
+case-id: rejected-ev2-authentication-retires-session
+origin: synthetic
+feature-version: 6
+source: generated authentication-state regression
+requires: ev3,ev2-secure-messaging
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+picc-ev2-card-capabilities: 00000000A55A
+scan
+inject-random 000102030405060708090A0B0C0D0E0F
+inject-random A1B2C3D4
+exchange native-apdu 9071000002000000 => 7ACA0FD9BCD6EC7C9F97466616E6A28291AF
+exchange native-apdu 90AF000020358D5B59ADB65D04107676586F4734468AE4FC4E8630324D15ABDA99C0D0202C00 => 4D693FA018614D600133425883AE77E27E888514CBB6195AD99B1E6B9512EEAD9100
+assert emulator.secure_messaging = present
+exchange native-apdu 90710000010000 => 917E
+assert emulator.secure_messaging = null
+exchange native-apdu 9045000000 => 0F819100
+field-off

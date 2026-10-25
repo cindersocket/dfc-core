@@ -1,4 +1,20 @@
-use std::{env, path::PathBuf};
+use std::{env, fs, path::Path, path::PathBuf};
+
+fn rerun_for_tree(path: &Path) {
+    let mut entries: Vec<_> = fs::read_dir(path)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
+        .map(|entry| entry.expect("cannot read native source entry"))
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            rerun_for_tree(&path);
+        } else {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+}
 
 fn exactly_one<'a>(features: &[(&'a str, bool)], kind: &str) -> &'a str {
     let enabled: Vec<_> = features
@@ -37,7 +53,16 @@ fn main() {
         ],
         "profile",
     );
+    #[cfg(not(feature = "bundled"))]
+    let _ = profile;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("CMakeLists.txt").display()
+    );
+    for directory in ["src", "ffi", "port"] {
+        rerun_for_tree(&root.join(directory));
+    }
     let bridge_header = if role == "target" {
         "ffi/dfc_target_ffi.h"
     } else {
@@ -49,32 +74,35 @@ fn main() {
     );
 
     if bundled {
-        let mut config = cmake::Config::new(&root);
-        config
-            .define("DFC_ROLE", role)
-            .define("DFC_PROFILE", profile)
-            .define("DFC_CRYPTO", "tiny")
-            .define("DFC_BUILD_SHARED", "OFF")
-            .define(
-                "DFC_BUILD_STATIC_FFI",
-                if role == "target" { "OFF" } else { "ON" },
-            )
-            .define(
-                "DFC_BUILD_RUST_TARGET_BRIDGE",
-                if role == "target" { "ON" } else { "OFF" },
-            )
-            .define("DFC_BUILD_TESTS", "OFF");
-        if role == "target" {
-            config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
+        #[cfg(feature = "bundled")]
+        {
+            let mut config = cmake::Config::new(&root);
+            config
+                .define("DFC_ROLE", role)
+                .define("DFC_PROFILE", profile)
+                .define("DFC_CRYPTO", "tiny")
+                .define("DFC_BUILD_SHARED", "OFF")
+                .define(
+                    "DFC_BUILD_STATIC_FFI",
+                    if role == "target" { "OFF" } else { "ON" },
+                )
+                .define(
+                    "DFC_BUILD_RUST_TARGET_BRIDGE",
+                    if role == "target" { "ON" } else { "OFF" },
+                )
+                .define("DFC_BUILD_TESTS", "OFF");
+            if role == "target" {
+                config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
+            }
+            if let Ok(path) = env::var("DFC_TINY_CRYPTO_DIR") {
+                config.define("DFC_TINY_CRYPTO_DIR", path);
+            }
+            let destination = config.build();
+            println!(
+                "cargo:rustc-link-search=native={}",
+                destination.join("lib").display()
+            );
         }
-        if let Ok(path) = env::var("DFC_TINY_CRYPTO_DIR") {
-            config.define("DFC_TINY_CRYPTO_DIR", path);
-        }
-        let destination = config.build();
-        println!(
-            "cargo:rustc-link-search=native={}",
-            destination.join("lib").display()
-        );
     } else if let Ok(path) = env::var("DFC_LIB_DIR") {
         println!("cargo:rustc-link-search=native={path}");
     }

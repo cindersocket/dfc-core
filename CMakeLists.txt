@@ -10,7 +10,7 @@
 #   ctest --test-dir build
 
 cmake_minimum_required(VERSION 3.24)
-project(dfc-core VERSION 1.2.1 LANGUAGES C)
+project(dfc-core VERSION 2.0.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -35,6 +35,7 @@ option(DFC_BUILD_STATIC_FFI "Build a static library with the flat interface" OFF
 option(DFC_BUILD_RUST_TARGET_BRIDGE "Build the allocation-neutral Rust target bridge" OFF)
 option(DFC_BUILD_TESTS "Build the smoke test for the shared library" ${DFC_BUILD_SHARED})
 option(DFC_BUILD_JNI "Build the self-contained Java/Android JNI library" OFF)
+option(DFC_BUILD_FOOTPRINT_PROBE "Build the embedded footprint metadata probe" OFF)
 # Workstation sizes for the credential model. A device build keeps the small
 # defaults in dfc_common.h.
 if(DFC_ROLE STREQUAL "target")
@@ -59,7 +60,16 @@ set(DFC_CORE_SOURCES
     src/dfc_crypto.c
     src/dfc_der.c
     src/dfc_emulator.c
+    src/dfc_emulator_access.c
     src/dfc_emulator_commands.c
+    src/dfc_emulator_commands_auth.c
+    src/dfc_emulator_commands_data.c
+    src/dfc_emulator_commands_keys.c
+    src/dfc_emulator_commands_lifecycle.c
+    src/dfc_emulator_commands_metadata.c
+    src/dfc_emulator_commands_proximity.c
+    src/dfc_emulator_commands_records.c
+    src/dfc_emulator_commands_transactions.c
     src/dfc_emulator_crypto.c
     src/dfc_emulator_iso7816.c
     src/dfc_ev2.c
@@ -154,12 +164,22 @@ add_library(dfc_objects OBJECT ${DFC_CORE_SOURCES} ${DFC_CRYPTO_SOURCES})
 target_include_directories(dfc_objects PUBLIC src port PRIVATE ${DFC_CRYPTO_INCLUDES})
 target_compile_definitions(dfc_objects PUBLIC ${DFC_DEFINITIONS})
 target_compile_options(dfc_objects PRIVATE ${DFC_WARNINGS})
-set_target_properties(dfc_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET default)
+set_target_properties(dfc_objects PROPERTIES C_VISIBILITY_PRESET default)
+if(DFC_BUILD_SHARED OR DFC_BUILD_JNI)
+    set_property(TARGET dfc_objects PROPERTY POSITION_INDEPENDENT_CODE ON)
+endif()
 
 add_library(dfc_core STATIC $<TARGET_OBJECTS:dfc_objects>)
 target_include_directories(dfc_core PUBLIC src port)
 target_compile_definitions(dfc_core PUBLIC ${DFC_DEFINITIONS})
 target_link_libraries(dfc_core PUBLIC ${DFC_CRYPTO_LIBRARIES})
+
+if(DFC_BUILD_FOOTPRINT_PROBE)
+    add_library(dfc_footprint_probe OBJECT tests/embedded_footprint_probe.c)
+    target_include_directories(dfc_footprint_probe PRIVATE src port)
+    target_compile_definitions(dfc_footprint_probe PRIVATE ${DFC_DEFINITIONS})
+    target_compile_options(dfc_footprint_probe PRIVATE ${DFC_WARNINGS})
+endif()
 
 set(DFC_FFI_SOURCES
         $<TARGET_OBJECTS:dfc_objects>
@@ -245,4 +265,12 @@ if(DFC_BUILD_JNI)
     endif()
     set_target_properties(dfc_jni PROPERTIES C_VISIBILITY_PRESET default)
     install(TARGETS dfc_jni LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
+
+    if(DFC_BUILD_TESTS)
+        enable_testing()
+        add_executable(test_dfc_jni_queue tests/java/test_dfc_jni_queue.c)
+        target_include_directories(test_dfc_jni_queue PRIVATE bindings/jni)
+        target_compile_options(test_dfc_jni_queue PRIVATE ${DFC_WARNINGS})
+        add_test(NAME jni_replay_queue COMMAND test_dfc_jni_queue)
+    endif()
 endif()

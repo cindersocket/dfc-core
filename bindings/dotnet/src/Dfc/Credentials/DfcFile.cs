@@ -38,7 +38,13 @@ public abstract record DfcFileContents
     }
 
     /// <summary>A value file.</summary>
-    public sealed record Value(int LowerLimit, int UpperLimit, int Current, byte LimitedCredit) : DfcFileContents
+    public sealed record Value(
+        int LowerLimit,
+        int UpperLimit,
+        int Current,
+        byte LimitedCredit,
+        int LimitedCreditValue = 0
+    ) : DfcFileContents
     {
         /// <summary>Whether an uncommitted transaction holds a change.</summary>
         public bool Pending { get; init; }

@@ -1,0 +1,44 @@
+# AuthenticateISO on a 2K3DES application, then ChangeKey on the key the
+# session authenticated with. The new key authenticates afterwards.
+#
+# Generated from tests/test_dfc_virtual_picc_mutation_vectors.c
+# (/iso-change-key-same-key-round-trip) by recording the exchanges the
+# reference engine performed, then cross-checked: all 5 byte
+# expectations asserted by that test matched the recording exactly.
+# 2 further exchanges carry no byte expectation in the source.
+#
+# The ChangeKey cryptograms are computed at runtime by the original test
+# from the derived session key, so they are recorded rather than
+# transcribed. inject-random pins RndB ahead of every authentication so
+# the vector does not depend on the engine's default generator.
+#
+# The original pre-creates AID AABBCC (0F / 2K3DES, one key) directly on the
+# credential and forces its authentication mode to ISO; the vector creates the
+# same application over the wire. The emulator selects the handshake from the
+# command byte, not from the stored mode, so the recorded bytes are identical.
+# The assert is the key-replacement check the original makes on
+# credential.apps[0].
+
+name: ISO ChangeKey on the authenticated key
+case-id: mutation-iso-change-key-same-key
+origin: synthetic
+requires: auth-iso
+source: tests/test_dfc_virtual_picc_mutation_vectors.c#/iso-change-key-same-key-round-trip
+uid: 04334455667788
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA000005AABBCC0F0100 => 00
+status   905A000003AABBCC00 => 00
+inject-random 0001020304050607
+exchange native-apdu 901A0000010000 => 491E890DE9ACE93291AF
+exchange native-apdu 90AF0000104059BA9A020166A3881A06C9412B3AD200 => 1F2C92E0F167B8859100
+status   90C4000019001CF0DAE6EA38EDDA0BFF82E0510A1E86D93E80B1F95BA48D00 => 00
+assert   apps[0].keys[0] = 0123456789ABCDEFFEDCBA9876543210
+status   905A000003AABBCC00 => 00
+inject-random 0001020304050607
+exchange native-apdu 901A0000010000 => 52C5C0705D9089E191AF
+exchange native-apdu 90AF0000101A69EE79197D15F37AAAB35D4271B58F00 => F74B33216A59B1F89100

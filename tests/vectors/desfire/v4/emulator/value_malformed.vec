@@ -1,0 +1,24 @@
+# Short CreateValueFile, GetValue without a file number and a truncated
+# Credit are length errors; negative amounts are parameter errors.
+#
+# Generated from tests/test_dfc_virtual_picc_value_vectors.c (/malformed) by
+# recording the exchanges the reference engine performed, then
+# cross-checked: all 9 byte expectations asserted by that test matched
+# the recording exactly.
+
+name: malformed value commands
+case-id: value-malformed
+origin: synthetic
+source: tests/test_dfc_virtual_picc_value_vectors.c#/malformed
+uid: 0476616C756531
+
+scan
+status   90CA000005A1B2C30F0100 => 00
+status   905A000003A1B2C300 => 00
+status   90CC0000040100EEEE00 => 7E
+status   906C000000 => 7E
+status   900C0000040101000000 => 7E
+status   90CC0000110100EEEE00000000640000000A0000000100 => 00
+status   90DC00000501FFFFFFFF00 => 9E
+status   900C00000501FFFFFFFF00 => 9E
+status   901C00000501FFFFFFFF00 => 9E

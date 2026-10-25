@@ -22,11 +22,14 @@ bool dfc_crypto_aes_block_init(DfcCryptoAesBlock* block, const uint8_t* key, siz
 }
 
 bool dfc_crypto_aes_block_encrypt(
-    DfcCryptoAesBlock* block, const uint8_t input[16], uint8_t output[16]) {
+    DfcCryptoAesBlock* block,
+    const uint8_t input[16],
+    uint8_t output[16]) {
     (void)block;
     aes_call++;
     if(aes_call == fail_at) return false;
-    for(size_t i = 0; i < 16; i++) output[i] = input[i] ^ (uint8_t)(0x31 + aes_call);
+    for(size_t i = 0; i < 16; i++)
+        output[i] = input[i] ^ (uint8_t)(0x31 + aes_call);
     return true;
 }
 
@@ -50,11 +53,14 @@ bool dfc_crypto_des_block_init(
 }
 
 bool dfc_crypto_des_block_crypt(
-    DfcCryptoDesBlock* block, const uint8_t input[8], uint8_t output[8]) {
+    DfcCryptoDesBlock* block,
+    const uint8_t input[8],
+    uint8_t output[8]) {
     (void)block;
     des_call++;
     if(des_call == fail_at) return false;
-    for(size_t i = 0; i < 8; i++) output[i] = input[i] ^ (uint8_t)(0x51 + des_call);
+    for(size_t i = 0; i < 8; i++)
+        output[i] = input[i] ^ (uint8_t)(0x51 + des_call);
     return true;
 }
 
@@ -62,8 +68,7 @@ void dfc_crypto_des_block_clear(DfcCryptoDesBlock* block) {
     memset(block, 0, sizeof(*block));
 }
 
-static MunitResult test_aes_failure_positions(
-    const MunitParameter params[], void* user_data) {
+static MunitResult test_aes_failure_positions(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     uint8_t key[16] = {0};
@@ -80,8 +85,7 @@ static MunitResult test_aes_failure_positions(
     return MUNIT_OK;
 }
 
-static MunitResult test_des_failure_positions(
-    const MunitParameter params[], void* user_data) {
+static MunitResult test_des_failure_positions(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     uint8_t key[24] = {0};

@@ -1,0 +1,36 @@
+# PROVENANCE: Synthetic regression for authenticated GetCardUID response protection.
+name: EV1 GetCardUID uses Full response protection
+case-id: ev1-get-card-uid-full-response
+origin: synthetic
+feature-version: 6
+source: generated GetCardUID response-protection regression
+issues: https://github.com/cindersocket/dfc-core/issues/126
+requires: ev1,auth-aes
+uid: 04112233445566
+picc-generation: EV1
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+scan
+
+# Authentication is required, and refusal never exposes UID bytes.
+exchange native-apdu 9051000000 => 91AE
+
+inject-random 000102030405060708090A0B0C0D0E0F
+exchange native-apdu 90AA0000010000 => 7ACA0FD9BCD6EC7C9F97466616E6A28291AF
+exchange native-apdu 90AF000020ECC9B00FDB4E6B30E0A7FCF1C08A892CA8F292369D4982D894F48C546C1F476700 => 220F6B51DD0CF762D6C7D2FC66BD72689100
+exchange native-apdu 9051000000 => 76B43C8AFF13D097E4C45593BEBBD0369100
+
+# Extra command data is a terminal error for the EV1 session.
+exchange native-apdu 90510000010000 => 917E
+assert emulator.secure_messaging = null
+exchange native-apdu 9051000000 => 91AE
+
+# A bad authentication proof cannot be used to reveal the UID.
+inject-random 000102030405060708090A0B0C0D0E0F
+exchange native-apdu 90AA0000010000 => 7ACA0FD9BCD6EC7C9F97466616E6A28291AF
+exchange native-apdu 90AF000020EDC9B00FDB4E6B30E0A7FCF1C08A892CA8F292369D4982D894F48C546C1F476700 => 91AE
+exchange native-apdu 9051000000 => 91AE
+field-off

@@ -1,0 +1,33 @@
+# DeleteFile without authentication under application KS1 0x0B.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /delete-file-requires-auth by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all 4 literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+#
+# The application uses KS1 0x0B, which withholds free create/delete, so the
+# file cannot be created unauthenticated. The vector authenticates with the
+# all-zero application master key to create it, then drops the field and
+# rescans so the DeleteFile that follows is unauthenticated, as in the source.
+
+name: ev1 conformance: delete-file-requires-auth
+case-id: ev1-delete-file-requires-auth
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /delete-file-requires-auth
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050102030B0100 => 00
+status   905A00000301020300 => 00
+inject-random 5EE11A0743FB4EB5
+exchange native-apdu 900A0000010000 => 11881D6C3B75CC1A91AF
+exchange native-apdu 90AF000010491E890DE9ACE932D48F74A7225E34DD00 => B7D1DA7CE0DD986B9100
+status   90CD0000070100EEEE04000000 => 00
+field-off
+scan
+status   905A00000301020300 => 00
+status   90DF0000010100 => AE

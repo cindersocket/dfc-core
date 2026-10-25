@@ -1,14 +1,15 @@
-#!/usr/bin/env python3
 """Keep authenticator comparisons on the constant-time helper."""
 
 from pathlib import Path
 
-
-SOURCE = Path(__file__).parents[1] / "src" / "dfc_emulator_commands.c"
+SOURCE_DIR = Path(__file__).parents[1] / "src"
 
 
 def main() -> None:
-    source = SOURCE.read_text(encoding="utf-8")
+    source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(SOURCE_DIR.glob("dfc_emulator_commands*.c"))
+    )
     required = (
         "dfc_ct_equal(clear + DFC_EV2_RANDOM_LENGTH, rotated_b, sizeof(rotated_b))",
         "dfc_ct_equal(rnd_b_rot, expected_rnd_b_rot, challenge_len)",
@@ -19,7 +20,7 @@ def main() -> None:
         raise SystemExit("non-constant-time authenticator comparison:\n" + "\n".join(missing))
 
     violations: list[str] = []
-    for path in sorted(SOURCE.parent.glob("dfc_emulator*.c")):
+    for path in sorted(SOURCE_DIR.glob("dfc_emulator*.c")):
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if "memcmp(" not in line:
                 continue

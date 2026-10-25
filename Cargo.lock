@@ -23,14 +23,14 @@ dependencies = [
 
 [[package]]
 name = "dfc-core"
-version = "1.2.1"
+version = "2.0.0"
 dependencies = [
  "dfc-core-sys",
 ]
 
 [[package]]
 name = "dfc-core-sys"
-version = "1.2.1"
+version = "2.0.0"
 dependencies = [
  "cmake",
 ]

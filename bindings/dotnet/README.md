@@ -44,6 +44,12 @@ Transport failures clear the managed reader session.
 `DfcCommand.SelectApplication` accepts the same human-readable AID byte order
 used by `DfcApplication.Aid` and converts it to wire order.
 
+For deterministic tests, pass a `DfcScriptedRandomSource` to
+`DfcVirtualPicc.Create`. `Append` queues bytes for later random requests,
+`Remaining` reports the unread count, and `Clear` wipes and discards unread
+bytes before a new replay segment is appended. A request larger than the queue
+fails without consuming bytes.
+
 The runnable [.NET example](../../examples/dotnet/README.md) validates a
 credential, activates a virtual card, and performs a multi-frame `GetVersion`
 exchange through the public reader and transport APIs.
@@ -63,4 +69,14 @@ dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj \
 
 Set `DfcNativeDirectory` if the native build is elsewhere. Published packages
 place the library under `runtimes/<RID>/native`; local builds copy it beside the
-test or example assembly.
+test or example assembly. The assembly verifies the complete generated native
+layout fingerprint before constructing a handle.
+
+## Secret lifetime
+
+Ordinary card snapshots exclude session keys. `DiagnosticSnapshot()` returns a
+disposable secret-bearing object for diagnostics and conformance tests; dispose
+it promptly to clear its managed buffers. The runtime may retain copies created
+by application code. Credential records expose mutable `byte[]` fields whose
+lifetime belongs to the caller; native marshalling temporaries are cleared on
+every exit.

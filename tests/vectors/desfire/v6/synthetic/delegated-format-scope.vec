@@ -1,0 +1,99 @@
+# A delegated application can format only its own files. Rejected attempts do
+# not alter either application, and successful formatting preserves both
+# applications and their key material.
+name: delegated format authentication and scope
+origin: synthetic
+case-id: delegated-format-authentication-and-scope
+feature-version: 6
+requires: auth-aes,ev2,delegated-applications
+source: dfc-core issue 130 regression coverage
+issues: https://github.com/cindersocket/dfc-core/issues/130
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+picc-dam-auth-key: 4142434445464748494A4B4C4D4E4F40
+picc-dam-mac-key: 5152535455565758595A5B5C5D5E5F50
+picc-dam-encryption-key: 6162636465666768696A6B6C6D6E6F60
+
+scan
+
+# Keep an ordinary application beside the delegated application so scope is
+# observable after formatting.
+status   90CA0000050100000F8100 => 00
+status   905A00000301000000 => 00
+status   90CD0000070100EEEE04000000 => 00
+status   903D00000B01000000040000A1A2A3A400 => 00
+exchange native-apdu 90BD0000070100000004000000 => A1A2A3A49100
+
+# Authenticate with the delegated-application manager key and create the
+# delegated application with a known AES master key.
+status   905A00000300000000 => 00
+inject-random 000102030405060708090A0B0C0D0E0F10111213
+exchange native-apdu 9071000008100600000000000000 => A80C0807CDAB160A5A11B8ACD774517E91AF
+exchange native-apdu 90AF000020EA4489E814CD8A9C40E45BC0863E0CF52A0B971F73F2851450EF12580BCD8CE400 => 013EB76388FE41ACFB57DC188D105026E930636D5FDE9CDDFB5FF5FC8C963C119100
+exchange native-apdu 90C900000A0A0B0C01000040000F8100 => 91AF
+exchange native-apdu 90AF0000303533CDD2BF1FEF31985E9C571E830DD384DD03DB9D574605BA92D490B6F1E9672C18FC0BB1975BF4388B83829330DE9B00 => 93F63E66CA7DA2C39100
+
+exchange native-apdu 905A00000B0A0B0CA2FBC09C14D3458300 => 9100
+
+# Formatting without authentication is refused.
+status   90FC000000 => AE
+assert   credential.num_apps = 2
+assert   apps[0].aid = 000001
+assert   apps[1].aid = 0C0B0A
+assert   apps[0].keys[0] = 00000000000000000000000000000000
+assert   apps[1].keys[0] = ABABABABABABABABCDCDCDCDCDCDCDCD
+
+# A failed application-master authentication does not grant permission.
+inject-random 202122232425262728292A2B2C2D2E2F
+exchange native-apdu 90AA0000010000 => 22990872D9C4E22697FBF1B1B25EAB1991AF
+status   90AF000020000000000000000000000000000000000000000000000000000000000000000000 => AE
+status   90FC000000 => AE
+assert   credential.num_apps = 2
+assert   apps[1].keys[0] = ABABABABABABABABCDCDCDCDCDCDCDCD
+
+# Authenticate with the application master and create one target file.
+inject-random 202122232425262728292A2B2C2D2E2F
+exchange native-apdu 90AA0000010000 => 22990872D9C4E22697FBF1B1B25EAB1991AF
+exchange native-apdu 90AF0000209EF4635EA17EB61F9BEEB7731442B73262D4B604ACA38E04DECF340DE69990E200 => 7C790865719FEE99AEA2ACC199C0480A9100
+exchange native-apdu 90CD0000070500EEEE04000000 => 1FA186D79F8BB9AD9100
+exchange native-apdu 903D00000B05000000040000B1B2B3B400 => 0ED833DC23C7F6559100
+exchange native-apdu 90BD0000070500000004000000 => B1B2B3B4EA39A8ADC9428EF59100
+assert   credential.num_files = 2
+assert   files[0].app_index = 0
+assert   files[0].number = 1
+assert   files[0].data_len = 4
+assert   files[0].data = A1A2A3A4
+assert   files[1].app_index = 1
+assert   files[1].number = 5
+assert   files[1].data_len = 4
+assert   files[1].data = B1B2B3B4
+
+# Formatting removes only the selected delegated application's files.
+exchange native-apdu 90FC000000 => C6A455569F0974099100
+# The selected application and authenticated session remain usable.
+exchange native-apdu 9045000000 => 0F81F1990ACA18618E439100
+assert   credential.num_apps = 2
+assert   credential.num_files = 1
+assert   apps[0].aid = 000001
+assert   apps[0].key_settings_1 = 15
+assert   apps[0].key_settings_2 = 129
+assert   apps[0].keys[0] = 00000000000000000000000000000000
+assert   apps[1].aid = 0C0B0A
+assert   apps[1].key_settings_1 = 15
+assert   apps[1].key_settings_2 = 129
+assert   apps[1].keys[0] = ABABABABABABABABCDCDCDCDCDCDCDCD
+assert   files[0].app_index = 0
+assert   files[0].number = 1
+assert   files[0].data_len = 4
+assert   files[0].data = A1A2A3A4
+assert   credential.dirty = 1
+
+# The neighboring application's exact bytes remain readable.
+status   905A00000301000000 => 00
+exchange native-apdu 90BD0000070100000004000000 => A1A2A3A49100

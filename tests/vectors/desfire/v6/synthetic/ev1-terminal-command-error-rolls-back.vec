@@ -1,0 +1,35 @@
+# PROVENANCE: Synthetic regression for terminal errors in an authenticated EV1 session.
+name: EV1 terminal command error retires session and rolls back transaction
+case-id: ev1-terminal-command-error-retires-session
+origin: synthetic
+feature-version: 6
+source: generated command-error state regression
+requires: ev1,auth-aes,backup-files
+uid: 045704EA916F80
+picc-generation: EV1
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+scan
+exchange native-apdu 90CA000005B3B2B10F8400 => 9100
+exchange native-apdu 905A000003B3B2B100 => 9100
+exchange native-apdu 90CD0000070100111104000000 => 9100
+exchange native-apdu 90CB0000070200EEEE04000000 => 9100
+exchange native-apdu 903D00000B020000000400001122334400 => 9100
+exchange native-apdu 90C7000000 => 9100
+inject-random AE2BD60FC7707E4421AAAF22A96B57D9
+exchange native-apdu 90AA0000010100 => D4D5134446E75962C7B0286F9F93C42491AF
+exchange native-apdu 90AF000020E63DCD42E49ADA2D8A38AFDD93A76B9131F137C175903F19529C49968B813CEA00 => 625B109FD57FE03E0FC284EFCE6318409100
+assert emulator.secure_messaging = present
+# The wildcard is only the successful write response CMAC. The status is exact.
+exchange native-apdu 903D00000B02000000040000AABBCCDD00 => ????????????????9100
+# The terminal status must be the two plain status octets, with no response CMAC.
+exchange native-apdu 90FF000000 => 911C
+assert emulator.secure_messaging = null
+# The failed command rolls the backup file back to its committed contents.
+exchange native-apdu 90BD0000070200000004000000 => 112233449100
+# The application stays selected, but the protected file now needs authentication.
+exchange native-apdu 90BD0000070100000001000000 => 91AE
+field-off

@@ -76,12 +76,7 @@ public record DfcCommand(int instruction, byte[] data) {
     return new DfcCommand(0xbd, fileRange(fileNumber, offset, length));
   }
   public static DfcCommand writeData(int fileNumber, int offset, byte[] value) {
-    Objects.requireNonNull(value, "value");
-    byte[] header = fileRange(fileNumber, offset, value.length);
-    byte[] data = new byte[header.length + value.length];
-    System.arraycopy(header, 0, data, 0, header.length);
-    System.arraycopy(value, 0, data, header.length, value.length);
-    return new DfcCommand(0x3d, data);
+    return writeRange(0x3d, fileNumber, offset, value);
   }
   public static DfcCommand readRecords(int fileNumber, int firstRecord, int count) {
     return new DfcCommand(0xbb, fileRange(fileNumber, firstRecord, count));

@@ -1,0 +1,23 @@
+# GetDFNames lists an application that has an ISO FID but no DF name.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /get-df-names-lists-unnamed by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+
+name: ev1 conformance: get-df-names-lists-unnamed
+case-id: ev1-get-df-names-lists-unnamed
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /get-df-names-lists-unnamed
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000070102030F2110E100 => 00
+exchange native-apdu 906D000000 => 01020310E19100
+assert   apps[0].has_iso_file_id = 1
+assert   apps[0].iso_file_id = 0xE110
+assert   apps[0].iso_aid_len = 0

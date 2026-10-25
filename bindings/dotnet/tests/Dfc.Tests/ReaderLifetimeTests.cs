@@ -1,0 +1,287 @@
+namespace Dfc.Tests;
+
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using CSharpFunctionalExtensions;
+using Dfc.Credentials;
+using Dfc.Emulation;
+using Dfc.Reader;
+using NUnit.Framework;
+
+[TestFixture]
+public sealed class ReaderLifetimeTests
+{
+    private static readonly string[] ThrowingOperations =
+    [
+        "exchange",
+        "write-data",
+        "write-record",
+        "update-record",
+        "authenticate",
+        "authenticate-iso7816",
+        "authenticate-ev2-first",
+        "authenticate-ev2-non-first",
+        "change-key",
+        "change-key-ev2",
+        "delegated-application",
+        "proximity-check",
+        "select-virtual-card",
+    ];
+
+    [TestCaseSource(nameof(ThrowingOperations))]
+    public async Task TransportException_ClearsSessionAndRethrows(string operation)
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        var transport = new ThrowingTransport(picc);
+        using var reader = new DfcReader(transport);
+        await Fixtures.SelectAsync(reader, Fixtures.AesAid);
+
+        var needsEv2 = operation is "authenticate-ev2-non-first" or "change-key-ev2" or "delegated-application";
+        if (needsEv2)
+        {
+            Fixtures.Ok(await reader.AuthenticateEv2FirstAsync(0, Fixtures.AesKey0));
+        }
+        else
+        {
+            Fixtures.Ok(await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0));
+        }
+
+        var expected = new TransportProbeException();
+        transport.Exception = expected;
+
+        var actual = Assert.ThrowsAsync<TransportProbeException>(async () => await InvokeAsync(operation, reader));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(actual, Is.SameAs(expected));
+            Assert.That(reader.IsAuthenticated, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task TransportExceptionAfterAResponse_ClearsSessionAndRethrows()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        var transport = new ThrowingTransport(picc);
+        using var reader = new DfcReader(transport);
+        await Fixtures.SelectAsync(reader, Fixtures.AesAid);
+        Fixtures.Ok(await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0));
+
+        var expected = new TransportProbeException();
+        transport.SuccessfulCallsBeforeThrow = 1;
+        transport.Exception = expected;
+
+        var actual = Assert.ThrowsAsync<TransportProbeException>(
+            async () => _ = await reader.ExchangeAsync(DfcCommand.GetVersion())
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(actual, Is.SameAs(expected));
+            Assert.That(reader.IsAuthenticated, Is.False);
+        });
+    }
+
+    [Test]
+    public void DisposedOperation_ReportsThePublicTypeName()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        var reader = new DfcReader(picc);
+        reader.Dispose();
+
+        var exception = Assert.ThrowsAsync<ObjectDisposedException>(
+            async () => _ = await reader.ExchangeAsync(DfcCommand.GetVersion())
+        );
+
+        Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcReader)));
+    }
+
+    [Test]
+    public async Task DisposeFromTransport_DefersNativeReleaseUntilTheOperationCompletes()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        var transport = new DisposingTransport(picc);
+        var reader = new DfcReader(transport);
+        transport.Attach(reader);
+
+        var response = Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.GetVersion()));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.Data, Has.Length.GreaterThan(0));
+            var exception = Assert.Throws<ObjectDisposedException>(() => _ = reader.Session);
+            Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcReader)));
+            Assert.DoesNotThrow(reader.Dispose);
+        });
+    }
+
+    [Test]
+    public async Task ConcurrentDispose_DefersNativeReleaseUntilTheOperationCompletes()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        var transport = new BlockingTransport(picc);
+        var reader = new DfcReader(transport);
+
+        var operation = reader.ExchangeAsync(DfcCommand.GetVersion());
+        await transport.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        reader.Dispose();
+        transport.Continue.TrySetResult();
+
+        var response = Fixtures.Ok(await operation);
+        Assert.That(response.Data, Has.Length.GreaterThan(0));
+        var exception = Assert.Throws<ObjectDisposedException>(() => reader.ClearSession());
+        Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcReader)));
+    }
+
+    [Test]
+    public async Task DisposeFromRandomSource_DefersNativeReleaseUntilAuthenticationCompletes()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        var random = new DisposingRandomSource();
+        var reader = new DfcReader(picc, random: random);
+        await Fixtures.SelectAsync(reader, Fixtures.AesAid);
+        random.Attach(reader);
+
+        Fixtures.Ok(await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0));
+
+        Assert.That(picc.Snapshot().Authentication, Is.EqualTo(DfcAuthenticationMode.Aes));
+        var exception = Assert.Throws<ObjectDisposedException>(() => _ = reader.IsAuthenticated);
+        Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcReader)));
+    }
+
+    private sealed class DisposingTransport(IDfcApduExchange inner) : IDfcApduExchange
+    {
+        private DfcReader? reader;
+
+        public void Attach(DfcReader value) => reader = value;
+
+        public async ValueTask<Result<byte[], DfcProtocolError>> TransmitAsync(
+            ReadOnlyMemory<byte> frame,
+            CancellationToken cancellationToken
+        )
+        {
+            var answer = await inner.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
+            Interlocked.Exchange(ref reader, null)?.Dispose();
+            return answer;
+        }
+    }
+
+    private static async Task InvokeAsync(string operation, DfcReader reader)
+    {
+        switch (operation)
+        {
+            case "exchange":
+                _ = await reader.ExchangeAsync(DfcCommand.GetVersion());
+                break;
+            case "write-data":
+                _ = await reader.WriteDataAsync(Fixtures.FilePlain, 0, new byte[1]);
+                break;
+            case "write-record":
+                _ = await reader.WriteRecordAsync(Fixtures.FilePlain, 0, new byte[1]);
+                break;
+            case "update-record":
+                _ = await reader.UpdateRecordAsync(Fixtures.FilePlain, 0, 0, new byte[1]);
+                break;
+            case "authenticate":
+                _ = await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0);
+                break;
+            case "authenticate-iso7816":
+                _ = await reader.AuthenticateIso7816Async(0, DfcIso7816AuthAlgorithm.Aes, Fixtures.AesKey0);
+                break;
+            case "authenticate-ev2-first":
+                _ = await reader.AuthenticateEv2FirstAsync(0, Fixtures.AesKey0);
+                break;
+            case "authenticate-ev2-non-first":
+                _ = await reader.AuthenticateEv2NonFirstAsync(0, Fixtures.AesKey0);
+                break;
+            case "change-key":
+                _ = await reader.ChangeKeyAsync(1, Fixtures.AesKey1, Fixtures.AesKey1, true, 0);
+                break;
+            case "change-key-ev2":
+                _ = await reader.ChangeKeyEv2Async(0, 1, Fixtures.AesKey1, Fixtures.AesKey1, 0);
+                break;
+            case "delegated-application":
+                _ = await reader.CreateDelegatedApplicationAsync(
+                    new DfcDelegatedApplicationRequest(
+                        [0x0A, 0x0B, 0x0C],
+                        1,
+                        0,
+                        64,
+                        0x0F,
+                        0x81,
+                        new byte[16],
+                        new byte[16],
+                        new byte[24],
+                        0
+                    )
+                );
+                break;
+            case "proximity-check":
+                _ = await reader.ProximityCheckAsync(new byte[16]);
+                break;
+            case "select-virtual-card":
+                _ = await reader.SelectVirtualCardAsync(new byte[] { 0x01 }, new byte[16], new byte[16]);
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown reader operation {operation}.");
+        }
+    }
+
+    private sealed class ThrowingTransport(IDfcApduExchange inner) : IDfcApduExchange
+    {
+        public Exception? Exception { get; set; }
+
+        public int SuccessfulCallsBeforeThrow { get; set; }
+
+        public async ValueTask<Result<byte[], DfcProtocolError>> TransmitAsync(
+            ReadOnlyMemory<byte> frame,
+            CancellationToken cancellationToken
+        )
+        {
+            if (Exception is null || SuccessfulCallsBeforeThrow-- > 0)
+            {
+                return await inner.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
+            }
+            throw Exception;
+        }
+    }
+
+    private sealed class TransportProbeException : Exception;
+
+    private sealed class BlockingTransport(IDfcApduExchange inner) : IDfcApduExchange
+    {
+        private int block = 1;
+
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<Result<byte[], DfcProtocolError>> TransmitAsync(
+            ReadOnlyMemory<byte> frame,
+            CancellationToken cancellationToken
+        )
+        {
+            var answer = await inner.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
+            if (Interlocked.Exchange(ref block, 0) != 0)
+            {
+                Entered.TrySetResult();
+                await Continue.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return answer;
+        }
+    }
+
+    private sealed class DisposingRandomSource : IDfcRandomSource
+    {
+        private DfcReader? reader;
+
+        public void Attach(DfcReader value) => reader = value;
+
+        public void Fill(Span<byte> destination)
+        {
+            destination.Clear();
+            Interlocked.Exchange(ref reader, null)?.Dispose();
+        }
+    }
+}

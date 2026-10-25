@@ -1,0 +1,104 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 8K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 04304622216A80, hardware 1.0, software 1.4, storage 8K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: the three communication modes under an ISO
+# session on a 3K3DES key with distinct thirds, so the 24-octet session
+# key and three-key DES CMAC are measured rather than assumed.
+
+name: genuine EV1 8K, ISO 3K3DES session read and write in every comm mode
+case-id: hardware-genuine-ev1-8k-3k3des-comm-modes
+origin: physical-card
+source: captured hardware trace
+requires: auth-iso
+uid: 04304622216A80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV1
+picc-storage: 8192
+
+scan
+# The application. KS1 0F leaves create and delete of files free, so
+# the structure below is built without an application authentication;
+# whether silicon really honours that bit is what the free-create
+# vector measures separately.
+status   90CA000005C3C2C10F4400 => 00
+status   905A000003C3C2C100 => 00
+#
+# Three Standard Data files of 32 octets, one per communication mode:
+# 00 plain, 01 MACed, 03 enciphered. Access rights are logical 0x1111
+# throughout - read, write, read&write and change all name key 1 - so
+# the only variable between the three is the communication mode.
+status   90CD0000070100111120000000 => 00
+status   90CD0000070201111120000000 => 00
+status   90CD0000070303111120000000 => 00
+#
+# Key 1 to the three-thirds test pattern, as another key under key 0,
+# so the old key is XORed in and the answer carries a CMAC.
+status   905A000003C3C2C100 => 00
+inject-random 10B9A6B2336546DB9EE2ED8512B4DC20
+exchange native-apdu 901A0000010000 => FE81D1842625A307A7B8E962F369F22D91AF
+exchange native-apdu 90AF000020246662F82C89375A03F67A15BDFE9A01D73F446C4F5053C41DE4F9BD8AF5350F00 => A525B4AC21BC4E5F5F3AE0285F42B61E9100
+exchange native-apdu 90C4000021012F534A7F4F87FD3160627A6DA3FA425440D51FFA2C1FA8BCCCBDAE99313F092900 => 0455C4AA250D1D099100
+status   905A000003C3C2C100 => 00
+#
+# GetFileSettings for each, unauthenticated, so the communication mode
+# the card believes it stored is on the record before anything is
+# written through it.
+exchange native-apdu 90F50000010100 => 000011112000009100
+exchange native-apdu 90F50000010200 => 000111112000009100
+exchange native-apdu 90F50000010300 => 000311112000009100
+#
+# Authenticate as key 1, the key every access right above names.
+inject-random 7466B3E427F43498406FA37DE5BF7D0B
+exchange native-apdu 901A0000010100 => B1BBA7C5D4FBF2F4EBD5800AC2CC12FA91AF
+exchange native-apdu 90AF0000207EEE949711544925C81047DA5B77ABD09E9C460C563BCEC774BB527BAAE8E7A600 => FD8B473B0CD6398A20BC6FC0D7AE0B3C9100
+#
+# File 01, plain. Write 16 octets, then read them back.
+exchange native-apdu 903D00001701000000100000101112131415161718191A1B1C1D1E1F00 => 1A0AFFD845DF16929100
+exchange native-apdu 90BD0000070100000010000000 => 101112131415161718191A1B1C1D1E1F2AD3149B4773EE5C9100
+#
+# File 02, MACed. Write 16 octets, then read them back.
+exchange native-apdu 903D00001F02000000100000202122232425262728292A2B2C2D2E2FA13800E9820F2DC200 => 39A68E7DFF71E0439100
+exchange native-apdu 90BD0000070200000010000000 => 202122232425262728292A2B2C2D2E2F8A71B99F0C7869AF9100
+#
+# How the card MACed the answers, measured rather than assumed:
+#   file 01 (plain): the write answer carried 8 octet(s) of MAC and it verified, the read answer 8.
+#   file 02 (MACed): the write answer carried 8 octet(s) of MAC and it verified, the read answer 8.
+#
+# File 03, enciphered. Before the round trip, which octets the
+# CRC32 inside the cryptogram covers, put to the card as two
+# candidate cryptograms over the same 16 octets of data.
+#
+# First candidate: CRC32 over Cmd||Data, which is what our engine
+# computes and verifies.
+exchange native-apdu 903D00001F03000000100000C59C5BF2F5A7286A953C084EAD4C233BC91CA8D601FD29C600 => 911E
+#
+# A refused cryptogram ends the session, so authenticate again
+# before offering the second candidate.
+status   905A000003C3C2C100 => 00
+inject-random 05979093EB51575C868826134B018C7E
+exchange native-apdu 901A0000010100 => 5C24D947F098BC016EF401BAB85AE78091AF
+exchange native-apdu 90AF000020E6FBFD704107C7AA7BA0DA2F35BA7EAC067D9644738B87EB25A4942470262F4500 => 29703FC8D110C42C7EEC83D06DB58D469100
+#
+# Second candidate: CRC32 over Cmd||FileNo||Offset||Length||Data,
+# the whole command as it appears on the wire.
+exchange native-apdu 903D00001F03000000100000CB513CD86F3747EE5C2B7C5826B32CB219A2DC2573E19E1200 => 4242C4296A9835959100
+exchange native-apdu 90BD0000070300000010000000 => 546CC2DFAC60BDBF7A9CF0D92A2B76831A1E8B457F9DEBBE9100

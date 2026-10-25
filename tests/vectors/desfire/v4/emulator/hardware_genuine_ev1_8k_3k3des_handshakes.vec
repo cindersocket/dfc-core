@@ -1,0 +1,68 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 8K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 04304622216A80, hardware 1.0, software 1.4, storage 8K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: the ISO (0x1A) handshake on a 3K3DES key, with
+# its sixteen-octet challenges, measured against silicon for the first time;
+# ChangeKey of the authenticated key under that session; and the refusals
+# of the handshakes a 3K3DES key does not answer. GetKeyVersion after the
+# change reads 55.
+
+name: genuine EV1 8K, ISO authentication and ChangeKey on a 3K3DES key
+case-id: hardware-genuine-ev1-8k-3k3des-handshakes
+origin: physical-card
+source: captured hardware trace
+issues: https://github.com/cindersocket/dfc-core/issues/10
+requires: auth-iso,auth-aes
+uid: 04304622216A80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV1
+picc-storage: 8192
+
+scan
+# One application with KS2 44: four 3K3DES keys, all-zero at creation.
+status   90CA000005C3C2C10F4400 => 00
+#
+# ISO (0x1A) on a 3K3DES key. The challenge is sixteen octets - two DES
+# blocks - and the reader chains its answer from the last of them.
+status   905A000003C3C2C100 => 00
+inject-random E0E907F46E65B9AF31B2F2D099D77404
+exchange native-apdu 901A0000010000 => 0F102C22F2E5D1FCC3C984706B2C532F91AF
+exchange native-apdu 90AF000020478565E8F305DFEF03433D08130DE3B7CA9AE1E3394D9995F6BCD9B4493EDD8200 => 845C96105D15D06EDD0C6BCF4290205B9100
+#
+# ChangeKey on the authenticated key, to a test pattern whose three
+# thirds differ. The card ends the session, so the answer has no CMAC.
+exchange native-apdu 90C4000021008DD891E0D44D1D1CA60E3F3B90B648737B43C726DCBC9B9DDC8C961686B09F4A00 => 9100
+#
+# The key version a DES-family key carries in its parity bits.
+exchange native-apdu 90640000010000 => 559100
+#
+# ISO again, under the pattern key, so the session below is genuine
+# three-key 3DES and not single DES in disguise.
+status   905A000003C3C2C100 => 00
+inject-random 70AD1902126C5F4EBD334E04DEA89DB2
+exchange native-apdu 901A0000010000 => AB0C3EFBEA630563C314E6E05054525191AF
+exchange native-apdu 90AF000020CAD62A07F5E1A49070B18D50746B117CA5F574458E4E4EAA39EF0876366171A300 => 1E336C5F3744354CF8AD7620CF567E379100
+#
+# The handshakes a 3K3DES key does not answer.
+status   905A000003C3C2C100 => 00
+exchange native-apdu 900A0000010000 => 91AE
+exchange native-apdu 90AA0000010000 => 91AE

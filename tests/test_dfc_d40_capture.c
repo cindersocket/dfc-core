@@ -46,8 +46,8 @@ static const uint8_t kRndB[] = {0xb2, 0x09, 0x4a, 0xa9, 0x33, 0x43, 0x75, 0x4f};
 static const uint8_t kEncRndB[] = {0x2a, 0x2c, 0xd1, 0xa3, 0xb4, 0x84, 0x82, 0x09};
 
 /* Captured: the reader's second frame, ek(RndA) || ek(RndB' xor previous). */
-static const uint8_t kReaderResponse[] = {0xd3, 0xf8, 0xf6, 0x02, 0x6a, 0x2b, 0x65, 0x80,
-                                          0x4a, 0x99, 0xa7, 0xb6, 0x42, 0xa0, 0x40, 0xd1};
+static const uint8_t kReaderResponse[] =
+    {0xd3, 0xf8, 0xf6, 0x02, 0x6a, 0x2b, 0x65, 0x80, 0x4a, 0x99, 0xa7, 0xb6, 0x42, 0xa0, 0x40, 0xd1};
 
 static MunitResult test_captured_d40_authentication(const MunitParameter params[], void* data) {
     (void)params;
@@ -88,8 +88,7 @@ static MunitResult test_captured_d40_authentication(const MunitParameter params[
             session, select_field, sizeof(select_field), response, sizeof(response), &response_len),
         ==,
         DfcVirtualPiccStatusOk);
-    munit_assert_memory_equal(
-        2, response, ((uint8_t[]){0x91, DFC_STATUS_APPLICATION_NOT_FOUND}));
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_APPLICATION_NOT_FOUND}));
 
     /* Select the application, least significant AID octet first on the wire. */
     const uint8_t select_app[] = {0x90, 0x5a, 0x00, 0x00, 0x03, 0x4f, 0x49, 0x53, 0x00};

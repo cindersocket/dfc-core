@@ -1,0 +1,16 @@
+# Synthetic EV1 4K vector: generation and capacity determine both
+# GetVersion frames.
+name: synthetic EV1 4K default version frames
+origin: synthetic
+feature-version: 5
+description: EV1 compatibility defaults remain available in v5
+source: synthetic
+case-id: dfc-v5-ev1-get-version-defaults
+uid: 0442381AD31090
+picc-generation: EV1
+picc-storage: 4096
+
+scan
+exchange native-apdu 9060000000 => 0401010100180591AF
+exchange native-apdu 90AF000000 => 0401010103180591AF
+exchange native-apdu 90AF000000 => 0442381AD31090000000000001249100

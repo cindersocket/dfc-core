@@ -1,0 +1,19 @@
+# Cross-binding application selection from the credential model's AID order.
+# D3494F is deliberately asymmetric: the semantic helper must place 4F49D3 on
+# the wire. A raw exchange creates that application first so a wrong byte order
+# fails as an observable card response, not merely as an encoder assertion.
+
+name: binding SelectApplication uses model AID order
+case-id: binding-select-application-aid-order
+origin: synthetic
+source: cross-binding public API contract
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000054F49D30F0100 => 00
+select-application D3494F => 9100
+assert   emulator.selected_application = 2

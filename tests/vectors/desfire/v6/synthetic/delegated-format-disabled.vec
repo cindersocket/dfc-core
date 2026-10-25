@@ -1,0 +1,63 @@
+# Protected application configuration can permanently disable delegated
+# formatting. The rejected command leaves the delegated file intact.
+name: delegated application format disabled
+origin: synthetic
+case-id: delegated-application-format-disabled
+feature-version: 6
+requires: ev2,delegated-applications
+source: dfc-core issue 130 regression coverage
+issues: https://github.com/cindersocket/dfc-core/issues/130
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+picc-dam-auth-key: 4142434445464748494A4B4C4D4E4F40
+picc-dam-mac-key: 5152535455565758595A5B5C5D5E5F50
+picc-dam-encryption-key: 6162636465666768696A6B6C6D6E6F60
+
+scan
+status   905A00000300000000 => 00
+inject-random 000102030405060708090A0B0C0D0E0F10111213
+exchange native-apdu 9071000008100600000000000000 => A80C0807CDAB160A5A11B8ACD774517E91AF
+exchange native-apdu 90AF000020EA4489E814CD8A9C40E45BC0863E0CF52A0B971F73F2851450EF12580BCD8CE400 => 013EB76388FE41ACFB57DC188D105026E930636D5FDE9CDDFB5FF5FC8C963C119100
+exchange native-apdu 90C900000A0A0B0C01000040000F8100 => 91AF
+exchange native-apdu 90AF0000303533CDD2BF1FEF31985E9C571E830DD384DD03DB9D574605BA92D490B6F1E9672C18FC0BB1975BF4388B83829330DE9B00 => 93F63E66CA7DA2C39100
+assert   apps[0].aid = 0C0B0A
+exchange native-apdu 905A00000B0A0B0CA2FBC09C14D3458300 => 9100
+
+# Authenticate with the delegated application master.
+inject-random 202122232425262728292A2B2C2D2E2F30313233
+exchange native-apdu 9071000008000600000000000000 => 22990872D9C4E22697FBF1B1B25EAB1991AF
+exchange native-apdu 90AF0000207E2D26549FA10ED3048676E2E946AED32C2A2966404B50A18E4E8CE1872571EC00 => 6868500769A3A579CBC550026C277EB4DD7B22275A0693F27C00767CD182A8559100
+
+# Create a file, then protect the application against formatting.
+exchange native-apdu 90CD00000F0600EEEE040000EE9C6759E0F2556100 => 2C66A0DADE3FD9B99100
+exchange native-apdu 903D00000B06000000040000C1C2C3C400 => 9100
+assert   files[0].data = C1C2C3C4
+exchange native-apdu 905C00001900EB67AD618F858251BAF9D85D1B24CD09ECB5AA1C290F9AF200 => 605560A30D275AA89100
+clear-dirty
+
+# The flag survives a new activation and authentication.
+field-off
+scan
+status   905A0000030A0B0C00 => 00
+inject-random 202122232425262728292A2B2C2D2E2F30313233
+exchange native-apdu 9071000008000600000000000000 => 22990872D9C4E22697FBF1B1B25EAB1991AF
+exchange native-apdu 90AF0000207E2D26549FA10ED3048676E2E946AED32C2A2966404B50A18E4E8CE1872571EC00 => 6868500769A3A579CBC550026C277EB4DD7B22275A0693F27C00767CD182A8559100
+exchange native-apdu 90FC000008CAB7B7A98113CA9600 => 919D
+exchange native-apdu 90BD0000070600000004000000 => C1C2C3C49100
+assert   credential.num_apps = 1
+assert   credential.num_files = 1
+assert   apps[0].aid = 0C0B0A
+assert   apps[0].key_settings_1 = 15
+assert   apps[0].key_settings_2 = 129
+assert   apps[0].keys[0] = ABABABABABABABABCDCDCDCDCDCDCDCD
+assert   files[0].app_index = 0
+assert   files[0].number = 6
+assert   files[0].data_len = 4
+assert   files[0].data = C1C2C3C4
+assert   credential.dirty = 0

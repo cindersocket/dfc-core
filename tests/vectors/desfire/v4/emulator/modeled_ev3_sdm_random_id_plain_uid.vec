@@ -1,0 +1,15 @@
+# PROVENANCE: Modeled from captured EV3 dynamic messaging wire shapes.
+name: EV3 Random ID plain UID mirror
+case-id: modeled-ev3-sdm-random-id-plain-uid
+origin: synthetic
+requires: ev3,sdm
+source: deterministic modeled fixture
+uid: 04A1B2C3D4E5F6
+picc-generation: EV3
+picc-storage: 4096
+picc-random-id: 1
+exchange native-apdu 90CA000005A1A1A10F8100 => 9100
+exchange native-apdu 905A000003A1A1A100 => 9100
+exchange native-apdu 90CD0000070140EEEE0E000000 => 9100
+exchange native-apdu 905F00000A0140EEEE81FFEF00000000 => 9100
+exchange native-apdu 90BD000007010000000E000000 => 30303030303030303030303030309100

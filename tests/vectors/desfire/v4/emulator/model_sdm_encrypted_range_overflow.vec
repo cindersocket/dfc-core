@@ -1,0 +1,20 @@
+# PROVENANCE: Synthetic overflow regression derived from captured SDM setup.
+name: SDM encrypted-file range rejects wrapping lengths
+origin: synthetic
+binding-applicability: core-model-only
+case-id: sdm-encrypted-range-overflow
+requires: ev3,sdm
+source: captured setup with deterministic malformed-model mutation
+issues: https://github.com/cindersocket/dfc-core/issues/17
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+exchange native-apdu 90CA00000FE8E8E80FB1043812D276000085010400 => 9100
+exchange native-apdu 905A000003E8E8E800 => 9100
+exchange native-apdu 90CD00000904050140EEEE60000000 => 9100
+exchange native-apdu 903D0000170414000010000000112233445566778899AABBCCDDEEFF00 => 9100
+exchange native-apdu 905F0000190440EEEED1FEE00000000E000014000014000020000034000000 => 9100
+assert credential.model_status = ok
+set-model files[0].sdm_encrypted_file_length = 4294967264
+assert credential.model_status = malformed
+field-off

@@ -108,7 +108,7 @@ Proximity uses `80` key, `81` option, `82` published time, and optional `83` bit
 
 Key sets use `80` key count, `81` maximum key size, `82` settings, and `A3` ordered sets. A set uses `80` number, `81` version, `82` key type, `83` initialized, and `A4` ordered keys. Applications with key sets omit the ordinary `A6` key list. Applications without key sets omit `A8`.
 
-Delegated state uses `80` slot, `81` version, `82` quota, and `83` free blocks. Transaction-MAC contents use `80` counter, `81` current MAC, `82` key type, `83` key version, `84` key, and `85` previous reader identifier.
+Delegated state uses `80` slot, `81` version, `82` quota, `83` free blocks, and optional v6 `84` format-disabled. PICC random ID uses DEFAULT FALSE `83` in the PICC container; optional v6 DEFAULT FALSE `90` selects the legacy prefix and is malformed without random ID. Versions 4 and 5 reject either new field when present. Format-disable settings and random-ID enablement are one-way command settings. Transaction-MAC contents use `80` counter, `81` current MAC, `82` key type, `83` key version, `84` key, and `85` previous reader identifier.
 
 SDM uses `80` options, `81` access rights, optional `82` through `89` values in the text-field order, and required `8A` read counter. Integers are non-negative canonical DER integers. Constructed fields use canonical DER lengths and field order.
 

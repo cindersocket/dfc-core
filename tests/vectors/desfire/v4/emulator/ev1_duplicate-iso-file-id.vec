@@ -1,0 +1,20 @@
+# A second application reusing an ISO file ID is rejected.
+#
+# Generated from tests/test_dfc_ev1_conformance.c test /duplicate-iso-file-id by recording
+# every ISO-DEP exchange the reference engine performed, then cross-checked:
+# all 4 literal byte expectations asserted by that test matched the
+# recording exactly, 0 mismatches.
+
+name: ev1 conformance: duplicate-iso-file-id
+case-id: ev1-duplicate-iso-file-id
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /duplicate-iso-file-id
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000070102030F2110E100 => 00
+status   90CA0000070405060F2110E100 => DE

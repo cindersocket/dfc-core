@@ -55,6 +55,7 @@ internal struct NativeStructSizes
     public uint Key;
     public uint Activation;
     public uint Snapshot;
+    public uint DiagnosticSnapshot;
     public uint ReaderState;
 }
 
@@ -91,6 +92,7 @@ internal unsafe struct NativePicc
     public byte KeySettings2;
     public byte AuthCommand;
     public byte RandomId;
+    public byte RandomIdLegacy;
     public byte FormatDisabled;
     public byte AtsLen;
     public fixed byte Ats[20];
@@ -155,6 +157,7 @@ internal unsafe struct NativeApplication
     public fixed byte CapabilityData[10];
     public byte Delegated;
     public byte DelegatedSlotVersion;
+    public byte DelegatedFormatDisabled;
     public byte HasAuthCommands;
     public byte AuthCommands;
     public byte HasPreferredAuthCommand;
@@ -172,6 +175,7 @@ internal unsafe struct NativeFile
     public int ValueLowerLimit;
     public int ValueUpperLimit;
     public int Value;
+    public int LimitedCreditValue;
     public int ValuePendingDelta;
     public uint RecordSize;
     public uint MaxRecords;
@@ -249,11 +253,16 @@ internal unsafe struct NativeSnapshot
     public byte AuthKeyNo;
     public byte Ev2Active;
     public byte Ev2KeyNo;
-    public fixed byte Ev2TransactionIdentifier[4];
-    public fixed byte Ev2EncryptionKey[16];
-    public fixed byte Ev2MacKey[16];
     public byte VirtualCardSelected;
     public byte ProximityVerified;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeDiagnosticSnapshot
+{
+    public fixed byte TransactionIdentifier[4];
+    public fixed byte EncryptionKey[16];
+    public fixed byte MacKey[16];
 }
 
 [StructLayout(LayoutKind.Sequential)]

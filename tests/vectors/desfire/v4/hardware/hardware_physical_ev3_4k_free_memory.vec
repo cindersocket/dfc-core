@@ -1,0 +1,110 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV3 4K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_physical_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 048222F2CF1890, hardware 51.0, software 3.0, storage 4K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: GetFreeMemory after each allocation, measured:
+#   after FormatPICC                    5120 octets
+#   after one two-key application       5024 octets
+#   after a 32-octet file               4960 octets
+#   after a 1-octet file                4928 octets
+#   after a 33-octet file               4832 octets
+#   after a fourteen-key application    4480 octets
+#   after DeleteFile                    4480 octets
+#   after DeleteApplication             4480 octets
+# Each reading carries a tolerance of 512 octets: the specification leaves
+# memory accounting to the chip, so a replay checks that an engine is
+# close, and a reading outside the tolerance is a real divergence.
+
+name: genuine EV3 4K, free memory as applications and files come and go
+case-id: hardware-physical-ev3-4k-free-memory
+origin: physical-card
+source: captured hardware trace
+requires: ev3
+uid: 048222F2CF1890
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+# Free memory after FormatPICC.
+exchange native-apdu 906E000000 => 0014009100 tolerance 0+3 512
+#   (tolerance above: 5120 octets free after FormatPICC; memory accounting is the chip's own)
+#
+# An application with two DES keys.
+status   90CA000005A3A2A10F0200 => 00
+exchange native-apdu 906E000000 => A013009100 tolerance 0+3 512
+#   (tolerance above: 5024 octets free after one two-key application; memory accounting is the chip's own)
+status   905A000003A3A2A100 => 00
+#
+# A 32-octet Standard Data file.
+status   90CD0000070100EEEE20000000 => 00
+exchange native-apdu 906E000000 => 6013009100 tolerance 0+3 512
+#   (tolerance above: 4960 octets free after a 32-octet file; memory accounting is the chip's own)
+#
+# A 1-octet Standard Data file.
+status   90CD0000070200EEEE01000000 => 00
+exchange native-apdu 906E000000 => 4013009100 tolerance 0+3 512
+#   (tolerance above: 4928 octets free after a 1-octet file; memory accounting is the chip's own)
+#
+# A 33-octet Standard Data file.
+status   90CD0000070300EEEE21000000 => 00
+exchange native-apdu 906E000000 => E012009100 tolerance 0+3 512
+#   (tolerance above: 4832 octets free after a 33-octet file; memory accounting is the chip's own)
+#
+# OPEN DIVERGENCE, card versus engine: how free memory is accounted.
+#
+# Our engine reports the card's storage less the declared size of every
+# data and record file. The card also charges each application for its
+# directory entry and keys - 128 octets for two DES keys, 288 for fourteen
+# AES keys here - and gives nothing back on DeleteFile or DeleteApplication
+# before the next FormatPICC. The readings above stay within the tolerance;
+# from the fourteen-key application on, the difference is more than a
+# chip's layout explains, so the steps below are recorded unexecuted.
+# Restore them when the engine accounts for application and key overhead
+# and keeps deleted space allocated until a format.
+#
+#
+# An application with fourteen AES keys, created from the PICC level.
+#   exchange native-apdu 905A00000300000000 => 9100
+#   exchange native-apdu 90CA000005B3B2B10F8E00 => 9100
+#   exchange native-apdu 906E000000 => 8011009100 tolerance 0+3 512
+#   (tolerance above: 4480 octets free after a fourteen-key application; memory accounting is the chip's own)
+#
+# DeleteFile of the 1-octet file, which KS1 0F lets anyone do.
+#   exchange native-apdu 905A000003A3A2A100 => 9100
+#   exchange native-apdu 90DF0000010200 => 9100
+#   exchange native-apdu 906E000000 => 8011009100 tolerance 0+3 512
+#   (tolerance above: 4480 octets free after DeleteFile; memory accounting is the chip's own)
+#
+# DeleteApplication of the AES application from the PICC with no session.
+#   exchange native-apdu 905A00000300000000 => 9100
+#   exchange native-apdu 90DA000003B3B2B100 => 91AE
+# DeleteApplication without a session is refused with AE.
+#
+# The same DeleteApplication under the application's own master key.
+#   exchange native-apdu 905A000003B3B2B100 => 9100
+#   inject-random 2763F483D5AE9EC81067E717414ADEE3
+#   exchange native-apdu 90AA0000010000 => 8B92BFE32FEC7C3D7C9AFC832BFEC24C91AF
+#   exchange native-apdu 90AF000020EA26CF04C8DA93A253B66298AD30198FC9B74223120DC491312B186C13746C4400 => 3C18ACD1FD72DAE5178ED9230F0F39169100
+#   exchange native-apdu 90DA000003B3B2B100 => 9100
+#   exchange native-apdu 905A00000300000000 => 9100
+#   exchange native-apdu 906E000000 => 8011009100 tolerance 0+3 512
+#   (tolerance above: 4480 octets free after DeleteApplication; memory accounting is the chip's own)

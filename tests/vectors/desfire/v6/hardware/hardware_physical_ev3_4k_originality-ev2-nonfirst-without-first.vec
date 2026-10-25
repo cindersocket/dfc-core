@@ -1,0 +1,21 @@
+# PROVENANCE: measured from the physical EV3 4K card over PC/SC.
+# Factory key material is unknown; continuation intentionally fails.
+name: physical EV3 special authentication originality-ev2-nonfirst-without-first
+case-id: hardware-physical-ev3-4k-originality-ev2-nonfirst-without-first
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+replayable: false
+requires: ev3
+uid: 048222F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-commands: 23
+scan
+exchange native-apdu 90640000010100 => 009100
+exchange native-apdu 90770000010100 => 4C5ADAB4385EB11685B0DF9F742E970491AF
+exchange native-apdu 90AF000020000000000000000000000000000000000000000000000000000000000000000000 => 91AE
+field-off

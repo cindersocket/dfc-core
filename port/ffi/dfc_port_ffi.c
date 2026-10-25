@@ -70,7 +70,10 @@ void dfc_ffi_port_system_random(uint8_t* buf, size_t len) {
     size_t filled = 0;
     while(filled < len) {
         ssize_t n = read(fd, buf + filled, len - filled);
-        if(n > 0) { filled += (size_t)n; continue; }
+        if(n > 0) {
+            filled += (size_t)n;
+            continue;
+        }
         if(n < 0 && errno == EINTR) continue;
         close(fd);
         abort();
@@ -106,11 +109,17 @@ bool dfc_random_fill(uint8_t* buf, size_t len) {
     return true;
 }
 
+void dfc_random_operation_begin(void) {
+    random_failed = false;
+}
+
+bool dfc_random_failure_is_retryable(void) {
+    return random_failed;
+}
+
 void* dfc_platform_alloc(size_t size, DfcAllocTag tag) {
     DFC_UNUSED(tag);
-    void* block = malloc(size);
-    if(block) memset(block, 0, size);
-    return block;
+    return calloc(1, size);
 }
 
 void dfc_platform_free(void* ptr) {

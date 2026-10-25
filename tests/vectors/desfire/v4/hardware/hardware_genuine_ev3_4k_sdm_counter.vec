@@ -1,0 +1,16 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: EV3 secure dynamic messaging counter and MAC
+case-id: hardware-genuine-ev3-4k-sdm-counter
+origin: physical-card
+requires: ev3,sdm
+source: captured hardware setup, unauthenticated read, and file counter responses
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+exchange native-apdu 90CA00000FE7E7E70FB1043712D276000085010300 => 9100
+exchange native-apdu 905A000003E7E7E700 => 9100
+exchange native-apdu 90CD00000901010140EEEE80000000 => 9100
+exchange native-apdu 905F0000100140EEEE41FEE000000000000006000000 => 9100
+exchange native-apdu 90F60000010100 => 00000000009100
+exchange native-apdu 90BD0000070100000016000000 => 303030303031303739364337384232323843323539339100
+exchange native-apdu 90F60000010100 => 01000000009100

@@ -1,0 +1,122 @@
+# PROVENANCE: measured, not generated. Every response byte below was captured
+# from a genuine DESFire EV1 8K over PC/SC by a PC/SC capture tool
+# and is used here as an expectation for our emulator. As with the other
+# hardware_genuine_*.vec files, this vector is the opposite of the rest
+# of the corpus: the others were recorded from the reference engine, so they
+# pin what we decided; this one pins what the silicon does. A mismatch here is
+# either a real divergence or a difference we can justify in writing, never a
+# vector to be re-recorded from our engine.
+#
+# Card: UID 04304622216A80, hardware 1.0, software 1.4, storage 8K. Formatted
+# with FormatPICC under the all-zero PICC test key, then provisioned with
+# a synthetic structure whose every key is a published test key. That is what
+# makes an authenticated capture safe to commit and replayable: no key material
+# enters the tree, and our engine derives the same session key from the same
+# pinned nonces.
+#
+# RndA is the fixed constant the recorder uses; RndB is the card's, recovered
+# by decrypting its first authentication frame with the test key and
+# pinned here with inject-random so our engine offers the same challenge.
+# What this vector is for: how directory answers split across frames.
+#   GetApplicationIDs, 28 AIDs:  [57, 27] octets per frame
+#   GetDFNames, 4 applications:  [14, 14, 14, 5]
+#   GetISOFileIDs, 32 files:     [58, 6]
+#   GetFileIDs, 32 files:        [32]
+# A frame carries only whole entries, as many as fit in 59 octets, and
+# GetDFNames sends one application per frame.
+
+name: genuine EV1 8K, directory listings that chain across frames
+case-id: hardware-genuine-ev1-8k-directory
+origin: physical-card
+source: captured hardware trace
+uid: 04304622216A80
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV1
+picc-storage: 8192
+
+scan
+# Twenty-eight applications, the most a card holds. The first three carry
+# an ISO file identifier and a DF name, the fourth an identifier only.
+status   90CA0000101020E00F2100E2D2760000850120556600 => 00
+status   90CA0000101120E00F2101E2D2760000850121556600 => 00
+status   90CA0000101220E00F2102E2D2760000850122556600 => 00
+status   90CA0000071320E00F2103E200 => 00
+status   90CA0000051420E00F0100 => 00
+status   90CA0000051520E00F0100 => 00
+status   90CA0000051620E00F0100 => 00
+status   90CA0000051720E00F0100 => 00
+status   90CA0000051820E00F0100 => 00
+status   90CA0000051920E00F0100 => 00
+status   90CA0000051A20E00F0100 => 00
+status   90CA0000051B20E00F0100 => 00
+status   90CA0000051C20E00F0100 => 00
+status   90CA0000051D20E00F0100 => 00
+status   90CA0000051E20E00F0100 => 00
+status   90CA0000051F20E00F0100 => 00
+status   90CA0000052020E00F0100 => 00
+status   90CA0000052120E00F0100 => 00
+status   90CA0000052220E00F0100 => 00
+status   90CA0000052320E00F0100 => 00
+status   90CA0000052420E00F0100 => 00
+status   90CA0000052520E00F0100 => 00
+status   90CA0000052620E00F0100 => 00
+status   90CA0000052720E00F0100 => 00
+status   90CA0000052820E00F0100 => 00
+status   90CA0000052920E00F0100 => 00
+status   90CA0000052A20E00F0100 => 00
+status   90CA0000052B20E00F0100 => 00
+status   90CA0000053F20E00F0100 => CE
+# A twenty-ninth application is refused with CE.
+#
+# GetApplicationIDs over twenty-eight three-octet AIDs.
+exchange native-apdu 906A000000 => 1020E01120E01220E01320E01420E01520E01620E01720E01820E01920E01A20E01B20E01C20E01D20E01E20E01F20E02020E02120E02220E091AF
+exchange native-apdu 90AF000000 => 2320E02420E02520E02620E02720E02820E02920E02A20E02B20E09100
+#
+# GetDFNames over the four applications with ISO identifiers.
+exchange native-apdu 906D000000 => 1020E000E2D2760000850120556691AF
+exchange native-apdu 90AF000000 => 1120E001E2D2760000850121556691AF
+exchange native-apdu 90AF000000 => 1220E002E2D2760000850122556691AF
+exchange native-apdu 90AF000000 => 1320E003E29100
+#
+# Thirty-two files with ISO identifiers in the fourth application.
+status   905A0000031320E000 => 00
+status   90CD00000900001000EEEE01000000 => 00
+status   90CD00000901011000EEEE01000000 => 00
+status   90CD00000902021000EEEE01000000 => 00
+status   90CD00000903031000EEEE01000000 => 00
+status   90CD00000904041000EEEE01000000 => 00
+status   90CD00000905051000EEEE01000000 => 00
+status   90CD00000906061000EEEE01000000 => 00
+status   90CD00000907071000EEEE01000000 => 00
+status   90CD00000908081000EEEE01000000 => 00
+status   90CD00000909091000EEEE01000000 => 00
+status   90CD0000090A0A1000EEEE01000000 => 00
+status   90CD0000090B0B1000EEEE01000000 => 00
+status   90CD0000090C0C1000EEEE01000000 => 00
+status   90CD0000090D0D1000EEEE01000000 => 00
+status   90CD0000090E0E1000EEEE01000000 => 00
+status   90CD0000090F0F1000EEEE01000000 => 00
+status   90CD00000910101000EEEE01000000 => 00
+status   90CD00000911111000EEEE01000000 => 00
+status   90CD00000912121000EEEE01000000 => 00
+status   90CD00000913131000EEEE01000000 => 00
+status   90CD00000914141000EEEE01000000 => 00
+status   90CD00000915151000EEEE01000000 => 00
+status   90CD00000916161000EEEE01000000 => 00
+status   90CD00000917171000EEEE01000000 => 00
+status   90CD00000918181000EEEE01000000 => 00
+status   90CD00000919191000EEEE01000000 => 00
+status   90CD0000091A1A1000EEEE01000000 => 00
+status   90CD0000091B1B1000EEEE01000000 => 00
+status   90CD0000091C1C1000EEEE01000000 => 00
+status   90CD0000091D1D1000EEEE01000000 => 00
+status   90CD0000091E1E1000EEEE01000000 => 00
+status   90CD0000091F1F1000EEEE01000000 => 00
+#
+# GetISOFileIDs over thirty-two two-octet identifiers, and GetFileIDs.
+exchange native-apdu 9061000000 => 00100110021003100410051006100710081009100A100B100C100D100E100F1010101110121013101410151016101710181019101A101B101C1091AF
+exchange native-apdu 90AF000000 => 1D101E101F109100
+exchange native-apdu 906F000000 => 000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F9100

@@ -168,7 +168,8 @@ static MunitResult test_user_ats_answers_rats(const MunitParameter params[], voi
 }
 
 /* A credential with no ATS still gets the engine's default. */
-static MunitResult test_default_ats_without_override(const MunitParameter params[], void* user_data) {
+static MunitResult
+    test_default_ats_without_override(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
 
@@ -179,8 +180,7 @@ static MunitResult test_default_ats_without_override(const MunitParameter params
     munit_assert_int(
         dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
     munit_assert_size(activation.ats_len, ==, 5);
-    munit_assert_memory_equal(
-        5, activation.ats, ((uint8_t[]){0x05, 0x65, 0x81, 0x02, 0x80}));
+    munit_assert_memory_equal(5, activation.ats, ((uint8_t[]){0x05, 0x65, 0x81, 0x02, 0x80}));
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
@@ -237,8 +237,15 @@ static MunitResult test_format_disabled_refuses(const MunitParameter params[], v
     size_t response_len = 0;
     const uint8_t master_key[8] = {0};
     authenticate_legacy_key0(
-        session, master_key, sizeof(master_key), response, sizeof(response), &response_len, NULL,
-        NULL, DFC_STATUS_OK);
+        session,
+        master_key,
+        sizeof(master_key),
+        response,
+        sizeof(response),
+        &response_len,
+        NULL,
+        NULL,
+        DFC_STATUS_OK);
     dfc_credential_clear_dirty(&credential);
 
     const uint8_t format[] = {0x90, 0xFC, 0x00, 0x00, 0x00};
@@ -249,7 +256,7 @@ static MunitResult test_format_disabled_refuses(const MunitParameter params[], v
         DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 2);
     munit_assert_uint8(response[0], ==, 0x91);
-    munit_assert_uint8(response[1], ==, DFC_STATUS_AUTHENTICATION_ERR);
+    munit_assert_uint8(response[1], ==, DFC_STATUS_ILLEGAL_COMMAND_CODE);
     munit_assert_size(credential.num_apps, ==, 1);
     munit_assert_size(credential.num_files, ==, 1);
     munit_assert_false(credential.dirty);
@@ -275,8 +282,15 @@ static MunitResult test_format_allowed_wipes(const MunitParameter params[], void
     size_t response_len = 0;
     const uint8_t master_key[8] = {0};
     authenticate_legacy_key0(
-        session, master_key, sizeof(master_key), response, sizeof(response), &response_len, NULL,
-        NULL, DFC_STATUS_OK);
+        session,
+        master_key,
+        sizeof(master_key),
+        response,
+        sizeof(response),
+        &response_len,
+        NULL,
+        NULL,
+        DFC_STATUS_OK);
 
     const uint8_t format[] = {0x90, 0xFC, 0x00, 0x00, 0x00};
     munit_assert_int(
@@ -333,42 +347,22 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/user-ats-answers-rats",
-     test_user_ats_answers_rats,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
+    {"/user-ats-answers-rats", test_user_ats_answers_rats, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/default-ats-without-override",
      test_default_ats_without_override,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/sak-and-atqa-override",
-     test_sak_and_atqa_override,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
+    {"/sak-and-atqa-override", test_sak_and_atqa_override, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/format-disabled-refuses",
      test_format_disabled_refuses,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/format-allowed-wipes",
-     test_format_allowed_wipes,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
-    {"/ats-consistency-check",
-     test_ats_consistency_check,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
+    {"/format-allowed-wipes", test_format_allowed_wipes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/ats-consistency-check", test_ats_consistency_check, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

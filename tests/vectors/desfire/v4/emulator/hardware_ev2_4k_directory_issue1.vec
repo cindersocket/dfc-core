@@ -1,0 +1,18 @@
+# PROVENANCE: Read responses from physical EV2 4K card capture attached to dfc-core issue 1.
+# The create commands reconstruct the captured application and file for replay.
+name: captured EV2 application directory and file settings
+case-id: hardware-ev2-4k-directory-issue1
+origin: physical-card
+requires: ev2
+source: dfc-core issue 1 card capture
+uid: 0442381AD31090
+picc-generation: EV2
+picc-storage: 4096
+scan
+exchange native-apdu 90CA0000053141F50F8E00 => 9100
+exchange native-apdu 906A000000 => 3141F59100
+exchange native-apdu 905A0000033141F500 => 9100
+exchange native-apdu 90CD0000070103001205000000 => 9100
+exchange native-apdu 906F000000 => 019100
+exchange native-apdu 90F50000010100 => 000300120500009100
+field-off

@@ -1,0 +1,29 @@
+# PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
+name: genuine EV3 native transaction and standard ISO file access
+case-id: hardware-genuine-ev3-4k-transactions
+origin: physical-card
+requires: ev1,backup-files,record-files
+source: captured hardware behavior
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+scan
+exchange native-apdu 90CA00000EE3E3E30FA113E1D276000085010200 => 9100
+exchange native-apdu 905A000003E3E3E300 => 9100
+exchange native-apdu 90CD0000090114E100E0EE10000000 => 9100
+exchange native-apdu 90CB0000090215E100EEEE10000000 => 9100
+exchange native-apdu 90C100000C0316E100EEEE04000003000000 => 9100
+exchange native-apdu 906F000000 => 0102039100
+exchange native-apdu 903D00001702000000100000112233445566778899AABBCCDDEEFF0000 => 9100
+exchange native-apdu 903B00000B03000000040000A1A2A3A400 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BD0000070200000000000000 => 112233445566778899AABBCCDDEEFF009100
+exchange native-apdu 90BB0000070300000000000000 => A1A2A3A49100
+field-off
+scan
+exchange iso-apdu 00A4000002E11300 => 9000
+exchange iso-apdu 00A4000002E11500 => 9000
+exchange iso-apdu 00B0000000 => 112233445566778899AABBCCDDEEFF009000
+exchange iso-apdu 00A4000002E11600 => 9000
+exchange iso-apdu 00B2010400 => A1A2A3A49000
+field-off

@@ -1,0 +1,24 @@
+# PROVENANCE: measured from the physical EV3 4K card over PC/SC.
+name: physical EV3 ISO 7816 authentication app-2tdea
+case-id: hardware-physical-ev3-4k-iso-auth-app-2tdea
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+requires: ev3,iso7816-auth
+uid: 048222F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-commands: 23
+scan
+exchange native-apdu 90CA000005A3A2A10F0400 => 9100
+exchange native-apdu 905A000003A3A2A100 => 9100
+inject-random 48019FEF86AD7486
+exchange iso-apdu 0084000008 => 48019FEF86AD74869000
+exchange iso-apdu 008202801005EEC31F1E6A0CC343623EB1F0FA2257 => 9000
+inject-random 025477954B07343A
+exchange iso-apdu 0088028008A7A6A5A4A3A2A1A000 => 0031D850C0C8623246F89CA4D5D7235A9000
+exchange native-apdu 9045000000 => 0F04DD6ED9C896FA4F639100
+field-off

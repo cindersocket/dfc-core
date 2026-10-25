@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import ctypes as C
+import operator
 import os
 import sys
 from importlib.resources import files
 from pathlib import Path
 
-ABI_VERSION = 4
+from ._layout import CONSTANTS as LAYOUT_CONSTANTS
+from ._layout import SIZE_FIELDS as LAYOUT_SIZE_FIELDS
+from ._layout import STRUCTS as LAYOUT_STRUCTS
+from ._layout import VALUES as LAYOUT_VALUES
+
+ABI_VERSION = LAYOUT_VALUES["DFC_FFI_ABI_VERSION"]
 OK, INVALID_ARGUMENT, BUFFER_TOO_SMALL, OUT_OF_MEMORY, UNSUPPORTED, RANDOM_FAILED = (
-    0,
-    -1,
-    -2,
-    -3,
-    -4,
-    -5,
+    LAYOUT_VALUES["DFC_FFI_OK"],
+    LAYOUT_VALUES["DFC_FFI_INVALID_ARGUMENT"],
+    LAYOUT_VALUES["DFC_FFI_BUFFER_TOO_SMALL"],
+    LAYOUT_VALUES["DFC_FFI_OUT_OF_MEMORY"],
+    LAYOUT_VALUES["DFC_FFI_UNSUPPORTED"],
+    LAYOUT_VALUES["DFC_FFI_RANDOM_FAILED"],
 )
-OWNER_PICC = -1
-MESSAGE_MAX = 96
+OWNER_PICC = LAYOUT_VALUES["DFC_FFI_OWNER_PICC"]
+PICC_BUFFER_TOO_SMALL = LAYOUT_VALUES["DFC_FFI_PICC_BUFFER_TOO_SMALL"]
+MESSAGE_MAX = LAYOUT_VALUES["DFC_FFI_MESSAGE_MAX"]
+AUTH_AES = LAYOUT_VALUES["DFC_FFI_AUTH_AES"]
+ISO_AUTH_TDEA2 = LAYOUT_VALUES["DFC_FFI_ISO_AUTH_TDEA2"]
 Handle = C.c_void_p
 P8 = C.POINTER(C.c_uint8)
 
@@ -68,21 +77,7 @@ class Capabilities(C.Structure):
 
 
 class StructSizes(C.Structure):
-    _fields_ = [
-        (name, C.c_uint32)
-        for name in [
-            "capabilities",
-            "error",
-            "card",
-            "picc",
-            "application",
-            "file",
-            "key",
-            "activation",
-            "snapshot",
-            "reader_state",
-        ]
-    ]
+    _fields_ = [(name, C.c_uint32) for name, _type_name in LAYOUT_SIZE_FIELDS]
 
 
 class Error(C.Structure):
@@ -116,6 +111,7 @@ class PiccSettings(C.Structure):
                 "key_settings_2",
                 "auth_command",
                 "random_id",
+                "random_id_legacy",
                 "format_disabled",
                 "ats_len",
             ]
@@ -186,6 +182,7 @@ class Application(C.Structure):
             for n in [
                 "delegated",
                 "delegated_slot_version",
+                "delegated_format_disabled",
                 "has_auth_commands",
                 "auth_commands",
                 "has_preferred_auth_command",
@@ -203,7 +200,13 @@ class File(C.Structure):
         + [(n, C.c_uint32) for n in ["declared_size", "data_len"]]
         + [
             (n, C.c_int32)
-            for n in ["value_lower_limit", "value_upper_limit", "value", "value_pending_delta"]
+            for n in [
+                "value_lower_limit",
+                "value_upper_limit",
+                "value",
+                "limited_credit_value",
+                "value_pending_delta",
+            ]
         ]
         + [
             (n, C.c_uint32)
@@ -290,13 +293,20 @@ class Snapshot(C.Structure):
             for n in ["dirty", "auth_mode", "auth_key_no", "ev2_active", "ev2_key_no"]
         ]
         + [
-            ("ev2_transaction_identifier", C.c_uint8 * 4),
-            ("ev2_encryption_key", C.c_uint8 * 16),
-            ("ev2_mac_key", C.c_uint8 * 16),
             ("virtual_card_selected", C.c_uint8),
             ("proximity_verified", C.c_uint8),
         ]
     )
+
+
+class DiagnosticSnapshot(C.Structure):
+    """Secret-bearing native state. Keep this out of the public Python API."""
+
+    _fields_ = [
+        ("transaction_identifier", C.c_uint8 * 4),
+        ("encryption_key", C.c_uint8 * 16),
+        ("mac_key", C.c_uint8 * 16),
+    ]
 
 
 class ReaderState(C.Structure):
@@ -310,63 +320,37 @@ class ReaderState(C.Structure):
     ]
 
 
-STRUCTS = (
-    Capabilities,
-    Error,
-    Card,
-    PiccSettings,
-    Application,
-    File,
-    Key,
-    Activation,
-    Snapshot,
-    ReaderState,
-)
 RANDOM_CALLBACK = C.CFUNCTYPE(C.c_int32, C.c_void_p, P8, C.c_size_t)
 
 
 def layout_fingerprint() -> int:
-    """Mirror dfc_ffi_layout_fingerprint using the active ctypes ABI."""
+    """Hash the complete generated FFI contract using the active ctypes ABI."""
     value = 14695981039346656037
     mask = (1 << 64) - 1
 
     def word(number: int) -> None:
         nonlocal value
-        for shift in range(0, C.sizeof(C.c_size_t) * 8, 8):
+        for shift in range(0, 64, 8):
             value ^= (number >> shift) & 0xFF
             value = (value * 1099511628211) & mask
 
-    word(ABI_VERSION)
-    entries = (
-        (Capabilities, "generation_ev1", "max_applications", "key_pool_size"),
-        (Error, "line", "message"),
-        (Card, "uid", "hardware_version", "static_signature"),
-        (
-            PiccSettings,
-            "ats",
-            "ev2_capabilities",
-            "virtual_card_installation_id",
-            "dam_auth_key",
-            "preferred_auth_command",
-        ),
-        (Application, "aid", "key_set_versions", "capability_data", "preferred_auth_command"),
-        (File, "access_rights", "number", "transaction_mac_key", "previous_reader_id"),
-        (Key, "value", "version"),
-        (Activation, "uid", "protocol", "rf_detail"),
-        (
-            Snapshot,
-            "selected_aid",
-            "ev2_transaction_identifier",
-            "ev2_mac_key",
-            "proximity_verified",
-        ),
-        (ReaderState, "auth_mode", "ev2_transaction_identifier", "ev2_reader_capabilities"),
-    )
-    for structure, *fields in entries:
+    for _name, number in LAYOUT_CONSTANTS:
+        word(number & mask)
+    for structure_name, fields in LAYOUT_STRUCTS:
+        structure = globals()[structure_name]
         word(C.sizeof(structure))
         for field in fields:
             word(getattr(structure, field).offset)
     return value
+
+
+def require_layout_fingerprint(actual: int) -> None:
+    expected = layout_fingerprint()
+    if actual != expected:
+        raise ImportError(
+            "dfc native layout fingerprint mismatch: "
+            f"native {actual:#018x}, Python {expected:#018x}"
+        )
 
 
 def _library_candidates() -> list[Path | str]:
@@ -392,11 +376,13 @@ def _library_candidates() -> list[Path | str]:
 
 def _declare(lib: C.CDLL) -> None:
     lib.dfc_ffi_abi_version.restype = C.c_uint32
-    if hasattr(lib, "dfc_ffi_layout_fingerprint"):
+    try:
         lib.dfc_ffi_layout_fingerprint.restype = C.c_uint64
+    except AttributeError as error:
+        raise ImportError("dfc native library has no layout fingerprint") from error
     lib.dfc_ffi_struct_sizes.argtypes = [C.POINTER(StructSizes)]
     lib.dfc_ffi_capabilities.argtypes = [C.POINTER(Capabilities)]
-    for name in ("credential_free", "picc_free", "reader_session_free", "reader_exchange_free"):
+    for name in ("credential_free", "picc_free"):
         getattr(lib, f"dfc_ffi_{name}").argtypes = [Handle]
     # Pointer-heavy calls use explicit signatures where ctypes conversion matters.
     lib.dfc_ffi_credential_parse_text.argtypes = [
@@ -438,7 +424,11 @@ def _declare(lib: C.CDLL) -> None:
     ]
     # A void pointer permits NULL as well as a live CFUNCTYPE callback.
     lib.dfc_ffi_picc_create.argtypes = [Handle, C.c_void_p, C.c_void_p, C.POINTER(Handle)]
-    for name, typ in (("activate", Activation), ("snapshot", Snapshot)):
+    for name, typ in (
+        ("activate", Activation),
+        ("snapshot", Snapshot),
+        ("diagnostic_snapshot", DiagnosticSnapshot),
+    ):
         getattr(lib, f"dfc_ffi_picc_{name}").argtypes = [Handle, C.POINTER(typ)]
     for name in ("exchange", "frame_exchange"):
         getattr(lib, f"dfc_ffi_picc_{name}").argtypes = [
@@ -449,10 +439,108 @@ def _declare(lib: C.CDLL) -> None:
             C.c_size_t,
             C.POINTER(C.c_size_t),
         ]
+    lib.dfc_ffi_picc_response_capacity.argtypes = []
+    lib.dfc_ffi_picc_response_capacity.restype = C.c_size_t
     lib.dfc_ffi_picc_export.argtypes = [Handle, C.POINTER(Handle)]
+    lib.dfc_ffi_picc_advance_time.argtypes = [Handle, C.c_uint32]
     lib.dfc_ffi_reader_session_new.argtypes = [C.POINTER(Handle)]
-    lib.dfc_ffi_reader_exchange_new.argtypes = [C.POINTER(Handle)]
+    lib.dfc_ffi_reader_session_new.restype = C.c_int32
+    lib.dfc_ffi_reader_session_free.argtypes = [Handle]
+    lib.dfc_ffi_reader_session_free.restype = None
+    lib.dfc_ffi_reader_session_clear.argtypes = [Handle]
+    lib.dfc_ffi_reader_session_clear.restype = None
     lib.dfc_ffi_reader_session_state.argtypes = [Handle, C.POINTER(ReaderState)]
+    lib.dfc_ffi_reader_session_state.restype = C.c_int32
+    lib.dfc_ffi_reader_exchange_new.argtypes = [C.POINTER(Handle)]
+    lib.dfc_ffi_reader_exchange_new.restype = C.c_int32
+    lib.dfc_ffi_reader_exchange_free.argtypes = [Handle]
+    lib.dfc_ffi_reader_exchange_free.restype = None
+    lib.dfc_ffi_reader_authenticate_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_reader_authenticate_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_authenticate_iso7816_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+        P8,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_reader_authenticate_iso7816_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_authenticate_ev2_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        P8,
+        P8,
+        C.c_size_t,
+    ]
+    lib.dfc_ffi_reader_authenticate_ev2_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_exchange_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+        C.c_int32,
+    ]
+    lib.dfc_ffi_reader_exchange_begin.restype = C.c_int32
+    for name in ("write_data", "write_record"):
+        function = getattr(lib, f"dfc_ffi_reader_{name}_begin")
+        function.argtypes = [
+            Handle,
+            Handle,
+            C.c_uint32,
+            C.c_uint8,
+            C.c_uint32,
+            P8,
+            C.c_size_t,
+            C.c_uint8,
+        ]
+        function.restype = C.c_int32
+    lib.dfc_ffi_reader_update_record_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        C.c_uint8,
+        C.c_uint32,
+        C.c_uint32,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+    ]
+    lib.dfc_ffi_reader_update_record_begin.restype = C.c_int32
+    lib.dfc_ffi_reader_create_delegated_application_begin.argtypes = [
+        Handle,
+        Handle,
+        C.c_uint32,
+        P8,
+        C.c_size_t,
+        P8,
+        P8,
+        P8,
+        P8,
+        C.c_size_t,
+        C.c_uint8,
+    ]
+    lib.dfc_ffi_reader_create_delegated_application_begin.restype = C.c_int32
     lib.dfc_ffi_reader_step.argtypes = [
         Handle,
         P8,
@@ -461,9 +549,36 @@ def _declare(lib: C.CDLL) -> None:
         C.c_size_t,
         C.POINTER(C.c_size_t),
     ]
+    lib.dfc_ffi_reader_step.restype = C.c_int32
     lib.dfc_ffi_reader_result_data.argtypes = [Handle, P8, C.c_size_t, C.POINTER(C.c_size_t)]
+    lib.dfc_ffi_reader_result_data.restype = C.c_int32
     lib.dfc_ffi_reader_result_status.argtypes = [Handle]
     lib.dfc_ffi_reader_result_status.restype = C.c_uint8
+    lib.dfc_ffi_reader_change_key_cryptogram.argtypes = [
+        Handle,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        P8,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.POINTER(C.c_size_t),
+    ]
+    lib.dfc_ffi_reader_change_key_cryptogram.restype = C.c_int32
+    lib.dfc_ffi_reader_change_key_ev2_data.argtypes = [
+        Handle,
+        C.c_uint8,
+        C.c_uint8,
+        P8,
+        P8,
+        C.c_uint8,
+        P8,
+        C.c_size_t,
+        C.POINTER(C.c_size_t),
+    ]
+    lib.dfc_ffi_reader_change_key_ev2_data.restype = C.c_int32
 
 
 _loaded: C.CDLL | None = None
@@ -482,15 +597,11 @@ def library() -> C.CDLL:
                 raise ImportError(f"dfc ABI {lib.dfc_ffi_abi_version()} is not {ABI_VERSION}")
             actual = StructSizes()
             lib.dfc_ffi_struct_sizes(C.byref(actual))
-            expected = [C.sizeof(t) for t in STRUCTS]
-            got = [getattr(actual, n) for n, _ in StructSizes._fields_]
+            expected = [C.sizeof(globals()[type_name]) for _field, type_name in LAYOUT_SIZE_FIELDS]
+            got = [getattr(actual, field) for field, _type_name in LAYOUT_SIZE_FIELDS]
             if got != expected:
                 raise ImportError(f"dfc structure layout mismatch: native {got}, Python {expected}")
-            if (
-                hasattr(lib, "dfc_ffi_layout_fingerprint")
-                and lib.dfc_ffi_layout_fingerprint() != layout_fingerprint()
-            ):
-                raise ImportError("dfc structure field layout fingerprint mismatch")
+            require_layout_fingerprint(lib.dfc_ffi_layout_fingerprint())
             _loaded = lib
             return lib
         except (OSError, ImportError) as exc:
@@ -515,6 +626,40 @@ def variable_output(call: object, *args: object) -> bytes:
     status = call(*args, out, size.value, C.byref(size))  # type: ignore[operator]
     raise_status(status)
     return bytes(out[: size.value])
+
+
+def _integer(value: int, name: str) -> int:
+    from .errors import InvalidArgumentError
+
+    try:
+        return operator.index(value)
+    except TypeError as error:
+        raise InvalidArgumentError(-1, f"{name} must be an integer") from error
+
+
+def unsigned(value: int, bits: int, name: str) -> int:
+    """Return ``value`` unchanged if it fits an unsigned ``bits``-wide native parameter.
+
+    ctypes truncates silently, so ``comm_mode=256`` would reach the core as 0 (plain).
+    A value that does not fit is refused as ``InvalidArgumentError`` instead.
+    """
+    from .errors import InvalidArgumentError
+
+    number = _integer(value, name)
+    if not 0 <= number < 1 << bits:
+        raise InvalidArgumentError(-1, f"{name} does not fit an unsigned {bits}-bit integer")
+    return number
+
+
+def signed(value: int, bits: int, name: str) -> int:
+    """Return ``value`` unchanged if it fits a signed ``bits``-wide native parameter."""
+    from .errors import InvalidArgumentError
+
+    number = _integer(value, name)
+    limit = 1 << (bits - 1)
+    if not -limit <= number < limit:
+        raise InvalidArgumentError(-1, f"{name} does not fit a signed {bits}-bit integer")
+    return number
 
 
 def raise_status(status: int) -> None:

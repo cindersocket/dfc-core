@@ -104,6 +104,31 @@ static void assert_get_value(DfcVirtualPiccSession* session, uint8_t file_no, in
     assert_response(session, command, command_len, expected, sizeof(expected));
 }
 
+static void assert_value_file_settings(
+    DfcVirtualPiccSession* session,
+    uint8_t file_no,
+    uint8_t comm_settings,
+    uint16_t access_rights,
+    int32_t lower_limit,
+    int32_t upper_limit,
+    int32_t limited_credit_value,
+    uint8_t limited_credit_option) {
+    uint8_t command[] = {0x90, DFC_CMD_GET_FILE_SETTINGS, 0x00, 0x00, 0x01, file_no, 0x00};
+    uint8_t expected[19] = {
+        DFC_FILE_TYPE_VALUE,
+        comm_settings,
+        (uint8_t)(access_rights & 0xFF),
+        (uint8_t)(access_rights >> 8),
+    };
+    put_i32_le(expected + 4, lower_limit);
+    put_i32_le(expected + 8, upper_limit);
+    put_i32_le(expected + 12, limited_credit_value);
+    expected[16] = limited_credit_option;
+    expected[17] = 0x91;
+    expected[18] = DFC_STATUS_OK;
+    assert_response(session, command, sizeof(command), expected, sizeof(expected));
+}
+
 static void assert_value_status(
     DfcVirtualPiccSession* session,
     uint8_t ins,
@@ -408,6 +433,203 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_limited_credit_transaction_state(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = NULL;
+    setup_app(&credential, &session);
+    create_value_file(session, 0x04, DFC_COMM_PLAIN, 0xEEEE, 0, 100, 50, 1, DFC_STATUS_OK);
+
+    // Zero is the explicit reset operation, even when no credit is available.
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 0, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 50);
+
+    // Zero also consumes an established limit without changing the value.
+    create_value_file(session, 0x08, DFC_COMM_PLAIN, 0xEEEE, 0, 100, 50, 1, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x08, 9, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x08, 0, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x08, 41);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x08, 1, DFC_STATUS_BOUNDARY_ERROR);
+
+    // A debit makes its amount available immediately in the same transaction.
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 6, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 6, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 50);
+
+    // A committed debit establishes a one-use limit. The exact amount succeeds,
+    // and a later use is refused without changing the committed value.
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 10, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 40);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 10, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 50);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 1, DFC_STATUS_BOUNDARY_ERROR);
+    assert_get_value(session, 0x04, 50);
+
+    // A rejected amount does not consume the limit. Aborting either a newer
+    // debit or a successful use restores both the value and the previous limit.
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 7, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 3, DFC_STATUS_OK);
+    abort_transaction(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 43);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 8, DFC_STATUS_BOUNDARY_ERROR);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 5, DFC_STATUS_OK);
+    abort_transaction(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 43);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 7, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 50);
+
+    // Credit-only transactions leave the latest debit limit untouched. A newer
+    // debit transaction replaces, rather than accumulates with, the old limit.
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 4, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_CREDIT, 0x04, 1, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 4, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 51);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 3, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 2, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 3, DFC_STATUS_BOUNDARY_ERROR);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 2, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 48);
+
+    // Selection and field reset abort an in-flight debit and preserve the last
+    // committed limit. The later debit establishes a fresh limit normally.
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 6, DFC_STATUS_OK);
+    select_picc(session);
+    select_app(session);
+    commit(session, DFC_STATUS_NO_CHANGES);
+    assert_get_value(session, 0x04, 48);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 1, DFC_STATUS_BOUNDARY_ERROR);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x04, 5, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    munit_assert_int(dfc_virtual_picc_field_off(session), ==, DfcVirtualPiccStatusOk);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    select_app(session);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x04, 5, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x04, 48);
+
+    create_value_file(session, 0x05, DFC_COMM_PLAIN, 0xEEEE, 0, 100, 50, 0, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x05, 0, DFC_STATUS_PERMISSION_DENIED);
+
+    // LimitedCredit still obeys the common value-command gates. A disabled
+    // write path and a non-value file must not create transaction state.
+    create_value_file(session, 0x07, DFC_COMM_PLAIN, 0xFFFF, 0, 100, 50, 1, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x07, 0, DFC_STATUS_PERMISSION_DENIED);
+    DfcFile* wrong_type =
+        dfc_credential_find_file_in_app(&credential, session->emulator->selected_app_index, 0x07);
+    munit_assert_not_null(wrong_type);
+    wrong_type->type = DFC_FILE_TYPE_STANDARD_DATA;
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x07, 0, DFC_STATUS_PERMISSION_DENIED);
+    commit(session, DFC_STATUS_NO_CHANGES);
+
+    // Debit accumulation saturates only the reusable limit, while the pending
+    // value keeps enough width to span the complete signed value range.
+    create_value_file(
+        session, 0x06, DFC_COMM_PLAIN, 0xEEEE, INT32_MIN, INT32_MAX, INT32_MAX, 1, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x06, INT32_MAX, DFC_STATUS_OK);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x06, 1, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x06, -1);
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x06, INT32_MAX, DFC_STATUS_OK);
+    commit(session, DFC_STATUS_OK);
+    assert_get_value(session, 0x06, INT32_MAX - 1);
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_get_file_settings_reports_committed_limit(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = NULL;
+    setup_app(&credential, &session);
+    create_value_file(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 37, 1, DFC_STATUS_OK);
+
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+    assert_value_status(session, DFC_CMD_DEBIT, 0x01, 11, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+    commit(session, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+
+    assert_value_status(session, DFC_CMD_DEBIT, 0x01, 7, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+    abort_transaction(session, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+
+    assert_value_status(session, DFC_CMD_LIMITED_CREDIT, 0x01, 11, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 11, 1);
+    commit(session, DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+
+    DfcApplication* app = dfc_credential_get_primary_application(&credential);
+    munit_assert_not_null(app);
+    app->key_settings_2 = DFC_KEY_TYPE_DES_2K3DES | 2;
+    munit_assert_true(dfc_credential_keys_resize(&credential, app, 2, 8));
+    uint8_t* non_master_key = dfc_credential_key(&credential, app, 1);
+    munit_assert_not_null(non_master_key);
+    memset(non_master_key, 0x11, 8);
+    app->key_settings_1 &= (uint8_t)~DFC_KS1_FREE_DIRECTORY_ACCESS;
+    uint8_t get_settings[] = {0x90, DFC_CMD_GET_FILE_SETTINGS, 0x00, 0x00, 0x01, 0x01, 0x00};
+    assert_status(session, get_settings, sizeof(get_settings), DFC_STATUS_AUTHENTICATION_ERR);
+
+    uint8_t response[128];
+    size_t response_len = 0;
+    uint8_t session_key[DFC_MAX_KEY_LEN];
+    size_t session_key_len = 0;
+    uint8_t zero_key[8] = {0};
+    authenticate_legacy_key(
+        session,
+        1,
+        non_master_key,
+        8,
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        DFC_STATUS_OK);
+    assert_status(session, get_settings, sizeof(get_settings), DFC_STATUS_AUTHENTICATION_ERR);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    munit_assert_uint8(session->emulator->secure_messaging->cipher, !=, 0);
+    munit_assert_uint8(session->emulator->auth_key_no, ==, 1);
+
+    authenticate_legacy_key0(
+        session,
+        zero_key,
+        sizeof(zero_key),
+        response,
+        sizeof(response),
+        &response_len,
+        session_key,
+        &session_key_len,
+        DFC_STATUS_OK);
+    assert_value_file_settings(session, 0x01, DFC_COMM_PLAIN, 0xEEEE, -100, 100, 0, 1);
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
 static MunitResult test_value_malformed_vectors(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
@@ -456,6 +678,18 @@ static MunitTest tests[] = {
      NULL},
     {"/multi-file-delete",
      test_value_multi_file_delete_vectors,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/limited-credit-transaction-state",
+     test_limited_credit_transaction_state,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/get-file-settings-reports-committed-limit",
+     test_get_file_settings_reports_committed_limit,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

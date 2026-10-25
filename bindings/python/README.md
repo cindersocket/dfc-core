@@ -23,8 +23,9 @@ export DFC_LIBRARY_PATH="$PWD/build/libdfc.dylib"  # macOS
 ```
 
 Production wheels include their matching native library under `dfc_core/lib/`.
-Loading stops immediately when the ABI version or a shared structure layout does
-not match, avoiding calls through an incompatible library.
+Loading stops before constructing a native handle when the ABI version or the
+complete generated layout fingerprint does not match. The fingerprint covers
+all shared fields and binding-visible numeric constants.
 
 ## Run a complete exchange
 
@@ -45,6 +46,14 @@ class Device:
     def transceive(self, command: bytes) -> bytes:
         return send_to_device(command)
 ```
+
+`Reader.exchange(command, comm_mode, header_len)` takes a `header_len` of -1 to
+derive the clear head of an encrypted field. Explicit values may not exceed
+`DFC_FFI_READER_MAX_CLEAR_HEADER_LENGTH`. Invalid values raise
+`InvalidArgumentError` without changing the reader session.
+
+Integers passed to fixed-width native parameters are range-checked before the
+call. Values that do not fit raise `InvalidArgumentError` instead of wrapping.
 
 `transceive` must return the complete response bytes or raise an exception. A
 transport exception clears the reader's authentication state before it is
@@ -70,6 +79,12 @@ with VirtualPicc(Credential.load(content)) as picc:
     picc.mark_persisted()
 ```
 
+Calling `Reader.close()` more than once is safe. Other reader operations raise
+`RuntimeError` after the reader is closed.
+
+`VirtualPicc.close()` is idempotent and marks the card closed immediately. An
+operation already in progress finishes before its native handle is released.
+
 Calls on one handle are serialized. A physical transport remains responsible for
 its own thread safety.
 
@@ -80,16 +95,19 @@ Use the named `Command` constructors for common operations, such as
 same readable byte order as credential files; the binding performs the protocol
 byte-order conversion.
 
-Responses contain the card status and returned data. Binding failures raise a
-subclass of `DfcError`; transport exceptions pass through unchanged. Check a
-nonzero card status before consuming response data.
+Successful responses contain the card status and returned data. Terminal card
+errors raise `CardError`; its `card_status` identifies the card's status byte.
+Special-success statuses from ReadSignature and proximity-check commands remain
+on `Response`. Other binding failures raise a subclass of `DfcError`, and
+transport exceptions pass through unchanged.
 
 ## Random sources and secret lifetime
 
 Pass a callable to `VirtualPicc` only when deterministic randomness is needed for
 testing. It must return exactly the requested number of bytes. Callback failures
 or short results abort the current operation without committing card state and
-raise `RuntimeError` after the native call returns. A caller may retry if its
+raise `RandomSourceError` with status `-5` after the native call returns. The
+original callback exception is available as its cause. A caller may retry if its
 source can satisfy the next request; deterministic replay should use a new card
 with a complete script.
 
@@ -112,3 +130,13 @@ MYPYPATH=bindings/python/src \
   --config-file bindings/python/pyproject.toml examples/python/virtual_card.py
 uv run --project bindings/python pytest bindings/python/tests
 ```
+
+## Secret lifetime
+
+Ordinary card snapshots exclude session keys. The private conformance helper
+returns mutable buffers that callers must consume only inside its context. The
+context clears those buffers and its native temporary on exit. Python may retain
+immutable copies created by callers, so applications should avoid converting
+secret buffers to `bytes`. Native key temporaries are cleared after the Python
+model has been built. Model key fields, encoded credentials, and text results
+are immutable runtime copies that Python cannot wipe; keep them short-lived.

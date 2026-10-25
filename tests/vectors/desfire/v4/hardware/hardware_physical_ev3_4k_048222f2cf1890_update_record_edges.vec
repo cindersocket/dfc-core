@@ -1,0 +1,38 @@
+# PROVENANCE: physical EV3 4K card over PC/SC, UID 048222F2CF1890.
+# Reader: ACS ACR1552 1S CL Reader PICC; captured 2026-09-25.
+# Every response byte was measured on this card, not generated.
+# Starting state: formatted with the published zero PICC test key.
+
+name: physical EV3 4K, UpdateRecord access and full linear file
+case-id: hardware-physical-ev3-4k-048222f2cf1890-update-record-edges
+origin: physical-card
+source: captured hardware trace
+requires: auth-aes,ev3,record-files
+uid: 048222F2CF1890
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+status   90CA0000055540E00F8100 => 00
+status   905A0000035540E000 => 00
+status   90C100000A0100FEFE04000002000000 => 00
+status   90C100000A0200EEEE04000001000000 => 00
+# UpdateRecord needs the read/write access condition, not the write condition.
+inject-random CBB804DC2E0390A0526CFC7FB3D9FA33
+exchange native-apdu 90AA0000010000 => B07DE96A87366D43EFE5C6BAE848F7B391AF
+exchange native-apdu 90AF000020CF97F09A4FF62020B267E12ADAF57C91402F771691C69C27FFEF0F92BE22D83B00 => C30B3D944221E3F63392B7537BD5B70A9100
+exchange native-apdu 903B00000901000000020000413100 => 8F0FFEAD913C6A139100
+exchange native-apdu 90C7000000 => 2D3D44FBB34261259100
+exchange native-apdu 90DB00000C01000000000000020000423200 => 919D
+# A full linear file has no backup record for UpdateRecord.
+status   905A0000035540E000 => 00
+inject-random E8189253654B18BF7767029C302BB7BA
+exchange native-apdu 90AA0000010000 => 398AD695CF8F65A4E67AC0AC93B56AAE91AF
+exchange native-apdu 90AF0000208EAC32A6362C6F1951FF09F1A7347B4055FD5A1FDEBA939898A7CD8807251F3200 => 287161CC1A912DFAD3C7F9538FCEC3469100
+exchange native-apdu 903B00000902000000020000433300 => 51EAF9FB855791FE9100
+exchange native-apdu 90C7000000 => 9D6F79A9113C04EE9100
+exchange native-apdu 90DB00000C02000000000000020000443400 => 91BE

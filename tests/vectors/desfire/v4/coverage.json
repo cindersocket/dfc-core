@@ -1,0 +1,215 @@
+{
+  "features": [
+    {
+      "evidence": [
+        "emulator/lifecycle.vec",
+        "emulator/multi_app.vec"
+      ],
+      "id": "desfire:ev1-application-and-file-lifecycle"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_wire_dialects.vec",
+        "emulator/hardware_genuine_ev3_4k_iso_select_file_types.vec"
+      ],
+      "id": "desfire:native-wrapped-and-standard-iso"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_ev2_auth.vec",
+        "emulator/hardware_genuine_ev3_4k_ev2_nonfirst.vec"
+      ],
+      "id": "desfire:ev2-authentication"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_handshakes.vec",
+        "emulator/hardware_genuine_ev1_4k_handshakes.vec"
+      ],
+      "id": "desfire:native-authentication-and-key-type-mismatch"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_ev2_comm_modes.vec"
+      ],
+      "id": "desfire:ev2-secure-messaging"
+    },
+    {
+      "evidence": [
+        "emulator/modeled_ev2_key_set_lifecycle.vec",
+        "emulator/hardware_genuine_ev3_4k_change-key-ev2-success.vec",
+        "emulator/modeled_ev2_change-key-ev2-errors.vec"
+      ],
+      "id": "desfire:ev2-key-sets"
+    },
+    {
+      "evidence": [
+        "emulator/modeled_ev2_delegated-command-boundaries.vec",
+        "emulator/hardware_genuine_ev3_4k_delegated-application-lifecycle.vec"
+      ],
+      "id": "desfire:ev2-delegated-applications"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_transaction_mac_modes.vec",
+        "hardware/hardware_genuine_ev3_4k_transaction_mac_reader_id.vec"
+      ],
+      "id": "desfire:transaction-mac-and-reader-id"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_virtual_card.vec",
+        "emulator/modeled_ev3_virtual_card_authenticated.vec"
+      ],
+      "id": "desfire:virtual-card"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_sdm_counter.vec",
+        "hardware/hardware_genuine_ev3_sdm_picc_native_iso.vec",
+        "hardware/hardware_genuine_ev3_sdm_encrypted_file_native_iso.vec"
+      ],
+      "id": "desfire:secure-dynamic-messaging"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_proximity_check.vec",
+        "hardware/hardware_genuine_ev3_4k_proximity_check_split.vec"
+      ],
+      "id": "desfire:proximity-check"
+    },
+    {
+      "evidence": [
+        "hardware/hardware_genuine_ev3_4k_transaction_timer.vec"
+      ],
+      "id": "desfire:transaction-timer-and-application-capability-data"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_identity.vec",
+        "emulator/hardware_ev2_4k_identity_issue1.vec"
+      ],
+      "id": "desfire:identity-and-static-signature"
+    },
+    {
+      "evidence": [
+        "emulator/hardware_genuine_ev3_4k_value_modes.vec",
+        "emulator/ev3_record-order-update-clear.vec",
+        "emulator/ev1_abort-restores-transactional-files.vec"
+      ],
+      "id": "desfire:all-data-file-families-and-transactions"
+    },
+    {
+      "id": "desfire:ev2-capture-directory-and-file-settings",
+      "evidence": [
+        "emulator/hardware_ev2_4k_directory_issue1.vec"
+      ]
+    },
+    {
+      "id": "desfire:ev2-capability-exchange",
+      "evidence": [
+        "emulator/modeled_ev2_capability_exchange.vec"
+      ]
+    },
+    {
+      "id": "desfire:v4-regression-corpus",
+      "evidence": [
+        "emulator/binding-select-application-aid-order.vec",
+        "emulator/ev1_authenticate-missing-key.vec",
+        "emulator/ev1_authenticate-wrong-algorithm.vec",
+        "emulator/ev1_command-during-chaining.vec",
+        "emulator/ev1_create-29th-application.vec",
+        "emulator/ev1_create-application-and-list.vec",
+        "emulator/ev1_create-application-fifteen-keys.vec",
+        "emulator/ev1_create-duplicate-file.vec",
+        "emulator/ev1_create-file-beyond-capacity.vec",
+        "emulator/ev1_create-file-requires-auth.vec",
+        "emulator/ev1_create-std-data-file-iso-fid-requires-ks2-bit.vec",
+        "emulator/ev1_delete-application-requires-auth.vec",
+        "emulator/ev1_delete-file-free-create-delete.vec",
+        "emulator/ev1_delete-file-requires-auth.vec",
+        "emulator/ev1_duplicate-df-name.vec",
+        "emulator/ev1_duplicate-iso-file-id.vec",
+        "emulator/ev1_file-number-out-of-range.vec",
+        "emulator/ev1_get-df-names-lists-unnamed.vec",
+        "emulator/ev1_get-iso-file-ids-chains-when-many.vec",
+        "emulator/ev1_get-iso-file-ids-lists-file-fids.vec",
+        "emulator/ev1_get-version-frames.vec",
+        "emulator/ev1_iso-select-df-name-beats-picc.vec",
+        "emulator/ev1_iso-select-picc-df.vec",
+        "emulator/ev1_read-past-file-end.vec",
+        "emulator/ev1_restricted-app-directory.vec",
+        "emulator/ev1_restricted-picc-create.vec",
+        "emulator/ev1_restricted-picc-directory.vec",
+        "emulator/ev1_stray-additional-frame.vec",
+        "emulator/ev1_truncated-payload.vec",
+        "emulator/ev1_unsupported-command.vec",
+        "emulator/ev1_write-past-file-end.vec",
+        "emulator/hardware_genuine_ev1_4k_access_rights.vec",
+        "emulator/hardware_genuine_ev1_4k_aes_comm_modes.vec",
+        "emulator/hardware_genuine_ev1_4k_chaining.vec",
+        "emulator/hardware_genuine_ev1_4k_d40_comm_modes.vec",
+        "emulator/hardware_genuine_ev1_4k_free_create.vec",
+        "emulator/hardware_genuine_ev1_4k_iso_comm_modes.vec",
+        "emulator/hardware_genuine_ev1_8k_3k3des_comm_modes.vec",
+        "emulator/hardware_genuine_ev1_8k_3k3des_handshakes.vec",
+        "emulator/hardware_genuine_ev1_8k_application_memory.vec",
+        "emulator/hardware_genuine_ev1_8k_application_memory_reversed.vec",
+        "emulator/hardware_genuine_ev1_8k_directory.vec",
+        "emulator/hardware_genuine_ev1_8k_free_memory.vec",
+        "emulator/hardware_genuine_ev1_8k_identity.vec",
+        "emulator/hardware_genuine_ev1_8k_long_data.vec",
+        "emulator/hardware_genuine_ev1_8k_long_data_d40.vec",
+        "emulator/hardware_genuine_ev1_8k_long_data_iso.vec",
+        "emulator/hardware_genuine_ev1_8k_records.vec",
+        "emulator/hardware_genuine_ev1_8k_records_d40.vec",
+        "emulator/hardware_genuine_ev1_8k_records_iso.vec",
+        "emulator/hardware_genuine_ev3_4k_transactions.vec",
+        "emulator/model_key_set_invariants.vec",
+        "emulator/model_sdm_encrypted_range_overflow.vec",
+        "emulator/modeled_ev3_sdm_random_id_plain_uid.vec",
+        "emulator/modeled_ev3_sdm_ten_byte_encrypted_uid.vec",
+        "emulator/mutation_aes_change_key_integrity_error.vec",
+        "emulator/mutation_aes_change_key_same_key.vec",
+        "emulator/mutation_iso_change_key_same_key.vec",
+        "emulator/mutation_pcsc_change_key.vec",
+        "emulator/picc_config_default_ats.vec",
+        "emulator/picc_config_format_disabled.vec",
+        "emulator/picc_config_sak_atqa.vec",
+        "emulator/picc_config_user_ats.vec",
+        "emulator/picc_random_id_activation.vec",
+        "emulator/probe_blank_card.vec",
+        "emulator/probe_reader_sequence.vec",
+        "emulator/value_access.vec",
+        "emulator/value_comm_limited_options.vec",
+        "emulator/value_create_status.vec",
+        "emulator/value_malformed.vec",
+        "emulator/value_multi_file_delete.vec",
+        "emulator/value_transactions.vec",
+        "hardware/hardware_genuine_ev3_4k_3k3des_handshakes.vec",
+        "hardware/hardware_genuine_ev3_4k_handshakes.vec",
+        "hardware/hardware_genuine_ev3_sdm_hidden_counter_limit.vec",
+        "hardware/hardware_physical_ev3_4k_048222f2cf1890_authenticated_app_directory.vec",
+        "hardware/hardware_physical_ev3_4k_048222f2cf1890_authenticated_file_ids.vec",
+        "hardware/hardware_physical_ev3_4k_048222f2cf1890_update_record_edges.vec",
+        "hardware/hardware_physical_ev3_4k_3k3des_comm_modes.vec",
+        "hardware/hardware_physical_ev3_4k_3k3des_handshakes.vec",
+        "hardware/hardware_physical_ev3_4k_access_rights.vec",
+        "hardware/hardware_physical_ev3_4k_aes_comm_modes.vec",
+        "hardware/hardware_physical_ev3_4k_chaining.vec",
+        "hardware/hardware_physical_ev3_4k_d40_comm_modes.vec",
+        "hardware/hardware_physical_ev3_4k_free_create.vec",
+        "hardware/hardware_physical_ev3_4k_free_memory.vec",
+        "hardware/hardware_physical_ev3_4k_identity.vec",
+        "hardware/hardware_physical_ev3_4k_iso_comm_modes.vec",
+        "hardware/hardware_physical_ev3_4k_long_data.vec",
+        "hardware/hardware_physical_ev3_4k_long_data_d40.vec",
+        "hardware/hardware_physical_ev3_4k_long_data_iso.vec",
+        "hardware/hardware_physical_ev3_4k_records.vec",
+        "hardware/hardware_physical_ev3_4k_records_d40.vec",
+        "hardware/hardware_physical_ev3_4k_records_iso.vec"
+      ]
+    }
+  ],
+  "schema": 1
+}

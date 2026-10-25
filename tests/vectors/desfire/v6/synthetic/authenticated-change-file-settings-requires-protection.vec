@@ -1,0 +1,47 @@
+# PROVENANCE: Synthetic regression for authenticated ChangeFileSettings request protection.
+name: authenticated ChangeFileSettings requires complete protected payloads
+case-id: authenticated-change-file-settings-requires-protection
+origin: synthetic
+feature-version: 6
+source: generated secure-write regression from the established EV1 authentication transcript
+requires: ev1,auth-d40
+issues: https://github.com/cindersocket/dfc-core/issues/122
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status 90CA0000050102030F0400 => 00
+status 905A00000301020300 => 00
+status 90CD0000070100E0EE04000000 => 00
+inject-random 5EE11A0743FB4EB5
+exchange native-apdu 900A0000010000 => 11881D6C3B75CC1A91AF
+exchange native-apdu 90AF000010491E890DE9ACE932D48F74A7225E34DD00 => B7D1DA7CE0DD986B9100
+assert emulator.secure_messaging = present
+exchange native-apdu 905F0000090143839BC012848B4100 => 9100
+exchange native-apdu 90F50000010100 => 0001E00E0400009100
+
+# A corrupted cryptogram leaves the accepted settings untouched and retires
+# the session. The following re-authentication proves the card remains usable.
+exchange native-apdu 905F00000901C3839BC012848B4100 => 911E
+exchange native-apdu 90F50000010100 => 0001E00E0400009100
+assert emulator.secure_messaging = null
+inject-random 5EE11A0743FB4EB5
+exchange native-apdu 900A0000010000 => 11881D6C3B75CC1A91AF
+exchange native-apdu 90AF000010491E890DE9ACE932D48F74A7225E34DD00 => B7D1DA7CE0DD986B9100
+
+# A non-block-aligned protected payload is rejected before any file mutation.
+exchange native-apdu 905F0000080143839BC012848B00 => 911E
+exchange native-apdu 90F50000010100 => 0001E00E0400009100
+assert emulator.secure_messaging = null
+inject-random 5EE11A0743FB4EB5
+exchange native-apdu 900A0000010000 => 11881D6C3B75CC1A91AF
+exchange native-apdu 90AF000010491E890DE9ACE932D48F74A7225E34DD00 => B7D1DA7CE0DD986B9100
+
+# Authentication alone does not make the clear settings form acceptable.
+exchange native-apdu 905F0000040101E00E00 => 911E
+exchange native-apdu 90F50000010100 => 0001E00E0400009100
+assert emulator.secure_messaging = null
+field-off

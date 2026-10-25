@@ -19,9 +19,15 @@ profile-full-ev1 = ["dfc-core-sys/profile-full-ev1"]
 profile-full-ev2 = ["dfc-core-sys/profile-full-ev2"]
 profile-full-ev3 = ["dfc-core-sys/profile-full-ev3"]
 profile-minimal-ev3 = ["dfc-core-sys/profile-minimal-ev3"]
+layout-mismatch-test = []
 
 [dependencies]
-dfc-core-sys = { path = "../../..", version = "1.2.1", default-features = false }
+dfc-core-sys = { path = "../../..", version = "2.0.0", default-features = false }
+
+[[test]]
+name = "layout_mismatch"
+path = "tests/layout_mismatch.rs"
+required-features = ["layout-mismatch-test"]
 
 [lints]
 workspace = true

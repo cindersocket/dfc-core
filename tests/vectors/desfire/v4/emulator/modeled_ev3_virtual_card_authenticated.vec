@@ -1,0 +1,21 @@
+# PROVENANCE: Modeled from observed DESFire EV3 virtual-card wire behavior.
+name: EV3 authenticated virtual-card selection
+case-id: modeled-ev3-virtual-card-authenticated
+origin: synthetic
+requires: ev2,virtual-card
+source: deterministic simulator fixture
+uid: 04A1B2C3D4E5F6
+picc-generation: EV3
+picc-storage: 4096
+vc-iid: D2760000850100
+vc-info: 04
+vc-capabilities: 0000
+vc-uid: 04112233445566
+vc-select-mac-key: 00000000000000000000000000000000
+vc-select-enc-key: 00000000000000000000000000000000
+vc-auth-mandatory: 1
+vc-pc-mandatory: 0
+inject-random 00112233445566778899AABBCCDDEEFF
+exchange iso-apdu 00A4040007D276000085010000 => 6F228520C8A331FF8EDD3DB175E1545DBEFB760B7544711246914DB1752CB5BC44C769E69000
+exchange iso-apdu 008200000857C03FC3393982A4 => 9000
+assert emulator.virtual_card_selected = 1

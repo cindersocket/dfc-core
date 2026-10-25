@@ -1,0 +1,19 @@
+# PROVENANCE: measured from the physical EV3 4K card over PC/SC.
+name: physical EV3 ISO 7816 authentication external-wrong-algorithm
+case-id: hardware-physical-ev3-4k-iso-auth-external-wrong-algorithm
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+requires: ev3,iso7816-auth
+uid: 048222F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-commands: 23
+scan
+inject-random 2D41B5F8FE4CABE8
+exchange iso-apdu 0084000008 => 2D41B5F8FE4CABE89000
+exchange iso-apdu 00820900200000000000000000000000000000000000000000000000000000000000000000 => 6982
+field-off

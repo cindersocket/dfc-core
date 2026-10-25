@@ -13,6 +13,8 @@ pub use target::{
 #[cfg(not(feature = "role-target"))]
 mod credential;
 #[cfg(not(feature = "role-target"))]
+mod layout;
+#[cfg(not(feature = "role-target"))]
 mod reader;
 
 #[cfg(not(feature = "role-target"))]
@@ -26,7 +28,7 @@ use core::{
 use dfc_core_sys as sys;
 
 #[cfg(not(feature = "role-target"))]
-pub use credential::Credential;
+pub use credential::{Credential, CredentialFile, CredentialKey, CredentialPiccSettings};
 #[cfg(not(feature = "role-target"))]
 pub use reader::{
     Command, CommunicationMode, Framing, Reader, ReaderError, ReaderState, Response, Transport,
@@ -36,70 +38,10 @@ pub use reader::{
 static ABI_STATE: AtomicU8 = AtomicU8::new(0);
 
 #[cfg(not(feature = "role-target"))]
-fn layout_fingerprint() -> u64 {
-    fn word(mut hash: u64, value: u64) -> u64 {
-        for byte in value.to_le_bytes() {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(1_099_511_628_211);
-        }
-        hash
+fn wipe<T>(value: &mut T) {
+    unsafe {
+        sys::dfc_ffi_secure_zero((value as *mut T).cast(), core::mem::size_of::<T>());
     }
-    macro_rules! size {
-        ($hash:expr, $ty:ty) => {
-            word($hash, size_of::<$ty>() as u64)
-        };
-    }
-    macro_rules! field {
-        ($hash:expr, $ty:ty, $field:ident) => {
-            word($hash, core::mem::offset_of!($ty, $field) as u64)
-        };
-    }
-    let mut hash = 14_695_981_039_346_656_037;
-    hash = word(hash, u64::from(sys::DFC_FFI_ABI_VERSION));
-    hash = size!(hash, sys::DfcFfiCapabilities);
-    hash = field!(hash, sys::DfcFfiCapabilities, generation_ev1);
-    hash = field!(hash, sys::DfcFfiCapabilities, max_applications);
-    hash = field!(hash, sys::DfcFfiCapabilities, key_pool_size);
-    hash = size!(hash, sys::DfcFfiError);
-    hash = field!(hash, sys::DfcFfiError, line);
-    hash = field!(hash, sys::DfcFfiError, message);
-    hash = size!(hash, sys::DfcFfiCard);
-    hash = field!(hash, sys::DfcFfiCard, uid);
-    hash = field!(hash, sys::DfcFfiCard, hardware_version);
-    hash = field!(hash, sys::DfcFfiCard, static_signature);
-    hash = size!(hash, sys::DfcFfiPiccSettings);
-    hash = field!(hash, sys::DfcFfiPiccSettings, ats);
-    hash = field!(hash, sys::DfcFfiPiccSettings, ev2_capabilities);
-    hash = field!(hash, sys::DfcFfiPiccSettings, virtual_card_installation_id);
-    hash = field!(hash, sys::DfcFfiPiccSettings, dam_auth_key);
-    hash = field!(hash, sys::DfcFfiPiccSettings, preferred_auth_command);
-    hash = size!(hash, sys::DfcFfiApplication);
-    hash = field!(hash, sys::DfcFfiApplication, aid);
-    hash = field!(hash, sys::DfcFfiApplication, key_set_versions);
-    hash = field!(hash, sys::DfcFfiApplication, capability_data);
-    hash = field!(hash, sys::DfcFfiApplication, preferred_auth_command);
-    hash = size!(hash, sys::DfcFfiFile);
-    hash = field!(hash, sys::DfcFfiFile, access_rights);
-    hash = field!(hash, sys::DfcFfiFile, number);
-    hash = field!(hash, sys::DfcFfiFile, transaction_mac_key);
-    hash = field!(hash, sys::DfcFfiFile, previous_reader_id);
-    hash = size!(hash, sys::DfcFfiKey);
-    hash = field!(hash, sys::DfcFfiKey, value);
-    hash = field!(hash, sys::DfcFfiKey, version);
-    hash = size!(hash, sys::DfcFfiActivation);
-    hash = field!(hash, sys::DfcFfiActivation, uid);
-    hash = field!(hash, sys::DfcFfiActivation, protocol);
-    hash = field!(hash, sys::DfcFfiActivation, rf_detail);
-    hash = size!(hash, sys::DfcFfiSnapshot);
-    hash = field!(hash, sys::DfcFfiSnapshot, selected_aid);
-    hash = field!(hash, sys::DfcFfiSnapshot, ev2_transaction_identifier);
-    hash = field!(hash, sys::DfcFfiSnapshot, ev2_mac_key);
-    hash = field!(hash, sys::DfcFfiSnapshot, proximity_verified);
-    hash = size!(hash, sys::DfcFfiReaderState);
-    hash = field!(hash, sys::DfcFfiReaderState, auth_mode);
-    hash = field!(hash, sys::DfcFfiReaderState, ev2_transaction_identifier);
-    hash = field!(hash, sys::DfcFfiReaderState, ev2_reader_capabilities);
-    hash
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,7 +52,19 @@ pub enum Error {
     OutOfMemory,
     Unsupported,
     RandomSourceFailed,
-    AbiMismatch { expected: u32, actual: u32 },
+    AbiMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    LayoutMismatch {
+        expected: u64,
+        actual: u64,
+    },
+    StructSizeMismatch {
+        structure: &'static str,
+        expected: u32,
+        actual: u32,
+    },
     Native(i32),
 }
 
@@ -126,6 +80,18 @@ impl fmt::Display for Error {
             Self::AbiMismatch { expected, actual } => {
                 write!(f, "dfc ABI mismatch: expected {expected}, found {actual}")
             }
+            Self::LayoutMismatch { expected, actual } => write!(
+                f,
+                "dfc native layout fingerprint mismatch: expected {expected:#018x}, found {actual:#018x}"
+            ),
+            Self::StructSizeMismatch {
+                structure,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "dfc native {structure} structure size mismatch: expected {expected}, found {actual}"
+            ),
             Self::Native(status) => write!(f, "dfc operation failed with status {status}"),
         }
     }
@@ -148,6 +114,56 @@ fn status(value: i32) -> Result<(), Error> {
 }
 
 #[cfg(not(feature = "role-target"))]
+fn picc_retry_capacity(initial: usize, reported: usize) -> Option<usize> {
+    (reported > initial && reported <= isize::MAX as usize).then_some(reported)
+}
+
+#[cfg(not(feature = "role-target"))]
+fn require_layout_fingerprint(actual: u64) -> Result<(), Error> {
+    let expected = layout::expected_layout_fingerprint();
+    if actual != expected {
+        return Err(Error::LayoutMismatch { expected, actual });
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "role-target"))]
+fn struct_size_mismatch(native: &sys::DfcFfiStructSizes) -> Option<Error> {
+    macro_rules! require_size {
+        ($field:ident, $type:ty) => {{
+            let expected = size_of::<$type>() as u32;
+            if native.$field != expected {
+                return Some(Error::StructSizeMismatch {
+                    structure: stringify!($field),
+                    expected,
+                    actual: native.$field,
+                });
+            }
+        }};
+    }
+    require_size!(capabilities, sys::DfcFfiCapabilities);
+    require_size!(error, sys::DfcFfiError);
+    require_size!(card, sys::DfcFfiCard);
+    require_size!(picc, sys::DfcFfiPiccSettings);
+    require_size!(application, sys::DfcFfiApplication);
+    require_size!(file, sys::DfcFfiFile);
+    require_size!(key, sys::DfcFfiKey);
+    require_size!(activation, sys::DfcFfiActivation);
+    require_size!(snapshot, sys::DfcFfiSnapshot);
+    require_size!(diagnostic_snapshot, sys::DfcFfiDiagnosticSnapshot);
+    require_size!(reader_state, sys::DfcFfiReaderState);
+    None
+}
+
+#[cfg(not(feature = "role-target"))]
+fn require_struct_sizes() -> Result<(), Error> {
+    let mut native = MaybeUninit::<sys::DfcFfiStructSizes>::uninit();
+    unsafe { sys::dfc_ffi_struct_sizes(native.as_mut_ptr()) };
+    let native = unsafe { native.assume_init() };
+    struct_size_mismatch(&native).map_or(Ok(()), Err)
+}
+
+#[cfg(not(feature = "role-target"))]
 fn ensure_abi() -> Result<(), Error> {
     match ABI_STATE.load(Ordering::Acquire) {
         1 => return Ok(()),
@@ -158,6 +174,14 @@ fn ensure_abi() -> Result<(), Error> {
                 actual,
             });
         }
+        3 => {
+            let actual = unsafe { sys::dfc_ffi_layout_fingerprint() };
+            return Err(Error::LayoutMismatch {
+                expected: layout::expected_layout_fingerprint(),
+                actual,
+            });
+        }
+        4 => return require_struct_sizes(),
         _ => {}
     }
     let actual = unsafe { sys::dfc_ffi_abi_version() };
@@ -168,37 +192,14 @@ fn ensure_abi() -> Result<(), Error> {
             actual,
         });
     }
-    let mut native = MaybeUninit::<sys::DfcFfiStructSizes>::uninit();
-    unsafe { sys::dfc_ffi_struct_sizes(native.as_mut_ptr()) };
-    let native = unsafe { native.assume_init() };
-    let expected = [
-        (native.capabilities, size_of::<sys::DfcFfiCapabilities>()),
-        (native.error, size_of::<sys::DfcFfiError>()),
-        (native.card, size_of::<sys::DfcFfiCard>()),
-        (native.picc, size_of::<sys::DfcFfiPiccSettings>()),
-        (native.application, size_of::<sys::DfcFfiApplication>()),
-        (native.file, size_of::<sys::DfcFfiFile>()),
-        (native.key, size_of::<sys::DfcFfiKey>()),
-        (native.activation, size_of::<sys::DfcFfiActivation>()),
-        (native.snapshot, size_of::<sys::DfcFfiSnapshot>()),
-        (native.reader_state, size_of::<sys::DfcFfiReaderState>()),
-    ];
-    if expected
-        .iter()
-        .any(|(native, rust)| *native as usize != *rust)
-    {
-        ABI_STATE.store(2, Ordering::Release);
-        return Err(Error::AbiMismatch {
-            expected: sys::DFC_FFI_ABI_VERSION,
-            actual,
-        });
+    let native_fingerprint = unsafe { sys::dfc_ffi_layout_fingerprint() };
+    if let Err(error) = require_layout_fingerprint(native_fingerprint) {
+        ABI_STATE.store(3, Ordering::Release);
+        return Err(error);
     }
-    if unsafe { sys::dfc_ffi_layout_fingerprint() } != layout_fingerprint() {
-        ABI_STATE.store(2, Ordering::Release);
-        return Err(Error::AbiMismatch {
-            expected: sys::DFC_FFI_ABI_VERSION,
-            actual,
-        });
+    if let Err(error) = require_struct_sizes() {
+        ABI_STATE.store(4, Ordering::Release);
+        return Err(error);
     }
     ABI_STATE.store(1, Ordering::Release);
     Ok(())
@@ -233,10 +234,39 @@ pub struct Activation(pub sys::DfcFfiActivation);
 #[cfg(not(feature = "role-target"))]
 pub struct Snapshot(pub sys::DfcFfiSnapshot);
 
+/// Secret-bearing state for diagnostics and conformance tests.
+///
+/// The backing storage is wiped when this value is dropped. Code that copies a
+/// returned slice is responsible for the lifetime of its own copy.
+#[cfg(not(feature = "role-target"))]
+pub struct DiagnosticSnapshot(sys::DfcFfiDiagnosticSnapshot);
+
+#[cfg(not(feature = "role-target"))]
+impl DiagnosticSnapshot {
+    fn clear(&mut self) {
+        wipe(&mut self.0);
+    }
+    pub fn transaction_identifier(&self) -> &[u8; 4] {
+        &self.0.transaction_identifier
+    }
+    pub fn encryption_key(&self) -> &[u8; 16] {
+        &self.0.encryption_key
+    }
+    pub fn mac_key(&self) -> &[u8; 16] {
+        &self.0.mac_key
+    }
+}
+
+#[cfg(not(feature = "role-target"))]
+impl Drop for DiagnosticSnapshot {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
 #[cfg(not(feature = "role-target"))]
 struct RandomContext {
     source: Box<dyn FnMut(usize) -> Vec<u8> + Send>,
-    failed: bool,
 }
 
 #[cfg(not(feature = "role-target"))]
@@ -248,20 +278,22 @@ unsafe extern "C" fn random_callback(
     let context = unsafe { &mut *context.cast::<RandomContext>() };
     let generated =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (context.source)(len)));
-    if let Ok(bytes) = generated
-        && bytes.len() == len
-    {
-        unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
-        return 0;
+    if let Ok(mut bytes) = generated {
+        if bytes.len() == len {
+            unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, len) };
+            bytes.fill(0);
+            return 0;
+        }
+        bytes.fill(0);
     }
-    context.failed = true;
     -5
 }
 
 #[cfg(not(feature = "role-target"))]
 pub struct VirtualPicc {
     raw: NonNull<sys::DfcFfiPicc>,
-    random: Option<Box<RandomContext>>,
+    // Keeps the callback context alive for as long as native code may use it.
+    _random_context: Option<Box<RandomContext>>,
 }
 
 #[cfg(not(feature = "role-target"))]
@@ -277,7 +309,7 @@ impl VirtualPicc {
         })?;
         Ok(Self {
             raw: NonNull::new(raw).ok_or(Error::OutOfMemory)?,
-            random: None,
+            _random_context: None,
         })
     }
 
@@ -305,7 +337,7 @@ impl VirtualPicc {
         }
         Ok(Self {
             raw: NonNull::new(raw).ok_or(Error::OutOfMemory)?,
-            random: None,
+            _random_context: None,
         })
     }
 
@@ -318,7 +350,6 @@ impl VirtualPicc {
         let mut owned_credential = raw_credential;
         let mut context = Box::new(RandomContext {
             source: Box::new(random),
-            failed: false,
         });
         let mut raw = core::ptr::null_mut();
         let result = status(unsafe {
@@ -337,25 +368,14 @@ impl VirtualPicc {
         }
         Ok(Self {
             raw: NonNull::new(raw).ok_or(Error::OutOfMemory)?,
-            random: Some(context),
+            _random_context: Some(context),
         })
-    }
-
-    fn check_random(&mut self) -> Result<(), Error> {
-        if self.random.as_ref().is_some_and(|context| context.failed) {
-            if let Some(context) = &mut self.random {
-                context.failed = false;
-            }
-            return Err(Error::RandomSourceFailed);
-        }
-        Ok(())
     }
 
     pub fn activate(&mut self) -> Result<Activation, Error> {
         let mut value = MaybeUninit::uninit();
         let result =
             status(unsafe { sys::dfc_ffi_picc_activate(self.raw.as_ptr(), value.as_mut_ptr()) });
-        self.check_random()?;
         result?;
         Ok(Activation(unsafe { value.assume_init() }))
     }
@@ -369,14 +389,15 @@ impl VirtualPicc {
     }
 
     fn exchange_inner(&mut self, input: &[u8], frame: bool) -> Result<Vec<u8>, Error> {
-        let mut response = vec![0; 8192];
+        const INITIAL_RESPONSE_CAPACITY: usize = 256;
+        let mut response = vec![0; INITIAL_RESPONSE_CAPACITY];
         let mut len = 0;
         let call = if frame {
             sys::dfc_ffi_picc_frame_exchange
         } else {
             sys::dfc_ffi_picc_exchange
         };
-        let result = status(unsafe {
+        let mut result = unsafe {
             call(
                 self.raw.as_ptr(),
                 input.as_ptr(),
@@ -385,9 +406,32 @@ impl VirtualPicc {
                 response.len(),
                 &mut len,
             )
-        });
-        self.check_random()?;
-        result?;
+        };
+        if result == sys::DFC_FFI_PICC_BUFFER_TOO_SMALL as i32 {
+            let capacity = unsafe { sys::dfc_ffi_picc_response_capacity() };
+            let Some(capacity) = picc_retry_capacity(response.len(), capacity) else {
+                return Err(Error::Native(result));
+            };
+            response
+                .try_reserve_exact(capacity - response.len())
+                .map_err(|_| Error::OutOfMemory)?;
+            response.resize(capacity, 0);
+            len = 0;
+            result = unsafe {
+                call(
+                    self.raw.as_ptr(),
+                    input.as_ptr(),
+                    input.len(),
+                    response.as_mut_ptr(),
+                    response.len(),
+                    &mut len,
+                )
+            };
+        }
+        status(result)?;
+        if len > response.len() {
+            return Err(Error::InvalidArgument);
+        }
         response.truncate(len);
         Ok(response)
     }
@@ -411,6 +455,14 @@ impl VirtualPicc {
         Ok(Snapshot(unsafe { value.assume_init() }))
     }
 
+    pub fn diagnostic_snapshot(&self) -> Result<DiagnosticSnapshot, Error> {
+        let mut value = MaybeUninit::zeroed();
+        status(unsafe {
+            sys::dfc_ffi_picc_diagnostic_snapshot(self.raw.as_ptr(), value.as_mut_ptr())
+        })?;
+        Ok(DiagnosticSnapshot(unsafe { value.assume_init() }))
+    }
+
     pub fn export(&self) -> Result<Credential, Error> {
         let mut raw = core::ptr::null_mut();
         status(unsafe { sys::dfc_ffi_picc_export(self.raw.as_ptr(), &mut raw) })?;
@@ -430,11 +482,66 @@ mod tests {
     use super::*;
 
     #[test]
+    fn picc_retry_capacity_is_larger_and_representable() {
+        assert_eq!(picc_retry_capacity(256, 257), Some(257));
+        assert_eq!(picc_retry_capacity(256, 8193), Some(8193));
+        assert_eq!(picc_retry_capacity(256, 0), None);
+        assert_eq!(picc_retry_capacity(256, 256), None);
+        assert_eq!(picc_retry_capacity(256, usize::MAX), None);
+    }
+
+    #[test]
     fn native_layout_and_capabilities_are_compatible() {
         let capabilities = Capabilities::get().expect("compatible native ABI");
         assert_eq!(capabilities.0.abi_version, sys::DFC_FFI_ABI_VERSION);
         assert_ne!(capabilities.0.emulator, 0);
         assert_ne!(capabilities.0.reader, 0);
+    }
+
+    #[test]
+    fn mismatched_native_layout_is_rejected_before_handles() {
+        let expected = layout::expected_layout_fingerprint();
+        assert_eq!(
+            require_layout_fingerprint(expected ^ 1),
+            Err(Error::LayoutMismatch {
+                expected,
+                actual: expected ^ 1,
+            })
+        );
+    }
+
+    #[test]
+    fn struct_size_mismatch_names_the_structure_and_sizes() {
+        let mut sizes = sys::DfcFfiStructSizes {
+            capabilities: size_of::<sys::DfcFfiCapabilities>() as u32,
+            error: size_of::<sys::DfcFfiError>() as u32,
+            card: size_of::<sys::DfcFfiCard>() as u32,
+            picc: size_of::<sys::DfcFfiPiccSettings>() as u32,
+            application: size_of::<sys::DfcFfiApplication>() as u32,
+            file: size_of::<sys::DfcFfiFile>() as u32,
+            key: size_of::<sys::DfcFfiKey>() as u32,
+            activation: size_of::<sys::DfcFfiActivation>() as u32,
+            snapshot: size_of::<sys::DfcFfiSnapshot>() as u32,
+            diagnostic_snapshot: size_of::<sys::DfcFfiDiagnosticSnapshot>() as u32,
+            reader_state: size_of::<sys::DfcFfiReaderState>() as u32,
+        };
+        assert_eq!(struct_size_mismatch(&sizes), None);
+
+        let expected = sizes.file;
+        sizes.file += 4;
+        let mismatch = Error::StructSizeMismatch {
+            structure: "file",
+            expected,
+            actual: expected + 4,
+        };
+        assert_eq!(struct_size_mismatch(&sizes), Some(mismatch.clone()));
+        assert_eq!(
+            mismatch.to_string(),
+            format!(
+                "dfc native file structure size mismatch: expected {expected}, found {}",
+                expected + 4
+            )
+        );
     }
 
     #[test]
@@ -456,6 +563,147 @@ mod tests {
         assert_eq!(before.auth_mode, after.auth_mode);
         assert_eq!(before.ev2_active, after.ev2_active);
         assert_eq!(before.proximity_verified, after.proximity_verified);
+    }
+
+    #[test]
+    fn random_failure_is_reported_by_each_operation() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let mut picc = VirtualPicc::from_credential_with_random(credential, move |length| {
+            observed.fetch_add(1, Ordering::Relaxed);
+            vec![0; length.saturating_sub(1)]
+        })
+        .expect("PICC");
+        picc.activate().expect("activation");
+
+        for _ in 0..2 {
+            assert_eq!(
+                picc.exchange(&[0x90, 0x1A, 0, 0, 1, 0, 0]),
+                Err(Error::RandomSourceFailed)
+            );
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        picc.reset_protocol().expect("reset after random failure");
+        assert!(picc.exchange(&[0x90, 0x60, 0, 0, 0]).is_ok());
+    }
+
+    struct PiccTransport(VirtualPicc);
+
+    impl Transport for PiccTransport {
+        type Error = Error;
+        fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Error> {
+            self.0.exchange(command)
+        }
+    }
+
+    #[test]
+    fn reader_clear_header_is_never_narrowed_before_native_check() {
+        const NATIVE_MAX_CLEAR_HEADER: u32 = 10;
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
+        picc.activate().expect("activation");
+        let mut reader = Reader::new(PiccTransport(picc), Framing::Iso7816).expect("reader");
+        let version = Command {
+            instruction: 0x60,
+            data: Vec::new(),
+        };
+
+        assert_eq!(
+            reader
+                .exchange(&version, CommunicationMode::Plain, None)
+                .expect("derived")
+                .status,
+            0
+        );
+        assert_eq!(
+            reader
+                .exchange(
+                    &version,
+                    CommunicationMode::Plain,
+                    Some(NATIVE_MAX_CLEAR_HEADER),
+                )
+                .expect("maximum")
+                .status,
+            0
+        );
+        for bad in [
+            NATIVE_MAX_CLEAR_HEADER + 1,
+            i32::MAX as u32,
+            i32::MAX as u32 + 1,
+            u32::MAX,
+        ] {
+            assert!(matches!(
+                reader.exchange(&version, CommunicationMode::Plain, Some(bad)),
+                Err(ReaderError::Dfc(Error::InvalidArgument))
+            ));
+        }
+        assert_eq!(
+            reader
+                .exchange(&version, CommunicationMode::Plain, None)
+                .expect("session usable")
+                .status,
+            0
+        );
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn credential_index_above_u32_is_refused_not_wrapped() {
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-maximal.dfcb"
+        ))
+        .expect("fixture");
+        let wrapped = u32::MAX as usize + 1;
+        assert!(credential.application(0).is_ok());
+        assert!(credential.file(0).is_ok());
+        assert_eq!(
+            credential.application(wrapped).map(|_| ()),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(
+            credential.file(wrapped).map(|_| ()),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(credential.file_data(wrapped), Err(Error::InvalidArgument));
+    }
+
+    #[test]
+    fn limited_credit_value_is_exposed_by_the_public_file_model() {
+        let text = include_str!("../../../../examples/credentials/v6-maximal.dfc").replace(
+            "Application 00 File 02 Limited Credit: 01\n",
+            "Application 00 File 02 Limited Credit: 01\nApplication 00 File 02 Limited Credit Value: 37\n",
+        );
+        let credential = Credential::parse_text(&text).expect("fixture");
+        let file = (0..credential.file_count())
+            .map(|index| credential.file(index).expect("file"))
+            .find(|file| file.type_ == 2)
+            .expect("value file");
+        assert_eq!(file.limited_credit_value, 37);
+    }
+
+    #[test]
+    fn diagnostic_snapshot_clear_wipes_every_field() {
+        let mut snapshot = DiagnosticSnapshot(sys::DfcFfiDiagnosticSnapshot {
+            transaction_identifier: [0xa1; 4],
+            encryption_key: [0xa2; 16],
+            mac_key: [0xa3; 16],
+        });
+        snapshot.clear();
+        assert_eq!(snapshot.transaction_identifier(), &[0; 4]);
+        assert_eq!(snapshot.encryption_key(), &[0; 16]);
+        assert_eq!(snapshot.mac_key(), &[0; 16]);
     }
 }
 pub use dfc_core_sys as raw;
