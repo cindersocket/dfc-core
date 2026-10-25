@@ -220,17 +220,23 @@ static void open_transaction_family(SnapshotFixture* fixture, const char* family
     munit_error("unknown transaction family");
 }
 
-static void
-    create_family(DfcVirtualPiccSession* session, const char* family, uint8_t file_number) {
+static size_t build_create_family(
+    const char* family,
+    uint8_t file_number,
+    uint8_t* apdu,
+    size_t apdu_capacity) {
     DfcCommand command;
-    if(strcmp(family, "backup") == 0) {
+    if(strcmp(family, "standard") == 0 || strcmp(family, "backup") == 0) {
         DfcCommandDataFile file = {
             .file_no = file_number,
             .comm_settings = DFC_COMM_PLAIN,
             .access_rights = 0xEEEE,
             .size = 4,
         };
-        munit_assert_int(dfc_command_create_backup_data_file(&command, &file), ==, DfcCommandOk);
+        DfcCommandStatus status = strcmp(family, "standard") == 0 ?
+                                      dfc_command_create_standard_data_file(&command, &file) :
+                                      dfc_command_create_backup_data_file(&command, &file);
+        munit_assert_int(status, ==, DfcCommandOk);
     } else if(strcmp(family, "value") == 0) {
         DfcCommandValueFile file = {
             .file_no = file_number,
@@ -268,11 +274,55 @@ static void
     } else {
         munit_error("unknown creation family");
     }
-    uint8_t apdu[DFC_COMMAND_MAX_DATA + 8];
     size_t apdu_len = 0;
     munit_assert_int(
-        dfc_command_to_apdu(&command, apdu, sizeof(apdu), &apdu_len), ==, DfcCommandOk);
+        dfc_command_to_apdu(&command, apdu, apdu_capacity, &apdu_len), ==, DfcCommandOk);
+    return apdu_len;
+}
+
+static void
+    create_family(DfcVirtualPiccSession* session, const char* family, uint8_t file_number) {
+    uint8_t apdu[DFC_COMMAND_MAX_DATA + 8];
+    size_t apdu_len = build_create_family(family, file_number, apdu, sizeof(apdu));
     exchange_status(session, apdu, apdu_len, DFC_STATUS_OK);
+}
+
+static MunitResult test_create_publish_matrix(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const char* families[] = {"standard", "linear", "value"};
+    for(size_t index = 0; index < sizeof(families) / sizeof(families[0]); index++) {
+        uint8_t command[DFC_COMMAND_MAX_DATA + 8];
+        size_t command_len = build_create_family(families[index], 5, command, sizeof(command));
+
+        SnapshotFixture success;
+        fixture_open(&success);
+        begin_transaction(&success);
+        dfc_credential_clear_dirty(&success.credential);
+        exchange_status(success.session, command, command_len, DFC_STATUS_OK);
+        munit_assert_not_null(dfc_credential_find_file_in_app(&success.credential, 0, 5));
+        munit_assert_true(success.credential.dirty);
+        fixture_close(&success);
+
+        SnapshotFixture failure;
+        fixture_open(&failure);
+        begin_transaction(&failure);
+        dfc_credential_clear_dirty(&failure.credential);
+        size_t snapshot_length = failure.session->emulator->transaction_snapshot_pool_length;
+        if(strcmp(families[index], "value") == 0) {
+            /* Value files have no pool bytes, so make snapshot insertion reject its bounds. */
+            failure.session->emulator->transaction_snapshot_pool_length =
+                failure.credential.file_pool_used + 1;
+        } else {
+            dfc_host_fail_next_allocation(DfcAllocEmulator);
+        }
+        exchange_status(failure.session, command, command_len, DFC_STATUS_OUT_OF_EEPROM);
+        failure.session->emulator->transaction_snapshot_pool_length = snapshot_length;
+        munit_assert_null(dfc_credential_find_file_in_app(&failure.credential, 0, 5));
+        munit_assert_false(failure.credential.dirty);
+        fixture_close(&failure);
+    }
+    return MUNIT_OK;
 }
 
 static void
@@ -803,6 +853,7 @@ static MunitParameterEnum immediate_write_params[] = {
     {NULL, NULL}};
 
 static MunitTest tests[] = {
+    {"/create-publish-matrix", test_create_publish_matrix, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/create-family", test_creation_family, NULL, NULL, MUNIT_TEST_OPTION_NONE, family_params},
     {"/delete-rebase",
      test_delete_rebases_pending_files,

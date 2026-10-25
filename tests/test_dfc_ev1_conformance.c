@@ -592,9 +592,179 @@ static MunitResult test_file_number_out_of_range(const MunitParameter params[], 
     assert_status(session, create_app, sizeof(create_app), DFC_STATUS_OK);
     const uint8_t select[] = {0x90, 0x5A, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03, 0x00};
     assert_status(session, select, sizeof(select), DFC_STATUS_OK);
-    const uint8_t create_file[] = {
+    uint8_t create_std[] = {
         0x90, 0xCD, 0x00, 0x00, 0x07, 0x20, 0x00, 0xEE, 0xEE, 0x01, 0x00, 0x00, 0x00};
-    assert_status(session, create_file, sizeof(create_file), DFC_STATUS_PARAMETER_ERROR);
+    uint8_t create_record[] = {
+        0x90,
+        0xC1,
+        0x00,
+        0x00,
+        0x0A,
+        0x20,
+        0x00,
+        0xEE,
+        0xEE,
+        0x01,
+        0x00,
+        0x00,
+        0x02,
+        0x00,
+        0x00,
+        0x00};
+    uint8_t create_value[] = {0x90, 0xCC, 0x00, 0x00, 0x11, 0x20, 0x00, 0xEE,
+                              0xEE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    assert_status(session, create_std, sizeof(create_std), DFC_STATUS_PARAMETER_ERROR);
+    assert_status(session, create_record, sizeof(create_record), DFC_STATUS_PARAMETER_ERROR);
+    assert_status(session, create_value, sizeof(create_value), DFC_STATUS_PARAMETER_ERROR);
+#if DFC_ENABLE_TRANSACTION_MAC
+    uint8_t create_transaction_mac[28] = {
+        0x90,
+        DFC_CMD_CREATE_TRANSACTION_MAC_FILE,
+        0x00,
+        0x00,
+        0x16,
+        0x20,
+        DFC_COMM_PLAIN,
+        0xEE,
+        0xEF,
+        DFC_TRANSACTION_MAC_KEY_TYPE_AES,
+    };
+    create_transaction_mac[27] = 0x00;
+    assert_status(
+        session,
+        create_transaction_mac,
+        sizeof(create_transaction_mac),
+        DFC_STATUS_PARAMETER_ERROR);
+#endif
+
+    create_std[5] = 0x01;
+    create_record[5] = 0x01;
+    create_value[5] = 0x01;
+    assert_status(session, create_std, sizeof(create_std), DFC_STATUS_OK);
+    assert_status(session, create_record, sizeof(create_record), DFC_STATUS_DUPLICATE_ERROR);
+    assert_status(session, create_value, sizeof(create_value), DFC_STATUS_DUPLICATE_ERROR);
+#if DFC_ENABLE_TRANSACTION_MAC
+    create_transaction_mac[5] = 0x01;
+    assert_status(
+        session,
+        create_transaction_mac,
+        sizeof(create_transaction_mac),
+        DFC_STATUS_PARAMETER_ERROR);
+#endif
+    munit_assert_size(credential.num_files, ==, 1);
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static void add_counted_file(DfcCredential* credential, size_t app_index, uint8_t number) {
+    DfcFile* file = dfc_credential_create_file(credential, app_index, number);
+    munit_assert_not_null(file);
+    file->type = DFC_FILE_TYPE_STANDARD_DATA;
+}
+
+static void assert_create_family_status(
+    DfcVirtualPiccSession* session,
+    uint8_t instruction,
+    uint8_t file_number,
+    uint8_t expected_status) {
+    uint8_t command[23] = {0x90, instruction, 0, 0};
+    size_t command_len;
+    if(instruction == DFC_CMD_CREATE_STD_DATA_FILE) {
+        const uint8_t body[] = {file_number, DFC_COMM_PLAIN, 0xEE, 0xEE, 1, 0, 0};
+        command[4] = sizeof(body);
+        memcpy(command + 5, body, sizeof(body));
+        command_len = 5 + sizeof(body) + 1;
+    } else if(instruction == DFC_CMD_CREATE_LINEAR_RECORD_FILE) {
+        const uint8_t body[] = {file_number, DFC_COMM_PLAIN, 0xEE, 0xEE, 1, 0, 0, 2, 0, 0};
+        command[4] = sizeof(body);
+        memcpy(command + 5, body, sizeof(body));
+        command_len = 5 + sizeof(body) + 1;
+    } else {
+        const uint8_t body[] = {
+            file_number, DFC_COMM_PLAIN, 0xEE, 0xEE, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0};
+        command[4] = sizeof(body);
+        memcpy(command + 5, body, sizeof(body));
+        command_len = 5 + sizeof(body) + 1;
+    }
+    assert_status(session, command, command_len, expected_status);
+}
+
+static MunitResult test_create_file_count_matrix(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t instructions[] = {
+        DFC_CMD_CREATE_STD_DATA_FILE,
+        DFC_CMD_CREATE_LINEAR_RECORD_FILE,
+        DFC_CMD_CREATE_VALUE_FILE,
+    };
+    for(size_t family = 0; family < sizeof(instructions) / sizeof(instructions[0]); family++) {
+        for(size_t scenario = 0; scenario < 2; scenario++) {
+            DfcCredential credential;
+            blank_picc(&credential, 0x0F);
+            credential.card.storage = DfcStorage4KByteCount;
+            const uint8_t selected_aid[] = {1, 2, 3};
+            const uint8_t other_aid[] = {4, 5, 6};
+            munit_assert_not_null(dfc_credential_create_application_desfire_order(
+                &credential, selected_aid, 0x0F, DFC_KEY_TYPE_DES_2K3DES | 1));
+            munit_assert_not_null(dfc_credential_create_application_desfire_order(
+                &credential, other_aid, 0x0F, DFC_KEY_TYPE_DES_2K3DES | 1));
+            for(uint8_t number = 0; number < DFC_EV1_MAX_FILES_PER_APP; number++) {
+                add_counted_file(&credential, scenario == 0 ? 0 : 1, number);
+            }
+            DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
+            munit_assert_not_null(session);
+            DfcVirtualPiccActivation activation;
+            munit_assert_int(
+                dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+            const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 1, 2, 3, 0};
+            assert_status(session, select, sizeof(select), DFC_STATUS_OK);
+            /* A full app occupies every valid file number, so duplicate wins there. */
+            assert_create_family_status(
+                session,
+                instructions[family],
+                0,
+                scenario == 0 ? DFC_STATUS_DUPLICATE_ERROR : DFC_STATUS_COUNT_ERROR);
+            munit_assert_size(credential.num_files, ==, DFC_MAX_FILES);
+            dfc_virtual_picc_session_free(session);
+        }
+    }
+    return MUNIT_OK;
+}
+
+static MunitResult test_record_iso_file_id_collision(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = open_blank(0x0F, &credential);
+    const uint8_t create_app[] = {
+        0x90, DFC_CMD_CREATE_APPLICATION, 0, 0, 5, 1, 2, 3, 0x0F, DFC_KS2_ISO_FILE_IDS | 1, 0};
+    assert_status(session, create_app, sizeof(create_app), DFC_STATUS_OK);
+    const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 1, 2, 3, 0};
+    assert_status(session, select, sizeof(select), DFC_STATUS_OK);
+    uint8_t create_record[] = {
+        0x90,
+        DFC_CMD_CREATE_LINEAR_RECORD_FILE,
+        0,
+        0,
+        12,
+        1,
+        0x34,
+        0x12,
+        0,
+        0xEE,
+        0xEE,
+        1,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0};
+    assert_status(session, create_record, sizeof(create_record), DFC_STATUS_OK);
+    create_record[5] = 2;
+    assert_status(session, create_record, sizeof(create_record), DFC_STATUS_DUPLICATE_ERROR);
+    munit_assert_size(credential.num_files, ==, 1);
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
 }
@@ -2537,6 +2707,18 @@ static MunitTest tests[] = {
      NULL},
     {"/file-number-out-of-range",
      test_file_number_out_of_range,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/create-file-count-matrix",
+     test_create_file_count_matrix,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/record-iso-file-id-collision",
+     test_record_iso_file_id_collision,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

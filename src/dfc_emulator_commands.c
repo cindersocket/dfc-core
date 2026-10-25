@@ -2836,6 +2836,48 @@ static bool file_iso_id_in_use(const DfcCredential* credential, uint16_t iso_fil
     return false;
 }
 
+/* Validate the slot before any type-specific allocation or state change. */
+static bool new_file_number_is_available(
+    DfcEmulator* emulator,
+    uint8_t file_number,
+    uint8_t duplicate_status,
+    DfcByteBuf* tx_buffer) {
+    DfcCredential* credential = emulator->credential;
+    if(file_number > DFC_EV1_MAX_FILE_NUMBER) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        return false;
+    }
+    if(dfc_credential_find_file_in_app(credential, emulator->selected_app_index, file_number)) {
+        dfc_bytebuf_append_byte(tx_buffer, duplicate_status);
+        return false;
+    }
+    return true;
+}
+
+static bool new_file_count_is_available(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
+    DfcCredential* credential = emulator->credential;
+    if(dfc_credential_count_files_in_app(credential, emulator->selected_app_index) >=
+           DFC_EV1_MAX_FILES_PER_APP ||
+       credential->num_files >= DFC_MAX_FILES) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COUNT_ERROR);
+        return false;
+    }
+    return true;
+}
+
+/* Publish a fully initialized file, or remove it if snapshotting cannot proceed. */
+static void publish_created_file(DfcEmulator* emulator, DfcFile* file, DfcByteBuf* tx_buffer) {
+    DfcCredential* credential = emulator->credential;
+    if(!dfc_emulator_transaction_snapshot_insert_file(
+           emulator, (size_t)(file - credential->files))) {
+        (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file->number);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
+    dfc_credential_mark_dirty(credential);
+    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+}
+
 static void handle_create_std_data_file(
     DfcEmulator* emulator,
     const uint8_t* apdu,
@@ -2871,20 +2913,9 @@ static void handle_create_std_data_file(
         }
     }
 
-    if(file_no > DFC_EV1_MAX_FILE_NUMBER) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+    if(!new_file_number_is_available(emulator, file_no, DFC_STATUS_DUPLICATE_ERROR, tx_buffer) ||
+       !new_file_count_is_available(emulator, tx_buffer))
         return;
-    }
-    if(dfc_credential_find_file_in_app(credential, emulator->selected_app_index, file_no)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_DUPLICATE_ERROR);
-        return;
-    }
-    if(dfc_credential_count_files_in_app(credential, emulator->selected_app_index) >=
-           DFC_EV1_MAX_FILES_PER_APP ||
-       credential->num_files >= DFC_MAX_FILES) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COUNT_ERROR);
-        return;
-    }
 
     uint8_t comm_settings = apdu[settings_offset];
     uint16_t access_rights =
@@ -2917,14 +2948,7 @@ static void handle_create_std_data_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
-    if(!dfc_emulator_transaction_snapshot_insert_file(
-           emulator, (size_t)(file - credential->files))) {
-        (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
-    dfc_credential_mark_dirty(credential);
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    publish_created_file(emulator, file, tx_buffer);
 }
 
 #if DFC_ENABLE_RECORD_FILES
@@ -2946,14 +2970,8 @@ static void handle_create_record_file(
     DfcCredential* credential = emulator->credential;
     uint8_t file_no = apdu[1];
     size_t settings_offset = has_iso_file_id ? 4 : 2;
-    if(file_no > DFC_EV1_MAX_FILE_NUMBER) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+    if(!new_file_number_is_available(emulator, file_no, DFC_STATUS_DUPLICATE_ERROR, tx_buffer))
         return;
-    }
-    if(dfc_credential_find_file_in_app(credential, emulator->selected_app_index, file_no)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_DUPLICATE_ERROR);
-        return;
-    }
 
     uint16_t iso_file_id = 0;
     if(has_iso_file_id) {
@@ -2968,7 +2986,6 @@ static void handle_create_record_file(
             return;
         }
     }
-
     uint32_t record_size = read_uint24_le(apdu + settings_offset + 3);
     uint32_t max_records = read_uint24_le(apdu + settings_offset + 6);
     uint64_t allocation = (uint64_t)record_size * max_records;
@@ -2982,6 +2999,7 @@ static void handle_create_record_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
+    if(!new_file_count_is_available(emulator, tx_buffer)) return;
 
     DfcFile* file = dfc_credential_create_file(credential, emulator->selected_app_index, file_no);
     if(!file) {
@@ -3004,14 +3022,7 @@ static void handle_create_record_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
-    if(!dfc_emulator_transaction_snapshot_insert_file(
-           emulator, (size_t)(file - credential->files))) {
-        (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
-    dfc_credential_mark_dirty(credential);
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    publish_created_file(emulator, file, tx_buffer);
 }
 #endif
 
@@ -3021,20 +3032,9 @@ static void
 
     DfcCredential* credential = emulator->credential;
     uint8_t file_no = apdu[1];
-    if(file_no > DFC_EV1_MAX_FILE_NUMBER) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+    if(!new_file_number_is_available(emulator, file_no, DFC_STATUS_DUPLICATE_ERROR, tx_buffer) ||
+       !new_file_count_is_available(emulator, tx_buffer))
         return;
-    }
-    if(dfc_credential_find_file_in_app(credential, emulator->selected_app_index, file_no)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_DUPLICATE_ERROR);
-        return;
-    }
-    if(dfc_credential_count_files_in_app(credential, emulator->selected_app_index) >=
-           DFC_EV1_MAX_FILES_PER_APP ||
-       credential->num_files >= DFC_MAX_FILES) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COUNT_ERROR);
-        return;
-    }
 
     int32_t lower_limit = read_int32_le(apdu + 5);
     int32_t upper_limit = read_int32_le(apdu + 9);
@@ -3062,14 +3062,7 @@ static void
     file->value_pending_delta = 0;
     file->value_pending_value = 0;
     file->value_pending_absolute = false;
-    if(!dfc_emulator_transaction_snapshot_insert_file(
-           emulator, (size_t)(file - credential->files))) {
-        (void)dfc_credential_delete_file(credential, emulator->selected_app_index, file_no);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
-    dfc_credential_mark_dirty(credential);
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    publish_created_file(emulator, file, tx_buffer);
 }
 
 static void handle_delete_file(DfcEmulator* emulator, const uint8_t* apdu, DfcByteBuf* tx_buffer) {
@@ -3392,22 +3385,8 @@ static DfcFile* transaction_mac_file(DfcEmulator* emulator) {
         emulator->credential, emulator->selected_app_index);
 }
 
-static bool transaction_mac_file_create_ready(
-    DfcEmulator* emulator,
-    uint8_t file_number,
-    DfcByteBuf* tx_buffer) {
+static bool transaction_mac_file_has_capacity(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     DfcCredential* credential = emulator->credential;
-    if(file_number > DFC_EV1_MAX_FILE_NUMBER ||
-       dfc_credential_find_file_in_app(credential, emulator->selected_app_index, file_number)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
-        return false;
-    }
-    if(dfc_credential_count_files_in_app(credential, emulator->selected_app_index) >=
-           DFC_EV1_MAX_FILES_PER_APP ||
-       credential->num_files >= DFC_MAX_FILES) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_COUNT_ERROR);
-        return false;
-    }
     if(credential->file_pool_used > DFC_FILE_POOL_SIZE ||
        DFC_TRANSACTION_MAC_FILE_LENGTH > DFC_FILE_POOL_SIZE - credential->file_pool_used) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
@@ -3436,7 +3415,10 @@ static void handle_create_transaction_mac_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
-    if(!transaction_mac_file_create_ready(emulator, buffer[1], tx_buffer)) return;
+    if(!new_file_number_is_available(emulator, buffer[1], DFC_STATUS_PARAMETER_ERROR, tx_buffer) ||
+       !new_file_count_is_available(emulator, tx_buffer) ||
+       !transaction_mac_file_has_capacity(emulator, tx_buffer))
+        return;
 
     /* No fallible operation remains after the transaction boundary moves. */
     (void)dfc_emulator_abort_transaction(emulator);
