@@ -1,6 +1,7 @@
 namespace Dfc.Tests;
 
 using System;
+using Dfc.Credentials;
 using Dfc.Crypto;
 using Dfc.Reader;
 using Dfc.Sdm;
@@ -61,12 +62,19 @@ public sealed class AdvancedApiTests
 
         var standard = DfcResponseDecoders.DecodeFileSettings(
             Convert.FromHexString("00013012360000")).Value;
-        Assert.That(standard.Size, Is.EqualTo(54));
-        Assert.That(standard.Access.Read.KeyNumber, Is.EqualTo(1));
+        Assert.Multiple(() =>
+        {
+            Assert.That(standard.Type, Is.EqualTo(DfcFileType.StandardData));
+            Assert.That(standard.CommunicationMode, Is.EqualTo(DfcCommunicationMode.Mac));
+            Assert.That(standard.Size, Is.EqualTo(54));
+            Assert.That(standard.Access.Read.KeyNumber, Is.EqualTo(1));
+        });
         var value = DfcResponseDecoders.DecodeFileSettings(
             Convert.FromHexString("0200EEEE9CFFFFFF640000000B00000001")).Value;
         Assert.Multiple(() =>
         {
+            Assert.That(value.Type, Is.EqualTo(DfcFileType.Value));
+            Assert.That(value.CommunicationMode, Is.EqualTo(DfcCommunicationMode.Plain));
             Assert.That(value.LowerLimit, Is.EqualTo(-100));
             Assert.That(value.UpperLimit, Is.EqualTo(100));
             Assert.That(value.LimitedCreditEnabled, Is.True);
@@ -75,6 +83,8 @@ public sealed class AdvancedApiTests
             Convert.FromHexString("0301EF12200000100000070000")).Value;
         Assert.Multiple(() =>
         {
+            Assert.That(records.Type, Is.EqualTo(DfcFileType.LinearRecord));
+            Assert.That(records.CommunicationMode, Is.EqualTo(DfcCommunicationMode.Mac));
             Assert.That(records.RecordSize, Is.EqualTo(32));
             Assert.That(records.MaxRecords, Is.EqualTo(16));
             Assert.That(records.CurrentRecords, Is.EqualTo(7));
@@ -119,6 +129,12 @@ public sealed class AdvancedApiTests
         var wrongKey = new byte[16];
         wrongKey[0] = 1;
         Assert.That(DfcSdmVerifier.Verify(message, config, wrongKey).IsFailure, Is.True);
+        Assert.That(DfcSdmVerifier.Verify(message,
+            config with { PlainUid = new DfcSdmField(0, 14) }, new byte[16]).IsFailure, Is.True,
+            "plain UID length is the decoded byte count, not the ASCII field width");
+        Assert.That(DfcSdmVerifier.Verify(message,
+            config with { EncryptedFileData = new DfcSdmField(20, 16) }, new byte[16]).IsFailure, Is.True,
+            "encrypted file length is the ASCII field width, not the decoded byte count");
         var modified = (byte[])message.Clone();
         modified[30] ^= 1;
         Assert.That(DfcSdmVerifier.Verify(modified, config, new byte[16]).IsFailure, Is.True);
