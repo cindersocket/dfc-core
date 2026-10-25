@@ -586,6 +586,8 @@ uint16_t
 #endif
 
 // Unwraps commands that carry a clear header followed by a protected body.
+// Unmodified bodies are borrowed from apdu. Transformed bodies use scratch,
+// and scratch_len tells the caller how much of that buffer it must wipe.
 // The caller owns command-IV advancement, so these commands must be deferred
 // by the dispatcher. SIZE_MAX means the body failed authentication.
 size_t dfc_emulator_command_unwrap_write_payload(
@@ -594,15 +596,17 @@ size_t dfc_emulator_command_unwrap_write_payload(
     size_t apdu_len,
     size_t header_len,
     uint8_t comm,
-    uint8_t* out,
-    size_t out_cap) {
+    uint8_t* scratch,
+    size_t scratch_cap,
+    const uint8_t** clear,
+    size_t* scratch_len) {
     size_t cmd_header = 1 + header_len;
     if(apdu_len < cmd_header) return SIZE_MAX;
     const uint8_t* wrapped = apdu + cmd_header;
     size_t wrapped_len = apdu_len - cmd_header;
+    *clear = wrapped;
+    *scratch_len = 0;
     if(!dfc_emulator_native_authentication_active(emulator)) {
-        if(wrapped_len > out_cap) return SIZE_MAX;
-        memcpy(out, wrapped, wrapped_len);
         return wrapped_len;
     }
     bool ev1_sm = dfc_secure_messaging_applies_ev1(emulator->secure_messaging, apdu[0]);
@@ -610,12 +614,11 @@ size_t dfc_emulator_command_unwrap_write_payload(
         size_t clear_body = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
             emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1);
         if(clear_body == SIZE_MAX || clear_body < header_len) return SIZE_MAX;
-        size_t data_len = clear_body - header_len;
-        if(data_len > out_cap) return SIZE_MAX;
-        if(data_len) memcpy(out, apdu + cmd_header, data_len);
-        return data_len;
+        return clear_body - header_len;
     }
     if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
+        *clear = scratch;
+        *scratch_len = DFC_MIN(wrapped_len, scratch_cap);
         size_t data_len = dfc_secure_messaging_verify_command(
             emulator->secure_messaging,
             DFC_COMM_ENCIPHERED,
@@ -623,33 +626,37 @@ size_t dfc_emulator_command_unwrap_write_payload(
             cmd_header,
             wrapped,
             wrapped_len,
-            out,
-            out_cap);
+            scratch,
+            scratch_cap);
         if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
         return data_len;
     }
     if(ev1_sm) {
-        if(wrapped_len > out_cap) return SIZE_MAX;
-        memcpy(out, wrapped, wrapped_len);
         if(!dfc_secure_messaging_update_ev1_command(
                emulator->secure_messaging, apdu[0], apdu + 1, apdu_len - 1)) {
-            dfc_secure_wipe(out, wrapped_len);
             return SIZE_MAX;
         }
         return wrapped_len;
     }
     if(comm == DFC_COMM_PLAIN) {
-        if(wrapped_len > out_cap) return SIZE_MAX;
-        memcpy(out, wrapped, wrapped_len);
         return wrapped_len;
     }
     if(comm == DFC_COMM_MAC) {
         size_t data_len = 0;
+        *clear = scratch;
+        *scratch_len = DFC_MIN(wrapped_len, scratch_cap);
         return dfc_secure_messaging_verify_d40_command_mac(
-                   emulator->secure_messaging, wrapped, wrapped_len, out, out_cap, &data_len) ?
+                   emulator->secure_messaging,
+                   wrapped,
+                   wrapped_len,
+                   scratch,
+                   scratch_cap,
+                   &data_len) ?
                    data_len :
                    SIZE_MAX;
     }
+    *clear = scratch;
+    *scratch_len = DFC_MIN(wrapped_len, scratch_cap);
     size_t data_len = dfc_secure_messaging_verify_command(
         emulator->secure_messaging,
         DFC_COMM_ENCIPHERED,
@@ -657,8 +664,8 @@ size_t dfc_emulator_command_unwrap_write_payload(
         cmd_header,
         wrapped,
         wrapped_len,
-        out,
-        out_cap);
+        scratch,
+        scratch_cap);
     if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
     return data_len;
 }

@@ -71,8 +71,10 @@ size_t dfc_emulator_command_unwrap_write_payload(
     size_t apdu_len,
     size_t header_len,
     uint8_t comm,
-    uint8_t* out,
-    size_t out_cap);
+    uint8_t* scratch,
+    size_t scratch_cap,
+    const uint8_t** clear,
+    size_t* scratch_len);
 void dfc_emulator_command_clear_pending_chain(DfcEmulator* emulator);
 const uint8_t* dfc_emulator_command_auth_key(
     DfcEmulator* emulator,

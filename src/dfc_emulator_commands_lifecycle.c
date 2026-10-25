@@ -575,6 +575,7 @@ void dfc_emulator_command_change_file_settings(
     const uint8_t* body = apdu + 2;
     size_t body_len = apdu_len - 2;
     size_t clear_len = 0;
+    size_t scratch_len = 0;
     bool ev2_active = false;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     ev2_active = emulator->ev2_session_active;
@@ -589,18 +590,20 @@ void dfc_emulator_command_change_file_settings(
             1,
             protection,
             emulator->pending_chain,
-            sizeof(emulator->pending_chain));
+            sizeof(emulator->pending_chain),
+            &body,
+            &scratch_len);
         if(clear_len == SIZE_MAX) {
+            dfc_secure_wipe(emulator->pending_chain, scratch_len);
             dfc_emulator_reset_session(emulator);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
-        body = emulator->pending_chain;
         body_len = clear_len;
     }
 
     apply_change_file_settings(emulator, file, body, body_len, tx_buffer);
-    dfc_secure_wipe(emulator->pending_chain, clear_len);
+    dfc_secure_wipe(emulator->pending_chain, scratch_len);
 }
 
 void dfc_emulator_command_get_application_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {

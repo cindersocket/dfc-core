@@ -30,6 +30,8 @@
   (#166).
 - Remove dormant hosted formatting code from target common builds (#167).
 - Use one reserved ISO file-ID policy throughout DER decoding (#168).
+- Route WriteData through the canonical secure-messaging unwrap path while
+  keeping already-clear payloads zero-copy (#170).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`

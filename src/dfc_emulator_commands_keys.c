@@ -439,6 +439,7 @@ void dfc_emulator_command_change_key_settings(
     bool ev2_active = false;
 #endif
     size_t clear_len = 0;
+    size_t scratch_len = 0;
     if(!ev2_active) {
         clear_len = dfc_emulator_command_unwrap_write_payload(
             emulator,
@@ -447,17 +448,19 @@ void dfc_emulator_command_change_key_settings(
             0,
             DFC_COMM_ENCIPHERED,
             emulator->pending_chain,
-            sizeof(emulator->pending_chain));
+            sizeof(emulator->pending_chain),
+            &settings,
+            &scratch_len);
         if(clear_len == SIZE_MAX) {
+            dfc_secure_wipe(emulator->pending_chain, scratch_len);
             dfc_emulator_reset_session(emulator);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
-        settings = emulator->pending_chain;
         settings_len = clear_len;
     }
     if(settings_len != 1) {
-        dfc_secure_wipe(emulator->pending_chain, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
@@ -469,7 +472,7 @@ void dfc_emulator_command_change_key_settings(
         emulator->credential->picc_key_settings_1 = settings[0];
     }
     dfc_credential_mark_dirty(emulator->credential);
-    dfc_secure_wipe(emulator->pending_chain, clear_len);
+    dfc_secure_wipe(emulator->pending_chain, scratch_len);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
 
@@ -737,8 +740,18 @@ void dfc_emulator_command_set_configuration(
             return;
         }
         uint8_t clear[DFC_SM_MAX_CIPHER_BLOCK_SIZE] = {0};
+        const uint8_t* configuration_data = NULL;
+        size_t scratch_len = 0;
         size_t clear_len = dfc_emulator_command_unwrap_write_payload(
-            emulator, buffer, buffer_len, 1, DFC_COMM_ENCIPHERED, clear, sizeof(clear));
+            emulator,
+            buffer,
+            buffer_len,
+            1,
+            DFC_COMM_ENCIPHERED,
+            clear,
+            sizeof(clear),
+            &configuration_data,
+            &scratch_len);
         if(clear_len == SIZE_MAX) {
             dfc_secure_wipe(clear, sizeof(clear));
             dfc_emulator_reset_session(emulator);
@@ -750,7 +763,7 @@ void dfc_emulator_command_set_configuration(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return;
         }
-        uint8_t configuration = clear[0];
+        uint8_t configuration = configuration_data[0];
         dfc_secure_wipe(clear, sizeof(clear));
         if(emulator->selected_application == DfcEmulatorSelectedApplicationPicc) {
             uint8_t reserved = emulator->credential->card.generation == DfcGenerationEv1 ?

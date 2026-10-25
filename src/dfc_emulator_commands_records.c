@@ -30,22 +30,32 @@ void dfc_emulator_command_write_record(
     uint32_t write_len = read_uint24_le(apdu + 5);
     uint8_t comm = dfc_emulator_file_effective_comm_settings(
         emulator, file, DfcFileAccessWrite, file->comm_settings);
-    uint8_t* record_data = emulator->pending_chain;
+    const uint8_t* record_data = NULL;
+    size_t scratch_len = 0;
     size_t clear_len = dfc_emulator_command_unwrap_write_payload(
-        emulator, apdu, apdu_len, 7, comm, record_data, sizeof(emulator->pending_chain));
+        emulator,
+        apdu,
+        apdu_len,
+        7,
+        comm,
+        emulator->pending_chain,
+        sizeof(emulator->pending_chain),
+        &record_data,
+        &scratch_len);
     if(clear_len == SIZE_MAX) {
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_emulator_reset_session(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         return;
     }
     if(clear_len != write_len || offset + write_len > file->record_size) {
-        dfc_secure_wipe(record_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
     if(!dfc_emulator_command_transaction_mac_can_add_data(emulator, clear_len)) {
-        dfc_secure_wipe(record_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
@@ -59,18 +69,18 @@ void dfc_emulator_command_write_record(
 
     uint8_t* data = dfc_file_data(emulator->credential, file);
     if(!data) {
-        dfc_secure_wipe(record_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
         return;
     }
     if(!dfc_emulator_command_transaction_snapshot_begin(emulator)) {
-        dfc_secure_wipe(record_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
     uint8_t operation = dfc_emulator_command_transaction_record_operation(emulator, file);
     if(operation == RecordTransactionClear || operation == RecordTransactionUpdate) {
-        dfc_secure_wipe(record_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
@@ -83,7 +93,7 @@ void dfc_emulator_command_write_record(
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
             if(!transaction_snapshot_was_active) dfc_emulator_abort_transaction_snapshot(emulator);
 #endif
-            dfc_secure_wipe(record_data, clear_len);
+            dfc_secure_wipe(emulator->pending_chain, scratch_len);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
             return;
         }
@@ -94,7 +104,7 @@ void dfc_emulator_command_write_record(
         // A linear file with no room left refuses the first write in a
         // transaction. Further writes target the record that call created.
         if(file->record_count >= file->max_records && file->type == DFC_FILE_TYPE_LINEAR_RECORD) {
-            dfc_secure_wipe(record_data, clear_len);
+            dfc_secure_wipe(emulator->pending_chain, scratch_len);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
             return;
         }
@@ -106,12 +116,12 @@ void dfc_emulator_command_write_record(
                 if(!transaction_snapshot_was_active)
                     dfc_emulator_abort_transaction_snapshot(emulator);
 #endif
-                dfc_secure_wipe(record_data, clear_len);
+                dfc_secure_wipe(emulator->pending_chain, scratch_len);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
                 return;
             }
 #endif
-            dfc_secure_wipe(record_data, clear_len);
+            dfc_secure_wipe(emulator->pending_chain, scratch_len);
             dfc_emulator_command_transaction_set_record_operation(
                 emulator, file, RecordTransactionWrite, 0);
             file->transaction_pending = true;
@@ -125,7 +135,7 @@ void dfc_emulator_command_write_record(
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
             if(!transaction_snapshot_was_active) dfc_emulator_abort_transaction_snapshot(emulator);
 #endif
-            dfc_secure_wipe(record_data, clear_len);
+            dfc_secure_wipe(emulator->pending_chain, scratch_len);
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
             return;
         }
@@ -149,7 +159,7 @@ void dfc_emulator_command_write_record(
     if(write_len > 0) {
         memcpy(data + record_index * file->record_size + offset, record_data, write_len);
     }
-    dfc_secure_wipe(record_data, clear_len);
+    dfc_secure_wipe(emulator->pending_chain, scratch_len);
     file->transaction_pending = true;
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -185,28 +195,32 @@ void dfc_emulator_command_update_record(
     }
     uint8_t comm = dfc_emulator_file_effective_comm_settings(
         emulator, file, DfcFileAccessReadWrite, file->comm_settings);
-    uint8_t* update_data = emulator->pending_chain;
+    const uint8_t* update_data = NULL;
+    size_t scratch_len = 0;
     size_t clear_len = dfc_emulator_command_unwrap_write_payload(
         emulator,
         apdu,
         apdu_len,
         DFC_UPDATE_RECORD_HEADER_SIZE - 1,
         comm,
-        update_data,
-        sizeof(emulator->pending_chain));
+        emulator->pending_chain,
+        sizeof(emulator->pending_chain),
+        &update_data,
+        &scratch_len);
     if(clear_len == SIZE_MAX) {
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_emulator_reset_session(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         return;
     }
     if(clear_len != write_length) {
-        dfc_secure_wipe(update_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
     if(!dfc_emulator_command_transaction_mac_can_add_record_update(emulator, clear_len)) {
-        dfc_secure_wipe(update_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
@@ -216,12 +230,12 @@ void dfc_emulator_command_update_record(
 #endif
     uint8_t* data = dfc_file_data(emulator->credential, file);
     if(!data || !dfc_emulator_command_transaction_snapshot_begin(emulator)) {
-        dfc_secure_wipe(update_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
     if(file->type == DFC_FILE_TYPE_LINEAR_RECORD && file->record_count >= file->max_records) {
-        dfc_secure_wipe(update_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
@@ -230,7 +244,7 @@ void dfc_emulator_command_update_record(
        (operation == RecordTransactionUpdate &&
         emulator->transaction_record_numbers[dfc_emulator_command_transaction_file_index(
             emulator, file)] != record_number)) {
-        dfc_secure_wipe(update_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
@@ -240,14 +254,14 @@ void dfc_emulator_command_update_record(
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
         if(!transaction_snapshot_was_active) dfc_emulator_abort_transaction_snapshot(emulator);
 #endif
-        dfc_secure_wipe(update_data, clear_len);
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
 #endif
     size_t stored_index = file->record_count - record_number - 1;
     memcpy(data + stored_index * file->record_size + offset, update_data, write_length);
-    dfc_secure_wipe(update_data, clear_len);
+    dfc_secure_wipe(emulator->pending_chain, scratch_len);
     dfc_emulator_command_transaction_set_record_operation(
         emulator, file, RecordTransactionUpdate, record_number);
     file->transaction_pending = true;

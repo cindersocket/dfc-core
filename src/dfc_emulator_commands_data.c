@@ -548,98 +548,25 @@ void dfc_emulator_command_write_data(
         return;
     }
 
-    const uint8_t* wrapped = apdu + 8;
-    size_t wrapped_len = apdu_len - 8;
-
-    const uint8_t* clear = wrapped;
-    size_t out_len = wrapped_len;
+    bool ev1_sm = dfc_emulator_native_authentication_active(emulator) &&
+                  dfc_secure_messaging_applies_ev1(emulator->secure_messaging, DFC_CMD_WRITE_DATA);
+    const uint8_t* clear = NULL;
     size_t scratch_len = 0;
-    if(dfc_emulator_native_authentication_active(emulator)) {
-        bool ev1_sm =
-            dfc_secure_messaging_applies_ev1(emulator->secure_messaging, DFC_CMD_WRITE_DATA);
-        if(ev1_sm && comm == DFC_COMM_MAC &&
-           dfc_secure_messaging_ev1_transmits_command_mac(DFC_CMD_WRITE_DATA)) {
-            // Option b: MACt covers Cmd||FileNo||Offset||Len||Data (whole body after Cmd).
-            size_t clear_body = dfc_secure_messaging_verify_ev1_transmitted_command_mac_full(
-                emulator->secure_messaging, apdu, apdu_len);
-            if(clear_body == SIZE_MAX || clear_body < 7) {
-                dfc_emulator_reset_session(emulator);
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-                return;
-            }
-            out_len = clear_body - 7;
-            clear = wrapped;
-        } else if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
-            if(wrapped_len > sizeof(emulator->pending_chain)) {
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
-                return;
-            }
-            uint8_t* target = emulator->pending_chain;
-            out_len = dfc_secure_messaging_verify_command(
-                emulator->secure_messaging,
-                DFC_COMM_ENCIPHERED,
-                apdu,
-                8,
-                wrapped,
-                wrapped_len,
-                target,
-                sizeof(emulator->pending_chain));
-            clear = target;
-            scratch_len = wrapped_len;
-            if(out_len == 0 && wrapped_len > 0) {
-                dfc_secure_wipe(target, scratch_len);
-                dfc_emulator_reset_session(emulator);
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-                return;
-            }
-            // IV left as last CT block for response MACt(RC).
-        } else if(ev1_sm) {
-            // Plain (or free-access Full demoted to plain): CMAC updates IV only.
-            if(!dfc_secure_messaging_update_ev1_command_full(
-                   emulator->secure_messaging, apdu, apdu_len)) {
-                dfc_emulator_reset_session(emulator);
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-                return;
-            }
-        } else {
-            // D40 file comm modes.
-            if(comm != DFC_COMM_PLAIN) {
-                if(wrapped_len > sizeof(emulator->pending_chain)) {
-                    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
-                    return;
-                }
-                uint8_t* target = emulator->pending_chain;
-                bool d40_mac_ok = true;
-                if(comm == DFC_COMM_MAC) {
-                    d40_mac_ok = dfc_secure_messaging_verify_d40_command_mac(
-                        emulator->secure_messaging,
-                        wrapped,
-                        wrapped_len,
-                        target,
-                        sizeof(emulator->pending_chain),
-                        &out_len);
-                } else {
-                    out_len = dfc_secure_messaging_verify_command(
-                        emulator->secure_messaging,
-                        DFC_COMM_ENCIPHERED,
-                        apdu,
-                        8,
-                        wrapped,
-                        wrapped_len,
-                        target,
-                        sizeof(emulator->pending_chain));
-                }
-                if(!d40_mac_ok) out_len = SIZE_MAX;
-                clear = target;
-                scratch_len = wrapped_len;
-            }
-            if((out_len == 0 && wrapped_len > 0 && comm != DFC_COMM_PLAIN) ||
-               out_len == SIZE_MAX) {
-                dfc_secure_wipe(emulator->pending_chain, scratch_len);
-                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-                return;
-            }
-        }
+    size_t out_len = dfc_emulator_command_unwrap_write_payload(
+        emulator,
+        apdu,
+        apdu_len,
+        7,
+        comm,
+        emulator->pending_chain,
+        sizeof(emulator->pending_chain),
+        &clear,
+        &scratch_len);
+    if(out_len == SIZE_MAX) {
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
+        if(ev1_sm) dfc_emulator_reset_session(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        return;
     }
 
     if(out_len != declared_len) {
