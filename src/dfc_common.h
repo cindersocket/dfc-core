@@ -334,6 +334,20 @@ uint32_t dfc_crc32(const uint8_t* data, size_t length);
 #ifndef DFC_KEY_POOL_SIZE
 #define DFC_KEY_POOL_SIZE 4096
 #endif
+#if DFC_ENABLE_KEY_SETS
+// A key-set application's metadata is at most 7/32 of the key storage it
+// already reserves (one key, two sets is the worst ratio). Keeping that bound
+// in a separate pool preserves every credential that fits in key_pool without
+// charging every application for sixteen sets.
+#ifndef DFC_KEY_SET_METADATA_POOL_SIZE
+#define DFC_KEY_SET_METADATA_POOL_SIZE \
+    ((DFC_KEY_POOL_SIZE / 32u) * 7u + (((DFC_KEY_POOL_SIZE % 32u) * 7u + 31u) / 32u))
+#endif
+#define DFC_KEY_SET_METADATA_POOL_NONE UINT16_MAX
+#if DFC_KEY_SET_METADATA_POOL_SIZE >= UINT16_MAX
+#error "DFC_KEY_SET_METADATA_POOL_SIZE must fit in a uint16_t offset"
+#endif
+#endif
 // Allocation a blank card's first file gets. WriteData bounds-checks against
 // the file length and never grows the file, so a zero-length file cannot be
 // written to and a blank card would be useless. Kept well under

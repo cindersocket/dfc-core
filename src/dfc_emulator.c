@@ -330,7 +330,8 @@ size_t dfc_emulator_key_len(DfcEmulator* emulator) {
     DfcApplication* app = dfc_emulator_current_app(emulator);
 #if DFC_ENABLE_KEY_SETS
     if(app && app->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
-        return dfc_key_set_type_length(app->key_set_types[0]);
+        const uint8_t* type = dfc_credential_key_set_type_const(emulator->credential, app, 0);
+        return type ? dfc_key_set_type_length(*type) : 0;
     }
 #endif
     return app ? app->key_len : emulator->credential->picc_key_len;

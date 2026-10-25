@@ -312,9 +312,9 @@ static MunitResult test_mixed_key_set_matrix(const MunitParameter params[], void
             dfc_credential_key_length(app->key_settings_2),
             DFC_KEY_SET_MAXIMUM_24_BYTE));
         for(size_t set = 0; set < 3; set++) {
-            app->key_set_types[set] = set_types[variant][set];
-            app->key_set_initialized[set] = true;
-            size_t width = dfc_key_set_type_length(app->key_set_types[set]);
+            *dfc_credential_key_set_type(&credential, app, set) = set_types[variant][set];
+            munit_assert_true(dfc_credential_key_set_set_initialized(&credential, app, set, true));
+            size_t width = dfc_key_set_type_length(set_types[variant][set]);
             for(size_t slot = 0; slot < app->num_keys; slot++) {
                 uint8_t* key = dfc_credential_key_in_set(&credential, app, set, slot);
                 munit_assert_not_null(key);
@@ -335,12 +335,14 @@ static MunitResult
     DfcApplication* app = &credential.apps[0];
     munit_assert_true(dfc_credential_key_sets_resize(
         &credential, app, 2, 2, DFC_AES_KEY_LENGTH, DFC_KEY_SET_MAXIMUM_24_BYTE));
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
-    app->key_set_types[1] = DFC_KEY_SET_TYPE_3K3DES;
-    app->key_set_initialized[0] = true;
-    app->key_set_initialized[1] = true;
-    app->key_set_versions[0] = 1;
-    app->key_set_versions[1] = 2;
+    *dfc_credential_key_set_type(&credential, app, 0) = DFC_KEY_SET_TYPE_AES;
+    *dfc_credential_key_set_type(&credential, app, 1) = DFC_KEY_SET_TYPE_3K3DES;
+    *dfc_credential_key_set_version(&credential, app, 0) = 0x11;
+    *dfc_credential_key_set_version(&credential, app, 1) = 0x22;
+    munit_assert_true(dfc_credential_key_set_set_initialized(&credential, app, 0, false));
+    munit_assert_true(dfc_credential_key_set_set_initialized(&credential, app, 1, true));
+    *dfc_credential_key_version_in_set(&credential, app, 0, 0) = 0x31;
+    *dfc_credential_key_version_in_set(&credential, app, 1, 0) = 0x42;
     uint8_t* target = dfc_credential_key_in_set(&credential, app, 1, 0);
     munit_assert_not_null(target);
     memset(target, 0xA5, DFC_KEY_SET_MAXIMUM_24_BYTE);
@@ -350,7 +352,12 @@ static MunitResult
     munit_assert_true(dfc_credential_roll_key_set(&credential, app, 1));
     munit_assert_size(app->key_len, ==, DFC_KEY_SET_MAXIMUM_24_BYTE);
     munit_assert_uint8(app->key_settings_2 & DFC_KEY_TYPE_MASK, ==, DFC_KEY_TYPE_3K3DES);
-    munit_assert_uint8(app->key_set_types[0], ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_uint8(
+        *dfc_credential_key_set_type(&credential, app, 0), ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_uint8(*dfc_credential_key_set_version(&credential, app, 0), ==, 0x22);
+    munit_assert_true(dfc_credential_key_set_is_initialized(&credential, app, 0));
+    munit_assert_false(dfc_credential_key_set_is_initialized(&credential, app, 1));
+    munit_assert_uint8(*dfc_credential_key_version_in_set(&credential, app, 0, 0), ==, 0x42);
     munit_assert_memory_equal(
         DFC_KEY_SET_MAXIMUM_24_BYTE,
         dfc_credential_key_in_set(&credential, app, 0, 0),
@@ -458,8 +465,8 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
     dfc_credential_copy_model(&bad, &source);
     DfcApplication* app = &bad.apps[0];
     munit_assert_true(dfc_credential_key_sets_resize(&bad, app, 2, 2, 16, 24));
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
-    app->key_set_types[1] = 0xFF;
+    *dfc_credential_key_set_type(&bad, app, 0) = DFC_KEY_SET_TYPE_AES;
+    *dfc_credential_key_set_type(&bad, app, 1) = 0xFF;
     assert_model_rejected(&bad);
 
     dfc_credential_copy_model(&bad, &source);
@@ -468,10 +475,10 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
     app->key_settings_2 =
         (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) | DFC_KEY_TYPE_3K3DES);
     app->key_len = 24;
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_3K3DES;
-    app->key_set_types[1] = DFC_KEY_SET_TYPE_AES;
-    app->key_set_initialized[0] = true;
-    app->key_set_initialized[1] = true;
+    *dfc_credential_key_set_type(&bad, app, 0) = DFC_KEY_SET_TYPE_3K3DES;
+    *dfc_credential_key_set_type(&bad, app, 1) = DFC_KEY_SET_TYPE_AES;
+    munit_assert_true(dfc_credential_key_set_set_initialized(&bad, app, 0, true));
+    munit_assert_true(dfc_credential_key_set_set_initialized(&bad, app, 1, true));
     assert_model_rejected(&bad);
 #endif
 

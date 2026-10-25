@@ -159,6 +159,8 @@ typedef struct {
     size_t key_len;
 #if DFC_ENABLE_KEY_SETS
     size_t key_storage_len;
+    uint16_t key_set_metadata_offset;
+    uint16_t key_set_metadata_len;
 #endif
     uint16_t iso_file_id;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
@@ -188,10 +190,6 @@ typedef struct {
     uint8_t num_key_sets;
     uint8_t max_key_size;
     uint8_t key_set_settings;
-    uint8_t key_set_versions[DFC_MAX_KEY_SETS];
-    uint8_t key_set_types[DFC_MAX_KEY_SETS];
-    bool key_set_initialized[DFC_MAX_KEY_SETS];
-    uint8_t additional_key_versions[DFC_ADDITIONAL_KEY_SET_COUNT][DFC_MAX_KEYS];
 #endif
 #if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
     bool has_capability_data;
@@ -315,6 +313,12 @@ typedef struct {
 
     // Variable key storage, shared by every application and the PICC record.
     uint8_t key_pool[DFC_KEY_POOL_SIZE];
+#if DFC_ENABLE_KEY_SETS
+    // Sparse metadata for applications that actually use multiple key sets.
+    // Each application owns one compact slice addressed by the fields above.
+    uint8_t key_set_metadata_pool[DFC_KEY_SET_METADATA_POOL_SIZE];
+    size_t key_set_metadata_pool_used;
+#endif
 
     bool dirty;
 
@@ -429,10 +433,43 @@ const uint8_t* dfc_credential_key_in_set_const(
     const DfcApplication* application,
     size_t key_set_number,
     size_t slot);
+// Metadata pointers are invalidated when an application's key sets are resized
+// or released, or when another application's metadata is compacted.
 uint8_t* dfc_credential_key_version_in_set(
+    DfcCredential* credential,
     DfcApplication* application,
     size_t key_set_number,
     size_t slot);
+const uint8_t* dfc_credential_key_version_in_set_const(
+    const DfcCredential* credential,
+    const DfcApplication* application,
+    size_t key_set_number,
+    size_t slot);
+uint8_t* dfc_credential_key_set_version(
+    DfcCredential* credential,
+    DfcApplication* application,
+    size_t key_set_number);
+const uint8_t* dfc_credential_key_set_version_const(
+    const DfcCredential* credential,
+    const DfcApplication* application,
+    size_t key_set_number);
+uint8_t* dfc_credential_key_set_type(
+    DfcCredential* credential,
+    DfcApplication* application,
+    size_t key_set_number);
+const uint8_t* dfc_credential_key_set_type_const(
+    const DfcCredential* credential,
+    const DfcApplication* application,
+    size_t key_set_number);
+bool dfc_credential_key_set_is_initialized(
+    const DfcCredential* credential,
+    const DfcApplication* application,
+    size_t key_set_number);
+bool dfc_credential_key_set_set_initialized(
+    DfcCredential* credential,
+    DfcApplication* application,
+    size_t key_set_number,
+    bool initialized);
 bool dfc_credential_roll_key_set(
     DfcCredential* credential,
     DfcApplication* application,

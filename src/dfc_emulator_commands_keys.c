@@ -36,7 +36,13 @@ void dfc_emulator_command_get_key_settings(DfcEmulator* emulator, DfcByteBuf* tx
             tx_buffer, app->key_settings_2 & (DFC_KEY_TYPE_MASK | DFC_NUM_KEYS_MASK));
 #if DFC_ENABLE_KEY_SETS
         if(app->num_key_sets > 1) {
-            dfc_bytebuf_append_byte(tx_buffer, app->key_set_versions[0]);
+            const uint8_t* version = dfc_credential_key_set_version_const(credential, app, 0);
+            if(!version) {
+                dfc_bytebuf_reset(tx_buffer);
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+                return;
+            }
+            dfc_bytebuf_append_byte(tx_buffer, *version);
             dfc_bytebuf_append_byte(tx_buffer, app->num_key_sets);
             dfc_bytebuf_append_byte(tx_buffer, app->max_key_size);
             dfc_bytebuf_append_byte(tx_buffer, app->key_set_settings);
@@ -74,12 +80,20 @@ void dfc_emulator_command_get_key_version(
                 return;
             }
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-            dfc_bytebuf_append_bytes(tx_buffer, app->key_set_versions, app->num_key_sets);
+            const uint8_t* versions =
+                dfc_credential_key_set_version_const(emulator->credential, app, 0);
+            if(!versions) {
+                dfc_bytebuf_reset(tx_buffer);
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+                return;
+            }
+            dfc_bytebuf_append_bytes(tx_buffer, versions, app->num_key_sets);
             return;
         }
         size_t key_set_number = key_set_selector & DFC_KEY_SET_NUMBER_MASK;
         size_t slot = key_no & DFC_KEY_NUMBER_MASK;
-        uint8_t* version = dfc_credential_key_version_in_set(app, key_set_number, slot);
+        uint8_t* version =
+            dfc_credential_key_version_in_set(emulator->credential, app, key_set_number, slot);
         if(!version) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
             return;
@@ -540,7 +554,16 @@ void dfc_emulator_command_initialize_key_set(
     }
     size_t key_set_number = buffer[1] & DFC_KEY_SET_NUMBER_MASK;
     size_t storage_length = dfc_credential_stored_key_length(app->key_storage_len);
-    size_t source_length = dfc_key_set_type_length(app->key_set_types[0]);
+    const uint8_t* active_type = dfc_credential_key_set_type_const(emulator->credential, app, 0);
+    uint8_t* target_set_type =
+        dfc_credential_key_set_type(emulator->credential, app, key_set_number);
+    uint8_t* target_set_version =
+        dfc_credential_key_set_version(emulator->credential, app, key_set_number);
+    if(!active_type || !target_set_type || !target_set_version) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
+    size_t source_length = dfc_key_set_type_length(*active_type);
     size_t target_length = dfc_key_set_type_length(target_type);
     size_t copy_length = source_length < target_length ? source_length : target_length;
     for(size_t slot = 0; slot < app->num_keys; slot++) {
@@ -548,7 +571,8 @@ void dfc_emulator_command_initialize_key_set(
             dfc_credential_key_in_set(emulator->credential, app, key_set_number, slot);
         const uint8_t* source =
             dfc_credential_key_in_set_const(emulator->credential, app, 0, slot);
-        uint8_t* target_version = dfc_credential_key_version_in_set(app, key_set_number, slot);
+        uint8_t* target_version =
+            dfc_credential_key_version_in_set(emulator->credential, app, key_set_number, slot);
         if(!target || !source || !target_version) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
             return;
@@ -557,9 +581,12 @@ void dfc_emulator_command_initialize_key_set(
         memcpy(target, source, copy_length);
         *target_version = app->key_versions[slot];
     }
-    app->key_set_types[key_set_number] = target_type;
-    app->key_set_versions[key_set_number] = DFC_KEY_SET_INITIAL_VERSION;
-    app->key_set_initialized[key_set_number] = true;
+    *target_set_type = target_type;
+    *target_set_version = DFC_KEY_SET_INITIAL_VERSION;
+    if(!dfc_credential_key_set_set_initialized(emulator->credential, app, key_set_number, true)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
     dfc_credential_mark_dirty(emulator->credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -584,12 +611,18 @@ void dfc_emulator_command_finalize_key_set(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
-    if(!app->key_set_initialized[key_set_number] ||
-       app->key_set_versions[key_set_number] != DFC_KEY_SET_INITIAL_VERSION) {
+    uint8_t* set_version =
+        dfc_credential_key_set_version(emulator->credential, app, key_set_number);
+    if(!set_version) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
+    if(!dfc_credential_key_set_is_initialized(emulator->credential, app, key_set_number) ||
+       *set_version != DFC_KEY_SET_INITIAL_VERSION) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
-    app->key_set_versions[key_set_number] = buffer[2];
+    *set_version = buffer[2];
     dfc_credential_mark_dirty(emulator->credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -612,8 +645,18 @@ void dfc_emulator_command_roll_key_set(
         return;
     }
     size_t key_set_number = buffer[1] & DFC_KEY_SET_NUMBER_MASK;
-    if(app->key_set_versions[key_set_number] <= app->key_set_versions[0] ||
-       app->key_set_types[key_set_number] < app->key_set_types[0]) {
+    const uint8_t* target_version =
+        dfc_credential_key_set_version_const(emulator->credential, app, key_set_number);
+    const uint8_t* active_version =
+        dfc_credential_key_set_version_const(emulator->credential, app, 0);
+    const uint8_t* target_type =
+        dfc_credential_key_set_type_const(emulator->credential, app, key_set_number);
+    const uint8_t* active_type = dfc_credential_key_set_type_const(emulator->credential, app, 0);
+    if(!target_version || !active_version || !target_type || !active_type) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
+    if(*target_version <= *active_version || *target_type < *active_type) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
@@ -669,7 +712,8 @@ void dfc_emulator_command_change_key_ev2(
         return;
     }
     size_t key_set_number = key_set_selector & DFC_KEY_SET_NUMBER_MASK;
-    if(key_set_number >= app->num_key_sets || !app->key_set_initialized[key_set_number]) {
+    if(key_set_number >= app->num_key_sets ||
+       !dfc_credential_key_set_is_initialized(emulator->credential, app, key_set_number)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
@@ -677,7 +721,15 @@ void dfc_emulator_command_change_key_ev2(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
-    if(app->key_set_types[key_set_number] != DFC_KEY_SET_TYPE_AES) {
+    const uint8_t* stored_key_set_type =
+        app->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT ?
+            dfc_credential_key_set_type_const(emulator->credential, app, key_set_number) :
+            NULL;
+    uint8_t key_set_type =
+        stored_key_set_type ?
+            *stored_key_set_type :
+            (uint8_t)((app->key_settings_2 & DFC_KEY_TYPE_MASK) >> DFC_KEY_TYPE_SHIFT);
+    if(key_set_type != DFC_KEY_SET_TYPE_AES) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
@@ -693,7 +745,8 @@ void dfc_emulator_command_change_key_ev2(
 
     uint8_t* stored_key =
         dfc_credential_key_in_set(emulator->credential, app, key_set_number, key_number);
-    uint8_t* stored_version = dfc_credential_key_version_in_set(app, key_set_number, key_number);
+    uint8_t* stored_version =
+        dfc_credential_key_version_in_set(emulator->credential, app, key_set_number, key_number);
     if(!stored_key || !stored_version) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;

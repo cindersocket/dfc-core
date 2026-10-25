@@ -478,11 +478,11 @@ static MunitResult test_mixed_key_set_round_trip(const MunitParameter params[], 
     src.card.generation = DfcGenerationEv2;
     DfcApplication* app = &src.apps[0];
     munit_assert_true(dfc_credential_key_sets_resize(&src, app, 3, 1, 16, 24));
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
-    app->key_set_types[1] = DFC_KEY_SET_TYPE_3K3DES;
-    app->key_set_types[2] = DFC_KEY_SET_TYPE_AES;
+    *dfc_credential_key_set_type(&src, app, 0) = DFC_KEY_SET_TYPE_AES;
+    *dfc_credential_key_set_type(&src, app, 1) = DFC_KEY_SET_TYPE_3K3DES;
+    *dfc_credential_key_set_type(&src, app, 2) = DFC_KEY_SET_TYPE_AES;
     for(size_t set = 0; set < 3; set++) {
-        app->key_set_initialized[set] = true;
+        munit_assert_true(dfc_credential_key_set_set_initialized(&src, app, set, true));
         uint8_t* key = dfc_credential_key_in_set(&src, app, set, 0);
         munit_assert_not_null(key);
         memset(key, (int)(0x40 + set), set == 1 ? 24 : 16);
@@ -493,7 +493,8 @@ static MunitResult test_mixed_key_set_round_trip(const MunitParameter params[], 
     munit_assert_int(dfc_text_write(&src, text, sizeof(text), &len), ==, DfcTextOk);
     static DfcCredential dst;
     munit_assert_int(dfc_text_parse(&dst, text, len, &detail), ==, DfcTextOk);
-    munit_assert_uint8(dst.apps[0].key_set_types[1], ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_uint8(
+        *dfc_credential_key_set_type(&dst, &dst.apps[0], 1), ==, DFC_KEY_SET_TYPE_3K3DES);
     munit_assert_memory_equal(
         24,
         dfc_credential_key_in_set_const(&dst, &dst.apps[0], 1, 0),

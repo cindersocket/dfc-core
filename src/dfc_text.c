@@ -922,25 +922,34 @@ static bool parse_key_sets(P* p, const char* prefix, DfcApplication* app) {
     app->key_set_settings = settings;
 
     for(size_t set = 0; set < count; set++) {
+        uint8_t* set_version = dfc_credential_key_set_version(p->c, app, set);
+        uint8_t* set_type = dfc_credential_key_set_type(p->c, app, set);
+        if(!set_version || !set_type) {
+            return fail_class(
+                p, DfcTextCapacity, 0, "%s: metadata does not fit this build", prefix);
+        }
         snprintf(name, sizeof(name), "%s Key Set %02X", prefix, (unsigned)set);
         snprintf(key, sizeof(key), "%s Version", name);
-        if(!req_hex(p, key, &app->key_set_versions[set], 1)) return false;
+        if(!req_hex(p, key, set_version, 1)) return false;
         snprintf(key, sizeof(key), "%s Type", name);
         size_t type_index = 0;
         if(!req_token(p, key, AUTH_NAMES, 3, &type_index)) return false;
-        app->key_set_types[set] = (uint8_t)type_index;
+        *set_type = (uint8_t)type_index;
         size_t required = dfc_key_set_type_length((uint8_t)type_index);
         if(required > max_size) {
             return fail(p, 0, "%s Type: key type exceeds the maximum key size", name);
         }
         snprintf(key, sizeof(key), "%s Initialized", name);
-        if(!req_bool(p, key, &app->key_set_initialized[set])) return false;
+        bool initialized;
+        if(!req_bool(p, key, &initialized) ||
+           !dfc_credential_key_set_set_initialized(p->c, app, set, initialized))
+            return false;
         uint32_t set_keys = 0;
         snprintf(key, sizeof(key), "%s Key Count", name);
         if(!req_uint(p, key, 0, key_count, &set_keys)) return false;
         for(size_t slot = 0; slot < set_keys; slot++) {
             uint8_t* value = dfc_credential_key_in_set(p->c, app, set, slot);
-            uint8_t* version = dfc_credential_key_version_in_set(app, set, slot);
+            uint8_t* version = dfc_credential_key_version_in_set(p->c, app, set, slot);
             if(!value || !version) {
                 return fail_class(p, DfcTextCapacity, 0, "%s: key does not fit this build", name);
             }
@@ -950,7 +959,7 @@ static bool parse_key_sets(P* p, const char* prefix, DfcApplication* app) {
             if(!req_hex(p, key, version, 1)) return false;
         }
     }
-    if(!app->key_set_initialized[0]) {
+    if(!dfc_credential_key_set_is_initialized(p->c, app, 0)) {
         return fail(p, 0, "%s Key Set 00: set zero shall be initialized", prefix);
     }
     return true;
@@ -1553,13 +1562,19 @@ static void
     snprintf(key, sizeof(key), "%s Key Set Count", prefix);
     w_line_uint(w, key, a->num_key_sets);
     for(size_t set = 0; set < a->num_key_sets; set++) {
+        const uint8_t* set_version = dfc_credential_key_set_version_const(c, a, set);
+        const uint8_t* set_type = dfc_credential_key_set_type_const(c, a, set);
+        if(!set_version || !set_type) {
+            w->overflow = true;
+            return;
+        }
         snprintf(name, sizeof(name), "%s Key Set %02X", prefix, (unsigned)set);
         snprintf(key, sizeof(key), "%s Version", name);
-        w_line_hex(w, key, &a->key_set_versions[set], 1);
+        w_line_hex(w, key, set_version, 1);
         snprintf(key, sizeof(key), "%s Type", name);
-        w_line_str(w, key, AUTH_NAMES[a->key_set_types[set]]);
+        w_line_str(w, key, AUTH_NAMES[*set_type]);
         snprintf(key, sizeof(key), "%s Initialized", name);
-        w_line_bool(w, key, a->key_set_initialized[set]);
+        w_line_bool(w, key, dfc_credential_key_set_is_initialized(c, a, set));
         snprintf(key, sizeof(key), "%s Key Count", name);
         w_line_uint(w, key, (uint32_t)a->num_keys);
         for(size_t slot = 0; slot < a->num_keys; slot++) {
@@ -1568,10 +1583,14 @@ static void
                 w->overflow = true;
                 return;
             }
-            uint8_t version = set == 0 ? a->key_versions[slot] :
-                                         a->additional_key_versions[set - 1][slot];
+            const uint8_t* version_ptr = dfc_credential_key_version_in_set_const(c, a, set, slot);
+            if(!version_ptr) {
+                w->overflow = true;
+                return;
+            }
+            uint8_t version = *version_ptr;
             snprintf(key, sizeof(key), "%s Key %02X", name, (unsigned)slot);
-            size_t key_len = dfc_key_set_type_length(a->key_set_types[set]);
+            size_t key_len = dfc_key_set_type_length(*set_type);
             w_line_hex(w, key, value, key_len);
             snprintf(key, sizeof(key), "%s Key %02X Version", name, (unsigned)slot);
             w_line_hex(w, key, &version, 1);

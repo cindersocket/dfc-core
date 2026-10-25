@@ -556,10 +556,16 @@ static void body_key_set_key(Writer* w, const void* p) {
         return;
     }
     // Set zero keeps its versions in the ordinary list; later sets follow it.
-    uint8_t version = k->set == 0 ? k->app->key_versions[k->slot] :
-                                    k->app->additional_key_versions[k->set - 1][k->slot];
+    const uint8_t* version_ptr =
+        dfc_credential_key_version_in_set_const(k->c, k->app, k->set, k->slot);
+    const uint8_t* type = dfc_credential_key_set_type_const(k->c, k->app, k->set);
+    if(!version_ptr || !type) {
+        w->overflow = true;
+        return;
+    }
+    uint8_t version = *version_ptr;
     w_int(w, KEY_SLOT, (int64_t)k->slot);
-    size_t key_len = dfc_key_set_type_length(k->app->key_set_types[k->set]);
+    size_t key_len = dfc_key_set_type_length(*type);
     w_tlv(w, KEY_VALUE, value, key_len);
     w_tlv(w, KEY_VERSION, &version, 1);
 }
@@ -575,11 +581,17 @@ static void body_key_set_keys(Writer* w, const void* p) {
 static void body_key_set(Writer* w, const void* p) {
     const KeySetCtx* k = p;
     const DfcApplication* a = k->app;
+    const uint8_t* version = dfc_credential_key_set_version_const(k->c, a, k->set);
+    const uint8_t* type = dfc_credential_key_set_type_const(k->c, a, k->set);
+    if(!version || !type) {
+        w->overflow = true;
+        return;
+    }
     w_int(w, SET_NUMBER, (int64_t)k->set);
-    w_tlv(w, SET_VERSION, &a->key_set_versions[k->set], 1);
-    w_int(w, SET_TYPE, (int64_t)a->key_set_types[k->set]);
+    w_tlv(w, SET_VERSION, version, 1);
+    w_int(w, SET_TYPE, (int64_t)*type);
     // Required, so FALSE is encoded rather than omitted.
-    w_bool(w, SET_INITIALIZED, a->key_set_initialized[k->set]);
+    w_bool(w, SET_INITIALIZED, dfc_credential_key_set_is_initialized(k->c, a, k->set));
     w_constructed(w, SET_KEYS, body_key_set_keys, k);
 }
 
@@ -721,17 +733,21 @@ static bool model_key_slice_is_valid(const DfcCredential* c, const DfcApplicatio
     if(app) {
         if(app->num_key_sets == 0 || app->num_key_sets > DFC_MAX_KEY_SETS) return false;
         if(app->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
-            if(count == 0 || !app->key_set_initialized[0]) return false;
+            if(count == 0 || !dfc_credential_key_set_is_initialized(c, app, 0)) return false;
+            const uint8_t* active_type = dfc_credential_key_set_type_const(c, app, 0);
+            if(!active_type) return false;
             if(app->max_key_size != DFC_KEY_SET_MAXIMUM_16_BYTE &&
                app->max_key_size != DFC_KEY_SET_MAXIMUM_24_BYTE)
                 return false;
             if(app->key_storage_len != app->max_key_size) return false;
             if(key_length > app->max_key_size ||
-               dfc_key_set_type_length(app->key_set_types[0]) != key_length ||
-               (settings & DFC_KEY_TYPE_MASK) != dfc_key_type_for_set_type(app->key_set_types[0]))
+               dfc_key_set_type_length(*active_type) != key_length ||
+               (settings & DFC_KEY_TYPE_MASK) != dfc_key_type_for_set_type(*active_type))
                 return false;
             for(size_t set = 0; set < app->num_key_sets; set++) {
-                size_t width = dfc_key_set_type_length(app->key_set_types[set]);
+                const uint8_t* type = dfc_credential_key_set_type_const(c, app, set);
+                if(!type) return false;
+                size_t width = dfc_key_set_type_length(*type);
                 if(width == 0 || width > app->max_key_size) return false;
             }
             if(count > SIZE_MAX / app->num_key_sets) return false;
@@ -751,7 +767,11 @@ static bool model_key_slice_is_valid(const DfcCredential* c, const DfcApplicatio
 }
 
 static bool model_pools_are_valid(const DfcCredential* c) {
-    if(c->key_pool_used > DFC_KEY_POOL_SIZE || c->file_pool_used > DFC_FILE_POOL_SIZE) {
+    if(c->key_pool_used > DFC_KEY_POOL_SIZE || c->file_pool_used > DFC_FILE_POOL_SIZE
+#if DFC_ENABLE_KEY_SETS
+       || c->key_set_metadata_pool_used > DFC_KEY_SET_METADATA_POOL_SIZE
+#endif
+    ) {
         return false;
     }
     if(!model_key_slice_is_valid(c, NULL)) return false;
@@ -774,6 +794,31 @@ static bool model_pools_are_valid(const DfcCredential* c) {
         }
     }
     if(key_total != c->key_pool_used) return false;
+
+#if DFC_ENABLE_KEY_SETS
+    size_t metadata_total = 0;
+    for(size_t i = 0; i < c->num_apps; i++) {
+        const DfcApplication* app = &c->apps[i];
+        if(app->num_key_sets < DFC_KEY_SET_MINIMUM_COUNT) {
+            if(app->key_set_metadata_offset != DFC_KEY_SET_METADATA_POOL_NONE ||
+               app->key_set_metadata_len != 0)
+                return false;
+            continue;
+        }
+        if(!dfc_credential_key_set_version_const(c, app, 0)) return false;
+        if(metadata_total > SIZE_MAX - app->key_set_metadata_len) return false;
+        metadata_total += app->key_set_metadata_len;
+        for(size_t j = 0; j < i; j++) {
+            if(model_slices_overlap(
+                   c->apps[j].key_set_metadata_offset,
+                   c->apps[j].key_set_metadata_len,
+                   app->key_set_metadata_offset,
+                   app->key_set_metadata_len))
+                return false;
+        }
+    }
+    if(metadata_total != c->key_set_metadata_pool_used) return false;
+#endif
 
     size_t file_total = 0;
     for(size_t i = 0; i < c->num_files; i++) {
@@ -1385,12 +1430,16 @@ static DfcDerStatus decode_key_sets(DfcCredential* c, DfcApplication* app, Slice
         if(type > DFC_KEY_SET_TYPE_AES) return DfcDerMalformed;
         size_t required = dfc_key_set_type_length((uint8_t)type);
         if(required > max_size) return DfcDerMalformed;
-        if(!r_octets(f_get(&sf, SET_VERSION), 1, &app->key_set_versions[index])) {
+        uint8_t* set_version = dfc_credential_key_set_version(c, app, index);
+        uint8_t* set_type = dfc_credential_key_set_type(c, app, index);
+        if(!set_version || !set_type || !r_octets(f_get(&sf, SET_VERSION), 1, set_version)) {
             return DfcDerMalformed;
         }
-        app->key_set_types[index] = (uint8_t)type;
+        *set_type = (uint8_t)type;
         // Required, so an absent flag is malformed.
-        if(!r_bool(f_get(&sf, SET_INITIALIZED), &app->key_set_initialized[index])) {
+        bool initialized;
+        if(!r_bool(f_get(&sf, SET_INITIALIZED), &initialized) ||
+           !dfc_credential_key_set_set_initialized(c, app, index, initialized)) {
             return DfcDerMalformed;
         }
         const uint8_t* keys = f_get(&sf, SET_KEYS);
@@ -1414,7 +1463,7 @@ static DfcDerStatus decode_key_sets(DfcCredential* c, DfcApplication* app, Slice
             Slice value_body = field_body(value);
             if(value_body.len != required) return DfcDerMalformed;
             uint8_t* dst = dfc_credential_key_in_set(c, app, index, slot);
-            uint8_t* version = dfc_credential_key_version_in_set(app, index, slot);
+            uint8_t* version = dfc_credential_key_version_in_set(c, app, index, slot);
             if(!dst || !version) return DfcDerCapacity;
             memcpy(dst, value_body.p, value_body.len);
             if(!r_octets(f_get(&kf, KEY_VERSION), 1, version)) return DfcDerMalformed;
@@ -1422,7 +1471,7 @@ static DfcDerStatus decode_key_sets(DfcCredential* c, DfcApplication* app, Slice
         }
         index++;
     }
-    if(!app->key_set_initialized[0]) return DfcDerMalformed;
+    if(!dfc_credential_key_set_is_initialized(c, app, 0)) return DfcDerMalformed;
     return DfcDerOk;
 }
 #endif

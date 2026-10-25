@@ -433,10 +433,15 @@ int32_t dfc_ffi_credential_get_application(
         out->num_key_sets = a->num_key_sets;
         out->key_set_max_size = a->max_key_size;
         out->key_set_settings = a->key_set_settings;
-        for(size_t i = 0; i < DFC_MAX_KEY_SETS; i++) {
-            out->key_set_versions[i] = a->key_set_versions[i];
-            out->key_set_types[i] = a->key_set_types[i];
-            out->key_set_initialized[i] = a->key_set_initialized[i];
+        for(size_t i = 0; i < a->num_key_sets; i++) {
+            const uint8_t* version =
+                dfc_credential_key_set_version_const(&credential->model, a, i);
+            const uint8_t* type = dfc_credential_key_set_type_const(&credential->model, a, i);
+            if(!version || !type) return DFC_FFI_INVALID_ARGUMENT;
+            out->key_set_versions[i] = *version;
+            out->key_set_types[i] = *type;
+            out->key_set_initialized[i] =
+                dfc_credential_key_set_is_initialized(&credential->model, a, i);
         }
     }
 #endif
@@ -570,7 +575,9 @@ int32_t dfc_ffi_credential_get_key(
         size_t key_len = app ? app->key_len : c->picc_key_len;
 #if DFC_ENABLE_KEY_SETS
         if(app && app->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
-            size_t active_len = dfc_key_set_type_length(app->key_set_types[0]);
+            const uint8_t* active_type = dfc_credential_key_set_type_const(c, app, 0);
+            if(!active_type) return DFC_FFI_INVALID_ARGUMENT;
+            size_t active_len = dfc_key_set_type_length(*active_type);
             if(active_len == 0 || active_len > app->key_storage_len || active_len != key_len) {
                 return DFC_FFI_INVALID_ARGUMENT;
             }
@@ -588,8 +595,10 @@ int32_t dfc_ffi_credential_get_key(
         return DFC_FFI_INVALID_ARGUMENT;
     }
     const uint8_t* key = dfc_credential_key_in_set_const(c, app, key_set, slot);
-    uint8_t* version = dfc_credential_key_version_in_set((DfcApplication*)app, key_set, slot);
-    size_t key_len = dfc_key_set_type_length(app->key_set_types[key_set]);
+    const uint8_t* version = dfc_credential_key_version_in_set_const(c, app, key_set, slot);
+    const uint8_t* type = dfc_credential_key_set_type_const(c, app, key_set);
+    if(!type) return DFC_FFI_INVALID_ARGUMENT;
+    size_t key_len = dfc_key_set_type_length(*type);
     if(key_len == 0) return DFC_FFI_INVALID_ARGUMENT;
     out->len = (uint32_t)key_len;
     if(key) memcpy(out->value, key, key_len);
@@ -834,9 +843,16 @@ int32_t dfc_ffi_credential_add_application(
         }
         app->key_set_settings = a->key_set_settings;
         for(size_t i = 0; i < a->num_key_sets; i++) {
-            app->key_set_versions[i] = a->key_set_versions[i];
-            app->key_set_types[i] = a->key_set_types[i];
-            app->key_set_initialized[i] = a->key_set_initialized[i] != 0;
+            uint8_t* version = dfc_credential_key_set_version(c, app, i);
+            uint8_t* type = dfc_credential_key_set_type(c, app, i);
+            if(!version || !type ||
+               !dfc_credential_key_set_set_initialized(c, app, i, a->key_set_initialized[i] != 0)) {
+                dfc_credential_keys_release(c, app);
+                dfc_credential_reset_application(app);
+                return DfcDerCapacity;
+            }
+            *version = a->key_set_versions[i];
+            *type = a->key_set_types[i];
         }
 #endif
     } else if(a->num_keys > 0) {
@@ -1032,7 +1048,9 @@ int32_t dfc_ffi_credential_set_key(
         size_t key_len = app ? app->key_len : c->picc_key_len;
 #if DFC_ENABLE_KEY_SETS
         if(app && app->num_key_sets >= DFC_KEY_SET_MINIMUM_COUNT) {
-            size_t active_len = dfc_key_set_type_length(app->key_set_types[0]);
+            const uint8_t* active_type = dfc_credential_key_set_type_const(c, app, 0);
+            if(!active_type) return DFC_FFI_INVALID_ARGUMENT;
+            size_t active_len = dfc_key_set_type_length(*active_type);
             if(active_len == 0 || active_len > app->key_storage_len || active_len != key_len) {
                 return DFC_FFI_INVALID_ARGUMENT;
             }
@@ -1053,11 +1071,13 @@ int32_t dfc_ffi_credential_set_key(
     if(!app || key_set >= app->num_key_sets || slot >= app->num_keys) {
         return DFC_FFI_INVALID_ARGUMENT;
     }
-    size_t key_len = dfc_key_set_type_length(app->key_set_types[key_set]);
+    const uint8_t* type = dfc_credential_key_set_type_const(c, app, key_set);
+    if(!type) return DFC_FFI_INVALID_ARGUMENT;
+    size_t key_len = dfc_key_set_type_length(*type);
     if(key_len == 0) return DFC_FFI_INVALID_ARGUMENT;
     if(key->len != key_len) return DFC_FFI_INVALID_ARGUMENT;
     uint8_t* dst = dfc_credential_key_in_set(c, app, key_set, slot);
-    uint8_t* version = dfc_credential_key_version_in_set(app, key_set, slot);
+    uint8_t* version = dfc_credential_key_version_in_set(c, app, key_set, slot);
     if(!dst || !version) return DfcDerCapacity;
     memcpy(dst, key->value, key_len);
     *version = key->version;

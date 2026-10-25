@@ -44,6 +44,9 @@
   (#173).
 - Consolidate reader authentication cleanup paths to reduce target code size
   while keeping secret wipes structurally enforced (#177).
+- Pool key-set metadata only for applications that use it, reducing the full
+  target credential by more than six KiB without reducing model capacity
+  (#174).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`

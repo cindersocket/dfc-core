@@ -789,11 +789,25 @@ void dfc_emulator_command_create_application(
             return;
         }
         app->key_set_settings = key_set_settings;
-        app->key_set_versions[0] = active_key_set_version;
+        uint8_t* active_version = dfc_credential_key_set_version(credential, app, 0);
         uint8_t active_type =
             (uint8_t)((key_settings_2 & DFC_KEY_TYPE_MASK) >> DFC_KEY_TYPE_SHIFT);
+        if(!active_version) {
+            size_t app_index = dfc_credential_application_index(credential, app);
+            dfc_credential_delete_application_at(credential, app_index);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+            return;
+        }
+        *active_version = active_key_set_version;
         for(size_t index = 0; index < app->num_key_sets; index++) {
-            app->key_set_types[index] = active_type;
+            uint8_t* type = dfc_credential_key_set_type(credential, app, index);
+            if(!type) {
+                size_t app_index = dfc_credential_application_index(credential, app);
+                dfc_credential_delete_application_at(credential, app_index);
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+                return;
+            }
+            *type = active_type;
         }
     }
 #endif

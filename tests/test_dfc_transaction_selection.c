@@ -699,7 +699,7 @@ static MunitResult test_ev2_current_key_change_preserves_complete_transaction(
     fixture_open(&fixture);
     DfcApplication* app = &fixture.credential.apps[0];
     app->key_settings_2 = DFC_KEY_TYPE_AES | 1;
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
+    munit_assert_true(dfc_credential_keys_resize(&fixture.credential, app, 1, DFC_AES_KEY_LENGTH));
     begin_transaction(&fixture);
 
     DfcEmulator* emulator = fixture.session->emulator;

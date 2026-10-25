@@ -3789,7 +3789,6 @@ static MunitResult test_ev2_change_key(const MunitParameter params[], void* data
     static Link link;
     link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
     DfcApplication* app = dfc_credential_get_application(&link.credential, 0);
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
     select_app(&link, AID_AES);
     munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
 
