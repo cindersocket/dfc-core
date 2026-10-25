@@ -36,6 +36,13 @@ def matrix_rows(job: str) -> list[tuple[str, ...]]:
 
 
 class UnitWorkflowTests(unittest.TestCase):
+    def test_fuzz_job_installs_the_matching_clang_runtime(self) -> None:
+        workflow = workflow_text()
+        fuzz = re.search(r"(?ms)^  fuzz:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow)
+
+        self.assertIsNotNone(fuzz)
+        self.assertIn("clang libclang-rt-18-dev libmbedtls-dev", fuzz.group("body"))
+
     def test_pull_requests_run_once_and_superseded_runs_are_cancelled(self) -> None:
         workflow = workflow_text()
 

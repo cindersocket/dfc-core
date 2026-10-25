@@ -129,7 +129,8 @@ jobs:
       - name: Install the toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libmbedtls-dev
+          sudo apt-get install -y --no-install-recommends \
+            clang libclang-rt-18-dev libmbedtls-dev
       - name: Fuzz accepted credential round trips
         run: make -C tests fuzz CC=clang FUZZ_TIME=300
       - name: Upload crashing inputs
