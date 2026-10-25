@@ -38,6 +38,15 @@ class FormatToolingTests(unittest.TestCase):
 
         self.assertIn("'tests/java/*.java'", script)
 
+    def test_format_job_installs_rustfmt(self) -> None:
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        format_job = workflow.split("  source-archives:", 1)[0]
+
+        self.assertRegex(
+            format_job,
+            r"dtolnay/rust-toolchain@stable\n\s+with:\n\s+components: rustfmt",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,6 +21,8 @@ jobs:
           dotnet-version: "10.0.x"
       - uses: astral-sh/setup-uv@v6
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - name: Check every binding language
         run: ./scripts/check-format.sh
       - name: Test C formatting scope
