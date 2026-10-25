@@ -387,6 +387,41 @@ static DfcFfiFile plain_file(int32_t owner, uint8_t number) {
     return file;
 }
 
+static void check_non_data_declared_size_is_canonical(void) {
+    DfcFfiCredential* credential = parse_test_credential();
+    if(!credential) return;
+    DfcFfiFile value = plain_file(0, DFC_EV1_MAX_FILE_NUMBER);
+    value.type = DFC_FILE_TYPE_VALUE;
+    value.declared_size = 123;
+    value.value_lower_limit = 0;
+    value.value_upper_limit = 100;
+    value.value = 50;
+    uint32_t index = UINT32_MAX;
+    CHECK(dfc_ffi_credential_add_file(credential, &value, &index) == DFC_FFI_OK);
+    DfcFfiFile round_trip;
+    CHECK(dfc_ffi_credential_get_file(credential, index, &round_trip) == DFC_FFI_OK);
+    CHECK(round_trip.declared_size == 0);
+
+#if DFC_ENABLE_TRANSACTION_MAC
+    DfcFfiFile transaction_mac = plain_file(0, DFC_EV1_MAX_FILE_NUMBER - 1);
+    transaction_mac.type = DFC_FILE_TYPE_TRANSACTION_MAC;
+    transaction_mac.access_rights = 0xEFEE;
+    transaction_mac.declared_size = 123;
+    transaction_mac.contents_complete = 1;
+    transaction_mac.transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+    transaction_mac.transaction_counter = 7;
+    CHECK(dfc_ffi_credential_add_file(credential, &transaction_mac, &index) == DFC_FFI_OK);
+    const uint8_t transaction_mac_data[DFC_TRANSACTION_MAC_FILE_LENGTH] = {0};
+    CHECK(
+        dfc_ffi_credential_set_file_data(
+            credential, index, transaction_mac_data, sizeof(transaction_mac_data)) == DFC_FFI_OK);
+    CHECK(dfc_ffi_credential_get_file(credential, index, &round_trip) == DFC_FFI_OK);
+    CHECK(round_trip.declared_size == DFC_TRANSACTION_MAC_FILE_LENGTH);
+    CHECK(round_trip.transaction_counter == 7);
+#endif
+    dfc_ffi_credential_free(credential);
+}
+
 static void check_rejected_file_creation_is_atomic(void) {
     DfcFfiCredential* credential = parse_test_credential();
     if(!credential) return;
@@ -695,8 +730,8 @@ static void check_limited_credit_value_ffi_round_trip(void) {
     DfcFfiCredential* source = parse_test_credential();
     if(!source) return;
     DfcFile* native = &source->model.files[1];
-    native->limited_credit = 1;
-    native->limited_credit_value = 37;
+    native->state.value.limited_credit = 1;
+    native->state.value.limited_credit_value = 37;
 
     DfcFfiFile exported;
     CHECK(dfc_ffi_credential_get_file(source, 1, &exported) == DFC_FFI_OK);
@@ -1051,6 +1086,7 @@ int main(void) {
     check_reader_header_length_bound();
     check_failed_reader_result_is_retired();
     check_rejected_file_creation_is_atomic();
+    check_non_data_declared_size_is_canonical();
     check_pool_resize_boundaries();
     check_delegated_format_ffi_round_trip();
     check_limited_credit_value_ffi_round_trip();

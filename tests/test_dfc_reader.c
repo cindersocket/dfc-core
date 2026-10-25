@@ -649,16 +649,16 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
     link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
     DfcFile* sdm_file = dfc_credential_find_file_in_app(&link.credential, 0, FileLong);
     munit_assert_not_null(sdm_file);
-    sdm_file->sdm_enabled = true;
-    sdm_file->sdm_has_picc_data_offset = true;
-    sdm_file->sdm_picc_data_offset = 0;
-    sdm_file->sdm_read_counter = 41;
+    dfc_file_sdm_flag_set(sdm_file, DfcSdmFlagEnabled, true);
+    dfc_file_sdm_flag_set(sdm_file, DfcSdmFlagPiccDataOffset, true);
+    sdm_file->state.data.sdm.picc_data_offset = 0;
+    sdm_file->state.data.sdm_read_counter = 41;
     DfcEmulator before_sdm = *link.picc->emulator;
-    uint32_t before_counter = sdm_file->sdm_read_counter;
+    uint32_t before_counter = sdm_file->state.data.sdm_read_counter;
     dfc_host_set_random_buffer(short_random, 7);
     munit_assert_false(dfc_emulator_render_sdm_read(link.picc->emulator, sdm_file));
     assert_emulator_unchanged(&before_sdm, &link);
-    munit_assert_uint32(sdm_file->sdm_read_counter, ==, before_counter);
+    munit_assert_uint32(sdm_file->state.data.sdm_read_counter, ==, before_counter);
     dfc_host_clear_random_buffer();
     link_close(&link);
 #endif
@@ -1294,8 +1294,8 @@ static MunitResult test_streamed_secure_record(const MunitParameter params[], vo
     file->type = DFC_FILE_TYPE_LINEAR_RECORD;
     file->comm_settings = DFC_COMM_ENCIPHERED;
     file->access_rights = 0x0000;
-    file->record_size = 300;
-    file->max_records = 2;
+    file->state.record.size = 300;
+    file->state.record.max_records = 2;
     munit_assert_true(dfc_file_resize(&link.credential, file, 600));
     select_app(&link, AID_AES);
     munit_assert_int(
@@ -1313,7 +1313,7 @@ static MunitResult test_streamed_secure_record(const MunitParameter params[], vo
         ==,
         DfcReaderOk);
     munit_assert_int(link_run(&link, &ex), ==, DfcReaderOk);
-    munit_assert_uint32(file->record_count, ==, 1);
+    munit_assert_uint32(file->state.record.count, ==, 1);
     munit_assert_memory_equal(sizeof(written), dfc_file_data(&link.credential, file), written);
 
     DfcCommand command;
@@ -2023,17 +2023,17 @@ static MunitResult
     file = dfc_credential_find_file_in_app(&link.credential, 0, FileLong);
     munit_assert_not_null(file);
     file->access_rights = ACCESS_FREE;
-    file->sdm_enabled = true;
-    file->sdm_has_picc_data_offset = true;
-    file->sdm_picc_data_offset = 0;
-    file->sdm_read_counter = 41;
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, true);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagPiccDataOffset, true);
+    file->state.data.sdm.picc_data_offset = 0;
+    file->state.data.sdm_read_counter = 41;
     link.picc->iso_file_selected = true;
     link.picc->iso_file_index = (size_t)(file - link.credential.files);
 
     uint8_t cache_before[DFC_SDM_READ_CACHE_SIZE];
     memcpy(cache_before, link.picc->emulator->sdm_read_cache, sizeof(cache_before));
     bool cache_valid_before = link.picc->emulator->sdm_read_cache_valid;
-    uint32_t counter_before = file->sdm_read_counter;
+    uint32_t counter_before = file->state.data.sdm_read_counter;
     dirty_before = link.credential.dirty;
     const uint8_t read_binary[] = {
         DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_READ_BINARY, 0x00, 0x00, 0x10};
@@ -2072,7 +2072,7 @@ static MunitResult
                 &response_len),
             ==,
             rejected_reads[i].expected);
-        munit_assert_uint32(file->sdm_read_counter, ==, counter_before);
+        munit_assert_uint32(file->state.data.sdm_read_counter, ==, counter_before);
         munit_assert_int(link.picc->emulator->sdm_read_cache_valid, ==, cache_valid_before);
         munit_assert_memory_equal(
             sizeof(cache_before), link.picc->emulator->sdm_read_cache, cache_before);
@@ -2103,7 +2103,7 @@ static MunitResult
     munit_assert_size(response_len, ==, DFC_ISO7816_STATUS_WORD_LENGTH);
     munit_assert_memory_equal(
         response_len, response, ((uint8_t[]){DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO}));
-    munit_assert_uint32(file->sdm_read_counter, ==, counter_before + 1);
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, counter_before + 1);
     munit_assert_true(link.picc->emulator->sdm_read_cache_valid);
 
     // Free read access keeps this ISO response plain, so its length is the
@@ -2115,7 +2115,7 @@ static MunitResult
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 0x10 + DFC_ISO7816_STATUS_WORD_LENGTH);
-    munit_assert_uint32(file->sdm_read_counter, ==, counter_before + 1);
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, counter_before + 1);
     munit_assert_true(link.picc->emulator->sdm_read_cache_valid);
     link_close(&link);
 #endif
@@ -2687,8 +2687,8 @@ static void begin_open_transaction(Link* link, uint8_t backup_before[32]) {
     emulator->transaction_mac.has_pending = true;
     munit_assert_true(emulator->transaction_snapshot_active);
     munit_assert_true(backup->transaction_pending);
-    munit_assert_true(value->value_pending);
-    munit_assert_int32(value->value_pending_delta, ==, 25);
+    munit_assert_true(value->state.value.pending);
+    munit_assert_int32(value->state.value.pending_delta, ==, 25);
 }
 
 static void assert_transaction_aborted(Link* link, const uint8_t backup_before[32]) {
@@ -2702,8 +2702,8 @@ static void assert_transaction_aborted(Link* link, const uint8_t backup_before[3
     munit_assert_null(emulator->transaction_snapshot_pool);
     munit_assert_false(backup->transaction_pending);
     munit_assert_memory_equal(32, dfc_file_data_const(&link->credential, backup), backup_before);
-    munit_assert_false(value->value_pending);
-    munit_assert_int32(value->value_pending_delta, ==, 0);
+    munit_assert_false(value->state.value.pending);
+    munit_assert_int32(value->state.value.pending_delta, ==, 0);
     assert_zero_bytes(
         (const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
     munit_assert_false(link->credential.dirty);
@@ -3418,10 +3418,11 @@ static MunitResult
             record->type = DFC_FILE_TYPE_LINEAR_RECORD;
             record->comm_settings = DFC_COMM_ENCIPHERED;
             record->access_rights = 0x0000;
-            record->record_size = 4;
-            record->max_records = 1;
-            record->record_count = 1;
-            munit_assert_true(dfc_file_resize(&link.credential, record, record->record_size));
+            record->state.record.size = 4;
+            record->state.record.max_records = 1;
+            record->state.record.count = 1;
+            munit_assert_true(
+                dfc_file_resize(&link.credential, record, record->state.record.size));
         }
         select_app(&link, AID_AES);
         munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);

@@ -47,6 +47,8 @@
 - Pool key-set metadata only for applications that use it, reducing the full
   target credential by more than six KiB without reducing model capacity
   (#174).
+- Store file-type-specific state in a tagged union and pack SDM presence flags,
+  reducing each full target file slot by 52 bytes (#178).
 - Journal only transactional files in the selected application and capture
   rollback data lazily, avoiding whole-pool snapshots and growth copies (#176).
 - Keep minified Android instrumentation builds complete when AndroidX exposes

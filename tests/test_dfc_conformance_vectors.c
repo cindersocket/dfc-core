@@ -670,13 +670,13 @@ static bool
 #if DFC_ENABLE_SDM
         DfcFile* file = &c->files[i];
         if(strcmp(field, "sdm_enabled") == 0)
-            file->sdm_enabled = value != 0;
+            dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, value != 0);
         else if(strcmp(field, "sdm_has_encrypted_file_offset") == 0)
-            file->sdm_has_encrypted_file_offset = value != 0;
+            dfc_file_sdm_flag_set(file, DfcSdmFlagEncryptedFile, value != 0);
         else if(strcmp(field, "sdm_encrypted_file_offset") == 0)
-            file->sdm_encrypted_file_offset = (uint32_t)value;
+            file->state.data.sdm.encrypted_file_offset = (uint32_t)value;
         else if(strcmp(field, "sdm_encrypted_file_length") == 0)
-            file->sdm_encrypted_file_length = (uint32_t)value;
+            file->state.data.sdm.encrypted_file_length = (uint32_t)value;
         else {
 #else
         {

@@ -68,9 +68,9 @@ static void assert_pending_cleared(const DfcEmulator* emulator) {
 
 static void assert_transaction_outcome(const AuthCase* auth_case, const AuthFixture* fixture) {
     bool preserve = auth_case->command == DFC_CMD_AUTHENTICATE_LEGACY;
-    munit_assert_int(fixture->value_file->value_pending, ==, preserve);
-    munit_assert_int32(fixture->value_file->value_pending_delta, ==, preserve ? 2 : 0);
-    munit_assert_int32(fixture->value_file->value, ==, 40);
+    munit_assert_int(fixture->value_file->state.value.pending, ==, preserve);
+    munit_assert_int32(fixture->value_file->state.value.pending_delta, ==, preserve ? 2 : 0);
+    munit_assert_int32(fixture->value_file->state.value.current, ==, 40);
 }
 
 static void assert_fixture_prior_session(const AuthCase* auth_case, const DfcEmulator* emulator) {

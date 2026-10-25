@@ -25,10 +25,11 @@ static bool sdm_derive_key(
     const DfcFile* file,
     uint32_t counter,
     uint8_t output[DFC_AES_KEY_LENGTH]) {
-    bool includes_uid = (file->sdm_options & DFC_SDM_UID_MIRROR_MASK) != 0;
-    uint8_t meta_read = (uint8_t)(file->sdm_access_rights >> DFC_SDM_META_READ_SHIFT);
-    bool includes_counter = (file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 &&
-                            (meta_read != DFC_SDM_FREE_ACCESS || file->sdm_has_counter_offset);
+    bool includes_uid = (file->state.data.sdm.options & DFC_SDM_UID_MIRROR_MASK) != 0;
+    uint8_t meta_read = (uint8_t)(file->state.data.sdm.access_rights >> DFC_SDM_META_READ_SHIFT);
+    bool includes_counter = (file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 &&
+                            (meta_read != DFC_SDM_FREE_ACCESS ||
+                             dfc_file_sdm_flag_is_set(file, DfcSdmFlagCounterOffset));
     return dfc_sdm_derive_session_key(
         static_key,
         label_high,
@@ -61,43 +62,56 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
     uint8_t zero_iv[DFC_AES_KEY_LENGTH] = {0};
     uint8_t file_iv[DFC_AES_KEY_LENGTH] = {0};
 
-    if(file->sdm_read_counter >= 0xFFFFFFu) goto cleanup;
+    if(file->state.data.sdm_read_counter >= 0xFFFFFFu) goto cleanup;
     if(file->data_len > sizeof(emulator->sdm_read_cache)) goto cleanup;
     size_t picc_clear_len = emulator->credential->uid_len == DFC_DESFIRE_UID_MAX_LENGTH ?
                                 DFC_SDM_PICC_DATA_BLOCK_LENGTH * 2 :
                                 DFC_SDM_PICC_DATA_BLOCK_LENGTH;
-    if(file->sdm_has_uid_offset &&
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagUidOffset) &&
        !sdm_range_fits(
-           file, file->sdm_uid_offset, emulator->credential->uid_len * DFC_SDM_HEX_EXPANSION))
+           file,
+           file->state.data.sdm.uid_offset,
+           emulator->credential->uid_len * DFC_SDM_HEX_EXPANSION))
         goto cleanup;
-    if(file->sdm_has_counter_offset && !sdm_range_fits(file, file->sdm_counter_offset, 6))
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagCounterOffset) &&
+       !sdm_range_fits(file, file->state.data.sdm.counter_offset, 6))
         goto cleanup;
-    if(file->sdm_has_picc_data_offset &&
-       !sdm_range_fits(file, file->sdm_picc_data_offset, picc_clear_len * DFC_SDM_HEX_EXPANSION))
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagPiccDataOffset) &&
+       !sdm_range_fits(
+           file, file->state.data.sdm.picc_data_offset, picc_clear_len * DFC_SDM_HEX_EXPANSION))
         goto cleanup;
-    if(file->sdm_has_mac_input_offset && file->sdm_has_mac_offset &&
-       (file->sdm_mac_offset < file->sdm_mac_input_offset ||
-        !sdm_range_fits(file, file->sdm_mac_offset, DFC_WIRE_MAC_LENGTH * DFC_SDM_HEX_EXPANSION)))
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagMacInputOffset) &&
+       dfc_file_sdm_flag_is_set(file, DfcSdmFlagMacOffset) &&
+       (file->state.data.sdm.mac_offset < file->state.data.sdm.mac_input_offset ||
+        !sdm_range_fits(
+            file, file->state.data.sdm.mac_offset, DFC_WIRE_MAC_LENGTH * DFC_SDM_HEX_EXPANSION)))
         goto cleanup;
-    if(file->sdm_has_encrypted_file_offset &&
-       (file->sdm_encrypted_file_length == 0 ||
-        file->sdm_encrypted_file_length % (DFC_AES_KEY_LENGTH * DFC_SDM_HEX_EXPANSION) != 0 ||
-        !sdm_range_fits(file, file->sdm_encrypted_file_offset, file->sdm_encrypted_file_length) ||
-        file->sdm_encrypted_file_length / DFC_SDM_HEX_EXPANSION > DFC_SDM_READ_CACHE_SIZE))
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagEncryptedFile) &&
+       (file->state.data.sdm.encrypted_file_length == 0 ||
+        file->state.data.sdm.encrypted_file_length %
+                (DFC_AES_KEY_LENGTH * DFC_SDM_HEX_EXPANSION) !=
+            0 ||
+        !sdm_range_fits(
+            file,
+            file->state.data.sdm.encrypted_file_offset,
+            file->state.data.sdm.encrypted_file_length) ||
+        file->state.data.sdm.encrypted_file_length / DFC_SDM_HEX_EXPANSION >
+            DFC_SDM_READ_CACHE_SIZE))
         goto cleanup;
     const uint8_t* source = dfc_file_data_const(emulator->credential, file);
     if(!source) goto cleanup;
     size_t random_padding_len = 0;
-    if(file->sdm_has_picc_data_offset) {
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagPiccDataOffset)) {
         size_t clear_len = picc_clear_len;
         random_padding_len = clear_len - 1 - emulator->credential->uid_len;
-        if((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) random_padding_len -= 3;
+        if((file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) != 0)
+            random_padding_len -= 3;
         size_t random_offset =
             emulator->credential->uid_len == DFC_DESFIRE_UID_MAX_LENGTH &&
-                    (file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) == 0 ?
+                    (file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) == 0 ?
                 1 :
                 1 + emulator->credential->uid_len +
-                    ((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 ? 3 : 0);
+                    ((file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 ? 3 : 0);
         if(!dfc_random_fill(picc_clear + random_offset, random_padding_len)) {
             status = DfcSdmRenderRandomExhausted;
             goto cleanup;
@@ -105,52 +119,59 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
     }
     memcpy(emulator->sdm_read_cache, source, file->data_len);
 
-    uint32_t counter = ++file->sdm_read_counter;
-    if(file->sdm_has_counter_limit && counter > file->sdm_counter_limit) goto cleanup;
+    uint32_t counter = ++file->state.data.sdm_read_counter;
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagCounterLimit) &&
+       counter > file->state.data.sdm.counter_limit)
+        goto cleanup;
     DfcApplication* app = dfc_emulator_current_app(emulator);
     uint8_t* file_read_key = NULL;
-    if(file->sdm_has_encrypted_file_offset ||
-       (file->sdm_has_mac_input_offset && file->sdm_has_mac_offset)) {
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagEncryptedFile) ||
+       (dfc_file_sdm_flag_is_set(file, DfcSdmFlagMacInputOffset) &&
+        dfc_file_sdm_flag_is_set(file, DfcSdmFlagMacOffset))) {
         uint8_t file_read_key_number =
-            (uint8_t)((file->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) & DFC_SDM_ACCESS_MASK);
+            (uint8_t)((file->state.data.sdm.access_rights >> DFC_SDM_FILE_READ_SHIFT) &
+                      DFC_SDM_ACCESS_MASK);
         file_read_key = app ? dfc_credential_key(emulator->credential, app, file_read_key_number) :
                               NULL;
         if(!file_read_key) goto cleanup;
     }
-    if(file->sdm_has_uid_offset) {
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagUidOffset)) {
         size_t encoded_uid_len = emulator->credential->uid_len * DFC_SDM_HEX_EXPANSION;
-        if(!sdm_range_fits(file, file->sdm_uid_offset, encoded_uid_len)) goto cleanup;
+        if(!sdm_range_fits(file, file->state.data.sdm.uid_offset, encoded_uid_len)) goto cleanup;
         uint8_t uid[DFC_DESFIRE_UID_MAX_LENGTH] = {0};
         if(!emulator->credential->picc_random_id)
             memcpy(uid, emulator->credential->uid, emulator->credential->uid_len);
         sdm_write_ascii_hex(
-            emulator->sdm_read_cache + file->sdm_uid_offset, uid, emulator->credential->uid_len);
+            emulator->sdm_read_cache + file->state.data.sdm.uid_offset,
+            uid,
+            emulator->credential->uid_len);
         dfc_secure_wipe(uid, sizeof(uid));
     }
-    if(file->sdm_has_counter_offset) {
-        if(!sdm_range_fits(file, file->sdm_counter_offset, 6)) goto cleanup;
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagCounterOffset)) {
+        if(!sdm_range_fits(file, file->state.data.sdm.counter_offset, 6)) goto cleanup;
         uint8_t counter_bytes[] = {
             (uint8_t)(counter >> 16), (uint8_t)(counter >> 8), (uint8_t)counter};
         sdm_write_ascii_hex(
-            emulator->sdm_read_cache + file->sdm_counter_offset,
+            emulator->sdm_read_cache + file->state.data.sdm.counter_offset,
             counter_bytes,
             sizeof(counter_bytes));
         dfc_secure_wipe(counter_bytes, sizeof(counter_bytes));
     }
 
-    if(file->sdm_has_picc_data_offset) {
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagPiccDataOffset)) {
         size_t clear_len = picc_clear_len;
         size_t encoded_len = clear_len * DFC_SDM_HEX_EXPANSION;
-        if(!sdm_range_fits(file, file->sdm_picc_data_offset, encoded_len)) goto cleanup;
-        picc_clear[0] = (uint8_t)(DFC_SDM_PICC_UID_TAG_MASK |
-                                  ((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 ?
-                                       DFC_SDM_COUNTER_MIRROR_MASK :
-                                       0) |
-                                  emulator->credential->uid_len);
+        if(!sdm_range_fits(file, file->state.data.sdm.picc_data_offset, encoded_len)) goto cleanup;
+        picc_clear[0] =
+            (uint8_t)(DFC_SDM_PICC_UID_TAG_MASK |
+                      ((file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) != 0 ?
+                           DFC_SDM_COUNTER_MIRROR_MASK :
+                           0) |
+                      emulator->credential->uid_len);
         size_t padding_len = clear_len - 1 - emulator->credential->uid_len;
-        if((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) padding_len -= 3;
+        if((file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) padding_len -= 3;
         if(emulator->credential->uid_len == DFC_DESFIRE_UID_MAX_LENGTH &&
-           (file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) == 0) {
+           (file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) == 0) {
             memcpy(
                 picc_clear + 1 + padding_len,
                 emulator->credential->uid,
@@ -162,7 +183,7 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
                 emulator->credential->uid,
                 emulator->credential->uid_len);
             payload_offset += emulator->credential->uid_len;
-            if((file->sdm_options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) {
+            if((file->state.data.sdm.options & DFC_SDM_COUNTER_MIRROR_MASK) != 0) {
                 picc_clear[payload_offset++] = (uint8_t)counter;
                 picc_clear[payload_offset++] = (uint8_t)(counter >> 8);
                 picc_clear[payload_offset++] = (uint8_t)(counter >> 16);
@@ -174,14 +195,20 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
                meta_key, DFC_AES_KEY_LENGTH, picc_iv, clear_len, picc_clear, picc_encrypted))
             goto cleanup;
         sdm_write_ascii_hex(
-            emulator->sdm_read_cache + file->sdm_picc_data_offset, picc_encrypted, clear_len);
+            emulator->sdm_read_cache + file->state.data.sdm.picc_data_offset,
+            picc_encrypted,
+            clear_len);
     }
-    if(file->sdm_has_encrypted_file_offset) {
-        if(file->sdm_encrypted_file_length == 0 ||
-           file->sdm_encrypted_file_length % (DFC_AES_KEY_LENGTH * DFC_SDM_HEX_EXPANSION) != 0 ||
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagEncryptedFile)) {
+        if(file->state.data.sdm.encrypted_file_length == 0 ||
+           file->state.data.sdm.encrypted_file_length %
+                   (DFC_AES_KEY_LENGTH * DFC_SDM_HEX_EXPANSION) !=
+               0 ||
            !sdm_range_fits(
-               file, file->sdm_encrypted_file_offset, file->sdm_encrypted_file_length) ||
-           file->sdm_encrypted_file_length / DFC_SDM_HEX_EXPANSION >
+               file,
+               file->state.data.sdm.encrypted_file_offset,
+               file->state.data.sdm.encrypted_file_length) ||
+           file->state.data.sdm.encrypted_file_length / DFC_SDM_HEX_EXPANSION >
                sizeof(emulator->sdm_read_cache))
             goto cleanup;
         if(!sdm_derive_key(
@@ -193,10 +220,10 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
                counter,
                session_encryption_key))
             goto cleanup;
-        size_t clear_len = file->sdm_encrypted_file_length / DFC_SDM_HEX_EXPANSION;
+        size_t clear_len = file->state.data.sdm.encrypted_file_length / DFC_SDM_HEX_EXPANSION;
         if(clear_len > DFC_SDM_READ_CACHE_SIZE) goto cleanup;
         uint8_t* encrypted = emulator->pending_chain;
-        memcpy(encrypted, source + file->sdm_encrypted_file_offset, clear_len);
+        memcpy(encrypted, source + file->state.data.sdm.encrypted_file_offset, clear_len);
         pending_scratch_len = clear_len;
         counter_block[0] = (uint8_t)counter;
         counter_block[1] = (uint8_t)(counter >> 8);
@@ -212,9 +239,12 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
                session_encryption_key, DFC_AES_KEY_LENGTH, file_iv, clear_len, encrypted, encrypted))
             goto cleanup;
         sdm_write_ascii_hex(
-            emulator->sdm_read_cache + file->sdm_encrypted_file_offset, encrypted, clear_len);
+            emulator->sdm_read_cache + file->state.data.sdm.encrypted_file_offset,
+            encrypted,
+            clear_len);
     }
-    if(file->sdm_has_mac_input_offset && file->sdm_has_mac_offset) {
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagMacInputOffset) &&
+       dfc_file_sdm_flag_is_set(file, DfcSdmFlagMacOffset)) {
         if(!sdm_derive_key(
                file_read_key,
                DFC_SDM_MAC_LABEL_HIGH,
@@ -223,19 +253,23 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
                file,
                counter,
                session_mac_key) ||
-           file->sdm_mac_offset < file->sdm_mac_input_offset ||
+           file->state.data.sdm.mac_offset < file->state.data.sdm.mac_input_offset ||
            !sdm_range_fits(
-               file, file->sdm_mac_offset, DFC_WIRE_MAC_LENGTH * DFC_SDM_HEX_EXPANSION) ||
+               file,
+               file->state.data.sdm.mac_offset,
+               DFC_WIRE_MAC_LENGTH * DFC_SDM_HEX_EXPANSION) ||
            !aes_cmac(
                session_mac_key,
                DFC_AES_KEY_LENGTH,
-               emulator->sdm_read_cache + file->sdm_mac_input_offset,
-               file->sdm_mac_offset - file->sdm_mac_input_offset,
+               emulator->sdm_read_cache + file->state.data.sdm.mac_input_offset,
+               file->state.data.sdm.mac_offset - file->state.data.sdm.mac_input_offset,
                full_mac))
             goto cleanup;
         dfc_truncate_aes_wire_mac(full_mac, wire_mac);
         sdm_write_ascii_hex(
-            emulator->sdm_read_cache + file->sdm_mac_offset, wire_mac, sizeof(wire_mac));
+            emulator->sdm_read_cache + file->state.data.sdm.mac_offset,
+            wire_mac,
+            sizeof(wire_mac));
     }
     DFC_UNUSED(counter);
     emulator->sdm_read_cache_valid = true;
@@ -269,14 +303,14 @@ DfcSdmRenderStatus dfc_emulator_render_sdm_read_status(DfcEmulator* emulator, Df
     }
     uint8_t* saved_cache = emulator->pending_chain + DFC_SDM_READ_CACHE_SIZE;
     memcpy(saved_cache, emulator->sdm_read_cache, sizeof(emulator->sdm_read_cache));
-    uint32_t saved_counter = file->sdm_read_counter;
+    uint32_t saved_counter = file->state.data.sdm_read_counter;
     bool saved_valid = emulator->sdm_read_cache_valid;
     uint8_t saved_file_number = emulator->sdm_read_cache_file_number;
     size_t saved_len = emulator->sdm_read_cache_len;
     DfcSdmRenderStatus status = render_sdm_read_in_place(emulator, file);
     if(status != DfcSdmRenderOk) {
         memcpy(emulator->sdm_read_cache, saved_cache, sizeof(emulator->sdm_read_cache));
-        file->sdm_read_counter = saved_counter;
+        file->state.data.sdm_read_counter = saved_counter;
         emulator->sdm_read_cache_valid = saved_valid;
         emulator->sdm_read_cache_file_number = saved_file_number;
         emulator->sdm_read_cache_len = saved_len;
@@ -344,9 +378,10 @@ bool dfc_emulator_command_read_data(
             emulator, (size_t)(file - emulator->credential->files), &committed_data_is_zero);
 #endif
 #if DFC_ENABLE_SDM
-    if(file->sdm_enabled) {
-        if(!emulator->sdm_read_cache_valid && file->sdm_has_counter_limit &&
-           file->sdm_read_counter >= file->sdm_counter_limit) {
+    if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagEnabled)) {
+        if(!emulator->sdm_read_cache_valid &&
+           dfc_file_sdm_flag_is_set(file, DfcSdmFlagCounterLimit) &&
+           file->state.data.sdm_read_counter >= file->state.data.sdm.counter_limit) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
             return true;
         }
@@ -443,14 +478,15 @@ void dfc_emulator_command_get_file_counters(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
         return;
     }
-    if(file->type != DFC_FILE_TYPE_STANDARD_DATA || !file->sdm_enabled) {
+    if(file->type != DFC_FILE_TYPE_STANDARD_DATA ||
+       !dfc_file_sdm_flag_is_set(file, DfcSdmFlagEnabled)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
 
     // SDMCtrRet is the low access-rights nibble. A key reference requires that
     // exact authenticated key; 0xE is free access and 0xF denies the command.
-    uint8_t counter_access = (uint8_t)(file->sdm_access_rights & DFC_SDM_ACCESS_MASK);
+    uint8_t counter_access = (uint8_t)(file->state.data.sdm.access_rights & DFC_SDM_ACCESS_MASK);
     if(counter_access == DFC_SDM_DENIED_ACCESS) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
@@ -462,9 +498,9 @@ void dfc_emulator_command_get_file_counters(
     }
 
     const uint8_t encoded_counter[] = {
-        (uint8_t)file->sdm_read_counter,
-        (uint8_t)(file->sdm_read_counter >> 8),
-        (uint8_t)(file->sdm_read_counter >> 16),
+        (uint8_t)file->state.data.sdm_read_counter,
+        (uint8_t)(file->state.data.sdm_read_counter >> 8),
+        (uint8_t)(file->state.data.sdm_read_counter >> 16),
         0,
         0,
     };

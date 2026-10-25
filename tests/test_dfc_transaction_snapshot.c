@@ -59,14 +59,14 @@ static DfcFile* add_file(
     file->comm_settings = DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
     if(type == DFC_FILE_TYPE_LINEAR_RECORD) {
-        file->record_size = 4;
-        file->max_records = 3;
-        file->record_count = 1;
+        file->state.record.size = 4;
+        file->state.record.max_records = 3;
+        file->state.record.count = 1;
     }
     if(type == DFC_FILE_TYPE_VALUE) {
-        file->value_lower_limit = 0;
-        file->value_upper_limit = 100;
-        file->value = 10;
+        file->state.value.lower_limit = 0;
+        file->state.value.upper_limit = 100;
+        file->state.value.current = 10;
     }
     if(length) {
         munit_assert_true(dfc_file_resize(credential, file, length));
@@ -340,7 +340,7 @@ static MunitResult
     munit_assert_size(
         dfc_emulator_transaction_snapshot_committed_record_count(emulator, record_index),
         ==,
-        record->record_count);
+        record->state.record.count);
     munit_assert_size(emulator->transaction_snapshot_pool_length, ==, 8);
 
     const uint8_t immediate[] = {0x71, 0x72, 0x73, 0x74};
@@ -364,15 +364,15 @@ static MunitResult
     SnapshotFixture fixture;
     fixture_open(&fixture);
     DfcFile* record = dfc_credential_find_file_in_app(&fixture.credential, 0, 3);
-    record->record_count = DFC_FILE_POOL_SIZE;
+    record->state.record.count = DFC_FILE_POOL_SIZE;
     open_transaction_family(&fixture, "backup");
     size_t record_index = (size_t)(record - fixture.credential.files);
     munit_assert_true(
         dfc_emulator_transaction_snapshot_capture_file(fixture.session->emulator, record_index));
     record->transaction_pending = true;
-    record->record_count = 0;
+    record->state.record.count = 0;
     finish_transaction(&fixture, false);
-    munit_assert_uint32(record->record_count, ==, DFC_FILE_POOL_SIZE);
+    munit_assert_uint32(record->state.record.count, ==, DFC_FILE_POOL_SIZE);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -498,10 +498,10 @@ static MunitResult test_creation_family(const MunitParameter params[], void* dat
             dfc_file_data_const(&fixture.credential, file),
             commit ? ((uint8_t[]){0xC1, 0xC2, 0xC3, 0xC4}) : ((uint8_t[]){0, 0, 0, 0}));
     } else if(strcmp(family, "value") == 0) {
-        munit_assert_int32(file->value, ==, commit ? 15 : 10);
-        munit_assert_false(file->value_pending);
+        munit_assert_int32(file->state.value.current, ==, commit ? 15 : 10);
+        munit_assert_false(file->state.value.pending);
     } else if(strcmp(family, "linear") == 0 || strcmp(family, "cyclic") == 0) {
-        munit_assert_uint32(file->record_count, ==, commit ? 1 : 0);
+        munit_assert_uint32(file->state.record.count, ==, commit ? 1 : 0);
         munit_assert_memory_equal(
             4,
             dfc_file_data_const(&fixture.credential, file),
@@ -533,7 +533,7 @@ static MunitResult test_delete_rebases_pending_files(const MunitParameter params
     DfcFile* value = dfc_credential_find_file_in_app(&fixture.credential, 0, 4);
     if(delete_lower) munit_assert_true(backup->transaction_pending);
     munit_assert_true(record->transaction_pending);
-    munit_assert_true(value->value_pending);
+    munit_assert_true(value->state.value.pending);
     finish_transaction(&fixture, commit);
     munit_assert_true(fixture.credential.dirty);
     if(delete_lower) {
@@ -545,13 +545,13 @@ static MunitResult test_delete_rebases_pending_files(const MunitParameter params
     } else {
         munit_assert_null(backup);
     }
-    munit_assert_uint32(record->record_count, ==, commit ? 2 : 1);
+    munit_assert_uint32(record->state.record.count, ==, commit ? 2 : 1);
     munit_assert_memory_equal(
         8,
         dfc_file_data_const(&fixture.credential, record),
         commit ? ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0xA1, 0xA2, 0xA3, 0xA4}) :
                  ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}));
-    munit_assert_int32(value->value, ==, commit ? 15 : 10);
+    munit_assert_int32(value->state.value.current, ==, commit ? 15 : 10);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -582,7 +582,7 @@ static MunitResult test_mixed_and_cross_app_offsets(const MunitParameter params[
     DfcFile* record = dfc_credential_find_file_in_app(&fixture.credential, 0, 6);
     munit_assert_memory_equal(
         4, dfc_file_data_const(&fixture.credential, backup), ((uint8_t[]){0, 0, 0, 0}));
-    munit_assert_uint32(record->record_count, ==, 0);
+    munit_assert_uint32(record->state.record.count, ==, 0);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -696,13 +696,13 @@ static MunitResult
         dfc_file_data_const(&fixture.credential, backup),
         ((uint8_t[]){0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22}));
     munit_assert_false(record->transaction_pending);
-    munit_assert_uint32(record->record_count, ==, 1);
+    munit_assert_uint32(record->state.record.count, ==, 1);
     munit_assert_memory_equal(
         12,
         dfc_file_data_const(&fixture.credential, record),
         ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11}));
-    munit_assert_false(value->value_pending);
-    munit_assert_int32(value->value, ==, 10);
+    munit_assert_false(value->state.value.pending);
+    munit_assert_int32(value->state.value.current, ==, 10);
     munit_assert_false(fixture.credential.dirty);
 #if DFC_ENABLE_TRANSACTION_MAC
     munit_assert_memory_equal(
@@ -801,10 +801,10 @@ static MunitResult test_immediate_write_survives_abort(const MunitParameter para
         dfc_file_data_const(&fixture.credential, backup),
         ((uint8_t[]){0x22, 0x22, 0x22, 0x22}));
     DfcFile* linear = dfc_credential_find_file_in_app(&fixture.credential, 0, 3);
-    munit_assert_uint32(linear->record_count, ==, 1);
+    munit_assert_uint32(linear->state.record.count, ==, 1);
     if(strcmp(family, "cyclic") == 0) {
         DfcFile* cyclic = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
-        munit_assert_uint32(cyclic->record_count, ==, 0);
+        munit_assert_uint32(cyclic->state.record.count, ==, 0);
     }
     fixture_close(&fixture);
     return MUNIT_OK;
@@ -901,8 +901,8 @@ static MunitResult
     DfcFile* value = dfc_credential_find_file_in_app(&fixture.credential, 0, 4);
     munit_assert_memory_equal(
         sizeof(replacement), dfc_file_data_const(&fixture.credential, standard), replacement);
-    munit_assert_int32(value->value, ==, 10);
-    munit_assert_false(value->value_pending);
+    munit_assert_int32(value->state.value.current, ==, 10);
+    munit_assert_false(value->state.value.pending);
     fixture_close(&fixture);
     return MUNIT_OK;
 }

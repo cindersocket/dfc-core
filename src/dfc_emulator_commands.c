@@ -1009,7 +1009,7 @@ static void
         return;
     }
 
-    uint32_t record_count = file->record_count;
+    uint32_t record_count = file->state.record.count;
     const uint8_t* data = dfc_file_data_const(emulator->credential, file);
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
     if(emulator->transaction_snapshot_active &&
@@ -1031,8 +1031,8 @@ static void
     }
     size_t available = record_count - first_record;
     size_t count = requested_records == 0 ? available : requested_records;
-    if(count > available || file->record_size == 0 ||
-       count > DFC_MAX_FILE_DATA / file->record_size) {
+    if(count > available || file->state.record.size == 0 ||
+       count > DFC_MAX_FILE_DATA / file->state.record.size) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
@@ -1042,7 +1042,7 @@ static void
     }
     // The requested records occupy one contiguous range in stored oldest-first
     // order, even though record number zero names the newest one.
-    size_t payload_len = count * file->record_size;
+    size_t payload_len = count * file->state.record.size;
     size_t stored_index = record_count - first_record - count;
 #if DFC_ENABLE_TRANSACTION_MAC
     if(!dfc_emulator_command_transaction_mac_add_data(
@@ -1051,7 +1051,7 @@ static void
            apdu[1],
            first_record,
            (uint32_t)count,
-           data + stored_index * file->record_size,
+           data + stored_index * file->state.record.size,
            payload_len)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
@@ -1063,7 +1063,7 @@ static void
         emulator,
         tx_buffer,
         apdu[0],
-        data + stored_index * file->record_size,
+        data + stored_index * file->state.record.size,
         payload_len,
         1,
         comm,

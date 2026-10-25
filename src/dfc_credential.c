@@ -1007,8 +1007,9 @@ void dfc_credential_copy_model(DfcCredential* credential, const DfcCredential* l
 
 bool dfc_file_set_data_size(DfcCredential* credential, DfcFile* file, uint32_t size) {
     if(!credential || !file) return false;
+    if(!dfc_file_type_is_data(file->type)) return false;
     if(!dfc_file_resize(credential, file, size)) return false;
-    file->declared_size = size;
+    if(!dfc_file_set_declared_size(file, size)) return false;
     file->contents_complete = true;
     return true;
 }
@@ -1023,9 +1024,11 @@ bool dfc_credential_materialize_contents(
         DfcFile* file = &credential->files[i];
         size_t want;
         if(file->type == 0x00 || file->type == 0x01) {
-            want = file->declared_size;
+            uint32_t declared_size;
+            if(!dfc_file_get_declared_size(file, &declared_size)) return false;
+            want = declared_size;
         } else if(file->type == 0x03 || file->type == 0x04) {
-            want = (size_t)file->record_count * (size_t)file->record_size;
+            want = (size_t)file->state.record.count * (size_t)file->state.record.size;
         } else {
             continue; // value files hold no pool slice
         }
@@ -1142,7 +1145,7 @@ bool dfc_credential_init_blank(DfcCredential* credential) {
     if(!dfc_file_set_data_size(credential, file, DFC_BLANK_FILE_SIZE)) {
         file->data_offset = DFC_FILE_POOL_NONE;
         file->data_len = 0;
-        file->declared_size = 0;
+        (void)dfc_file_set_declared_size(file, 0);
         return false;
     }
     return true;

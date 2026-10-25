@@ -73,7 +73,7 @@ static void build_model(
     file->access_rights = 0xEEEE;
     file->has_iso_file_id = true;
     file->iso_file_id = 0x1002;
-    file->declared_size = 4;
+    munit_assert_true(dfc_file_set_declared_size(file, 4));
     file->contents_complete = true;
     munit_assert_true(dfc_file_resize(credential, file, 4));
     memcpy(dfc_file_data(credential, file), "\x01\x02\x03\x04", 4);
@@ -196,11 +196,11 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     munit_assert_true(dfc_file_resize(&value_file, value, 0));
     value->type = DFC_FILE_TYPE_VALUE;
     value->contents_complete = false;
-    value->value_lower_limit = -1;
-    value->value_upper_limit = 1;
-    value->value = 0;
+    value->state.value.lower_limit = -1;
+    value->state.value.upper_limit = 1;
+    value->state.value.current = 0;
     for(unsigned setting = 0; setting <= UINT8_MAX; setting++) {
-        value->limited_credit = (uint8_t)setting;
+        value->state.value.limited_credit = (uint8_t)setting;
         munit_assert_int(
             dfc_credential_validate_model(&value_file),
             ==,
@@ -214,20 +214,19 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     munit_assert_true(dfc_file_resize(&transaction_mac, transaction_file, 0));
     transaction_file->type = DFC_FILE_TYPE_TRANSACTION_MAC;
     transaction_file->contents_complete = false;
-    transaction_file->declared_size = 0;
-    transaction_file->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+    transaction_file->state.transaction_mac.key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
     transaction_file->access_rights = 0xEFFE;
     munit_assert_int(dfc_credential_validate_model(&transaction_mac), ==, DfcModelOk);
 
     for(unsigned value = 0; value <= UINT8_MAX; value++) {
-        transaction_file->transaction_mac_key_type = (uint8_t)value;
+        transaction_file->state.transaction_mac.key_type = (uint8_t)value;
         munit_assert_int(
             dfc_credential_validate_model(&transaction_mac),
             ==,
             value == DFC_TRANSACTION_MAC_KEY_TYPE_AES ? DfcModelOk : DfcModelMalformed);
     }
 
-    transaction_file->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+    transaction_file->state.transaction_mac.key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
     for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
         transaction_file->access_rights = (uint16_t)rights;
         bool valid = ordinary_access_rights_are_valid((uint16_t)rights, 2) &&
@@ -243,22 +242,22 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     DfcCredential sdm;
     dfc_credential_copy_model(&sdm, &source);
     DfcFile* sdm_file = &sdm.files[0];
-    sdm_file->sdm_enabled = true;
+    dfc_file_sdm_flag_set(sdm_file, DfcSdmFlagEnabled, true);
     sdm_file->comm_settings = DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN;
-    sdm_file->sdm_access_rights = 0xEFFE;
+    sdm_file->state.data.sdm.access_rights = 0xEFFE;
     const uint8_t sdm_option_mask = DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
                                     DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
                                     DFC_SDM_ASCII_ENCODING_MASK;
     for(unsigned options = 0; options <= UINT8_MAX; options++) {
-        sdm_file->sdm_options = (uint8_t)options;
+        sdm_file->state.data.sdm.options = (uint8_t)options;
         munit_assert_int(
             dfc_credential_validate_model(&sdm),
             ==,
             (options & ~sdm_option_mask) == 0 ? DfcModelOk : DfcModelMalformed);
     }
-    sdm_file->sdm_options = 0;
+    sdm_file->state.data.sdm.options = 0;
     for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
-        sdm_file->sdm_access_rights = (uint16_t)rights;
+        sdm_file->state.data.sdm.access_rights = (uint16_t)rights;
         uint8_t meta = (uint8_t)(rights >> 12);
         uint8_t file_read = (uint8_t)(rights >> 8) & 0x0F;
         uint8_t reserved = (uint8_t)(rights >> 4) & 0x0F;
@@ -485,14 +484,65 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
 #if DFC_ENABLE_SDM
     dfc_credential_copy_model(&bad, &source);
     DfcFile* file = &bad.files[0];
-    file->sdm_enabled = true;
-    file->sdm_has_encrypted_file_offset = true;
-    file->sdm_encrypted_file_offset = 2;
-    file->sdm_encrypted_file_length = UINT32_MAX;
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, true);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEncryptedFile, true);
+    file->state.data.sdm.encrypted_file_offset = 2;
+    file->state.data.sdm.encrypted_file_length = UINT32_MAX;
     assert_model_rejected(&bad);
 #endif
     return MUNIT_OK;
 }
+
+static MunitResult test_declared_size_is_data_only(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcFile file = {0};
+    uint32_t size = UINT32_MAX;
+
+    file.type = DFC_FILE_TYPE_STANDARD_DATA;
+    munit_assert_true(dfc_file_set_declared_size(&file, 0xFFFFFFu));
+    munit_assert_true(dfc_file_get_declared_size(&file, &size));
+    munit_assert_uint32(size, ==, 0xFFFFFFu);
+
+    file.type = DFC_FILE_TYPE_VALUE;
+    file.state.value.current = 42;
+    munit_assert_false(dfc_file_set_declared_size(&file, 12));
+    munit_assert_int32(file.state.value.current, ==, 42);
+    size = UINT32_MAX;
+    munit_assert_false(dfc_file_get_declared_size(&file, &size));
+    munit_assert_uint32(size, ==, UINT32_MAX);
+    return MUNIT_OK;
+}
+
+#if DFC_ENABLE_SDM
+static MunitResult test_sdm_flags_are_independent(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const DfcSdmFlag flags[] = {
+        DfcSdmFlagEnabled,
+        DfcSdmFlagUidOffset,
+        DfcSdmFlagCounterOffset,
+        DfcSdmFlagPiccDataOffset,
+        DfcSdmFlagMacInputOffset,
+        DfcSdmFlagEncryptedFile,
+        DfcSdmFlagMacOffset,
+        DfcSdmFlagCounterLimit,
+    };
+    DfcFile file = {.type = DFC_FILE_TYPE_STANDARD_DATA};
+    for(size_t index = 0; index < sizeof(flags) / sizeof(flags[0]); index++) {
+        dfc_file_sdm_flag_set(&file, flags[index], true);
+        munit_assert_uint8(file.state.data.sdm.flags, ==, (uint8_t)flags[index]);
+        munit_assert_true(dfc_file_sdm_flag_is_set(&file, flags[index]));
+        dfc_file_sdm_flag_set(&file, flags[index], false);
+        munit_assert_uint8(file.state.data.sdm.flags, ==, 0);
+    }
+    file.type = DFC_FILE_TYPE_BACKUP_DATA;
+    dfc_file_sdm_flag_set(&file, DfcSdmFlagEnabled, true);
+    munit_assert_uint8(file.state.data.sdm.flags, ==, 0);
+    munit_assert_false(dfc_file_sdm_flag_is_set(&file, DfcSdmFlagEnabled));
+    return MUNIT_OK;
+}
+#endif
 
 static MunitTest tests[] = {
     {"/secure-messaging-wiped-before-free",
@@ -524,6 +574,20 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/invalid-mutations", test_invalid_mutations, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/declared-size-is-data-only",
+     test_declared_size_is_data_only,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#if DFC_ENABLE_SDM
+    {"/sdm-flags-are-independent",
+     test_sdm_flags_are_independent,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

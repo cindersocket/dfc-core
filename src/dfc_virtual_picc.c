@@ -1365,7 +1365,7 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         if(!iso_file_read_fits(session, comm, requested, response_capacity))
             return DfcVirtualPiccStatusBufferTooSmall;
 #if DFC_ENABLE_SDM
-        if(file->sdm_enabled) {
+        if(dfc_file_sdm_flag_is_set(file, DfcSdmFlagEnabled)) {
             DfcSdmRenderStatus render_status =
                 dfc_emulator_render_sdm_read_status(session->emulator, file);
             if(render_status == DfcSdmRenderRandomExhausted)
@@ -1432,7 +1432,7 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         if(!iso_file_read_comm(session, file, &comm))
             return write_iso_security_status(response, response_capacity, response_len);
         size_t record_number = command[2];
-        if(command_len != 5 || record_number == 0 || record_number > file->record_count) {
+        if(command_len != 5 || record_number == 0 || record_number > file->state.record.count) {
             return write_status_word(
                 DFC_ISO7816_SW_WRONG_PARAMETERS_HI,
                 DFC_ISO7816_SW_WRONG_PARAMETERS_LO,
@@ -1443,7 +1443,7 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         size_t requested;
         bool short_eof;
         if(!iso_file_read_length(
-               session, comm, command[4], file->record_size, &requested, &short_eof)) {
+               session, comm, command[4], file->state.record.size, &requested, &short_eof)) {
             return write_status_word(
                 DFC_ISO7816_SW_WRONG_LE_HI,
                 DFC_ISO7816_SW_WRONG_LE_LO,
@@ -1453,7 +1453,7 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         }
         if(!iso_file_read_fits(session, comm, requested, response_capacity))
             return DfcVirtualPiccStatusBufferTooSmall;
-        const uint8_t* record = data ? data + (record_number - 1) * file->record_size : NULL;
+        const uint8_t* record = data ? data + (record_number - 1) * file->state.record.size : NULL;
         return write_iso_file_read_response(
             session,
             comm,

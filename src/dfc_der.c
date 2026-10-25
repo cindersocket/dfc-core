@@ -324,37 +324,43 @@ static void body_data_contents(Writer* w, const void* p) {
     const Ctx* x = p;
     const DfcFile* f = x->file;
     const uint8_t* known = dfc_file_data_const(x->c, f);
-    w_int(w, DATA_SIZE, (int64_t)f->declared_size);
+    uint32_t declared_size;
+    if(!dfc_file_get_declared_size(f, &declared_size)) {
+        w->overflow = true;
+        return;
+    }
+    w_int(w, DATA_SIZE, (int64_t)declared_size);
     if(known && f->data_len > 0) w_tlv(w, DATA_KNOWN, known, f->data_len);
     w_bool(w, DATA_COMPLETE, f->contents_complete);
 }
 
 static void body_value_contents(Writer* w, const void* p) {
     const DfcFile* f = ((const Ctx*)p)->file;
-    w_int(w, VAL_LOWER, f->value_lower_limit);
-    w_int(w, VAL_UPPER, f->value_upper_limit);
-    w_int(w, VAL_CURRENT, f->value);
-    w_tlv(w, VAL_LIMITED, &f->limited_credit, 1);
-    if(f->limited_credit_value != 0) w_int(w, VAL_LIMIT, f->limited_credit_value);
+    w_int(w, VAL_LOWER, f->state.value.lower_limit);
+    w_int(w, VAL_UPPER, f->state.value.upper_limit);
+    w_int(w, VAL_CURRENT, f->state.value.current);
+    w_tlv(w, VAL_LIMITED, &f->state.value.limited_credit, 1);
+    if(f->state.value.limited_credit_value != 0)
+        w_int(w, VAL_LIMIT, f->state.value.limited_credit_value);
 }
 
 static void body_records(Writer* w, const void* p) {
     const Ctx* x = p;
     const DfcFile* f = x->file;
     const uint8_t* known = dfc_file_data_const(x->c, f);
-    size_t count = f->record_size ? f->data_len / f->record_size : 0;
-    if(count > f->record_count) count = f->record_count;
+    size_t count = f->state.record.size ? f->data_len / f->state.record.size : 0;
+    if(count > f->state.record.count) count = f->state.record.count;
     for(size_t i = 0; i < count; i++) {
-        w_tlv(w, TAG_OCTETS, known + i * f->record_size, f->record_size);
+        w_tlv(w, TAG_OCTETS, known + i * f->state.record.size, f->state.record.size);
     }
 }
 
 static void body_record_contents(Writer* w, const void* p) {
     const Ctx* x = p;
     const DfcFile* f = x->file;
-    w_int(w, REC_SIZE, (int64_t)f->record_size);
-    w_int(w, REC_MAX, (int64_t)f->max_records);
-    w_int(w, REC_CURRENT, (int64_t)f->record_count);
+    w_int(w, REC_SIZE, (int64_t)f->state.record.size);
+    w_int(w, REC_MAX, (int64_t)f->state.record.max_records);
+    w_int(w, REC_CURRENT, (int64_t)f->state.record.count);
     w_bool(w, REC_COMPLETE, f->contents_complete);
     w_constructed(w, REC_RECORDS, body_records, x);
 }
@@ -362,12 +368,16 @@ static void body_record_contents(Writer* w, const void* p) {
 #if DFC_ENABLE_TRANSACTION_MAC
 static void body_transaction_mac_contents(Writer* w, const void* p) {
     const DfcFile* f = ((const Ctx*)p)->file;
-    w_int(w, TMAC_COUNTER, (int64_t)f->transaction_counter);
-    w_tlv(w, TMAC_VALUE, f->transaction_mac, sizeof(f->transaction_mac));
-    w_tlv(w, TMAC_KEY_TYPE, &f->transaction_mac_key_type, 1);
-    w_tlv(w, TMAC_KEY_VERSION, &f->transaction_mac_key_version, 1);
-    w_tlv(w, TMAC_KEY, f->transaction_mac_key, sizeof(f->transaction_mac_key));
-    w_tlv(w, TMAC_READER_ID, f->previous_reader_id, sizeof(f->previous_reader_id));
+    w_int(w, TMAC_COUNTER, (int64_t)f->state.transaction_mac.counter);
+    w_tlv(w, TMAC_VALUE, f->state.transaction_mac.mac, sizeof(f->state.transaction_mac.mac));
+    w_tlv(w, TMAC_KEY_TYPE, &f->state.transaction_mac.key_type, 1);
+    w_tlv(w, TMAC_KEY_VERSION, &f->state.transaction_mac.key_version, 1);
+    w_tlv(w, TMAC_KEY, f->state.transaction_mac.key, sizeof(f->state.transaction_mac.key));
+    w_tlv(
+        w,
+        TMAC_READER_ID,
+        f->state.transaction_mac.previous_reader_id,
+        sizeof(f->state.transaction_mac.previous_reader_id));
 }
 #endif
 
@@ -375,20 +385,27 @@ static void body_transaction_mac_contents(Writer* w, const void* p) {
 static void body_sdm(Writer* w, const void* p) {
     const DfcFile* f = ((const Ctx*)p)->file;
     uint8_t rights[2] = {
-        (uint8_t)(f->sdm_access_rights >> 8), (uint8_t)(f->sdm_access_rights & 0xFF)};
-    w_tlv(w, SDM_OPTIONS, &f->sdm_options, 1);
+        (uint8_t)(f->state.data.sdm.access_rights >> 8),
+        (uint8_t)(f->state.data.sdm.access_rights & 0xFF)};
+    w_tlv(w, SDM_OPTIONS, &f->state.data.sdm.options, 1);
     w_tlv(w, SDM_RIGHTS, rights, 2);
-    if(f->sdm_has_uid_offset) w_int(w, SDM_UID_OFF, (int64_t)f->sdm_uid_offset);
-    if(f->sdm_has_counter_offset) w_int(w, SDM_COUNTER_OFF, (int64_t)f->sdm_counter_offset);
-    if(f->sdm_has_picc_data_offset) w_int(w, SDM_PICC_OFF, (int64_t)f->sdm_picc_data_offset);
-    if(f->sdm_has_mac_input_offset) w_int(w, SDM_MAC_IN_OFF, (int64_t)f->sdm_mac_input_offset);
-    if(f->sdm_has_mac_offset) w_int(w, SDM_MAC_OFF, (int64_t)f->sdm_mac_offset);
-    if(f->sdm_has_encrypted_file_offset) {
-        w_int(w, SDM_ENC_OFF, (int64_t)f->sdm_encrypted_file_offset);
-        w_int(w, SDM_ENC_LEN, (int64_t)f->sdm_encrypted_file_length);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagUidOffset))
+        w_int(w, SDM_UID_OFF, (int64_t)f->state.data.sdm.uid_offset);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagCounterOffset))
+        w_int(w, SDM_COUNTER_OFF, (int64_t)f->state.data.sdm.counter_offset);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagPiccDataOffset))
+        w_int(w, SDM_PICC_OFF, (int64_t)f->state.data.sdm.picc_data_offset);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagMacInputOffset))
+        w_int(w, SDM_MAC_IN_OFF, (int64_t)f->state.data.sdm.mac_input_offset);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagMacOffset))
+        w_int(w, SDM_MAC_OFF, (int64_t)f->state.data.sdm.mac_offset);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagEncryptedFile)) {
+        w_int(w, SDM_ENC_OFF, (int64_t)f->state.data.sdm.encrypted_file_offset);
+        w_int(w, SDM_ENC_LEN, (int64_t)f->state.data.sdm.encrypted_file_length);
     }
-    if(f->sdm_has_counter_limit) w_int(w, SDM_LIMIT, (int64_t)f->sdm_counter_limit);
-    w_int(w, SDM_READ_COUNTER, (int64_t)f->sdm_read_counter);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagCounterLimit))
+        w_int(w, SDM_LIMIT, (int64_t)f->state.data.sdm.counter_limit);
+    w_int(w, SDM_READ_COUNTER, (int64_t)f->state.data.sdm_read_counter);
 }
 #endif
 
@@ -419,7 +436,7 @@ static void body_file(Writer* w, const void* p) {
         w->overflow = true;
     }
 #if DFC_ENABLE_SDM
-    if(f->sdm_enabled) w_constructed(w, FILE_SDM, body_sdm, x);
+    if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagEnabled)) w_constructed(w, FILE_SDM, body_sdm, x);
 #endif
 }
 
@@ -969,7 +986,7 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
         const DfcFile* f = &c->files[i];
         has_ev2 = has_ev2 || f->type == FILE_TYPE_TMAC;
 #if DFC_ENABLE_SDM
-        has_ev3 = has_ev3 || f->sdm_enabled;
+        has_ev3 = has_ev3 || dfc_file_sdm_flag_is_set(f, DfcSdmFlagEnabled);
 #endif
     }
     if(has_ev2 && c->card.generation < DfcGenerationEv2) return DfcDerMalformed;
@@ -1002,7 +1019,8 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
                                                                  c->apps[f->app_index].num_keys;
         if(!dfc_communication_settings_is_valid(f->comm_settings)) return DfcDerMalformed;
 #if DFC_ENABLE_SDM
-        if((f->comm_settings & DFC_SDM_ENABLED_MASK) != 0 && !f->sdm_enabled) {
+        if((f->comm_settings & DFC_SDM_ENABLED_MASK) != 0 &&
+           !dfc_file_sdm_flag_is_set(f, DfcSdmFlagEnabled)) {
             return DfcDerMalformed;
         }
 #endif
@@ -1017,16 +1035,22 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
             }
         }
         if(model_file_is_data(f->type)) {
-            if(f->declared_size == 0 || f->declared_size > U24_MAX) return DfcDerMalformed;
-            if(f->data_len > f->declared_size) return DfcDerMalformed;
-            if(f->contents_complete && f->data_len != f->declared_size) return DfcDerMalformed;
-        } else if(f->type == FILE_TYPE_VALUE) {
-            if(f->value_lower_limit > f->value || f->value > f->value_upper_limit) {
+            uint32_t declared_size;
+            if(!dfc_file_get_declared_size(f, &declared_size) || declared_size == 0 ||
+               declared_size > U24_MAX) {
                 return DfcDerMalformed;
             }
-            if(f->limited_credit > 3 ||
-               ((f->limited_credit & 0x01u) == 0 && f->limited_credit_value != 0) ||
-               f->limited_credit_value < 0) {
+            if(f->data_len > declared_size) return DfcDerMalformed;
+            if(f->contents_complete && f->data_len != declared_size) return DfcDerMalformed;
+        } else if(f->type == FILE_TYPE_VALUE) {
+            if(f->state.value.lower_limit > f->state.value.current ||
+               f->state.value.current > f->state.value.upper_limit) {
+                return DfcDerMalformed;
+            }
+            if(f->state.value.limited_credit > 3 ||
+               ((f->state.value.limited_credit & 0x01u) == 0 &&
+                f->state.value.limited_credit_value != 0) ||
+               f->state.value.limited_credit_value < 0) {
                 return DfcDerMalformed;
             }
         } else if(f->type == FILE_TYPE_TMAC) {
@@ -1035,50 +1059,63 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
                 return DfcDerMalformed;
             }
 #if DFC_ENABLE_TRANSACTION_MAC
-            if(!dfc_transaction_mac_key_type_is_valid(f->transaction_mac_key_type)) {
+            if(!dfc_transaction_mac_key_type_is_valid(f->state.transaction_mac.key_type)) {
                 return DfcDerMalformed;
             }
 #endif
         } else {
-            if(f->record_size == 0 || f->record_size > U24_MAX) return DfcDerMalformed;
-            if(f->max_records == 0 || f->max_records > U24_MAX) return DfcDerMalformed;
-            if(f->record_count > f->max_records) return DfcDerMalformed;
-            if(f->data_len % f->record_size != 0) return DfcDerMalformed;
-            size_t stored = f->data_len / f->record_size;
-            bool reserved = stored == f->max_records;
-            if(stored > f->record_count && !reserved) return DfcDerMalformed;
-            if(f->contents_complete && stored != f->record_count && !reserved) {
+            if(f->state.record.size == 0 || f->state.record.size > U24_MAX) return DfcDerMalformed;
+            if(f->state.record.max_records == 0 || f->state.record.max_records > U24_MAX)
+                return DfcDerMalformed;
+            if(f->state.record.count > f->state.record.max_records) return DfcDerMalformed;
+            if(f->data_len % f->state.record.size != 0) return DfcDerMalformed;
+            size_t stored = f->data_len / f->state.record.size;
+            bool reserved = stored == f->state.record.max_records;
+            if(stored > f->state.record.count && !reserved) return DfcDerMalformed;
+            if(f->contents_complete && stored != f->state.record.count && !reserved) {
                 return DfcDerMalformed;
             }
-            if(f->type == FILE_TYPE_CYCLIC && f->max_records < 2) return DfcDerMalformed;
+            if(f->type == FILE_TYPE_CYCLIC && f->state.record.max_records < 2)
+                return DfcDerMalformed;
         }
         if(f->has_iso_file_id && dfc_iso_file_id_is_reserved(f->iso_file_id)) {
             return DfcDerMalformed;
         }
 #if DFC_ENABLE_SDM
-        if(f->sdm_enabled) {
+        if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagEnabled)) {
             if(f->type != FILE_TYPE_STANDARD) return DfcDerMalformed;
-            if((f->sdm_options & (uint8_t)~(
-                                     DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
-                                     DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
-                                     DFC_SDM_ASCII_ENCODING_MASK)) != 0 ||
-               !dfc_sdm_access_rights_are_valid(f->sdm_access_rights, key_count)) {
+            if((f->state.data.sdm.options &
+                (uint8_t)~(
+                    DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
+                    DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
+                    DFC_SDM_ASCII_ENCODING_MASK)) != 0 ||
+               !dfc_sdm_access_rights_are_valid(f->state.data.sdm.access_rights, key_count)) {
                 return DfcDerMalformed;
             }
             // Every offset addresses a position inside the file.
-            const uint32_t size = f->declared_size;
-            if(f->sdm_has_uid_offset && f->sdm_uid_offset >= size) return DfcDerMalformed;
-            if(f->sdm_has_counter_offset && f->sdm_counter_offset >= size) return DfcDerMalformed;
-            if(f->sdm_has_picc_data_offset && f->sdm_picc_data_offset >= size) {
+            uint32_t size;
+            if(!dfc_file_get_declared_size(f, &size)) return DfcDerMalformed;
+            if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagUidOffset) &&
+               f->state.data.sdm.uid_offset >= size)
+                return DfcDerMalformed;
+            if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagCounterOffset) &&
+               f->state.data.sdm.counter_offset >= size)
+                return DfcDerMalformed;
+            if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagPiccDataOffset) &&
+               f->state.data.sdm.picc_data_offset >= size) {
                 return DfcDerMalformed;
             }
-            if(f->sdm_has_mac_input_offset && f->sdm_mac_input_offset >= size) {
+            if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagMacInputOffset) &&
+               f->state.data.sdm.mac_input_offset >= size) {
                 return DfcDerMalformed;
             }
-            if(f->sdm_has_mac_offset && f->sdm_mac_offset >= size) return DfcDerMalformed;
-            if(f->sdm_has_encrypted_file_offset) {
-                if(f->sdm_encrypted_file_offset >= size) return DfcDerMalformed;
-                if(f->sdm_encrypted_file_length > size - f->sdm_encrypted_file_offset) {
+            if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagMacOffset) &&
+               f->state.data.sdm.mac_offset >= size)
+                return DfcDerMalformed;
+            if(dfc_file_sdm_flag_is_set(f, DfcSdmFlagEncryptedFile)) {
+                if(f->state.data.sdm.encrypted_file_offset >= size) return DfcDerMalformed;
+                if(f->state.data.sdm.encrypted_file_length >
+                   size - f->state.data.sdm.encrypted_file_offset) {
                     return DfcDerMalformed;
                 }
             }
@@ -1345,39 +1382,47 @@ static DfcDerStatus decode_sdm(DfcFile* file, Slice body) {
         SDM_READ_COUNTER};
     Fields f;
     if(!r_fields(body, order, TAG_COUNT(order), &f)) return DfcDerMalformed;
-    if(!r_octets(f_get(&f, SDM_OPTIONS), 1, &file->sdm_options)) return DfcDerMalformed;
+    if(!r_octets(f_get(&f, SDM_OPTIONS), 1, &file->state.data.sdm.options)) return DfcDerMalformed;
     uint8_t rights[2];
     if(!r_octets(f_get(&f, SDM_RIGHTS), 2, rights)) return DfcDerMalformed;
-    file->sdm_access_rights = (uint16_t)((rights[0] << 8) | rights[1]);
-    if(!sdm_offset(&f, SDM_UID_OFF, &file->sdm_has_uid_offset, &file->sdm_uid_offset) ||
-       !sdm_offset(&f, SDM_COUNTER_OFF, &file->sdm_has_counter_offset, &file->sdm_counter_offset) ||
-       !sdm_offset(
-           &f, SDM_PICC_OFF, &file->sdm_has_picc_data_offset, &file->sdm_picc_data_offset) ||
-       !sdm_offset(
-           &f, SDM_MAC_IN_OFF, &file->sdm_has_mac_input_offset, &file->sdm_mac_input_offset) ||
-       !sdm_offset(&f, SDM_MAC_OFF, &file->sdm_has_mac_offset, &file->sdm_mac_offset) ||
-       !sdm_offset(
-           &f,
-           SDM_ENC_OFF,
-           &file->sdm_has_encrypted_file_offset,
-           &file->sdm_encrypted_file_offset)) {
+    file->state.data.sdm.access_rights = (uint16_t)((rights[0] << 8) | rights[1]);
+    bool has_uid = false;
+    bool has_counter = false;
+    bool has_picc = false;
+    bool has_mac_input = false;
+    bool has_mac = false;
+    bool has_encrypted = false;
+    if(!sdm_offset(&f, SDM_UID_OFF, &has_uid, &file->state.data.sdm.uid_offset) ||
+       !sdm_offset(&f, SDM_COUNTER_OFF, &has_counter, &file->state.data.sdm.counter_offset) ||
+       !sdm_offset(&f, SDM_PICC_OFF, &has_picc, &file->state.data.sdm.picc_data_offset) ||
+       !sdm_offset(&f, SDM_MAC_IN_OFF, &has_mac_input, &file->state.data.sdm.mac_input_offset) ||
+       !sdm_offset(&f, SDM_MAC_OFF, &has_mac, &file->state.data.sdm.mac_offset) ||
+       !sdm_offset(&f, SDM_ENC_OFF, &has_encrypted, &file->state.data.sdm.encrypted_file_offset)) {
         return DfcDerMalformed;
     }
+    dfc_file_sdm_flag_set(file, DfcSdmFlagUidOffset, has_uid);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagCounterOffset, has_counter);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagPiccDataOffset, has_picc);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagMacInputOffset, has_mac_input);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagMacOffset, has_mac);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEncryptedFile, has_encrypted);
     const uint8_t* enc_len = f_get(&f, SDM_ENC_LEN);
     // The encrypted offset and its length occur together.
-    if((enc_len != NULL) != file->sdm_has_encrypted_file_offset) return DfcDerMalformed;
+    if((enc_len != NULL) != has_encrypted) return DfcDerMalformed;
     if(enc_len) {
         uint64_t value;
         if(!r_uint(enc_len, U24_MAX, &value)) return DfcDerMalformed;
-        file->sdm_encrypted_file_length = (uint32_t)value;
+        file->state.data.sdm.encrypted_file_length = (uint32_t)value;
     }
-    if(!sdm_offset(&f, SDM_LIMIT, &file->sdm_has_counter_limit, &file->sdm_counter_limit)) {
+    bool has_limit = false;
+    if(!sdm_offset(&f, SDM_LIMIT, &has_limit, &file->state.data.sdm.counter_limit)) {
         return DfcDerMalformed;
     }
+    dfc_file_sdm_flag_set(file, DfcSdmFlagCounterLimit, has_limit);
     uint64_t counter;
     if(!r_uint(f_get(&f, SDM_READ_COUNTER), U24_MAX, &counter)) return DfcDerMalformed;
-    file->sdm_read_counter = (uint32_t)counter;
-    file->sdm_enabled = true;
+    file->state.data.sdm_read_counter = (uint32_t)counter;
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, true);
     return DfcDerOk;
 }
 #endif
@@ -1720,7 +1765,7 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
         if(!r_fields(field_body(data), dorder, TAG_COUNT(dorder), &d)) return DfcDerMalformed;
         uint64_t size;
         if(!r_uint(f_get(&d, DATA_SIZE), U24_MAX, &size) || size == 0) return DfcDerMalformed;
-        file->declared_size = (uint32_t)size;
+        if(!dfc_file_set_declared_size(file, (uint32_t)size)) return DfcDerMalformed;
         if(!r_bool(f_get(&d, DATA_COMPLETE), &file->contents_complete)) return DfcDerMalformed;
         const uint8_t* known = f_get(&d, DATA_KNOWN);
         if(known) {
@@ -1746,17 +1791,18 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
             return DfcDerMalformed;
         }
         if(lower > current || current > upper) return DfcDerMalformed;
-        file->value_lower_limit = (int32_t)lower;
-        file->value_upper_limit = (int32_t)upper;
-        file->value = (int32_t)current;
-        if(!r_octets(f_get(&v, VAL_LIMITED), 1, &file->limited_credit)) return DfcDerMalformed;
+        file->state.value.lower_limit = (int32_t)lower;
+        file->state.value.upper_limit = (int32_t)upper;
+        file->state.value.current = (int32_t)current;
+        if(!r_octets(f_get(&v, VAL_LIMITED), 1, &file->state.value.limited_credit))
+            return DfcDerMalformed;
         const uint8_t* limit_field = f_get(&v, VAL_LIMIT);
         if(limit_field) {
             int64_t limit;
             if(!r_int(limit_field, &limit) || limit < 0 || limit > INT32_MAX) {
                 return DfcDerMalformed;
             }
-            file->limited_credit_value = (int32_t)limit;
+            file->state.value.limited_credit_value = (int32_t)limit;
         }
     } else if(file->type == FILE_TYPE_TMAC) {
         if(!transaction_mac) return DfcDerMalformed;
@@ -1769,27 +1815,29 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
         }
         uint64_t counter;
         if(!r_uint(f_get(&tm, TMAC_COUNTER), UINT32_MAX, &counter)) return DfcDerMalformed;
-        file->transaction_counter = (uint32_t)counter;
+        file->state.transaction_mac.counter = (uint32_t)counter;
         if(!r_octets(
-               f_get(&tm, TMAC_VALUE), sizeof(file->transaction_mac), file->transaction_mac)) {
+               f_get(&tm, TMAC_VALUE),
+               sizeof(file->state.transaction_mac.mac),
+               file->state.transaction_mac.mac)) {
             return DfcDerMalformed;
         }
-        if(!r_octets(f_get(&tm, TMAC_KEY_TYPE), 1, &file->transaction_mac_key_type)) {
+        if(!r_octets(f_get(&tm, TMAC_KEY_TYPE), 1, &file->state.transaction_mac.key_type)) {
             return DfcDerMalformed;
         }
-        if(!r_octets(f_get(&tm, TMAC_KEY_VERSION), 1, &file->transaction_mac_key_version)) {
+        if(!r_octets(f_get(&tm, TMAC_KEY_VERSION), 1, &file->state.transaction_mac.key_version)) {
             return DfcDerMalformed;
         }
         if(!r_octets(
                f_get(&tm, TMAC_KEY),
-               sizeof(file->transaction_mac_key),
-               file->transaction_mac_key)) {
+               sizeof(file->state.transaction_mac.key),
+               file->state.transaction_mac.key)) {
             return DfcDerMalformed;
         }
         if(!r_octets(
                f_get(&tm, TMAC_READER_ID),
-               sizeof(file->previous_reader_id),
-               file->previous_reader_id)) {
+               sizeof(file->state.transaction_mac.previous_reader_id),
+               file->state.transaction_mac.previous_reader_id)) {
             return DfcDerMalformed;
         }
 #else
@@ -1809,9 +1857,9 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
         if(rcur > rmax) return DfcDerMalformed;
         if(file->type == FILE_TYPE_CYCLIC && rmax < 2) return DfcDerMalformed;
         if(!r_bool(f_get(&r, REC_COMPLETE), &file->contents_complete)) return DfcDerMalformed;
-        file->record_size = (uint32_t)rsize;
-        file->max_records = (uint32_t)rmax;
-        file->record_count = (uint32_t)rcur;
+        file->state.record.size = (uint32_t)rsize;
+        file->state.record.max_records = (uint32_t)rmax;
+        file->state.record.count = (uint32_t)rcur;
 
         const uint8_t* recs = f_get(&r, REC_RECORDS);
         if(!recs) return DfcDerMalformed;

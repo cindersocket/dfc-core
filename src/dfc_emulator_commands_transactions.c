@@ -26,7 +26,7 @@ bool dfc_emulator_command_transaction_mac_can_add_data(
     size_t data_length) {
     DFC_UNUSED(data_length);
     return !transaction_mac_file_const(emulator) ||
-           transaction_mac_file_const(emulator)->transaction_counter != UINT32_MAX;
+           transaction_mac_file_const(emulator)->state.transaction_mac.counter != UINT32_MAX;
 }
 
 typedef enum {
@@ -38,7 +38,7 @@ typedef enum {
 static TransactionMacUpdateResult
     transaction_mac_candidate(DfcEmulator* emulator, DfcTransactionMacAccumulator* candidate) {
     DfcFile* file = transaction_mac_file(emulator);
-    if(!file || file->transaction_counter == UINT32_MAX ||
+    if(!file || file->state.transaction_mac.counter == UINT32_MAX ||
        (emulator->credential->uid_len != DFC_DESFIRE_UID_SHORT_LEN &&
         emulator->credential->uid_len != DFC_DESFIRE_UID_LEN))
         return TransactionMacUpdateTerminal;
@@ -47,10 +47,10 @@ static TransactionMacUpdateResult
 
     uint8_t session_key[DFC_AES_KEY_LENGTH] = {0};
     bool derived = dfc_transaction_mac_derive_session_key(
-        file->transaction_mac_key,
+        file->state.transaction_mac.key,
         emulator->credential->uid,
         emulator->credential->uid_len,
-        file->transaction_counter + 1,
+        file->state.transaction_mac.counter + 1,
         session_key);
     bool initialized = derived && dfc_transaction_mac_accumulator_init(candidate, session_key);
     dfc_secure_wipe(session_key, sizeof(session_key));
@@ -141,7 +141,7 @@ bool dfc_emulator_command_transaction_mac_can_add_record_update(
     size_t data_length) {
     DFC_UNUSED(data_length);
     return !transaction_mac_file_const(emulator) ||
-           transaction_mac_file_const(emulator)->transaction_counter != UINT32_MAX;
+           transaction_mac_file_const(emulator)->state.transaction_mac.counter != UINT32_MAX;
 }
 
 bool dfc_emulator_command_transaction_mac_add_value(
@@ -180,18 +180,18 @@ bool dfc_emulator_command_transaction_mac_add_clear_record(
 
 bool dfc_emulator_command_transaction_mac_can_add_clear_record(const DfcEmulator* emulator) {
     return !transaction_mac_file_const(emulator) ||
-           transaction_mac_file_const(emulator)->transaction_counter != UINT32_MAX;
+           transaction_mac_file_const(emulator)->state.transaction_mac.counter != UINT32_MAX;
 }
 #endif
 
 static bool value_delta_result(const DfcFile* file, int32_t delta, int32_t* result) {
-    int64_t current = file->value_pending ?
-                          (file->value_pending_absolute ?
-                               file->value_pending_value :
-                               (int64_t)file->value + file->value_pending_delta) :
-                          file->value;
+    int64_t current = file->state.value.pending ? (file->state.value.pending_absolute ?
+                                                       file->state.value.pending_value :
+                                                       (int64_t)file->state.value.current +
+                                                           file->state.value.pending_delta) :
+                                                  file->state.value.current;
     int64_t next = current + delta;
-    if(next < file->value_lower_limit || next > file->value_upper_limit) return false;
+    if(next < file->state.value.lower_limit || next > file->state.value.upper_limit) return false;
     *result = (int32_t)next;
     return true;
 }
@@ -217,7 +217,7 @@ void dfc_emulator_command_get_value(
     }
 
     uint8_t value_bytes[4] = {0};
-    uint32_t raw = (uint32_t)file->value;
+    uint32_t raw = (uint32_t)file->state.value.current;
     value_bytes[0] = (uint8_t)(raw & 0xFF);
     value_bytes[1] = (uint8_t)((raw >> 8) & 0xFF);
     value_bytes[2] = (uint8_t)((raw >> 16) & 0xFF);
@@ -423,13 +423,14 @@ void dfc_emulator_command_value_delta(
 
     int32_t delta = debit ? -amount : amount;
     if(limited_credit) {
-        if((file->limited_credit & 0x01u) == 0) {
+        if((file->state.value.limited_credit & 0x01u) == 0) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
             return;
         }
-        int32_t available = file->limited_credit_pending > 0 ? file->limited_credit_pending :
-                                                               file->limited_credit_value;
-        if(file->limited_credit_pending == DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED ||
+        int32_t available = file->state.value.limited_credit_pending > 0 ?
+                                file->state.value.limited_credit_pending :
+                                file->state.value.limited_credit_value;
+        if(file->state.value.limited_credit_pending == DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED ||
            amount > available) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
             return;
@@ -451,20 +452,20 @@ void dfc_emulator_command_value_delta(
     }
     dfc_secure_wipe(encoded_amount, sizeof(encoded_amount));
 #endif
-    int64_t aggregate = (int64_t)next_value - file->value;
-    file->value_pending = true;
-    file->value_pending_value = next_value;
-    file->value_pending_absolute = true;
-    file->value_pending_delta = aggregate > INT32_MAX ? INT32_MAX :
-                                aggregate < INT32_MIN ? INT32_MIN :
-                                                        (int32_t)aggregate;
+    int64_t aggregate = (int64_t)next_value - file->state.value.current;
+    file->state.value.pending = true;
+    file->state.value.pending_value = next_value;
+    file->state.value.pending_absolute = true;
+    file->state.value.pending_delta = aggregate > INT32_MAX ? INT32_MAX :
+                                      aggregate < INT32_MIN ? INT32_MIN :
+                                                              (int32_t)aggregate;
     if(limited_credit) {
-        file->limited_credit_pending = DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED;
-    } else if(debit && file->limited_credit_pending >= 0) {
-        if(amount > INT32_MAX - file->limited_credit_pending) {
-            file->limited_credit_pending = INT32_MAX;
+        file->state.value.limited_credit_pending = DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED;
+    } else if(debit && file->state.value.limited_credit_pending >= 0) {
+        if(amount > INT32_MAX - file->state.value.limited_credit_pending) {
+            file->state.value.limited_credit_pending = INT32_MAX;
         } else {
-            file->limited_credit_pending += amount;
+            file->state.value.limited_credit_pending += amount;
         }
     }
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
@@ -476,11 +477,11 @@ static bool transaction_mac_calculate(
     DfcFile* file,
     uint8_t mac[DFC_WIRE_MAC_LENGTH],
     uint32_t* next_counter) {
-    if(file->transaction_counter == UINT32_MAX) {
+    if(file->state.transaction_mac.counter == UINT32_MAX) {
         memset(mac, 0, DFC_WIRE_MAC_LENGTH);
         return false;
     }
-    *next_counter = file->transaction_counter + 1;
+    *next_counter = file->state.transaction_mac.counter + 1;
     uint8_t full_mac[DFC_AES_CMAC_LENGTH] = {0};
     bool ok = dfc_transaction_mac_accumulator_finalize(&emulator->transaction_mac, full_mac);
     if(ok) {
@@ -542,7 +543,7 @@ void dfc_emulator_command_commit_reader_id(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
-    if(file->transaction_counter == UINT32_MAX) {
+    if(file->state.transaction_mac.counter == UINT32_MAX) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         return;
     }
@@ -551,7 +552,7 @@ void dfc_emulator_command_commit_reader_id(
                          || emulator->ev2_session_active
 #endif
         ;
-    uint32_t next_counter = file->transaction_counter + 1;
+    uint32_t next_counter = file->state.transaction_mac.counter + 1;
     uint8_t vector[DFC_AES_KEY_LENGTH] = {0};
     vector[0] = DFC_TRANSACTION_ENCRYPTION_DERIVATION_LABEL;
     vector[1] = DFC_DERIVATION_COUNTER_HIGH;
@@ -568,7 +569,11 @@ void dfc_emulator_command_commit_reader_id(
     uint8_t encrypted[DFC_TRANSACTION_READER_ID_LENGTH] = {0};
     if(authenticated) {
         if(!aes_cmac(
-               file->transaction_mac_key, DFC_AES_KEY_LENGTH, vector, sizeof(vector), session_key)) {
+               file->state.transaction_mac.key,
+               DFC_AES_KEY_LENGTH,
+               vector,
+               sizeof(vector),
+               session_key)) {
             emulator->transaction_mac_retryable_failure = true;
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             goto cleanup;
@@ -577,8 +582,8 @@ void dfc_emulator_command_commit_reader_id(
                session_key,
                DFC_AES_KEY_LENGTH,
                zero_iv,
-               sizeof(file->previous_reader_id),
-               file->previous_reader_id,
+               sizeof(file->state.transaction_mac.previous_reader_id),
+               file->state.transaction_mac.previous_reader_id,
                encrypted)) {
             emulator->transaction_mac_retryable_failure = true;
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
@@ -697,7 +702,8 @@ void dfc_emulator_command_commit_transaction(
     for(size_t i = 0; i < emulator->credential->num_files; i++) {
         DfcFile* file = &emulator->credential->files[i];
         if(file->app_index != emulator->selected_app_index) continue;
-        if((file->type == DFC_FILE_TYPE_VALUE && file->value_pending) || file->transaction_pending)
+        if((file->type == DFC_FILE_TYPE_VALUE && file->state.value.pending) ||
+           file->transaction_pending)
             changed = true;
     }
 
@@ -730,16 +736,16 @@ void dfc_emulator_command_commit_transaction(
 #if DFC_ENABLE_TRANSACTION_MAC
     if(transaction_file && emulator->transaction_reader_id_persist) {
         memcpy(
-            transaction_file->previous_reader_id,
+            transaction_file->state.transaction_mac.previous_reader_id,
             emulator->transaction_pending_reader_id,
-            sizeof(transaction_file->previous_reader_id));
+            sizeof(transaction_file->state.transaction_mac.previous_reader_id));
     }
 #endif
     dfc_emulator_publish_transaction(emulator);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 #if DFC_ENABLE_TRANSACTION_MAC
     if(transaction_file) {
-        transaction_file->transaction_counter = next_counter;
+        transaction_file->state.transaction_mac.counter = next_counter;
         if(return_transaction_mac) {
             const uint8_t counter[] = {
                 (uint8_t)next_counter,
@@ -766,11 +772,11 @@ void dfc_emulator_command_clear_selected_app_pending_values(DfcEmulator* emulato
         if(file->app_index != emulator->selected_app_index || file->type != DFC_FILE_TYPE_VALUE) {
             continue;
         }
-        file->value_pending = false;
-        file->value_pending_delta = 0;
-        file->value_pending_value = 0;
-        file->value_pending_absolute = false;
-        file->limited_credit_pending = 0;
+        file->state.value.pending = false;
+        file->state.value.pending_delta = 0;
+        file->state.value.pending_value = 0;
+        file->state.value.pending_absolute = false;
+        file->state.value.limited_credit_pending = 0;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
     dfc_transaction_mac_accumulator_clear(&emulator->transaction_mac);

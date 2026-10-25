@@ -117,7 +117,7 @@ static inline uint32_t dfc_emulator_transaction_snapshot_committed_record_count(
     size_t file_index) {
     if(!emulator || !emulator->credential || file_index >= emulator->credential->num_files)
         return 0;
-    return emulator->credential->files[file_index].record_count;
+    return emulator->credential->files[file_index].state.record.count;
 }
 
 static inline void

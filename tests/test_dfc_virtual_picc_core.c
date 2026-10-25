@@ -124,8 +124,8 @@ static MunitResult
     add_applications_for_chained_listing(&credential);
     DfcFile* file = &credential.files[0];
     file->access_rights = 0xEEEE;
-    file->sdm_enabled = true;
-    file->sdm_read_counter = 41;
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, true);
+    file->state.data.sdm_read_counter = 41;
 
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
     munit_assert_not_null(session);
@@ -141,7 +141,7 @@ static MunitResult
 
     const size_t pending_len = session->emulator->pending_chain_len;
     const size_t pending_offset = session->emulator->pending_chain_offset;
-    const uint32_t sdm_counter = file->sdm_read_counter;
+    const uint32_t sdm_counter = file->state.data.sdm_read_counter;
     const bool sdm_cache_valid = session->emulator->sdm_read_cache_valid;
     uint8_t sdm_cache[DFC_SDM_READ_CACHE_SIZE];
     memcpy(sdm_cache, session->emulator->sdm_read_cache, sizeof(sdm_cache));
@@ -150,14 +150,14 @@ static MunitResult
     assert_iso_abort_preflight_is_atomic(session);
     munit_assert_size(session->emulator->pending_chain_len, ==, pending_len);
     munit_assert_size(session->emulator->pending_chain_offset, ==, pending_offset);
-    munit_assert_uint32(file->sdm_read_counter, ==, sdm_counter);
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, sdm_counter);
     munit_assert_true(session->emulator->sdm_read_cache_valid == sdm_cache_valid);
     munit_assert_memory_equal(sizeof(sdm_cache), session->emulator->sdm_read_cache, sdm_cache);
 
     assert_iso_abort_and_no_native_continuation(session);
     munit_assert_size(session->emulator->pending_chain_len, ==, 0);
     assert_zeroed_bytes(session->emulator->pending_chain, pending_len);
-    munit_assert_uint32(file->sdm_read_counter, ==, sdm_counter);
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, sdm_counter);
     munit_assert_true(session->emulator->sdm_read_cache_valid == sdm_cache_valid);
     munit_assert_memory_equal(sizeof(sdm_cache), session->emulator->sdm_read_cache, sdm_cache);
 
@@ -168,7 +168,7 @@ static MunitResult
         DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 5);
     munit_assert_memory_equal(2, response + 3, ((uint8_t[]){0x90, 0x00}));
-    munit_assert_uint32(file->sdm_read_counter, ==, sdm_counter + 1);
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, sdm_counter + 1);
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
 }
@@ -1408,8 +1408,8 @@ static MunitResult test_iso_file_capacity_and_request_classification(
     load_standard_credential(&credential);
     DfcFile* file = &credential.files[0];
     file->type = DFC_FILE_TYPE_LINEAR_RECORD;
-    file->record_size = 3;
-    file->record_count = 1;
+    file->state.record.size = 3;
+    file->state.record.count = 1;
     file->comm_settings = DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);

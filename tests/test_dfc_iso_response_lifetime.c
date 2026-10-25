@@ -38,8 +38,8 @@ static void open_record(Fixture* fixture, size_t length) {
     file->type = DFC_FILE_TYPE_LINEAR_RECORD;
     file->comm_settings = DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
-    file->record_size = (uint32_t)length;
-    file->record_count = file->max_records = 1;
+    file->state.record.size = (uint32_t)length;
+    file->state.record.count = file->state.record.max_records = 1;
     munit_assert_true(dfc_file_resize(&fixture->credential, file, length));
     memset(dfc_file_data(&fixture->credential, file), RecordByte, length);
     fixture->session = dfc_virtual_picc_session_alloc(&fixture->credential);

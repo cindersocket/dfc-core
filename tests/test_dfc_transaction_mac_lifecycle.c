@@ -61,14 +61,14 @@ static DfcFile*
     file->comm_settings = DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
     if(type == DFC_FILE_TYPE_LINEAR_RECORD || type == DFC_FILE_TYPE_CYCLIC_RECORD) {
-        file->record_size = 4;
-        file->max_records = 3;
-        file->record_count = 1;
+        file->state.record.size = 4;
+        file->state.record.max_records = 3;
+        file->state.record.count = 1;
     } else if(type == DFC_FILE_TYPE_VALUE) {
-        file->value_lower_limit = 0;
-        file->value_upper_limit = 100;
-        file->value = 10;
-        file->limited_credit = 1;
+        file->state.value.lower_limit = 0;
+        file->state.value.upper_limit = 100;
+        file->state.value.current = 10;
+        file->state.value.limited_credit = 1;
     }
     if(length) {
         munit_assert_true(dfc_file_resize(credential, file, length));
@@ -83,7 +83,7 @@ static void add_transaction_mac_file(DfcCredential* credential) {
     // Most lifecycle tests do not exercise ReaderID, so disable that optional command.
     file->access_rights = 0xEFFE;
     file->contents_complete = true;
-    memset(file->transaction_mac_key, 0x5A, sizeof(file->transaction_mac_key));
+    memset(file->state.transaction_mac.key, 0x5A, sizeof(file->state.transaction_mac.key));
 }
 
 static void fixture_open(LifecycleFixture* fixture, bool with_transaction_mac) {
@@ -180,20 +180,20 @@ static void assert_mixed_pending_unchanged(LifecycleFixture* fixture, PendingSta
         dfc_file_data_const(&fixture->credential, backup),
         ((uint8_t[]){0xB1, 0xB2, 0xB3, 0xB4, 0x21, 0x21, 0x21, 0x21}));
     munit_assert_true(linear->transaction_pending);
-    munit_assert_uint32(linear->record_count, ==, 2);
+    munit_assert_uint32(linear->state.record.count, ==, 2);
     munit_assert_memory_equal(
         8,
         dfc_file_data_const(&fixture->credential, linear),
         ((uint8_t[]){0x32, 0x32, 0x32, 0x32, 0xC1, 0xC2, 0xC3, 0xC4}));
     munit_assert_true(cyclic->transaction_pending);
-    munit_assert_uint32(cyclic->record_count, ==, 2);
+    munit_assert_uint32(cyclic->state.record.count, ==, 2);
     munit_assert_memory_equal(
         8,
         dfc_file_data_const(&fixture->credential, cyclic),
         ((uint8_t[]){0x43, 0x43, 0x43, 0x43, 0xD1, 0xD2, 0xD3, 0xD4}));
-    munit_assert_true(value->value_pending);
-    munit_assert_int32(value->value_pending_delta, ==, 5);
-    munit_assert_int32(value->value, ==, 10);
+    munit_assert_true(value->state.value.pending);
+    munit_assert_int32(value->state.value.pending_delta, ==, 5);
+    munit_assert_int32(value->state.value.current, ==, 10);
     munit_assert_true(emulator->transaction_mac.initialized);
     munit_assert_true(emulator->transaction_mac.has_pending);
 }
@@ -208,8 +208,8 @@ static void assert_transaction_retired(LifecycleFixture* fixture, bool verify_ab
     munit_assert_false(backup->transaction_pending);
     munit_assert_false(linear->transaction_pending);
     munit_assert_false(cyclic->transaction_pending);
-    munit_assert_false(value->value_pending);
-    munit_assert_int32(value->value, ==, 10);
+    munit_assert_false(value->state.value.pending);
+    munit_assert_int32(value->state.value.current, ==, 10);
     munit_assert_memory_equal(
         sizeof(fixture->session->emulator->transaction_mac),
         &fixture->session->emulator->transaction_mac,
@@ -218,8 +218,8 @@ static void assert_transaction_retired(LifecycleFixture* fixture, bool verify_ab
         4,
         dfc_file_data_const(&fixture->credential, backup),
         ((uint8_t[]){0x21, 0x21, 0x21, 0x21}));
-    munit_assert_uint32(linear->record_count, ==, 1);
-    munit_assert_uint32(cyclic->record_count, ==, 1);
+    munit_assert_uint32(linear->state.record.count, ==, 1);
+    munit_assert_uint32(cyclic->state.record.count, ==, 1);
     if(verify_abort_status) {
         const uint8_t abort[] = {0x90, DFC_CMD_ABORT_TRANSACTION, 0, 0, 0};
         exchange_status(fixture->session, abort, sizeof(abort), DFC_STATUS_NO_CHANGES);
@@ -248,7 +248,8 @@ static void create_transaction_mac(LifecycleFixture* fixture) {
     exchange_status(fixture->session, apdu, apdu_len, DFC_STATUS_OK);
     DfcFile* file = dfc_credential_find_file_in_app(&fixture->credential, 0, 5);
     munit_assert_not_null(file);
-    munit_assert_uint8(file->transaction_mac_key_type, ==, DFC_TRANSACTION_MAC_KEY_TYPE_AES);
+    munit_assert_uint8(file->state.transaction_mac.key_type, ==, DFC_TRANSACTION_MAC_KEY_TYPE_AES);
+    munit_assert_uint32(file->state.transaction_mac.counter, ==, 0);
 }
 
 static void
@@ -374,7 +375,10 @@ static MunitResult
     DfcFile* transaction = dfc_credential_find_file_in_app(&fixture.credential, 0, 5);
     munit_assert_not_null(transaction);
     transaction->access_rights = 0xEFEE;
-    memset(transaction->previous_reader_id, 0x77, sizeof(transaction->previous_reader_id));
+    memset(
+        transaction->state.transaction_mac.previous_reader_id,
+        0x77,
+        sizeof(transaction->state.transaction_mac.previous_reader_id));
     const uint8_t reader_id[] = {0x90, DFC_CMD_COMMIT_READER_ID,
                                  0,    0,
                                  16,   0x10,
@@ -395,8 +399,8 @@ static MunitResult
     uint8_t expected_previous[DFC_TRANSACTION_READER_ID_LENGTH];
     memset(expected_previous, 0x77, sizeof(expected_previous));
     munit_assert_memory_equal(
-        sizeof(transaction->previous_reader_id),
-        transaction->previous_reader_id,
+        sizeof(transaction->state.transaction_mac.previous_reader_id),
+        transaction->state.transaction_mac.previous_reader_id,
         expected_previous);
     fixture_close(&fixture);
 
@@ -712,7 +716,7 @@ static void assert_full_value_transaction_oracle(uint8_t cipher, size_t key_leng
         DfcFile* value = dfc_credential_find_file_in_app(&fixture.credential, 0, 4);
         value->comm_settings = DFC_COMM_ENCIPHERED;
         value->access_rights = 0x0000;
-        value->limited_credit_value = 10;
+        value->state.value.limited_credit_value = 10;
         uint8_t session_key[DFC_MAX_KEY_LEN] = {0};
         fixture.session->emulator->secure_messaging =
             dfc_secure_messaging_alloc(cipher, session_key, key_length, NULL);

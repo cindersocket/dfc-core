@@ -210,7 +210,7 @@ bool dfc_emulator_transaction_snapshot_capture_file(DfcEmulator* emulator, size_
     emulator->transaction_snapshot_offsets[file_index] = offset;
     emulator->transaction_snapshot_record_counts[file_index] =
         (file->type == DFC_FILE_TYPE_LINEAR_RECORD || file->type == DFC_FILE_TYPE_CYCLIC_RECORD) ?
-            file->record_count :
+            file->state.record.count :
             0;
     emulator->transaction_snapshot_pool_length += file->data_len;
     transaction_file_bit_set(emulator->transaction_snapshot_captured, file_index, true);
@@ -251,11 +251,11 @@ uint32_t dfc_emulator_transaction_snapshot_committed_record_count(
     if(!emulator->transaction_snapshot_active ||
        file->app_index != emulator->transaction_snapshot_app_index ||
        (file->type != DFC_FILE_TYPE_LINEAR_RECORD && file->type != DFC_FILE_TYPE_CYCLIC_RECORD))
-        return file->record_count;
+        return file->state.record.count;
     if(transaction_file_bit(emulator->transaction_snapshot_created, file_index)) return 0;
     if(transaction_file_bit(emulator->transaction_snapshot_captured, file_index))
         return emulator->transaction_snapshot_record_counts[file_index];
-    return file->record_count;
+    return file->state.record.count;
 }
 
 void dfc_emulator_transaction_snapshot_note_persistent_change(DfcEmulator* emulator) {
@@ -323,7 +323,7 @@ bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
             if(data && file->data_len) dfc_secure_wipe(data, file->data_len);
             if(file->type == DFC_FILE_TYPE_LINEAR_RECORD ||
                file->type == DFC_FILE_TYPE_CYCLIC_RECORD)
-                file->record_count = 0;
+                file->state.record.count = 0;
             file->transaction_pending = false;
         }
         emulator->credential->dirty = true;
@@ -339,14 +339,14 @@ bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
                 if(file->data_len) memset(data, 0, file->data_len);
                 if(file->type == DFC_FILE_TYPE_LINEAR_RECORD ||
                    file->type == DFC_FILE_TYPE_CYCLIC_RECORD)
-                    file->record_count = 0;
+                    file->state.record.count = 0;
             } else if(transaction_file_bit(emulator->transaction_snapshot_captured, index)) {
                 size_t offset = emulator->transaction_snapshot_offsets[index];
                 if(file->data_len)
                     memcpy(data, emulator->transaction_snapshot_pool + offset, file->data_len);
                 if(file->type == DFC_FILE_TYPE_LINEAR_RECORD ||
                    file->type == DFC_FILE_TYPE_CYCLIC_RECORD)
-                    file->record_count = emulator->transaction_snapshot_record_counts[index];
+                    file->state.record.count = emulator->transaction_snapshot_record_counts[index];
             }
         }
         file->transaction_pending = false;
@@ -498,14 +498,14 @@ bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
     for(size_t i = 0; i < emulator->credential->num_files; i++) {
         DfcFile* file = &emulator->credential->files[i];
         if(file->app_index != emulator->selected_app_index || file->type != DFC_FILE_TYPE_VALUE ||
-           !file->value_pending) {
+           !file->state.value.pending) {
             continue;
         }
-        file->value_pending = false;
-        file->value_pending_delta = 0;
-        file->value_pending_value = 0;
-        file->value_pending_absolute = false;
-        file->limited_credit_pending = 0;
+        file->state.value.pending = false;
+        file->state.value.pending_delta = 0;
+        file->state.value.pending_value = 0;
+        file->state.value.pending_absolute = false;
+        file->state.value.limited_credit_pending = 0;
         changed = true;
     }
     return changed;
@@ -515,20 +515,22 @@ void dfc_emulator_publish_transaction(DfcEmulator* emulator) {
     for(size_t i = 0; i < emulator->credential->num_files; i++) {
         DfcFile* file = &emulator->credential->files[i];
         if(file->app_index != emulator->selected_app_index) continue;
-        if(file->type == DFC_FILE_TYPE_VALUE && file->value_pending) {
-            file->value = file->value_pending_absolute ?
-                              file->value_pending_value :
-                              (int32_t)((int64_t)file->value + file->value_pending_delta);
-            if(file->limited_credit_pending == DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED) {
-                file->limited_credit_value = 0;
-            } else if(file->limited_credit_pending > 0) {
-                file->limited_credit_value = file->limited_credit_pending;
+        if(file->type == DFC_FILE_TYPE_VALUE && file->state.value.pending) {
+            file->state.value.current = file->state.value.pending_absolute ?
+                                            file->state.value.pending_value :
+                                            (int32_t)((int64_t)file->state.value.current +
+                                                      file->state.value.pending_delta);
+            if(file->state.value.limited_credit_pending ==
+               DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED) {
+                file->state.value.limited_credit_value = 0;
+            } else if(file->state.value.limited_credit_pending > 0) {
+                file->state.value.limited_credit_value = file->state.value.limited_credit_pending;
             }
-            file->value_pending = false;
-            file->value_pending_delta = 0;
-            file->value_pending_value = 0;
-            file->value_pending_absolute = false;
-            file->limited_credit_pending = 0;
+            file->state.value.pending = false;
+            file->state.value.pending_delta = 0;
+            file->state.value.pending_value = 0;
+            file->state.value.pending_absolute = false;
+            file->state.value.limited_credit_pending = 0;
         }
         file->transaction_pending = false;
     }

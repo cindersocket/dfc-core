@@ -209,9 +209,9 @@ void auth_fixture_open(AuthFixture* fixture, const AuthCase* auth_case) {
     fixture->value_file = dfc_credential_create_file(&fixture->credential, 0, 1);
     munit_assert_not_null(fixture->value_file);
     fixture->value_file->type = DFC_FILE_TYPE_VALUE;
-    fixture->value_file->value = 40;
-    fixture->value_file->value_pending = true;
-    fixture->value_file->value_pending_delta = 2;
+    fixture->value_file->state.value.current = 40;
+    fixture->value_file->state.value.pending = true;
+    fixture->value_file->state.value.pending_delta = 2;
 
     fixture->session = dfc_virtual_picc_session_alloc(&fixture->credential);
     munit_assert_not_null(fixture->session);

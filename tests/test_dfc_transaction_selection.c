@@ -102,12 +102,12 @@ static DfcFile* add_record_file(DfcCredential* credential, size_t app_index, uin
     file->type = DFC_FILE_TYPE_LINEAR_RECORD;
     file->comm_settings = DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
-    file->record_size = 4;
-    file->max_records = 3;
-    file->record_count = 1;
+    file->state.record.size = 4;
+    file->state.record.max_records = 3;
+    file->state.record.count = 1;
     munit_assert_true(dfc_file_resize(credential, file, 12));
     memset(dfc_file_data(credential, file), 0, file->data_len);
-    memset(dfc_file_data(credential, file), 0x11, file->record_size);
+    memset(dfc_file_data(credential, file), 0x11, file->state.record.size);
     file->contents_complete = true;
     return file;
 }
@@ -118,9 +118,9 @@ static DfcFile* add_value_file(DfcCredential* credential, size_t app_index, uint
     file->type = DFC_FILE_TYPE_VALUE;
     file->comm_settings = DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
-    file->value_lower_limit = 0;
-    file->value_upper_limit = 100;
-    file->value = 10;
+    file->state.value.lower_limit = 0;
+    file->state.value.upper_limit = 100;
+    file->state.value.current = 10;
     return file;
 }
 
@@ -229,9 +229,9 @@ static void begin_transaction(SelectionFixture* fixture) {
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     munit_assert_true(fixture->app0_backup->transaction_pending);
     munit_assert_true(fixture->app0_records->transaction_pending);
-    munit_assert_uint32(fixture->app0_records->record_count, ==, 2);
-    munit_assert_true(fixture->app0_value->value_pending);
-    munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 5);
+    munit_assert_uint32(fixture->app0_records->state.record.count, ==, 2);
+    munit_assert_true(fixture->app0_value->state.value.pending);
+    munit_assert_int32(fixture->app0_value->state.value.pending_delta, ==, 5);
 #if DFC_ENABLE_TRANSACTION_MAC
     munit_assert_true(emulator->transaction_mac.initialized);
     munit_assert_true(emulator->transaction_mac.has_pending);
@@ -245,10 +245,10 @@ static void
     munit_assert_null(emulator->transaction_snapshot_pool);
     munit_assert_false(fixture->app0_backup->transaction_pending);
     munit_assert_false(fixture->app0_records->transaction_pending);
-    munit_assert_uint32(fixture->app0_records->record_count, ==, 1);
-    munit_assert_int32(fixture->app0_value->value, ==, 10);
-    munit_assert_false(fixture->app0_value->value_pending);
-    munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 0);
+    munit_assert_uint32(fixture->app0_records->state.record.count, ==, 1);
+    munit_assert_int32(fixture->app0_value->state.value.current, ==, 10);
+    munit_assert_false(fixture->app0_value->state.value.pending);
+    munit_assert_int32(fixture->app0_value->state.value.pending_delta, ==, 0);
     munit_assert_memory_equal(
         4,
         dfc_file_data(&fixture->credential, fixture->app0_backup),
@@ -276,9 +276,9 @@ static void assert_transaction_still_pending(SelectionFixture* fixture) {
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     munit_assert_true(fixture->app0_backup->transaction_pending);
     munit_assert_true(fixture->app0_records->transaction_pending);
-    munit_assert_uint32(fixture->app0_records->record_count, ==, 2);
-    munit_assert_true(fixture->app0_value->value_pending);
-    munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 5);
+    munit_assert_uint32(fixture->app0_records->state.record.count, ==, 2);
+    munit_assert_true(fixture->app0_value->state.value.pending);
+    munit_assert_int32(fixture->app0_value->state.value.pending_delta, ==, 5);
     munit_assert_memory_equal(
         4,
         dfc_file_data(&fixture->credential, fixture->app0_backup),
@@ -338,9 +338,9 @@ static void finish_preserved_transaction(SelectionFixture* fixture, const char* 
     munit_assert_null(fixture->session->emulator->transaction_snapshot_pool);
     munit_assert_false(fixture->app0_backup->transaction_pending);
     munit_assert_false(fixture->app0_records->transaction_pending);
-    munit_assert_false(fixture->app0_value->value_pending);
-    munit_assert_int32(fixture->app0_value->value, ==, 15);
-    munit_assert_uint32(fixture->app0_records->record_count, ==, 2);
+    munit_assert_false(fixture->app0_value->state.value.pending);
+    munit_assert_int32(fixture->app0_value->state.value.current, ==, 15);
+    munit_assert_uint32(fixture->app0_records->state.record.count, ==, 2);
     munit_assert_memory_equal(
         4,
         dfc_file_data(&fixture->credential, fixture->app0_backup),
@@ -369,10 +369,10 @@ static void assert_transaction_published(SelectionFixture* fixture) {
     munit_assert_null(emulator->transaction_snapshot_pool);
     munit_assert_false(fixture->app0_backup->transaction_pending);
     munit_assert_false(fixture->app0_records->transaction_pending);
-    munit_assert_uint32(fixture->app0_records->record_count, ==, 2);
-    munit_assert_false(fixture->app0_value->value_pending);
-    munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 0);
-    munit_assert_int32(fixture->app0_value->value, ==, 15);
+    munit_assert_uint32(fixture->app0_records->state.record.count, ==, 2);
+    munit_assert_false(fixture->app0_value->state.value.pending);
+    munit_assert_int32(fixture->app0_value->state.value.pending_delta, ==, 0);
+    munit_assert_int32(fixture->app0_value->state.value.current, ==, 15);
 #if DFC_ENABLE_TRANSACTION_MAC
     munit_assert_memory_equal(
         sizeof(emulator->transaction_mac),

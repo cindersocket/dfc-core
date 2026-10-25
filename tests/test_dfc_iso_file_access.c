@@ -36,9 +36,9 @@ static DfcVirtualPiccSession* prepare_session(DfcCredential* credential, uint8_t
     file->access_rights = ACCESS_KEY1_READ_KEY2_WRITE;
     file->comm_settings = DFC_COMM_PLAIN;
     if(file_type == DFC_FILE_TYPE_LINEAR_RECORD) {
-        file->record_size = 3;
-        file->max_records = 1;
-        file->record_count = 1;
+        file->state.record.size = 3;
+        file->state.record.max_records = 1;
+        file->state.record.count = 1;
     }
 
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(credential);
@@ -615,8 +615,8 @@ static MunitResult
     DfcVirtualPiccSession* session = prepare_session(&credential, DFC_FILE_TYPE_STANDARD_DATA);
     DfcFile* file = &credential.files[0];
     file->access_rights = ACCESS_FREE;
-    file->sdm_enabled = true;
-    file->sdm_read_counter = 41;
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, true);
+    file->state.data.sdm_read_counter = 41;
     session->emulator->sdm_read_cache_valid = false;
     uint8_t cache[DFC_SDM_READ_CACHE_SIZE];
     memcpy(cache, session->emulator->sdm_read_cache, sizeof(cache));
@@ -627,11 +627,11 @@ static MunitResult
         ==,
         DfcVirtualPiccStatusBufferTooSmall);
     munit_assert_size(response_len, ==, 0);
-    munit_assert_uint32(file->sdm_read_counter, ==, 41);
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, 41);
     munit_assert_false(session->emulator->sdm_read_cache_valid);
     munit_assert_memory_equal(sizeof(cache), session->emulator->sdm_read_cache, cache);
     exchange(session, read, sizeof(read), response, sizeof(response), &response_len);
-    munit_assert_uint32(file->sdm_read_counter, ==, 42);
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, 42);
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
 }

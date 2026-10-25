@@ -284,9 +284,9 @@ static void prepare_delegated_fixture(FormatFixture* fixture) {
 #if DFC_ENABLE_TRANSACTION_MAC
     fixture->credential.files[0].type = DFC_FILE_TYPE_TRANSACTION_MAC;
     memset(
-        fixture->credential.files[0].transaction_mac_key,
+        fixture->credential.files[0].state.transaction_mac.key,
         0xA5,
-        sizeof(fixture->credential.files[0].transaction_mac_key));
+        sizeof(fixture->credential.files[0].state.transaction_mac.key));
 #endif
     add_other_app_and_file(fixture);
     select_format_app(fixture, 0);

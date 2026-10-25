@@ -479,52 +479,64 @@ int32_t dfc_ffi_credential_get_file(
     out->access_rights = f->access_rights;
     out->has_iso_file_id = f->has_iso_file_id;
     out->iso_file_id = f->iso_file_id;
-    out->declared_size = f->declared_size;
+    if(f->type == DFC_FILE_TYPE_STANDARD_DATA || f->type == DFC_FILE_TYPE_BACKUP_DATA) {
+        if(!dfc_file_get_declared_size(f, &out->declared_size)) return DfcDerMalformed;
+    } else if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) {
+        out->declared_size = (uint32_t)f->data_len;
+    }
     out->data_len = (uint32_t)f->data_len;
     out->contents_complete = f->contents_complete;
     out->transaction_pending = f->transaction_pending;
     if(f->type == DFC_FILE_TYPE_VALUE) {
-        out->value_lower_limit = f->value_lower_limit;
-        out->value_upper_limit = f->value_upper_limit;
-        out->value = f->value;
-        out->limited_credit_value = f->limited_credit_value;
-        out->limited_credit = f->limited_credit;
-        out->value_pending = f->value_pending;
-        out->value_pending_delta = f->value_pending_delta;
+        out->value_lower_limit = f->state.value.lower_limit;
+        out->value_upper_limit = f->state.value.upper_limit;
+        out->value = f->state.value.current;
+        out->limited_credit_value = f->state.value.limited_credit_value;
+        out->limited_credit = f->state.value.limited_credit;
+        out->value_pending = f->state.value.pending;
+        out->value_pending_delta = f->state.value.pending_delta;
     } else if(f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
-        out->record_size = f->record_size;
-        out->max_records = f->max_records;
-        out->record_count = f->record_count;
+        out->record_size = f->state.record.size;
+        out->max_records = f->state.record.max_records;
+        out->record_count = f->state.record.count;
     }
 #if DFC_ENABLE_SDM
-    out->sdm_enabled = f->sdm_enabled;
-    out->sdm_options = f->sdm_options;
-    out->sdm_access_rights = f->sdm_access_rights;
-    out->sdm_has_uid_offset = f->sdm_has_uid_offset;
-    out->sdm_uid_offset = f->sdm_uid_offset;
-    out->sdm_has_counter_offset = f->sdm_has_counter_offset;
-    out->sdm_counter_offset = f->sdm_counter_offset;
-    out->sdm_has_picc_data_offset = f->sdm_has_picc_data_offset;
-    out->sdm_picc_data_offset = f->sdm_picc_data_offset;
-    out->sdm_has_mac_input_offset = f->sdm_has_mac_input_offset;
-    out->sdm_mac_input_offset = f->sdm_mac_input_offset;
-    out->sdm_has_mac_offset = f->sdm_has_mac_offset;
-    out->sdm_mac_offset = f->sdm_mac_offset;
-    out->sdm_has_encrypted_file_offset = f->sdm_has_encrypted_file_offset;
-    out->sdm_encrypted_file_offset = f->sdm_encrypted_file_offset;
-    out->sdm_encrypted_file_length = f->sdm_encrypted_file_length;
-    out->sdm_has_counter_limit = f->sdm_has_counter_limit;
-    out->sdm_counter_limit = f->sdm_counter_limit;
-    out->sdm_read_counter = f->sdm_read_counter;
+    if(f->type == DFC_FILE_TYPE_STANDARD_DATA) {
+        out->sdm_enabled = dfc_file_sdm_flag_is_set(f, DfcSdmFlagEnabled);
+        out->sdm_options = f->state.data.sdm.options;
+        out->sdm_access_rights = f->state.data.sdm.access_rights;
+        out->sdm_has_uid_offset = dfc_file_sdm_flag_is_set(f, DfcSdmFlagUidOffset);
+        out->sdm_uid_offset = f->state.data.sdm.uid_offset;
+        out->sdm_has_counter_offset = dfc_file_sdm_flag_is_set(f, DfcSdmFlagCounterOffset);
+        out->sdm_counter_offset = f->state.data.sdm.counter_offset;
+        out->sdm_has_picc_data_offset = dfc_file_sdm_flag_is_set(f, DfcSdmFlagPiccDataOffset);
+        out->sdm_picc_data_offset = f->state.data.sdm.picc_data_offset;
+        out->sdm_has_mac_input_offset = dfc_file_sdm_flag_is_set(f, DfcSdmFlagMacInputOffset);
+        out->sdm_mac_input_offset = f->state.data.sdm.mac_input_offset;
+        out->sdm_has_mac_offset = dfc_file_sdm_flag_is_set(f, DfcSdmFlagMacOffset);
+        out->sdm_mac_offset = f->state.data.sdm.mac_offset;
+        out->sdm_has_encrypted_file_offset = dfc_file_sdm_flag_is_set(f, DfcSdmFlagEncryptedFile);
+        out->sdm_encrypted_file_offset = f->state.data.sdm.encrypted_file_offset;
+        out->sdm_encrypted_file_length = f->state.data.sdm.encrypted_file_length;
+        out->sdm_has_counter_limit = dfc_file_sdm_flag_is_set(f, DfcSdmFlagCounterLimit);
+        out->sdm_counter_limit = f->state.data.sdm.counter_limit;
+        out->sdm_read_counter = f->state.data.sdm_read_counter;
+    }
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
     if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) {
-        memcpy(out->transaction_mac_key, f->transaction_mac_key, sizeof(out->transaction_mac_key));
-        out->transaction_mac_key_type = f->transaction_mac_key_type;
-        out->transaction_mac_key_version = f->transaction_mac_key_version;
-        out->transaction_counter = f->transaction_counter;
-        memcpy(out->transaction_mac, f->transaction_mac, sizeof(out->transaction_mac));
-        memcpy(out->previous_reader_id, f->previous_reader_id, sizeof(out->previous_reader_id));
+        memcpy(
+            out->transaction_mac_key,
+            f->state.transaction_mac.key,
+            sizeof(out->transaction_mac_key));
+        out->transaction_mac_key_type = f->state.transaction_mac.key_type;
+        out->transaction_mac_key_version = f->state.transaction_mac.key_version;
+        out->transaction_counter = f->state.transaction_mac.counter;
+        memcpy(out->transaction_mac, f->state.transaction_mac.mac, sizeof(out->transaction_mac));
+        memcpy(
+            out->previous_reader_id,
+            f->state.transaction_mac.previous_reader_id,
+            sizeof(out->previous_reader_id));
     }
 #endif
     return DfcDerOk;
@@ -956,54 +968,65 @@ int32_t dfc_ffi_credential_add_file(
     file->access_rights = f->access_rights;
     file->has_iso_file_id = f->has_iso_file_id != 0;
     file->iso_file_id = f->iso_file_id;
-    file->declared_size = f->declared_size;
+    if(dfc_file_type_is_data(file->type) && !dfc_file_set_declared_size(file, f->declared_size)) {
+        return DfcDerMalformed;
+    }
     file->contents_complete = f->contents_complete != 0;
     file->transaction_pending = f->transaction_pending != 0;
     if(f->type == DFC_FILE_TYPE_VALUE) {
-        file->value_lower_limit = f->value_lower_limit;
-        file->value_upper_limit = f->value_upper_limit;
-        file->value = f->value;
-        file->limited_credit_value = f->limited_credit_value;
-        file->limited_credit = f->limited_credit;
-        file->value_pending = f->value_pending != 0;
-        file->value_pending_delta = f->value_pending_delta;
+        file->state.value.lower_limit = f->value_lower_limit;
+        file->state.value.upper_limit = f->value_upper_limit;
+        file->state.value.current = f->value;
+        file->state.value.limited_credit_value = f->limited_credit_value;
+        file->state.value.limited_credit = f->limited_credit;
+        file->state.value.pending = f->value_pending != 0;
+        file->state.value.pending_delta = f->value_pending_delta;
     } else if(f->type == DFC_FILE_TYPE_LINEAR_RECORD || f->type == DFC_FILE_TYPE_CYCLIC_RECORD) {
-        file->record_size = f->record_size;
-        file->max_records = f->max_records;
-        file->record_count = f->record_count;
+        file->state.record.size = f->record_size;
+        file->state.record.max_records = f->max_records;
+        file->state.record.count = f->record_count;
     }
     if(f->sdm_enabled) {
 #if DFC_ENABLE_SDM
-        file->sdm_enabled = true;
-        file->sdm_options = f->sdm_options;
-        file->sdm_access_rights = f->sdm_access_rights;
-        file->sdm_has_uid_offset = f->sdm_has_uid_offset != 0;
-        file->sdm_uid_offset = f->sdm_uid_offset;
-        file->sdm_has_counter_offset = f->sdm_has_counter_offset != 0;
-        file->sdm_counter_offset = f->sdm_counter_offset;
-        file->sdm_has_picc_data_offset = f->sdm_has_picc_data_offset != 0;
-        file->sdm_picc_data_offset = f->sdm_picc_data_offset;
-        file->sdm_has_mac_input_offset = f->sdm_has_mac_input_offset != 0;
-        file->sdm_mac_input_offset = f->sdm_mac_input_offset;
-        file->sdm_has_mac_offset = f->sdm_has_mac_offset != 0;
-        file->sdm_mac_offset = f->sdm_mac_offset;
-        file->sdm_has_encrypted_file_offset = f->sdm_has_encrypted_file_offset != 0;
-        file->sdm_encrypted_file_offset = f->sdm_encrypted_file_offset;
-        file->sdm_encrypted_file_length = f->sdm_encrypted_file_length;
-        file->sdm_has_counter_limit = f->sdm_has_counter_limit != 0;
-        file->sdm_counter_limit = f->sdm_counter_limit;
-        file->sdm_read_counter = f->sdm_read_counter;
+        dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, true);
+        file->state.data.sdm.options = f->sdm_options;
+        file->state.data.sdm.access_rights = f->sdm_access_rights;
+        dfc_file_sdm_flag_set(file, DfcSdmFlagUidOffset, f->sdm_has_uid_offset != 0);
+        file->state.data.sdm.uid_offset = f->sdm_uid_offset;
+        dfc_file_sdm_flag_set(file, DfcSdmFlagCounterOffset, f->sdm_has_counter_offset != 0);
+        file->state.data.sdm.counter_offset = f->sdm_counter_offset;
+        dfc_file_sdm_flag_set(file, DfcSdmFlagPiccDataOffset, f->sdm_has_picc_data_offset != 0);
+        file->state.data.sdm.picc_data_offset = f->sdm_picc_data_offset;
+        dfc_file_sdm_flag_set(file, DfcSdmFlagMacInputOffset, f->sdm_has_mac_input_offset != 0);
+        file->state.data.sdm.mac_input_offset = f->sdm_mac_input_offset;
+        dfc_file_sdm_flag_set(file, DfcSdmFlagMacOffset, f->sdm_has_mac_offset != 0);
+        file->state.data.sdm.mac_offset = f->sdm_mac_offset;
+        dfc_file_sdm_flag_set(
+            file, DfcSdmFlagEncryptedFile, f->sdm_has_encrypted_file_offset != 0);
+        file->state.data.sdm.encrypted_file_offset = f->sdm_encrypted_file_offset;
+        file->state.data.sdm.encrypted_file_length = f->sdm_encrypted_file_length;
+        dfc_file_sdm_flag_set(file, DfcSdmFlagCounterLimit, f->sdm_has_counter_limit != 0);
+        file->state.data.sdm.counter_limit = f->sdm_counter_limit;
+        file->state.data.sdm_read_counter = f->sdm_read_counter;
 #endif
     }
     if(f->type == DFC_FILE_TYPE_TRANSACTION_MAC) {
 #if DFC_ENABLE_TRANSACTION_MAC
         memcpy(
-            file->transaction_mac_key, f->transaction_mac_key, sizeof(file->transaction_mac_key));
-        file->transaction_mac_key_type = f->transaction_mac_key_type;
-        file->transaction_mac_key_version = f->transaction_mac_key_version;
-        file->transaction_counter = f->transaction_counter;
-        memcpy(file->transaction_mac, f->transaction_mac, sizeof(file->transaction_mac));
-        memcpy(file->previous_reader_id, f->previous_reader_id, sizeof(file->previous_reader_id));
+            file->state.transaction_mac.key,
+            f->transaction_mac_key,
+            sizeof(file->state.transaction_mac.key));
+        file->state.transaction_mac.key_type = f->transaction_mac_key_type;
+        file->state.transaction_mac.key_version = f->transaction_mac_key_version;
+        file->state.transaction_mac.counter = f->transaction_counter;
+        memcpy(
+            file->state.transaction_mac.mac,
+            f->transaction_mac,
+            sizeof(file->state.transaction_mac.mac));
+        memcpy(
+            file->state.transaction_mac.previous_reader_id,
+            f->previous_reader_id,
+            sizeof(file->state.transaction_mac.previous_reader_id));
 #endif
     }
     if(index) *index = (uint32_t)c->num_files;

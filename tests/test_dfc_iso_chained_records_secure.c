@@ -89,8 +89,8 @@ static void fixture_open(Fixture* fixture, uint8_t comm) {
     file->type = DFC_FILE_TYPE_LINEAR_RECORD;
     file->comm_settings = comm;
     file->access_rights = 0x0000;
-    file->record_size = 16;
-    file->max_records = 16;
+    file->state.record.size = 16;
+    file->state.record.max_records = 16;
     munit_assert_true(dfc_file_resize(&fixture->credential, file, 256));
 
     fixture->picc = dfc_virtual_picc_session_alloc(&fixture->credential);
@@ -242,8 +242,8 @@ static MunitResult test_large_secure_write(const MunitParameter params[], void* 
             Fixture fixture;
             fixture_open(&fixture, modes[mode]);
             DfcFile* file = dfc_credential_find_file_in_app(&fixture.credential, 0, RecordFile);
-            file->record_size = 160;
-            file->max_records = 3;
+            file->state.record.size = 160;
+            file->state.record.max_records = 3;
             munit_assert_true(dfc_file_resize(&fixture.credential, file, 480));
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
             if(ev2)
