@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+RUST_EXAMPLE_MANIFEST = ROOT / "examples" / "rust-virtual-picc" / "Cargo.toml"
 MATRIX_KEYS = ("label", "backend", "sanitize", "cc", "release", "packages")
 
 
@@ -125,6 +127,16 @@ class UnitWorkflowTests(unittest.TestCase):
 
         self.assertIn("- name: Run unit suite\n        timeout-minutes: 20", job)
         self.assertIn(f"run: {command}", job)
+
+    def test_rust_example_command_has_an_unambiguous_default_binary(self) -> None:
+        manifest = tomllib.loads(RUST_EXAMPLE_MANIFEST.read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["package"].get("default-run"), manifest["package"]["name"])
+        self.assertIn(
+            "cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- "
+            "examples/credentials/v6-minimal.dfcb",
+            workflow_text(),
+        )
 
 
 if __name__ == "__main__":
