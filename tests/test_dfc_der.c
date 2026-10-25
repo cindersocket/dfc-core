@@ -734,6 +734,35 @@ static MunitResult test_capacity(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static MunitResult test_long_form_field_indexing(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential src = {0};
+    build_basic(&src);
+    uint8_t contents[300];
+    for(size_t i = 0; i < sizeof(contents); i++)
+        contents[i] = (uint8_t)i;
+    add_data_file(&src, 1, sizeof(contents), (const char*)contents, sizeof(contents), true);
+
+    uint8_t encoded[DFC_DER_MAX_SIZE];
+    size_t encoded_len = 0;
+    munit_assert_int(dfc_der_encode(&src, encoded, sizeof(encoded), &encoded_len), ==, DfcDerOk);
+
+    DfcCredential decoded = {0};
+    munit_assert_int(dfc_der_decode(&decoded, encoded, encoded_len), ==, DfcDerOk);
+    munit_assert_size(decoded.files[0].data_len, ==, sizeof(contents));
+    munit_assert_memory_equal(
+        sizeof(contents), contents, dfc_file_data_const(&decoded, &decoded.files[0]));
+
+    uint8_t oversized[DFC_DER_MAX_SIZE + 1] = {0};
+    memset(&decoded, 0xA5, sizeof(decoded));
+    munit_assert_int(dfc_der_decode(&decoded, oversized, sizeof(oversized)), ==, DfcDerMalformed);
+    DfcCredential empty = {0};
+    dfc_credential_clear(&empty);
+    munit_assert_memory_equal(sizeof(decoded), &empty, &decoded);
+    return MUNIT_OK;
+}
+
 #if DFC_ENABLE_KEY_SETS
 static MunitResult test_mixed_key_set_round_trip(const MunitParameter params[], void* data) {
     (void)params;
@@ -823,6 +852,12 @@ static MunitTest tests[] = {
      NULL},
 #endif
     {"/capacity", test_capacity, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/long-form-field-indexing",
+     test_long_form_field_indexing,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

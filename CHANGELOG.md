@@ -40,6 +40,8 @@
   (#172).
 - Give emulator objects, response buffers, command chains, and transaction
   snapshots distinct allocation tags for static-storage ports (#175).
+- Compact DER field indexes to reduce peak credential-decoder stack use
+  (#173).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`
