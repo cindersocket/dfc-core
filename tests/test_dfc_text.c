@@ -384,6 +384,31 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static MunitResult test_unclaimed_line_diagnostics(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static char text[sizeof(MINIMAL) + (4096 * 2) + 64];
+
+    size_t at = 0;
+    for(size_t i = 0; i < 4096; i++) {
+        text[at++] = '#';
+        text[at++] = '\n';
+    }
+    size_t document_len = strlen(MINIMAL);
+    memcpy(text + at, MINIMAL, document_len);
+    at += document_len;
+    memcpy(text + at, "Card Storage: 2048\n", strlen("Card Storage: 2048\n"));
+    at += strlen("Card Storage: 2048\n");
+
+    static DfcCredential credential;
+    DfcTextError detail = {0};
+    munit_assert_int(dfc_text_parse(&credential, text, at, &detail), ==, DfcTextMalformed);
+    log_detail(&detail);
+    munit_assert_not_null(strstr(detail.message, "duplicate key Card Storage"));
+    munit_assert_size(detail.line, >, 4096);
+    return MUNIT_OK;
+}
+
 static MunitResult test_v5_version_overrides(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -512,6 +537,12 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/rejections", test_rejections, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/unclaimed-line-diagnostics",
+     test_unclaimed_line_diagnostics,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/v5-version-overrides", test_v5_version_overrides, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/v5-short-version-override",
      test_v5_rejects_short_version_override,

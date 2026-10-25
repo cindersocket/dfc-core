@@ -28,10 +28,6 @@ bool dfc_credential_content_is_binary(const uint8_t* content, size_t len) {
 #define PREFIX_MAX 40
 #define KEY_MAX    96
 
-// Lines whose consumption is tracked individually. Past this the parser still
-// refuses a document with unrecognised keys, it just cannot name the key.
-#define TRACKED_LINES 4096
-
 static const char* const GENERATION_NAMES[] = {"EV1", "EV2", "EV3"};
 static const char* const PROVENANCE_NAMES[] = {"Real", "Random", "Unknown"};
 static const char* const AUTH_NAMES[] = {"D40", "ISO", "AES"};
@@ -95,8 +91,6 @@ typedef struct {
     const char* last_key;
     size_t last_key_len;
     bool has_lookahead;
-    uint8_t seen[TRACKED_LINES / 8];
-    bool tracked;
 
     bool failed;
     DfcTextStatus status;
@@ -158,18 +152,6 @@ static bool fail_class(P* p, DfcTextStatus status, size_t line, const char* fmt,
         va_end(ap);
     }
     return false;
-}
-
-static void mark_seen(P* p, size_t number) {
-    if(!p->tracked || number == 0 || number > TRACKED_LINES) return;
-    size_t bit = number - 1;
-    p->seen[bit / 8] |= (uint8_t)(1u << (bit % 8));
-}
-
-static bool was_seen(const P* p, size_t number) {
-    if(!p->tracked || number == 0 || number > TRACKED_LINES) return true;
-    size_t bit = number - 1;
-    return (p->seen[bit / 8] & (uint8_t)(1u << (bit % 8))) != 0;
 }
 
 // Next raw line, LF terminated. A final line without its LF is still a line.
@@ -237,7 +219,6 @@ static bool prescan(P* p) {
         if(p->total == 1) first = l;
         if(p->total == 2) second = l;
     }
-    p->tracked = p->total <= TRACKED_LINES;
     if(p->total < 2) return fail(p, 0, "Filetype and Version shall come first");
     if(first.key_len != 8 || memcmp(first.key, "Filetype", 8) != 0 || second.key_len != 7 ||
        memcmp(second.key, "Version", 7) != 0) {
@@ -292,7 +273,6 @@ static bool lookup(P* p, const char* key, Line* out, bool claim) {
         p->last_key = line.key;
         p->last_key_len = line.key_len;
         p->consumed++;
-        mark_seen(p, line.number);
     }
     return true;
 }
@@ -1388,41 +1368,36 @@ static DfcTextStatus parse_credential(
 
         // Every line shall have been claimed by a rule above (rule 4).
         if(p.consumed != p.total) {
-            size_t pos = 0;
-            size_t number = 0;
-            const char* s;
-            size_t n;
             bool named = false;
-            while(!named && raw_line(&p, &pos, &s, &n)) {
-                number++;
-                if(line_is_skipped(s, n)) continue;
-                if(was_seen(&p, number)) continue;
-                Line bad;
-                if(!split_line(&p, s, n, number, &bad)) break;
+            Line bad;
+            if(peek_line(&p, &bad)) {
+                // Claims only advance the forward cursor, so every significant
+                // line before `bad` belongs to the claimed prefix.
                 size_t prior_pos = 0;
                 size_t prior_number = 0;
                 const char* prior_s;
                 size_t prior_n;
                 while(raw_line(&p, &prior_pos, &prior_s, &prior_n)) {
                     prior_number++;
-                    if(prior_number >= number) break;
-                    if(line_is_skipped(prior_s, prior_n) || !was_seen(&p, prior_number)) continue;
+                    if(prior_number >= bad.number) break;
+                    if(line_is_skipped(prior_s, prior_n)) continue;
                     Line prior;
                     if(!split_line(&p, prior_s, prior_n, prior_number, &prior)) break;
                     if(prior.key_len == bad.key_len &&
                        memcmp(prior.key, bad.key, bad.key_len) == 0) {
-                        fail(&p, number, "duplicate key %.*s", (int)bad.key_len, bad.key);
+                        fail(&p, bad.number, "duplicate key %.*s", (int)bad.key_len, bad.key);
                         named = true;
                         break;
                     }
                 }
-                if(named) break;
-                char name[KEY_MAX];
-                size_t copy = bad.key_len < sizeof(name) ? bad.key_len : sizeof(name) - 1;
-                memcpy(name, bad.key, copy);
-                name[copy] = '\0';
-                fail(&p, number, "unrecognised or out of order key %s", name);
-                named = true;
+                if(!named) {
+                    char name[KEY_MAX];
+                    size_t copy = bad.key_len < sizeof(name) ? bad.key_len : sizeof(name) - 1;
+                    memcpy(name, bad.key, copy);
+                    name[copy] = '\0';
+                    fail(&p, bad.number, "unrecognised or out of order key %s", name);
+                    named = true;
+                }
             }
             if(!named) fail(&p, 0, "unrecognised or out of order keys are present");
             break;
