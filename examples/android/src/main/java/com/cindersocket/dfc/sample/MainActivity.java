@@ -69,7 +69,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
       isoDep.connect();
       try (DfcReader reader = new DfcReader(new IsoDepTransport(isoDep))) {
         DfcResponse response = reader.exchange(
-            DfcCommand.getVersion(), DfcReader.Framing.ISO_7816, DfcReader.Communication.PLAIN);
+            DfcCommand.getVersion(), DfcReader.Framing.ISO_7816, DfcReader.Communication.PLAIN, -1);
         show("GetVersion: status=" + String.format("%02X", response.status())
             + ", data=" + hex(response.data()));
       }

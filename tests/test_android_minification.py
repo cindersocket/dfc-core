@@ -13,6 +13,9 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
             ROOT
             / "examples/android/src/androidTest/java/com/cindersocket/dfc/sample/MinifiedExceptionTest.java"
         ).read_text()
+        sample_source = (
+            ROOT / "examples/android/src/main/java/com/cindersocket/dfc/sample/MainActivity.java"
+        ).read_text()
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
 
         self.assertIn(
@@ -33,7 +36,9 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
         )
         self.assertIn('testProguardFiles("proguard-rules.pro")', sample_build)
         self.assertIn("-dontwarn javax.lang.model.element.Modifier", sample_rules)
-        self.assertIn('DfcCredentialCodec.parse("not a credential")', smoke_test)
+        self.assertIn("new DfcReader", smoke_test)
+        self.assertIn("Integer.MAX_VALUE", smoke_test)
+        self.assertIn("DfcReader.Communication.PLAIN, -1", sample_source)
         self.assertIn(
             "script: bindings/android/gradlew --no-daemon -p bindings/android "
             ":sample:connectedReleaseAndroidTest :dfc:connectedMismatchAndroidTest",
