@@ -6,6 +6,7 @@
 
 #include "dfc_credential.h"
 #include "dfc_secure_messaging.h"
+#include "dfc_transaction_mac_i.h"
 
 #define DFC_SDM_READ_CACHE_SIZE 192
 
@@ -55,7 +56,6 @@ typedef struct {
     size_t sdm_read_cache_len;
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
-    size_t transaction_input_len;
     bool transaction_reader_id_pending;
     bool transaction_reader_id_persist;
 #endif
@@ -160,7 +160,8 @@ typedef struct {
     uint8_t sdm_read_cache[DFC_SDM_READ_CACHE_SIZE];
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
-    uint8_t transaction_input[DFC_TRANSACTION_INPUT_MAX_LENGTH];
+    DfcTransactionMacAccumulator transaction_mac;
+    bool transaction_mac_retryable_failure;
     uint8_t transaction_pending_reader_id[DFC_TRANSACTION_READER_ID_LENGTH];
 #endif
 

@@ -760,9 +760,8 @@ static MunitResult test_native_initial_authentication_allocation_failure(
 }
 
 #if DFC_ENABLE_TRANSACTION_MAC && DFC_ENABLE_EV2_SECURE_MESSAGING
-static void assert_transaction_mac_failure_aborts(
-    bool return_transaction_mac,
-    size_t failed_cmac_operation) {
+static void
+    assert_transaction_mac_failure_aborts(bool return_transaction_mac, size_t failed_cmac_block) {
     static DfcCredential credential;
     munit_assert_true(dfc_credential_clear(&credential));
     credential.card.generation = DfcGenerationEv3;
@@ -790,15 +789,15 @@ static void assert_transaction_mac_failure_aborts(
     munit_assert_not_null(emulator);
     emulator->selected_application = DfcEmulatorSelectedApplicationApp;
     emulator->selected_app_index = 0;
-    emulator->transaction_input_len = DFC_AES_KEY_LENGTH;
-    for(size_t i = 0; i < emulator->transaction_input_len; i++)
-        emulator->transaction_input[i] = (uint8_t)(0x70 + i);
+    memset(&emulator->transaction_mac, 0x70, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
     uint8_t command[2] = {DFC_CMD_COMMIT_TRANSACTION, DFC_TRANSACTION_COMMIT_RETURN_MAC_OPTION};
     size_t command_len = return_transaction_mac ? sizeof(command) : 1;
     uint8_t response[64];
     aes_operation = 0;
-    fail_at = 1;
-    fail_aes_operation = failed_cmac_operation;
+    fail_at = failed_cmac_block;
+    fail_aes_operation = 1;
     size_t response_len = fault_emulator_command(emulator, command, command_len, response, true);
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
@@ -806,8 +805,7 @@ static void assert_transaction_mac_failure_aborts(
     munit_assert_false(value->value_pending);
     munit_assert_int(value->value_pending_delta, ==, 0);
     munit_assert_uint32(transaction->transaction_counter, ==, 9);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
+    assert_zeroed((const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
 
     aes_operation = 0;
     fail_at = 0;
@@ -819,8 +817,7 @@ static void assert_transaction_mac_failure_aborts(
     munit_assert_false(value->value_pending);
     munit_assert_int(value->value_pending_delta, ==, 0);
     munit_assert_uint32(transaction->transaction_counter, ==, 9);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
+    assert_zeroed((const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
     dfc_emulator_free(emulator);
 }
 
@@ -829,8 +826,8 @@ static MunitResult
     (void)params;
     (void)user_data;
     for(size_t return_mac = 0; return_mac < 2; return_mac++) {
-        for(size_t operation = 1; operation <= 2; operation++)
-            assert_transaction_mac_failure_aborts(return_mac != 0, operation);
+        for(size_t block = 1; block <= 2; block++)
+            assert_transaction_mac_failure_aborts(return_mac != 0, block);
     }
     fail_at = 0;
     fail_aes_operation = 0;
@@ -841,6 +838,7 @@ static DfcEmulator*
     transaction_test_emulator(DfcCredential* credential, DfcFile** value, DfcFile** transaction) {
     munit_assert_true(dfc_credential_clear(credential));
     credential->card.generation = DfcGenerationEv3;
+    credential->uid_len = DFC_DESFIRE_UID_LEN;
     const uint8_t aid[3] = {1, 2, 3};
     munit_assert_not_null(dfc_credential_create_application_desfire_order(
         credential, aid, 0x0F, DFC_KEY_TYPE_AES | 1));
@@ -857,6 +855,21 @@ static DfcEmulator*
     (*transaction)->access_rights = 0xEFFE;
     memset((*transaction)->transaction_mac_key, 0x42, sizeof((*transaction)->transaction_mac_key));
     munit_assert_true(dfc_file_resize(credential, *transaction, DFC_TRANSACTION_MAC_FILE_LENGTH));
+    DfcFile* data = dfc_credential_create_file(credential, 0, 3);
+    munit_assert_not_null(data);
+    data->type = DFC_FILE_TYPE_BACKUP_DATA;
+    data->access_rights = 0xEEEE;
+    munit_assert_true(dfc_file_resize(credential, data, 32));
+    memset(dfc_file_data(credential, data), 0x31, 32);
+    DfcFile* record = dfc_credential_create_file(credential, 0, 4);
+    munit_assert_not_null(record);
+    record->type = DFC_FILE_TYPE_LINEAR_RECORD;
+    record->access_rights = 0xEEEE;
+    record->record_size = 32;
+    record->max_records = 2;
+    record->record_count = 1;
+    munit_assert_true(dfc_file_resize(credential, record, 64));
+    memset(dfc_file_data(credential, record), 0x42, 64);
     DfcEmulator* emulator = dfc_emulator_alloc(credential);
     munit_assert_not_null(emulator);
     emulator->selected_application = DfcEmulatorSelectedApplicationApp;
@@ -879,70 +892,272 @@ static MunitResult
     DfcFile* transaction;
     uint8_t response[64];
     const uint8_t credit[] = {DFC_CMD_CREDIT, 1, 7, 0, 0, 0};
+    DfcEmulator* emulator = transaction_test_emulator(&credential, &value, &transaction);
+    for(size_t operation = 0; operation < 10; operation++) {
+        size_t response_len =
+            fault_emulator_command(emulator, credit, sizeof(credit), response, true);
+        munit_assert_size(response_len, ==, 1);
+        munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
+    }
+    munit_assert_true(value->value_pending);
+    munit_assert_int(value->value_pending_delta, ==, 70);
+    munit_assert_true(emulator->transaction_mac.has_pending);
+    dfc_emulator_free(emulator);
+    return MUNIT_OK;
+}
+
+static void reset_aes_fault(size_t block) {
+    aes_operation = 0;
+    fail_at = block;
+    fail_aes_operation = 1;
+}
+
+static void clear_aes_fault(void) {
+    aes_operation = 0;
+    fail_at = 0;
+    fail_aes_operation = 0;
+}
+
+static uint8_t
+    run_transaction_command(DfcEmulator* emulator, const uint8_t* command, size_t command_length) {
+    uint8_t response[64];
+    size_t response_length =
+        fault_emulator_command(emulator, command, command_length, response, true);
+    munit_assert_size(response_length, ==, 1);
+    return response[0];
+}
+
+static MunitResult
+    test_transaction_streaming_failures_are_atomic(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    static DfcCredential credential;
+    DfcFile* value;
+    DfcFile* transaction;
+    const uint8_t credit[] = {DFC_CMD_CREDIT, 1, 7, 0, 0, 0};
 
     DfcEmulator* emulator = transaction_test_emulator(&credential, &value, &transaction);
-    emulator->transaction_input_len = DFC_TRANSACTION_INPUT_MAX_LENGTH - DFC_AES_KEY_LENGTH;
-    memset(emulator->transaction_input, 0x35, emulator->transaction_input_len);
-    size_t response_len = fault_emulator_command(emulator, credit, sizeof(credit), response, true);
-    munit_assert_size(response_len, ==, 1);
-    munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
-    munit_assert_size(emulator->transaction_input_len, ==, DFC_TRANSACTION_INPUT_MAX_LENGTH);
-    munit_assert_true(value->value_pending);
-    munit_assert_int(value->value_pending_delta, ==, 7);
-    dfc_emulator_free(emulator);
-
-    emulator = transaction_test_emulator(&credential, &value, &transaction);
-    emulator->transaction_input_len = DFC_TRANSACTION_INPUT_MAX_LENGTH - DFC_AES_KEY_LENGTH + 1;
-    memset(emulator->transaction_input, 0x5A, emulator->transaction_input_len);
-    response_len = fault_emulator_command(emulator, credit, sizeof(credit), response, true);
-    munit_assert_size(response_len, ==, 1);
-    munit_assert_uint8(response[0], ==, DFC_STATUS_BOUNDARY_ERROR);
+    DfcTransactionMacAccumulator empty = emulator->transaction_mac;
+    reset_aes_fault(1);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(empty), &emulator->transaction_mac, &empty);
     munit_assert_false(value->value_pending);
-    munit_assert_int(value->value_pending_delta, ==, 0);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
-    dfc_emulator_free(emulator);
+    munit_assert_int32(value->value, ==, 100);
+    clear_aes_fault();
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
 
-    const uint8_t commit_reader_id[1 + DFC_TRANSACTION_READER_ID_LENGTH] = {
-        DFC_CMD_COMMIT_READER_ID,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-    };
-    emulator = transaction_test_emulator(&credential, &value, &transaction);
-    enable_transaction_reader_id_authentication(emulator, transaction);
-    emulator->transaction_input_len = DFC_TRANSACTION_INPUT_MAX_LENGTH - 3 * DFC_AES_KEY_LENGTH;
-    response_len = fault_emulator_command(
-        emulator, commit_reader_id, sizeof(commit_reader_id), response, true);
-    munit_assert_size(response_len, ==, 1 + DFC_TRANSACTION_READER_ID_LENGTH);
-    munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
-    munit_assert_size(emulator->transaction_input_len, ==, DFC_TRANSACTION_INPUT_MAX_LENGTH);
+    DfcTransactionMacAccumulator prior = emulator->transaction_mac;
+    int32_t prior_pending_value = value->value_pending_value;
+    int32_t prior_pending_delta = value->value_pending_delta;
+    reset_aes_fault(1);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
+    munit_assert_true(value->value_pending);
+    munit_assert_int32(value->value_pending_value, ==, prior_pending_value);
+    munit_assert_int32(value->value_pending_delta, ==, prior_pending_delta);
+    clear_aes_fault();
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
     dfc_emulator_free(emulator);
 
     emulator = transaction_test_emulator(&credential, &value, &transaction);
-    enable_transaction_reader_id_authentication(emulator, transaction);
-    emulator->transaction_input_len =
-        DFC_TRANSACTION_INPUT_MAX_LENGTH - 3 * DFC_AES_KEY_LENGTH + 1;
-    memset(emulator->transaction_input, 0x6C, emulator->transaction_input_len);
-    response_len = fault_emulator_command(
-        emulator, commit_reader_id, sizeof(commit_reader_id), response, true);
-    munit_assert_size(response_len, ==, 1);
-    munit_assert_uint8(response[0], ==, DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    prior = emulator->transaction_mac;
+    prior_pending_value = value->value_pending_value;
+    DfcFile* data = dfc_credential_find_file_in_app(&credential, 0, 3);
+    uint8_t original_data[32];
+    memcpy(original_data, dfc_file_data_const(&credential, data), sizeof(original_data));
+    uint8_t write[8 + sizeof(original_data)] = {DFC_CMD_WRITE_DATA, 3, 0, 0, 0, 32, 0, 0};
+    memset(write + 8, 0xA5, sizeof(original_data));
+    reset_aes_fault(2);
+    munit_assert_uint8(
+        run_transaction_command(emulator, write, sizeof(write)), ==, DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
+    munit_assert_memory_equal(
+        sizeof(original_data), dfc_file_data_const(&credential, data), original_data);
+    munit_assert_false(data->transaction_pending);
+    munit_assert_false(emulator->transaction_snapshot_active);
+    munit_assert_int32(value->value_pending_value, ==, prior_pending_value);
+    clear_aes_fault();
+    munit_assert_uint8(run_transaction_command(emulator, write, sizeof(write)), ==, DFC_STATUS_OK);
+    dfc_emulator_free(emulator);
+
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    prior = emulator->transaction_mac;
+    prior_pending_value = value->value_pending_value;
+    DfcFile* record = dfc_credential_find_file_in_app(&credential, 0, 4);
+    uint8_t original_record[32];
+    memcpy(original_record, dfc_file_data_const(&credential, record), sizeof(original_record));
+    uint8_t update[11 + sizeof(original_record)] = {
+        DFC_CMD_UPDATE_RECORD, 4, 0, 0, 0, 0, 0, 0, 32, 0, 0};
+    memset(update + 11, 0xB6, sizeof(original_record));
+    reset_aes_fault(2);
+    munit_assert_uint8(
+        run_transaction_command(emulator, update, sizeof(update)), ==, DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
+    munit_assert_memory_equal(
+        sizeof(original_record), dfc_file_data_const(&credential, record), original_record);
+    munit_assert_false(record->transaction_pending);
+    munit_assert_false(emulator->transaction_snapshot_active);
+    munit_assert_int32(value->value_pending_value, ==, prior_pending_value);
+    clear_aes_fault();
+    munit_assert_uint8(
+        run_transaction_command(emulator, update, sizeof(update)), ==, DFC_STATUS_OK);
+    dfc_emulator_free(emulator);
+
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    prior = emulator->transaction_mac;
+    record = dfc_credential_find_file_in_app(&credential, 0, 4);
+    memcpy(original_record, dfc_file_data_const(&credential, record), sizeof(original_record));
+    uint8_t write_record[8 + sizeof(original_record)] = {
+        DFC_CMD_WRITE_RECORD, 4, 0, 0, 0, 32, 0, 0};
+    memset(write_record + 8, 0xC7, sizeof(original_record));
+    reset_aes_fault(2);
+    munit_assert_uint8(
+        run_transaction_command(emulator, write_record, sizeof(write_record)),
+        ==,
+        DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
+    munit_assert_memory_equal(
+        sizeof(original_record), dfc_file_data_const(&credential, record), original_record);
+    munit_assert_uint32(record->record_count, ==, 1);
+    munit_assert_false(record->transaction_pending);
+    munit_assert_false(emulator->transaction_snapshot_active);
+    clear_aes_fault();
+    munit_assert_uint8(
+        run_transaction_command(emulator, write_record, sizeof(write_record)), ==, DFC_STATUS_OK);
+
+    prior = emulator->transaction_mac;
+    uint8_t written_record[64];
+    memcpy(written_record, dfc_file_data_const(&credential, record), sizeof(written_record));
+    reset_aes_fault(2);
+    munit_assert_uint8(
+        run_transaction_command(emulator, write_record, sizeof(write_record)),
+        ==,
+        DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
+    munit_assert_memory_equal(
+        sizeof(written_record), dfc_file_data_const(&credential, record), written_record);
+    munit_assert_true(record->transaction_pending);
+    munit_assert_true(emulator->transaction_snapshot_active);
+    clear_aes_fault();
+    munit_assert_uint8(
+        run_transaction_command(emulator, write_record, sizeof(write_record)), ==, DFC_STATUS_OK);
+    dfc_emulator_free(emulator);
+
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    record = dfc_credential_find_file_in_app(&credential, 0, 4);
+    record->type = DFC_FILE_TYPE_CYCLIC_RECORD;
+    record->max_records = 1;
+    prior = emulator->transaction_mac;
+    reset_aes_fault(2);
+    munit_assert_uint8(
+        run_transaction_command(emulator, write_record, sizeof(write_record)),
+        ==,
+        DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
+    munit_assert_false(record->transaction_pending);
+    munit_assert_false(emulator->transaction_snapshot_active);
+    clear_aes_fault();
+    munit_assert_uint8(
+        run_transaction_command(emulator, write_record, sizeof(write_record)), ==, DFC_STATUS_OK);
+    dfc_emulator_free(emulator);
+
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    record = dfc_credential_find_file_in_app(&credential, 0, 4);
+    prior = emulator->transaction_mac;
+    memcpy(original_record, dfc_file_data_const(&credential, record), sizeof(original_record));
+    const uint8_t clear_record[] = {DFC_CMD_CLEAR_RECORD_FILE, 4};
+    reset_aes_fault(1);
+    munit_assert_uint8(
+        run_transaction_command(emulator, clear_record, sizeof(clear_record)),
+        ==,
+        DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
+    munit_assert_memory_equal(
+        sizeof(original_record), dfc_file_data_const(&credential, record), original_record);
+    munit_assert_uint32(record->record_count, ==, 1);
+    munit_assert_false(record->transaction_pending);
+    munit_assert_false(emulator->transaction_snapshot_active);
+    clear_aes_fault();
+    munit_assert_uint8(
+        run_transaction_command(emulator, clear_record, sizeof(clear_record)), ==, DFC_STATUS_OK);
+    dfc_emulator_free(emulator);
+
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    uint8_t session_key[DFC_AES_KEY_LENGTH] = {0};
+    uint8_t initial_iv[DFC_AES_KEY_LENGTH];
+    memset(initial_iv, 0x5C, sizeof(initial_iv));
+    emulator->secure_messaging = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), initial_iv);
+    munit_assert_not_null(emulator->secure_messaging);
+    emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
+    emulator->auth_key_no = 0;
+    DfcSecureMessaging* reader = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), initial_iv);
+    munit_assert_not_null(reader);
+    munit_assert_true(dfc_secure_messaging_update_ev1_command(
+        reader, credit[0], credit + 1, sizeof(credit) - 1));
+    uint8_t response_mac[DFC_WIRE_MAC_LENGTH];
+    munit_assert_true(dfc_secure_messaging_generate_ev1_response_mac(
+        reader, DFC_STATUS_OK, NULL, 0, response_mac));
+
+    reset_aes_fault(1);
+    fail_aes_operation = 2;
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_memory_equal(sizeof(initial_iv), emulator->secure_messaging->iv, initial_iv);
+    munit_assert_true(dfc_emulator_native_authentication_active(emulator));
+    clear_aes_fault();
+    uint8_t authenticated_response[64];
+    size_t authenticated_response_length =
+        fault_emulator_command(emulator, credit, sizeof(credit), authenticated_response, true);
+    munit_assert_size(authenticated_response_length, ==, 1 + DFC_WIRE_MAC_LENGTH);
+    munit_assert_uint8(authenticated_response[0], ==, DFC_STATUS_OK);
+    munit_assert_memory_equal(sizeof(reader->iv), emulator->secure_messaging->iv, reader->iv);
+    munit_assert_memory_equal(sizeof(response_mac), authenticated_response + 1, response_mac);
+    munit_assert_true(dfc_emulator_native_authentication_active(emulator));
+    dfc_secure_messaging_free(reader);
+    dfc_emulator_free(emulator);
+
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    emulator->secure_messaging = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), initial_iv);
+    munit_assert_not_null(emulator->secure_messaging);
+    emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
+    emulator->auth_key_no = 0;
+    credential.uid_len = 0;
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_false(value->value_pending);
+    assert_zeroed((const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
+    munit_assert_false(dfc_emulator_native_authentication_active(emulator));
+    dfc_emulator_free(emulator);
+
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
+    transaction->transaction_counter = UINT32_MAX;
+    munit_assert_uint8(
+        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_BOUNDARY_ERROR);
+    munit_assert_false(value->value_pending);
+    assert_zeroed((const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
     dfc_emulator_free(emulator);
     return MUNIT_OK;
 }
@@ -958,8 +1173,9 @@ static MunitResult
     transaction->transaction_counter = UINT32_MAX;
     value->value_pending = true;
     value->value_pending_delta = 7;
-    emulator->transaction_input_len = DFC_AES_KEY_LENGTH;
-    memset(emulator->transaction_input, 0x33, emulator->transaction_input_len);
+    memset(&emulator->transaction_mac, 0x33, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
     uint8_t response[64];
     const uint8_t commit[] = {DFC_CMD_COMMIT_TRANSACTION};
     size_t response_len = fault_emulator_command(emulator, commit, sizeof(commit), response, true);
@@ -969,8 +1185,7 @@ static MunitResult
     munit_assert_false(value->value_pending);
     munit_assert_int(value->value_pending_delta, ==, 0);
     munit_assert_int(value->value, ==, 100);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
+    assert_zeroed((const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
 
     const uint8_t commit_reader_id[1 + DFC_TRANSACTION_READER_ID_LENGTH] = {
         DFC_CMD_COMMIT_READER_ID};
@@ -980,8 +1195,7 @@ static MunitResult
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
     munit_assert_uint32(transaction->transaction_counter, ==, UINT32_MAX);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
+    assert_zeroed((const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
     dfc_emulator_free(emulator);
     return MUNIT_OK;
 }
@@ -1022,8 +1236,7 @@ static MunitResult
     munit_assert_size(response_len, ==, 1);
     munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
     munit_assert_memory_equal(sizeof(original), transaction->previous_reader_id, original);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zeroed(emulator->transaction_input, sizeof(emulator->transaction_input));
+    assert_zeroed((const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
 
     response_len = fault_emulator_command(emulator, command, sizeof(command), response, true);
     munit_assert_size(response_len, ==, 1 + DFC_TRANSACTION_READER_ID_LENGTH);
@@ -2409,6 +2622,12 @@ static MunitTest tests[] = {
      NULL},
     {"/transaction-mac/transcript-bounds",
      test_transaction_transcript_bounds,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/transaction-mac/streaming-atomic",
+     test_transaction_streaming_failures_are_atomic,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

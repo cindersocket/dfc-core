@@ -359,14 +359,14 @@ uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no) {
 bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
     bool changed = false;
 #if DFC_ENABLE_TRANSACTION_MAC
-    if(emulator->transaction_input_len > 0 || emulator->transaction_reader_id_pending) {
-        dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+    if(emulator->transaction_mac.has_pending || emulator->transaction_reader_id_pending) {
+        dfc_transaction_mac_accumulator_clear(&emulator->transaction_mac);
         dfc_secure_wipe(
             emulator->transaction_pending_reader_id,
             sizeof(emulator->transaction_pending_reader_id));
-        emulator->transaction_input_len = 0;
         emulator->transaction_reader_id_pending = false;
         emulator->transaction_reader_id_persist = false;
+        emulator->transaction_mac_retryable_failure = false;
         changed = true;
     }
 #endif
@@ -424,12 +424,12 @@ void dfc_emulator_publish_transaction(DfcEmulator* emulator) {
     }
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
-    dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+    dfc_transaction_mac_accumulator_clear(&emulator->transaction_mac);
     dfc_secure_wipe(
         emulator->transaction_pending_reader_id, sizeof(emulator->transaction_pending_reader_id));
-    emulator->transaction_input_len = 0;
     emulator->transaction_reader_id_pending = false;
     emulator->transaction_reader_id_persist = false;
+    emulator->transaction_mac_retryable_failure = false;
 #endif
     dfc_credential_mark_dirty(emulator->credential);
 }

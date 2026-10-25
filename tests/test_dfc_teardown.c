@@ -486,8 +486,9 @@ static MunitResult
     memset(emulator->sdm_read_cache, 0xE8, sizeof(emulator->sdm_read_cache));
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
-    emulator->transaction_input_len = sizeof(emulator->transaction_input);
-    memset(emulator->transaction_input, 0xF9, sizeof(emulator->transaction_input));
+    memset(&emulator->transaction_mac, 0xF9, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
 #endif
     emulator->awaiting_step2 = true;
     emulator->pending_auth_cipher = 0xAA;
@@ -575,8 +576,9 @@ static MunitResult
     memset(emulator->sdm_read_cache, 0xE8, sizeof(emulator->sdm_read_cache));
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
-    emulator->transaction_input_len = 17;
-    memset(emulator->transaction_input, 0xF9, sizeof(emulator->transaction_input));
+    memset(&emulator->transaction_mac, 0xF9, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
 #endif
 
     FreeAudit audit = {
@@ -628,10 +630,10 @@ static MunitResult
         ((uint8_t[sizeof(emulator->sdm_read_cache)]){0}));
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    for(size_t index = 0; index < sizeof(emulator->transaction_input); index++) {
-        munit_assert_uint8(emulator->transaction_input[index], ==, index < 17 ? 0 : 0xF9);
-    }
+    munit_assert_memory_equal(
+        sizeof(emulator->transaction_mac),
+        &emulator->transaction_mac,
+        &(DfcTransactionMacAccumulator){0});
 #endif
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     munit_assert_false(emulator->ev2_authentication_pending);

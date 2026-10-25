@@ -220,8 +220,9 @@ static void begin_transaction(SelectionFixture* fixture) {
 
     DfcEmulator* emulator = fixture->session->emulator;
 #if DFC_ENABLE_TRANSACTION_MAC
-    memset(emulator->transaction_input, 0xD4, 17);
-    emulator->transaction_input_len = 17;
+    memset(&emulator->transaction_mac, 0xD4, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
 #endif
     munit_assert_true(emulator->transaction_snapshot_active);
     munit_assert_size(emulator->transaction_snapshot_app_index, ==, 0);
@@ -232,9 +233,8 @@ static void begin_transaction(SelectionFixture* fixture) {
     munit_assert_true(fixture->app0_value->value_pending);
     munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 5);
 #if DFC_ENABLE_TRANSACTION_MAC
-    munit_assert_size(emulator->transaction_input_len, ==, 17);
-    for(size_t i = 0; i < 17; i++)
-        munit_assert_uint8(emulator->transaction_input[i], ==, 0xD4);
+    munit_assert_true(emulator->transaction_mac.initialized);
+    munit_assert_true(emulator->transaction_mac.has_pending);
 #endif
 }
 
@@ -259,11 +259,10 @@ static void
         ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0x00, 0x00, 0x00, 0x00}));
     munit_assert_true(fixture->credential.dirty == expected_dirty);
 #if DFC_ENABLE_TRANSACTION_MAC
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
     munit_assert_memory_equal(
-        sizeof(emulator->transaction_input),
-        emulator->transaction_input,
-        ((uint8_t[sizeof(emulator->transaction_input)]){0}));
+        sizeof(emulator->transaction_mac),
+        &emulator->transaction_mac,
+        &(DfcTransactionMacAccumulator){0});
 #endif
 }
 
@@ -289,9 +288,8 @@ static void assert_transaction_still_pending(SelectionFixture* fixture) {
         dfc_file_data(&fixture->credential, fixture->app0_records),
         ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0xA1, 0xA2, 0xA3, 0xA4}));
 #if DFC_ENABLE_TRANSACTION_MAC
-    munit_assert_size(emulator->transaction_input_len, ==, 17);
-    for(size_t i = 0; i < 17; i++)
-        munit_assert_uint8(emulator->transaction_input[i], ==, 0xD4);
+    munit_assert_true(emulator->transaction_mac.initialized);
+    munit_assert_true(emulator->transaction_mac.has_pending);
 #endif
 }
 
@@ -352,11 +350,10 @@ static void finish_preserved_transaction(SelectionFixture* fixture, const char* 
         dfc_file_data(&fixture->credential, fixture->app0_records),
         ((uint8_t[]){0x11, 0x11, 0x11, 0x11, 0xA1, 0xA2, 0xA3, 0xA4}));
 #if DFC_ENABLE_TRANSACTION_MAC
-    munit_assert_size(fixture->session->emulator->transaction_input_len, ==, 0);
     munit_assert_memory_equal(
-        sizeof(fixture->session->emulator->transaction_input),
-        fixture->session->emulator->transaction_input,
-        ((uint8_t[sizeof(fixture->session->emulator->transaction_input)]){0}));
+        sizeof(fixture->session->emulator->transaction_mac),
+        &fixture->session->emulator->transaction_mac,
+        &(DfcTransactionMacAccumulator){0});
 #endif
 }
 
@@ -377,11 +374,10 @@ static void assert_transaction_published(SelectionFixture* fixture) {
     munit_assert_int32(fixture->app0_value->value_pending_delta, ==, 0);
     munit_assert_int32(fixture->app0_value->value, ==, 15);
 #if DFC_ENABLE_TRANSACTION_MAC
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
     munit_assert_memory_equal(
-        sizeof(emulator->transaction_input),
-        emulator->transaction_input,
-        ((uint8_t[sizeof(emulator->transaction_input)]){0}));
+        sizeof(emulator->transaction_mac),
+        &emulator->transaction_mac,
+        &(DfcTransactionMacAccumulator){0});
 #endif
 }
 

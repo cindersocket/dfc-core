@@ -24,9 +24,47 @@ static const DfcFile* transaction_mac_file_const(const DfcEmulator* emulator) {
 bool dfc_emulator_command_transaction_mac_can_add_data(
     const DfcEmulator* emulator,
     size_t data_length) {
+    DFC_UNUSED(data_length);
     return !transaction_mac_file_const(emulator) ||
-           dfc_transaction_mac_input_can_add_data(
-               sizeof(emulator->transaction_input), emulator->transaction_input_len, data_length);
+           transaction_mac_file_const(emulator)->transaction_counter != UINT32_MAX;
+}
+
+typedef enum {
+    TransactionMacUpdateOk,
+    TransactionMacUpdateTerminal,
+    TransactionMacUpdateCryptoFailed,
+} TransactionMacUpdateResult;
+
+static TransactionMacUpdateResult
+    transaction_mac_candidate(DfcEmulator* emulator, DfcTransactionMacAccumulator* candidate) {
+    DfcFile* file = transaction_mac_file(emulator);
+    if(!file || file->transaction_counter == UINT32_MAX ||
+       (emulator->credential->uid_len != DFC_DESFIRE_UID_SHORT_LEN &&
+        emulator->credential->uid_len != DFC_DESFIRE_UID_LEN))
+        return TransactionMacUpdateTerminal;
+    *candidate = emulator->transaction_mac;
+    if(candidate->initialized) return TransactionMacUpdateOk;
+
+    uint8_t session_key[DFC_AES_KEY_LENGTH] = {0};
+    bool derived = dfc_transaction_mac_derive_session_key(
+        file->transaction_mac_key,
+        emulator->credential->uid,
+        emulator->credential->uid_len,
+        file->transaction_counter + 1,
+        session_key);
+    bool initialized = derived && dfc_transaction_mac_accumulator_init(candidate, session_key);
+    dfc_secure_wipe(session_key, sizeof(session_key));
+    return initialized ? TransactionMacUpdateOk : TransactionMacUpdateCryptoFailed;
+}
+
+static bool transaction_mac_publish_candidate(
+    DfcEmulator* emulator,
+    DfcTransactionMacAccumulator* candidate,
+    TransactionMacUpdateResult result) {
+    emulator->transaction_mac_retryable_failure = result == TransactionMacUpdateCryptoFailed;
+    if(result == TransactionMacUpdateOk) emulator->transaction_mac = *candidate;
+    dfc_transaction_mac_accumulator_clear(candidate);
+    return result == TransactionMacUpdateOk;
 }
 
 bool dfc_emulator_command_transaction_mac_add_data(
@@ -37,16 +75,19 @@ bool dfc_emulator_command_transaction_mac_add_data(
     uint32_t length,
     const uint8_t* data,
     size_t data_length) {
-    return !transaction_mac_file(emulator) || dfc_transaction_mac_input_add_data(
-                                                  emulator->transaction_input,
-                                                  sizeof(emulator->transaction_input),
-                                                  &emulator->transaction_input_len,
-                                                  command,
-                                                  file_number,
-                                                  offset,
-                                                  length,
-                                                  data,
-                                                  data_length);
+    if(!transaction_mac_file(emulator)) return true;
+    DfcTransactionMacAccumulator candidate;
+    TransactionMacUpdateResult result = transaction_mac_candidate(emulator, &candidate);
+    if(result != TransactionMacUpdateOk) {
+        emulator->transaction_mac_retryable_failure = result == TransactionMacUpdateCryptoFailed;
+        return false;
+    }
+    if(offset > 0xFFFFFFu || length > 0xFFFFFFu || (data_length && !data))
+        result = TransactionMacUpdateTerminal;
+    else if(!dfc_transaction_mac_accumulator_add_data(
+                &candidate, command, file_number, offset, length, data, data_length))
+        result = TransactionMacUpdateCryptoFailed;
+    return transaction_mac_publish_candidate(emulator, &candidate, result);
 }
 
 bool dfc_emulator_command_transaction_mac_add_record_update(
@@ -58,25 +99,28 @@ bool dfc_emulator_command_transaction_mac_add_record_update(
     uint32_t length,
     const uint8_t* data,
     size_t data_length) {
-    return !transaction_mac_file(emulator) || dfc_transaction_mac_input_add_record_update(
-                                                  emulator->transaction_input,
-                                                  sizeof(emulator->transaction_input),
-                                                  &emulator->transaction_input_len,
-                                                  command,
-                                                  file_number,
-                                                  record_number,
-                                                  offset,
-                                                  length,
-                                                  data,
-                                                  data_length);
+    if(!transaction_mac_file(emulator)) return true;
+    DfcTransactionMacAccumulator candidate;
+    TransactionMacUpdateResult result = transaction_mac_candidate(emulator, &candidate);
+    if(result != TransactionMacUpdateOk) {
+        emulator->transaction_mac_retryable_failure = result == TransactionMacUpdateCryptoFailed;
+        return false;
+    }
+    if(record_number > 0xFFFFFFu || offset > 0xFFFFFFu || length > 0xFFFFFFu ||
+       (data_length && !data))
+        result = TransactionMacUpdateTerminal;
+    else if(!dfc_transaction_mac_accumulator_add_record_update(
+                &candidate, command, file_number, record_number, offset, length, data, data_length))
+        result = TransactionMacUpdateCryptoFailed;
+    return transaction_mac_publish_candidate(emulator, &candidate, result);
 }
 
 bool dfc_emulator_command_transaction_mac_can_add_record_update(
     const DfcEmulator* emulator,
     size_t data_length) {
+    DFC_UNUSED(data_length);
     return !transaction_mac_file_const(emulator) ||
-           dfc_transaction_mac_input_can_add_record_update(
-               sizeof(emulator->transaction_input), emulator->transaction_input_len, data_length);
+           transaction_mac_file_const(emulator)->transaction_counter != UINT32_MAX;
 }
 
 bool dfc_emulator_command_transaction_mac_add_value(
@@ -84,29 +128,38 @@ bool dfc_emulator_command_transaction_mac_add_value(
     uint8_t command,
     uint8_t file_number,
     const uint8_t value[4]) {
-    return !transaction_mac_file(emulator) || dfc_transaction_mac_input_add_value(
-                                                  emulator->transaction_input,
-                                                  sizeof(emulator->transaction_input),
-                                                  &emulator->transaction_input_len,
-                                                  command,
-                                                  file_number,
-                                                  value);
+    if(!transaction_mac_file(emulator)) return true;
+    DfcTransactionMacAccumulator candidate;
+    TransactionMacUpdateResult result = transaction_mac_candidate(emulator, &candidate);
+    if(result != TransactionMacUpdateOk) {
+        emulator->transaction_mac_retryable_failure = result == TransactionMacUpdateCryptoFailed;
+        return false;
+    }
+    if(!value)
+        result = TransactionMacUpdateTerminal;
+    else if(!dfc_transaction_mac_accumulator_add_value(&candidate, command, file_number, value))
+        result = TransactionMacUpdateCryptoFailed;
+    return transaction_mac_publish_candidate(emulator, &candidate, result);
 }
 
 bool dfc_emulator_command_transaction_mac_add_clear_record(
     DfcEmulator* emulator,
     uint8_t file_number) {
-    return !transaction_mac_file(emulator) || dfc_transaction_mac_input_add_clear_record(
-                                                  emulator->transaction_input,
-                                                  sizeof(emulator->transaction_input),
-                                                  &emulator->transaction_input_len,
-                                                  file_number);
+    if(!transaction_mac_file(emulator)) return true;
+    DfcTransactionMacAccumulator candidate;
+    TransactionMacUpdateResult result = transaction_mac_candidate(emulator, &candidate);
+    if(result != TransactionMacUpdateOk) {
+        emulator->transaction_mac_retryable_failure = result == TransactionMacUpdateCryptoFailed;
+        return false;
+    }
+    if(!dfc_transaction_mac_accumulator_add_clear_record(&candidate, file_number))
+        result = TransactionMacUpdateCryptoFailed;
+    return transaction_mac_publish_candidate(emulator, &candidate, result);
 }
 
 bool dfc_emulator_command_transaction_mac_can_add_clear_record(const DfcEmulator* emulator) {
     return !transaction_mac_file_const(emulator) ||
-           dfc_transaction_mac_input_can_add_clear_record(
-               sizeof(emulator->transaction_input), emulator->transaction_input_len);
+           transaction_mac_file_const(emulator)->transaction_counter != UINT32_MAX;
 }
 #endif
 
@@ -407,35 +460,13 @@ static bool transaction_mac_calculate(
         return false;
     }
     *next_counter = file->transaction_counter + 1;
-    uint8_t vector[DFC_AES_KEY_LENGTH] = {0};
-    vector[0] = DFC_TRANSACTION_MAC_DERIVATION_LABEL;
-    vector[1] = DFC_DERIVATION_COUNTER_HIGH;
-    vector[2] = DFC_DERIVATION_COUNTER_LOW;
-    vector[3] = DFC_DERIVED_AES_KEY_LENGTH_HIGH;
-    vector[4] = DFC_DERIVED_AES_KEY_LENGTH_LOW;
-    write_uint32_le(vector + DFC_TRANSACTION_VECTOR_COUNTER_OFFSET, *next_counter);
-    memcpy(
-        vector + DFC_TRANSACTION_VECTOR_UID_OFFSET,
-        emulator->credential->uid,
-        emulator->credential->uid_len);
-    uint8_t session_key[DFC_AES_CMAC_LENGTH] = {0};
     uint8_t full_mac[DFC_AES_CMAC_LENGTH] = {0};
-    bool ok =
-        aes_cmac(
-            file->transaction_mac_key, DFC_AES_KEY_LENGTH, vector, sizeof(vector), session_key) &&
-        aes_cmac(
-            session_key,
-            DFC_AES_KEY_LENGTH,
-            emulator->transaction_input,
-            emulator->transaction_input_len,
-            full_mac);
+    bool ok = dfc_transaction_mac_accumulator_finalize(&emulator->transaction_mac, full_mac);
     if(ok) {
         dfc_truncate_aes_wire_mac(full_mac, mac);
     } else {
         memset(mac, 0, DFC_WIRE_MAC_LENGTH);
     }
-    dfc_secure_wipe(vector, sizeof(vector));
-    dfc_secure_wipe(session_key, sizeof(session_key));
     dfc_secure_wipe(full_mac, sizeof(full_mac));
     return ok;
 }
@@ -499,11 +530,6 @@ void dfc_emulator_command_commit_reader_id(
                          || emulator->ev2_session_active
 #endif
         ;
-    if(!dfc_transaction_mac_input_can_add_reader_id(
-           sizeof(emulator->transaction_input), emulator->transaction_input_len, authenticated)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
-        return;
-    }
     uint32_t next_counter = file->transaction_counter + 1;
     uint8_t vector[DFC_AES_KEY_LENGTH] = {0};
     vector[0] = DFC_TRANSACTION_ENCRYPTION_DERIVATION_LABEL;
@@ -522,6 +548,7 @@ void dfc_emulator_command_commit_reader_id(
     if(authenticated) {
         if(!aes_cmac(
                file->transaction_mac_key, DFC_AES_KEY_LENGTH, vector, sizeof(vector), session_key)) {
+            emulator->transaction_mac_retryable_failure = true;
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             goto cleanup;
         }
@@ -532,19 +559,26 @@ void dfc_emulator_command_commit_reader_id(
                sizeof(file->previous_reader_id),
                file->previous_reader_id,
                encrypted)) {
+            emulator->transaction_mac_retryable_failure = true;
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             goto cleanup;
         }
     }
-    if(!dfc_transaction_mac_input_add_reader_id(
-           emulator->transaction_input,
-           sizeof(emulator->transaction_input),
-           &emulator->transaction_input_len,
-           reader_id,
-           authenticated ? encrypted : NULL)) {
+    DfcTransactionMacAccumulator candidate;
+    TransactionMacUpdateResult update_result = transaction_mac_candidate(emulator, &candidate);
+    if(update_result == TransactionMacUpdateOk &&
+       !dfc_transaction_mac_accumulator_add_reader_id(
+           &candidate, reader_id, authenticated ? encrypted : NULL))
+        update_result = TransactionMacUpdateCryptoFailed;
+    if(update_result != TransactionMacUpdateOk) {
+        emulator->transaction_mac_retryable_failure = update_result ==
+                                                      TransactionMacUpdateCryptoFailed;
+        dfc_transaction_mac_accumulator_clear(&candidate);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         goto cleanup;
     }
+    emulator->transaction_mac = candidate;
+    dfc_transaction_mac_accumulator_clear(&candidate);
     memcpy(
         emulator->transaction_pending_reader_id,
         reader_id,
@@ -628,7 +662,7 @@ void dfc_emulator_command_commit_transaction(
     DfcByteBuf* tx_buffer) {
     bool changed = false;
 #if DFC_ENABLE_TRANSACTION_MAC
-    if(emulator->transaction_input_len > 0) changed = true;
+    if(emulator->transaction_mac.has_pending) changed = true;
 #endif
     for(size_t i = 0; i < emulator->credential->num_files; i++) {
         DfcFile* file = &emulator->credential->files[i];
@@ -709,12 +743,12 @@ void dfc_emulator_command_clear_selected_app_pending_values(DfcEmulator* emulato
         file->limited_credit_pending = 0;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
-    dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+    dfc_transaction_mac_accumulator_clear(&emulator->transaction_mac);
     dfc_secure_wipe(
         emulator->transaction_pending_reader_id, sizeof(emulator->transaction_pending_reader_id));
-    emulator->transaction_input_len = 0;
     emulator->transaction_reader_id_pending = false;
     emulator->transaction_reader_id_persist = false;
+    emulator->transaction_mac_retryable_failure = false;
 #endif
 }
 

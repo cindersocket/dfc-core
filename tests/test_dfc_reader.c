@@ -2686,8 +2686,9 @@ static void begin_open_transaction(Link* link, uint8_t backup_before[32]) {
     munit_assert_int(link_send(link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
 
     DfcEmulator* emulator = link->picc->emulator;
-    memset(emulator->transaction_input, 0xD4, 17);
-    emulator->transaction_input_len = 17;
+    memset(&emulator->transaction_mac, 0xD4, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
     munit_assert_true(emulator->transaction_snapshot_active);
     munit_assert_true(backup->transaction_pending);
     munit_assert_true(value->value_pending);
@@ -2707,8 +2708,8 @@ static void assert_transaction_aborted(Link* link, const uint8_t backup_before[3
     munit_assert_memory_equal(32, dfc_file_data_const(&link->credential, backup), backup_before);
     munit_assert_false(value->value_pending);
     munit_assert_int32(value->value_pending_delta, ==, 0);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    assert_zero_bytes(emulator->transaction_input, sizeof(emulator->transaction_input));
+    assert_zero_bytes(
+        (const uint8_t*)&emulator->transaction_mac, sizeof(emulator->transaction_mac));
     munit_assert_false(link->credential.dirty);
 }
 

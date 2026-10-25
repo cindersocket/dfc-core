@@ -1421,7 +1421,11 @@ static bool dispatch_native_command(
         emulator->command_chain_expected = SIZE_MAX;
         bool handled = dispatch_native_command(
             emulator, emulator->command_chain, logical_len, tx_buffer, context);
-        if(handled)
+        if(handled
+#if DFC_ENABLE_TRANSACTION_MAC
+           && !emulator->transaction_mac_retryable_failure
+#endif
+        )
             dfc_emulator_command_apply_ev1_response_secure_messaging(
                 emulator, emulator->command_chain[0], tx_buffer);
         dfc_emulator_discard_command_chain(emulator);
@@ -1522,7 +1526,40 @@ bool dfc_emulator_handle_command(
     }
 #endif
     preserve_transaction_on_failure = preserve_transaction_on_failure || preserve_auth_transaction;
-    if(!dispatch_native_command(emulator, buffer, buffer_len, tx_buffer, context)) return false;
+#if DFC_ENABLE_TRANSACTION_MAC
+    uint8_t transaction_mac_prior_iv[DFC_SM_MAX_CIPHER_BLOCK_SIZE] = {0};
+    bool transaction_mac_had_secure_messaging = emulator->secure_messaging != NULL;
+    if(transaction_mac_had_secure_messaging)
+        memcpy(
+            transaction_mac_prior_iv,
+            emulator->secure_messaging->iv,
+            sizeof(transaction_mac_prior_iv));
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    uint16_t transaction_mac_prior_command_counter = emulator->ev2_command_counter;
+#endif
+#endif
+    if(!dispatch_native_command(emulator, buffer, buffer_len, tx_buffer, context)) {
+#if DFC_ENABLE_TRANSACTION_MAC
+        dfc_secure_wipe(transaction_mac_prior_iv, sizeof(transaction_mac_prior_iv));
+#endif
+        return false;
+    }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(emulator->transaction_mac_retryable_failure) {
+        if(transaction_mac_had_secure_messaging && emulator->secure_messaging)
+            memcpy(
+                emulator->secure_messaging->iv,
+                transaction_mac_prior_iv,
+                sizeof(transaction_mac_prior_iv));
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+        emulator->ev2_command_counter = transaction_mac_prior_command_counter;
+#endif
+        emulator->transaction_mac_retryable_failure = false;
+        dfc_secure_wipe(transaction_mac_prior_iv, sizeof(transaction_mac_prior_iv));
+        return true;
+    }
+    dfc_secure_wipe(transaction_mac_prior_iv, sizeof(transaction_mac_prior_iv));
+#endif
     // A caller-controlled source can be replenished and retried. Its adapter
     // replaces the provisional status, so do not publish failure side effects.
     if(dfc_random_failure_is_retryable()) return true;

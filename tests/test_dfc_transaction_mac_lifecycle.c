@@ -141,8 +141,12 @@ static void open_pending(LifecycleFixture* fixture, const char* family) {
         exchange_status(fixture->session, command, sizeof(command), DFC_STATUS_OK);
     }
     if(strcmp(family, "input") == 0 || strcmp(family, "mixed") == 0) {
-        memset(fixture->session->emulator->transaction_input, 0xA5, 17);
-        fixture->session->emulator->transaction_input_len = 17;
+        memset(
+            &fixture->session->emulator->transaction_mac,
+            0xA5,
+            sizeof(fixture->session->emulator->transaction_mac));
+        fixture->session->emulator->transaction_mac.initialized = true;
+        fixture->session->emulator->transaction_mac.has_pending = true;
     }
 }
 
@@ -190,9 +194,8 @@ static void assert_mixed_pending_unchanged(LifecycleFixture* fixture, PendingSta
     munit_assert_true(value->value_pending);
     munit_assert_int32(value->value_pending_delta, ==, 5);
     munit_assert_int32(value->value, ==, 10);
-    munit_assert_size(emulator->transaction_input_len, ==, 17);
-    for(size_t index = 0; index < 17; index++)
-        munit_assert_uint8(emulator->transaction_input[index], ==, 0xA5);
+    munit_assert_true(emulator->transaction_mac.initialized);
+    munit_assert_true(emulator->transaction_mac.has_pending);
 }
 
 static void assert_transaction_retired(LifecycleFixture* fixture, bool verify_abort_status) {
@@ -207,11 +210,10 @@ static void assert_transaction_retired(LifecycleFixture* fixture, bool verify_ab
     munit_assert_false(cyclic->transaction_pending);
     munit_assert_false(value->value_pending);
     munit_assert_int32(value->value, ==, 10);
-    munit_assert_size(fixture->session->emulator->transaction_input_len, ==, 0);
     munit_assert_memory_equal(
-        sizeof(fixture->session->emulator->transaction_input),
-        fixture->session->emulator->transaction_input,
-        ((uint8_t[sizeof(fixture->session->emulator->transaction_input)]){0}));
+        sizeof(fixture->session->emulator->transaction_mac),
+        &fixture->session->emulator->transaction_mac,
+        &(DfcTransactionMacAccumulator){0});
     munit_assert_memory_equal(
         4,
         dfc_file_data_const(&fixture->credential, backup),
@@ -251,10 +253,7 @@ static void create_transaction_mac(LifecycleFixture* fixture) {
 
 static void
     assert_transaction_receipt(LifecycleFixture* fixture, DfcTransactionMacVerifier* verifier) {
-    munit_assert_size(
-        fixture->session->emulator->transaction_input_len, ==, verifier->input_length);
-    munit_assert_memory_equal(
-        verifier->input_length, fixture->session->emulator->transaction_input, verifier->input);
+    munit_assert_true(fixture->session->emulator->transaction_mac.has_pending);
     const uint8_t commit[] = {
         0x90, DFC_CMD_COMMIT_TRANSACTION, 0, 0, 1, DFC_TRANSACTION_COMMIT_RETURN_MAC_OPTION, 0};
     uint8_t response[32] = {0};
@@ -365,46 +364,6 @@ static MunitResult test_data_value_and_record_receipts_match_structured_inputs(
     return MUNIT_OK;
 }
 
-static MunitResult test_transcript_capacity_failure_preserves_model_capacity(
-    const MunitParameter params[],
-    void* data) {
-    (void)params;
-    (void)data;
-
-    LifecycleFixture fixture;
-    fixture_open(&fixture, true);
-    DfcEmulator* emulator = fixture.session->emulator;
-    DfcFile* file = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
-    munit_assert_not_null(file);
-    const size_t app_count = fixture.credential.num_apps;
-    const size_t file_count = fixture.credential.num_files;
-    const size_t pool_used = fixture.credential.file_pool_used;
-    const size_t pool_free = dfc_credential_file_pool_free(&fixture.credential);
-    uint8_t original[8];
-    memcpy(original, dfc_file_data_const(&fixture.credential, file), sizeof(original));
-
-    memset(emulator->transaction_input, 0xA5, sizeof(emulator->transaction_input));
-    emulator->transaction_input_len = sizeof(emulator->transaction_input);
-    const uint8_t command[] = {0x90, DFC_CMD_WRITE_DATA, 0, 0, 8, 1, 0, 0, 0, 1, 0, 0, 0xBC, 0};
-    exchange_status(fixture.session, command, sizeof(command), DFC_STATUS_BOUNDARY_ERROR);
-
-    munit_assert_size(fixture.credential.num_apps, ==, app_count);
-    munit_assert_size(fixture.credential.num_files, ==, file_count);
-    munit_assert_size(fixture.credential.file_pool_used, ==, pool_used);
-    munit_assert_size(dfc_credential_file_pool_free(&fixture.credential), ==, pool_free);
-    munit_assert_memory_equal(
-        sizeof(original), dfc_file_data_const(&fixture.credential, file), original);
-    munit_assert_false(file->transaction_pending);
-    munit_assert_false(emulator->transaction_snapshot_active);
-    munit_assert_size(emulator->transaction_input_len, ==, 0);
-    munit_assert_memory_equal(
-        sizeof(emulator->transaction_input),
-        emulator->transaction_input,
-        ((uint8_t[sizeof(emulator->transaction_input)]){0}));
-    fixture_close(&fixture);
-    return MUNIT_OK;
-}
-
 static MunitResult
     test_free_reader_id_is_one_shot_and_not_persisted(const MunitParameter params[], void* data) {
     (void)params;
@@ -428,7 +387,7 @@ static MunitResult
                                  0x1D, 0x1E,
                                  0x1F, 0};
     exchange_status(fixture.session, reader_id, sizeof(reader_id), DFC_STATUS_OK);
-    munit_assert_size(fixture.session->emulator->transaction_input_len, ==, 32);
+    munit_assert_true(fixture.session->emulator->transaction_mac.has_pending);
     munit_assert_true(fixture.session->emulator->transaction_reader_id_pending);
     munit_assert_false(fixture.session->emulator->transaction_reader_id_persist);
     const uint8_t commit[] = {0x90, DFC_CMD_COMMIT_TRANSACTION, 0, 0, 0};
@@ -510,64 +469,6 @@ static MunitResult test_data_block_starting_with_reader_id_command_is_not_reader
     return MUNIT_OK;
 }
 
-static MunitResult test_full_transcript_precedes_standard_snapshot_mirror(
-    const MunitParameter params[],
-    void* data) {
-    (void)params;
-    (void)data;
-
-    LifecycleFixture fixture;
-    fixture_open(&fixture, true);
-    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
-    standard->type = DFC_FILE_TYPE_STANDARD_DATA;
-    uint8_t original[8];
-    memcpy(original, dfc_file_data_const(&fixture.credential, standard), sizeof(original));
-    open_pending(&fixture, "linear");
-    memset(
-        fixture.session->emulator->transaction_input,
-        0xA5,
-        sizeof(fixture.session->emulator->transaction_input));
-    fixture.session->emulator->transaction_input_len =
-        sizeof(fixture.session->emulator->transaction_input);
-
-    const uint8_t write[] = {0x90, DFC_CMD_WRITE_DATA, 0, 0, 8, 1, 0, 0, 0, 1, 0, 0, 0xBC, 0};
-    exchange_status(fixture.session, write, sizeof(write), DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_memory_equal(
-        sizeof(original), dfc_file_data_const(&fixture.credential, standard), original);
-    munit_assert_false(fixture.session->emulator->transaction_snapshot_active);
-    fixture_close(&fixture);
-    return MUNIT_OK;
-}
-
-static MunitResult
-    test_full_transcript_precedes_sdm_render(const MunitParameter params[], void* data) {
-    (void)params;
-    (void)data;
-
-    LifecycleFixture fixture;
-    fixture_open(&fixture, true);
-    DfcFile* file = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
-    file->sdm_enabled = true;
-    file->sdm_read_counter = 7;
-    DfcEmulator* emulator = fixture.session->emulator;
-    emulator->sdm_read_cache_valid = true;
-    emulator->sdm_read_cache_len = 3;
-    memset(emulator->sdm_read_cache, 0xD4, sizeof(emulator->sdm_read_cache));
-    memset(emulator->transaction_input, 0xA5, sizeof(emulator->transaction_input));
-    emulator->transaction_input_len = sizeof(emulator->transaction_input);
-    uint8_t original_cache[sizeof(emulator->sdm_read_cache)];
-    memcpy(original_cache, emulator->sdm_read_cache, sizeof(original_cache));
-
-    const uint8_t read[] = {0x90, DFC_CMD_READ_DATA, 0, 0, 7, 1, 0, 0, 0, 1, 0, 0, 0};
-    exchange_status(fixture.session, read, sizeof(read), DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_uint32(file->sdm_read_counter, ==, 7);
-    munit_assert_true(emulator->sdm_read_cache_valid);
-    munit_assert_size(emulator->sdm_read_cache_len, ==, 3);
-    munit_assert_memory_equal(sizeof(original_cache), emulator->sdm_read_cache, original_cache);
-    fixture_close(&fixture);
-    return MUNIT_OK;
-}
-
 static void assert_direct_write_status(
     DfcEmulator* emulator,
     const uint8_t* command,
@@ -592,8 +493,10 @@ static MunitResult test_write_data_preparation_failures_preserve_transcript(
     LifecycleFixture fixture;
     fixture_open(&fixture, true);
     DfcEmulator* emulator = fixture.session->emulator;
-    memcpy(emulator->transaction_input, expected_transcript, sizeof(expected_transcript));
-    emulator->transaction_input_len = sizeof(expected_transcript);
+    memset(&emulator->transaction_mac, 0xA5, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
+    DfcTransactionMacAccumulator expected_accumulator = emulator->transaction_mac;
     uint8_t original[8];
     DfcFile* file = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
     memcpy(original, dfc_file_data_const(&fixture.credential, file), sizeof(original));
@@ -602,9 +505,8 @@ static MunitResult test_write_data_preparation_failures_preserve_transcript(
     dfc_host_fail_next_allocation(DfcAllocEmulator);
     assert_direct_write_status(
         emulator, write, sizeof(write), response, DFC_STATUS_PERMISSION_DENIED);
-    munit_assert_size(emulator->transaction_input_len, ==, sizeof(expected_transcript));
     munit_assert_memory_equal(
-        sizeof(expected_transcript), emulator->transaction_input, expected_transcript);
+        sizeof(expected_accumulator), &emulator->transaction_mac, &expected_accumulator);
     munit_assert_memory_equal(
         sizeof(original), dfc_file_data_const(&fixture.credential, file), original);
     munit_assert_false(emulator->transaction_snapshot_active);
@@ -616,17 +518,18 @@ static MunitResult test_write_data_preparation_failures_preserve_transcript(
     file = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
     file->type = DFC_FILE_TYPE_STANDARD_DATA;
     memcpy(original, dfc_file_data_const(&fixture.credential, file), sizeof(original));
-    memcpy(emulator->transaction_input, expected_transcript, sizeof(expected_transcript));
-    emulator->transaction_input_len = sizeof(expected_transcript);
+    memset(&emulator->transaction_mac, 0xA5, sizeof(emulator->transaction_mac));
+    emulator->transaction_mac.initialized = true;
+    emulator->transaction_mac.has_pending = true;
+    expected_accumulator = emulator->transaction_mac;
     munit_assert_true(dfc_emulator_command_transaction_snapshot_begin(emulator));
     emulator->transaction_snapshot_pool_length = 0;
     response = dfc_bytebuf_alloc(8);
     munit_assert_not_null(response);
     assert_direct_write_status(
         emulator, write, sizeof(write), response, DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_size(emulator->transaction_input_len, ==, sizeof(expected_transcript));
     munit_assert_memory_equal(
-        sizeof(expected_transcript), emulator->transaction_input, expected_transcript);
+        sizeof(expected_accumulator), &emulator->transaction_mac, &expected_accumulator);
     munit_assert_memory_equal(
         sizeof(original), dfc_file_data_const(&fixture.credential, file), original);
     dfc_bytebuf_free(response);
@@ -744,9 +647,7 @@ static void assert_commit_reader_id_oracle(uint8_t cipher, size_t key_length) {
 
     uint8_t expected_prefix[2 * DFC_AES_KEY_LENGTH] = {DFC_CMD_COMMIT_READER_ID};
     memcpy(expected_prefix + 1, command + 1, DFC_TRANSACTION_READER_ID_LENGTH);
-    munit_assert_size(emulator->transaction_input_len, ==, 3 * DFC_AES_KEY_LENGTH);
-    munit_assert_memory_equal(
-        sizeof(expected_prefix), emulator->transaction_input, expected_prefix);
+    munit_assert_true(emulator->transaction_mac.has_pending);
     dfc_bytebuf_free(response);
     fixture_close(&fixture);
 }
@@ -812,9 +713,7 @@ static MunitResult
     munit_assert_uint8(dfc_bytebuf_get_data(response)[0], ==, DFC_STATUS_OK);
     uint8_t expected_prefix[2 * DFC_AES_KEY_LENGTH] = {DFC_CMD_COMMIT_READER_ID};
     memcpy(expected_prefix + 1, secured + 1, DFC_TRANSACTION_READER_ID_LENGTH);
-    munit_assert_size(emulator->transaction_input_len, ==, 3 * DFC_AES_KEY_LENGTH);
-    munit_assert_memory_equal(
-        sizeof(expected_prefix), emulator->transaction_input, expected_prefix);
+    munit_assert_true(emulator->transaction_mac.has_pending);
     dfc_bytebuf_free(response);
     fixture_close(&fixture);
     return MUNIT_OK;
@@ -867,10 +766,7 @@ static void assert_full_value_transaction_oracle(uint8_t cipher, size_t key_leng
 
         uint8_t expected_tmi[DFC_AES_KEY_LENGTH] = {commands[index], 4};
         memcpy(expected_tmi + 2, amount, sizeof(amount));
-        munit_assert_size(
-            fixture.session->emulator->transaction_input_len, ==, sizeof(expected_tmi));
-        munit_assert_memory_equal(
-            sizeof(expected_tmi), fixture.session->emulator->transaction_input, expected_tmi);
+        munit_assert_true(fixture.session->emulator->transaction_mac.has_pending);
         DfcByteBuf* receipt = dfc_bytebuf_alloc(16);
         munit_assert_not_null(receipt);
         dfc_emulator_command_commit_transaction(fixture.session->emulator, true, receipt);
@@ -931,15 +827,19 @@ static MunitResult test_retry_is_single_execution(const MunitParameter params[],
     munit_assert_null(dfc_credential_find_file_in_app(&fixture.credential, 0, 5));
     assert_transaction_retired(&fixture, false);
     /* Re-open pending input: replay must return the cached response without executing again. */
-    memset(fixture.session->emulator->transaction_input, 0x6C, 7);
-    fixture.session->emulator->transaction_input_len = 7;
+    memset(
+        &fixture.session->emulator->transaction_mac,
+        0x6C,
+        sizeof(fixture.session->emulator->transaction_mac));
+    fixture.session->emulator->transaction_mac.initialized = true;
+    fixture.session->emulator->transaction_mac.has_pending = true;
     munit_assert_int(
         dfc_virtual_picc_iso_dep_exchange(
             fixture.session, command, sizeof(command), response, sizeof(response), &response_len),
         ==,
         DfcVirtualPiccStatusOk);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_OK}));
-    munit_assert_size(fixture.session->emulator->transaction_input_len, ==, 7);
+    munit_assert_true(fixture.session->emulator->transaction_mac.has_pending);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -993,8 +893,12 @@ static MunitResult
         DfcVirtualPiccStatusBufferTooSmall);
     munit_assert_not_null(dfc_credential_find_file_in_app(&fixture.credential, 0, 5));
     assert_transaction_retired(&fixture, false);
-    memset(fixture.session->emulator->transaction_input, 0x6C, 7);
-    fixture.session->emulator->transaction_input_len = 7;
+    memset(
+        &fixture.session->emulator->transaction_mac,
+        0x6C,
+        sizeof(fixture.session->emulator->transaction_mac));
+    fixture.session->emulator->transaction_mac.initialized = true;
+    fixture.session->emulator->transaction_mac.has_pending = true;
     munit_assert_int(
         dfc_virtual_picc_iso_dep_exchange(
             fixture.session, command, command_len, response, sizeof(response), &response_len),
@@ -1002,7 +906,7 @@ static MunitResult
         DfcVirtualPiccStatusOk);
     munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_OK}));
     munit_assert_size(fixture.credential.num_files, ==, 5);
-    munit_assert_size(fixture.session->emulator->transaction_input_len, ==, 7);
+    munit_assert_true(fixture.session->emulator->transaction_mac.has_pending);
     fixture_close(&fixture);
     return MUNIT_OK;
 }
@@ -1197,12 +1101,6 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/capacity-failure-preserves-model",
-     test_transcript_capacity_failure_preserves_model_capacity,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
     {"/reader-id/free-one-shot",
      test_free_reader_id_is_one_shot_and_not_persisted,
      NULL,
@@ -1217,18 +1115,6 @@ static MunitTest tests[] = {
      NULL},
     {"/reader-id/c8-data-block",
      test_data_block_starting_with_reader_id_command_is_not_reader_state,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
-    {"/capacity/standard-mirror-order",
-     test_full_transcript_precedes_standard_snapshot_mirror,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
-    {"/capacity/sdm-render-order",
-     test_full_transcript_precedes_sdm_render,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

@@ -660,6 +660,9 @@ void dfc_emulator_command_write_data(
         return;
     }
 #endif
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES && DFC_ENABLE_TRANSACTION_MAC
+    bool transaction_snapshot_was_active = emulator->transaction_snapshot_active;
+#endif
 #if DFC_ENABLE_BACKUP_FILES
     if(file->type == DFC_FILE_TYPE_BACKUP_DATA &&
        !dfc_emulator_command_transaction_snapshot_begin(emulator)) {
@@ -676,10 +679,13 @@ void dfc_emulator_command_write_data(
         return;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
-    // Capacity was checked before preparation. Publishing the transcript here
-    // cannot fail and leaves allocation and mirror failures retryable.
+    // Publish after allocation succeeds. A cipher failure discards a snapshot
+    // opened by this command so the same write can be retried unchanged.
     if(!dfc_emulator_command_transaction_mac_add_data(
            emulator, apdu[0], file_no, offset, declared_len, clear, out_len)) {
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+        if(!transaction_snapshot_was_active) dfc_emulator_abort_transaction_snapshot(emulator);
+#endif
         dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;

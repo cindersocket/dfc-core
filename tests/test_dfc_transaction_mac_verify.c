@@ -1,6 +1,7 @@
 #include "munit/munit.h"
 
 #include "dfc_transaction_mac.h"
+#include "dfc_transaction_mac_i.h"
 
 #include <string.h>
 
@@ -257,6 +258,68 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_streaming_input_exceeds_old_limit(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t key[DFC_AES_KEY_LENGTH] = {0};
+    static const uint8_t uid[DFC_DESFIRE_UID_LEN] = {0x04, 0x83, 0xB4, 0xF2, 0xCF, 0x18, 0x90};
+    static const uint8_t expected_full_mac[DFC_AES_CMAC_LENGTH] = {
+        0x72,
+        0xA9,
+        0xFC,
+        0x1D,
+        0x90,
+        0x15,
+        0x50,
+        0xB5,
+        0x0C,
+        0x26,
+        0x3F,
+        0xE9,
+        0x4E,
+        0xF2,
+        0xA6,
+        0x86};
+    static const uint8_t expected_wire_mac[DFC_WIRE_MAC_LENGTH] = {
+        0xA9, 0x1D, 0x15, 0xB5, 0x26, 0xE9, 0xF2, 0x86};
+
+    uint8_t input[160] = {0};
+    DfcTransactionMacVerifier verifier;
+    init_captured(&verifier, input, sizeof(input));
+    uint8_t session_key[DFC_AES_KEY_LENGTH] = {0};
+    munit_assert_true(
+        dfc_transaction_mac_derive_session_key(key, uid, sizeof(uid), 1, session_key));
+    DfcTransactionMacAccumulator accumulator;
+    munit_assert_true(dfc_transaction_mac_accumulator_init(&accumulator, session_key));
+
+    for(uint32_t value = 1; value <= 10; value++) {
+        uint8_t encoded[4] = {
+            (uint8_t)value, (uint8_t)(value >> 8), (uint8_t)(value >> 16), (uint8_t)(value >> 24)};
+        munit_assert_int(
+            dfc_transaction_mac_add_value(&verifier, DFC_CMD_CREDIT, 5, value),
+            ==,
+            DfcTransactionMacOk);
+        munit_assert_true(
+            dfc_transaction_mac_accumulator_add_value(&accumulator, DFC_CMD_CREDIT, 5, encoded));
+    }
+    munit_assert_size(verifier.input_length, ==, sizeof(input));
+
+    uint8_t full_mac[DFC_AES_CMAC_LENGTH] = {0};
+    munit_assert_true(dfc_transaction_mac_accumulator_finalize(&accumulator, full_mac));
+    munit_assert_memory_equal(sizeof(full_mac), full_mac, expected_full_mac);
+    bool verified = false;
+    munit_assert_int(
+        dfc_transaction_mac_verify(&verifier, expected_wire_mac, &verified),
+        ==,
+        DfcTransactionMacOk);
+    munit_assert_true(verified);
+
+    dfc_transaction_mac_accumulator_clear(&accumulator);
+    dfc_transaction_mac_verifier_clear(&verifier);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
     {"/captured-credit", test_captured_credit_receipt, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/structured-input",
@@ -284,6 +347,12 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/ordering", test_omitted_and_reordered_inputs_fail, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/streaming-over-128",
+     test_streaming_input_exceeds_old_limit,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

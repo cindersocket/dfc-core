@@ -123,8 +123,12 @@ static void begin_transaction(SnapshotFixture* fixture) {
     exchange_status(fixture->session, write_record, sizeof(write_record), DFC_STATUS_OK);
     exchange_status(fixture->session, credit, sizeof(credit), DFC_STATUS_OK);
 #if DFC_ENABLE_TRANSACTION_MAC
-    memset(fixture->session->emulator->transaction_input, 0xD4, 17);
-    fixture->session->emulator->transaction_input_len = 17;
+    memset(
+        &fixture->session->emulator->transaction_mac,
+        0xD4,
+        sizeof(fixture->session->emulator->transaction_mac));
+    fixture->session->emulator->transaction_mac.initialized = true;
+    fixture->session->emulator->transaction_mac.has_pending = true;
 #endif
 }
 
@@ -543,11 +547,10 @@ static MunitResult test_growth_failure_is_atomic(const MunitParameter params[], 
     munit_assert_int32(value->value, ==, 10);
     munit_assert_false(fixture.credential.dirty);
 #if DFC_ENABLE_TRANSACTION_MAC
-    munit_assert_size(fixture.session->emulator->transaction_input_len, ==, 0);
     munit_assert_memory_equal(
-        sizeof(fixture.session->emulator->transaction_input),
-        fixture.session->emulator->transaction_input,
-        ((uint8_t[sizeof(fixture.session->emulator->transaction_input)]){0}));
+        sizeof(fixture.session->emulator->transaction_mac),
+        &fixture.session->emulator->transaction_mac,
+        &(DfcTransactionMacAccumulator){0});
 #endif
     fixture_close(&fixture);
     return MUNIT_OK;
