@@ -283,7 +283,7 @@ def digest(path: Path) -> str:
 
 
 def vector_paths() -> list[Path]:
-    return sorted(VECTOR_ROOT.glob("v[0-9]/*/*.vec"))
+    return sorted(VECTOR_ROOT.glob("v[0-9]/**/*.vec"))
 
 
 def validate_header(location: str, key: str, value: str) -> None:

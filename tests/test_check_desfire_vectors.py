@@ -159,6 +159,11 @@ class DesfireVectorGrammarTests(unittest.TestCase):
             ):
                 self.validate_catalog([path])
 
+    def test_vector_discovery_is_recursive(self) -> None:
+        expected = self.write_vector("v4/synthetic/nested/example.vec")
+        with patch.object(CHECKER, "VECTOR_ROOT", self.vector_root):
+            self.assertEqual(CHECKER.vector_paths(), [expected])
+
 
 if __name__ == "__main__":
     unittest.main()
