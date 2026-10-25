@@ -43,6 +43,13 @@ void dfc_emulator_command_write_record(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
     }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(!dfc_emulator_command_transaction_mac_can_add_data(emulator, clear_len)) {
+        dfc_secure_wipe(record_data, clear_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
     // A cyclic file keeps one record in reserve, so it holds one fewer than its
     // declared size, measured against a genuine EV1.
     size_t cyclic_capacity = file->max_records > 0 ? (size_t)file->max_records - 1 : 0;
@@ -67,6 +74,14 @@ void dfc_emulator_command_write_record(
 
     size_t record_index = 0;
     if(operation == RecordTransactionWrite) {
+#if DFC_ENABLE_TRANSACTION_MAC
+        if(!dfc_emulator_command_transaction_mac_add_data(
+               emulator, apdu[0], apdu[1], offset, write_len, record_data, clear_len)) {
+            dfc_secure_wipe(record_data, clear_len);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+            return;
+        }
+#endif
         size_t index = dfc_emulator_command_transaction_file_index(emulator, file);
         record_index = emulator->transaction_record_numbers[index];
     } else {
@@ -78,6 +93,14 @@ void dfc_emulator_command_write_record(
             return;
         }
         if(file->type == DFC_FILE_TYPE_CYCLIC_RECORD && cyclic_capacity == 0) {
+#if DFC_ENABLE_TRANSACTION_MAC
+            if(!dfc_emulator_command_transaction_mac_add_data(
+                   emulator, apdu[0], apdu[1], offset, write_len, record_data, clear_len)) {
+                dfc_secure_wipe(record_data, clear_len);
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+                return;
+            }
+#endif
             dfc_secure_wipe(record_data, clear_len);
             dfc_emulator_command_transaction_set_record_operation(
                 emulator, file, RecordTransactionWrite, 0);
@@ -85,6 +108,15 @@ void dfc_emulator_command_write_record(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
             return;
         }
+
+#if DFC_ENABLE_TRANSACTION_MAC
+        if(!dfc_emulator_command_transaction_mac_add_data(
+               emulator, apdu[0], apdu[1], offset, write_len, record_data, clear_len)) {
+            dfc_secure_wipe(record_data, clear_len);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+            return;
+        }
+#endif
 
         record_index = file->record_count;
         if(file->type == DFC_FILE_TYPE_CYCLIC_RECORD && file->record_count >= cyclic_capacity) {
@@ -159,6 +191,13 @@ void dfc_emulator_command_update_record(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(!dfc_emulator_command_transaction_mac_can_add_record_update(emulator, clear_len)) {
+        dfc_secure_wipe(update_data, clear_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
     uint8_t* data = dfc_file_data(emulator->credential, file);
     if(!data || !dfc_emulator_command_transaction_snapshot_begin(emulator)) {
         dfc_secure_wipe(update_data, clear_len);
@@ -179,6 +218,14 @@ void dfc_emulator_command_update_record(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(!dfc_emulator_command_transaction_mac_add_record_update(
+           emulator, apdu[0], apdu[1], record_number, offset, write_length, update_data, clear_len)) {
+        dfc_secure_wipe(update_data, clear_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
     size_t stored_index = file->record_count - record_number - 1;
     memcpy(data + stored_index * file->record_size + offset, update_data, write_length);
     dfc_secure_wipe(update_data, clear_len);
@@ -209,6 +256,12 @@ void dfc_emulator_command_clear_record_file(
             tx_buffer, dfc_emulator_command_file_access_refusal_status(file, true));
         return;
     }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(!dfc_emulator_command_transaction_mac_can_add_clear_record(emulator)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
     if(!dfc_emulator_command_transaction_snapshot_begin(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
@@ -218,6 +271,12 @@ void dfc_emulator_command_clear_record_file(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(!dfc_emulator_command_transaction_mac_add_clear_record(emulator, apdu[1])) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
     file->record_count = 0;
     dfc_emulator_command_transaction_set_record_operation(
         emulator, file, RecordTransactionClear, 0);

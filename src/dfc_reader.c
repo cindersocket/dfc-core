@@ -51,7 +51,6 @@ enum {
 #define VALUE_HEADER_LENGTH         1
 #define SET_CONFIGURATION_HEADER    1
 #define CREATE_TMAC_HEADER          5
-#define COMMIT_READER_ID_HEADER     0
 #define CHANGE_KEY_EV2_HEADER       2
 #define CHANGE_KEY_HEADER           1
 
@@ -1164,6 +1163,10 @@ static DfcReaderStatus
         return prepare_wrapped_file_write(
             ex, command, DFC_COMM_ENCIPHERED, SET_CONFIGURATION_HEADER);
     }
+    if(ins == DFC_CMD_COMMIT_READER_ID) {
+        if(ex->comm_mode != DFC_COMM_MAC) return DfcReaderInvalid;
+        return prepare_wrapped_file_write(ex, command, DFC_COMM_MAC, 0);
+    }
     bool file_write = is_file_command(ins) && !is_file_read(ins);
     if(file_write && ex->comm_mode != DFC_COMM_PLAIN) {
         return prepare_wrapped_file_write(ex, command, ex->comm_mode, header_len);
@@ -1245,8 +1248,6 @@ static size_t ev2_always_encrypted_header(uint8_t ins) {
         return SET_CONFIGURATION_HEADER;
     case DFC_CMD_CREATE_TRANSACTION_MAC_FILE:
         return CREATE_TMAC_HEADER;
-    case DFC_CMD_COMMIT_READER_ID:
-        return COMMIT_READER_ID_HEADER;
     case DFC_CMD_CHANGE_KEY_EV2:
         return CHANGE_KEY_EV2_HEADER;
     case DFC_CMD_CHANGE_KEY_SETTINGS:
@@ -1388,6 +1389,10 @@ static DfcReaderStatus reader_exchange_begin(
        command->ins == DFC_CMD_AUTHENTICATE_EV2_FIRST ||
        command->ins == DFC_CMD_AUTHENTICATE_EV2_NON_FIRST) {
         // Authentication has its own entry points, which keep the session right.
+        return DfcReaderInvalid;
+    }
+    if(session->auth_mode != DFC_READER_AUTH_NONE && command->ins == DFC_CMD_COMMIT_READER_ID &&
+       options->comm_mode != DFC_COMM_MAC) {
         return DfcReaderInvalid;
     }
 

@@ -363,6 +363,14 @@ bool dfc_emulator_command_read_data(
     size_t available = file->data_len - offset;
     size_t read_len = requested_len == 0 ? available : (size_t)requested_len;
 
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(file->type != DFC_FILE_TYPE_TRANSACTION_MAC &&
+       !dfc_emulator_command_transaction_mac_can_add_data(emulator, read_len)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return true;
+    }
+#endif
+
     const uint8_t* file_bytes = dfc_file_data_const(emulator->credential, file);
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
     // Backup reads keep showing the committed image until CommitTransaction.
@@ -397,6 +405,20 @@ bool dfc_emulator_command_read_data(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
         return true;
     }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(file->type != DFC_FILE_TYPE_TRANSACTION_MAC &&
+       !dfc_emulator_command_transaction_mac_add_data(
+           emulator,
+           apdu[0],
+           file_no,
+           offset,
+           (uint32_t)read_len,
+           read_len ? file_bytes + offset : NULL,
+           read_len)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return true;
+    }
+#endif
 
     uint8_t comm = dfc_emulator_file_effective_comm_settings(
         emulator, file, DfcFileAccessRead, file->comm_settings);
@@ -626,6 +648,18 @@ void dfc_emulator_command_write_data(
         return;
     }
     uint8_t* file_bytes = dfc_file_data(emulator->credential, file);
+    if(out_len > 0 && !file_bytes) {
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
+        return;
+    }
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(!dfc_emulator_command_transaction_mac_can_add_data(emulator, out_len)) {
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
 #if DFC_ENABLE_BACKUP_FILES
     if(file->type == DFC_FILE_TYPE_BACKUP_DATA &&
        !dfc_emulator_command_transaction_snapshot_begin(emulator)) {
@@ -634,19 +668,28 @@ void dfc_emulator_command_write_data(
         return;
     }
 #endif
-    if(out_len > 0) {
-        if(!file_bytes) {
-            dfc_secure_wipe(emulator->pending_chain, scratch_len);
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
-            return;
-        }
-    }
     if(file->type == DFC_FILE_TYPE_STANDARD_DATA &&
-       !dfc_emulator_transaction_snapshot_mirror_write(
+       !dfc_emulator_transaction_snapshot_can_mirror_write(
            emulator, (size_t)(file - emulator->credential->files), offset, clear, out_len)) {
         dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
+    }
+#if DFC_ENABLE_TRANSACTION_MAC
+    // Capacity was checked before preparation. Publishing the transcript here
+    // cannot fail and leaves allocation and mirror failures retryable.
+    if(!dfc_emulator_command_transaction_mac_add_data(
+           emulator, apdu[0], file_no, offset, declared_len, clear, out_len)) {
+        dfc_secure_wipe(emulator->pending_chain, scratch_len);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
+    if(file->type == DFC_FILE_TYPE_STANDARD_DATA) {
+        bool mirrored = dfc_emulator_transaction_snapshot_mirror_write(
+            emulator, (size_t)(file - emulator->credential->files), offset, clear, out_len);
+        DFC_ASSERT(mirrored);
+        DFC_UNUSED(mirrored);
     }
     if(out_len > 0) {
         memcpy(file_bytes + offset, clear, out_len);

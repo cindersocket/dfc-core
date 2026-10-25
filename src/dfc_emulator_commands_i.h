@@ -186,6 +186,38 @@ void dfc_emulator_command_commit_reader_id(
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer);
+bool dfc_emulator_command_transaction_mac_add_data(
+    DfcEmulator* emulator,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t offset,
+    uint32_t length,
+    const uint8_t* data,
+    size_t data_length);
+bool dfc_emulator_command_transaction_mac_can_add_data(
+    const DfcEmulator* emulator,
+    size_t data_length);
+bool dfc_emulator_command_transaction_mac_add_record_update(
+    DfcEmulator* emulator,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    uint32_t length,
+    const uint8_t* data,
+    size_t data_length);
+bool dfc_emulator_command_transaction_mac_can_add_record_update(
+    const DfcEmulator* emulator,
+    size_t data_length);
+bool dfc_emulator_command_transaction_mac_add_value(
+    DfcEmulator* emulator,
+    uint8_t command,
+    uint8_t file_number,
+    const uint8_t value[4]);
+bool dfc_emulator_command_transaction_mac_add_clear_record(
+    DfcEmulator* emulator,
+    uint8_t file_number);
+bool dfc_emulator_command_transaction_mac_can_add_clear_record(const DfcEmulator* emulator);
 #endif
 bool dfc_emulator_command_transaction_snapshot_begin(DfcEmulator* emulator);
 size_t

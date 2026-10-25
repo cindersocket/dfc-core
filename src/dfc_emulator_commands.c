@@ -989,9 +989,22 @@ static void
     // The requested records occupy one contiguous range in stored oldest-first
     // order, even though record number zero names the newest one.
     size_t payload_len = count * file->record_size;
+    size_t stored_index = record_count - first_record - count;
+#if DFC_ENABLE_TRANSACTION_MAC
+    if(!dfc_emulator_command_transaction_mac_add_data(
+           emulator,
+           apdu[0],
+           apdu[1],
+           first_record,
+           (uint32_t)count,
+           data + stored_index * file->record_size,
+           payload_len)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+        return;
+    }
+#endif
     uint8_t comm = dfc_emulator_file_effective_comm_settings(
         emulator, file, DfcFileAccessRead, file->comm_settings);
-    size_t stored_index = record_count - first_record - count;
     dfc_emulator_command_emit_payload_with_chaining_comm(
         emulator,
         tx_buffer,

@@ -166,16 +166,16 @@ void dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t
     emulator->transaction_record_numbers[DFC_MAX_FILES - 1] = 0;
 }
 
-bool dfc_emulator_transaction_snapshot_mirror_write(
-    DfcEmulator* emulator,
+bool dfc_emulator_transaction_snapshot_can_mirror_write(
+    const DfcEmulator* emulator,
     size_t file_index,
     size_t offset,
     const uint8_t* data,
     size_t length) {
     if(!emulator->transaction_snapshot_active) return true;
-    DfcCredential* credential = emulator->credential;
+    const DfcCredential* credential = emulator->credential;
     if(file_index >= credential->num_files || (length && !data)) return false;
-    DfcFile* file = &credential->files[file_index];
+    const DfcFile* file = &credential->files[file_index];
     if(file->app_index != emulator->transaction_snapshot_app_index || offset > file->data_len ||
        length > file->data_len - offset ||
        file->data_offset > emulator->transaction_snapshot_pool_length ||
@@ -183,6 +183,20 @@ bool dfc_emulator_transaction_snapshot_mirror_write(
        length > emulator->transaction_snapshot_pool_length - file->data_offset - offset) {
         return false;
     }
+    return true;
+}
+
+bool dfc_emulator_transaction_snapshot_mirror_write(
+    DfcEmulator* emulator,
+    size_t file_index,
+    size_t offset,
+    const uint8_t* data,
+    size_t length) {
+    if(!dfc_emulator_transaction_snapshot_can_mirror_write(
+           emulator, file_index, offset, data, length))
+        return false;
+    if(!emulator->transaction_snapshot_active) return true;
+    const DfcFile* file = &emulator->credential->files[file_index];
     if(length) {
         memcpy(emulator->transaction_snapshot_pool + file->data_offset + offset, data, length);
     }
@@ -345,11 +359,14 @@ uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no) {
 bool dfc_emulator_abort_transaction(DfcEmulator* emulator) {
     bool changed = false;
 #if DFC_ENABLE_TRANSACTION_MAC
-    if(emulator->transaction_input_len > 0) {
-        size_t used =
-            DFC_MIN(emulator->transaction_input_len, sizeof(emulator->transaction_input));
-        dfc_secure_wipe(emulator->transaction_input, used);
+    if(emulator->transaction_input_len > 0 || emulator->transaction_reader_id_pending) {
+        dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+        dfc_secure_wipe(
+            emulator->transaction_pending_reader_id,
+            sizeof(emulator->transaction_pending_reader_id));
         emulator->transaction_input_len = 0;
+        emulator->transaction_reader_id_pending = false;
+        emulator->transaction_reader_id_persist = false;
         changed = true;
     }
 #endif
@@ -408,7 +425,11 @@ void dfc_emulator_publish_transaction(DfcEmulator* emulator) {
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
     dfc_secure_wipe(emulator->transaction_input, sizeof(emulator->transaction_input));
+    dfc_secure_wipe(
+        emulator->transaction_pending_reader_id, sizeof(emulator->transaction_pending_reader_id));
     emulator->transaction_input_len = 0;
+    emulator->transaction_reader_id_pending = false;
+    emulator->transaction_reader_id_persist = false;
 #endif
     dfc_credential_mark_dirty(emulator->credential);
 }

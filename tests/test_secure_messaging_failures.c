@@ -781,6 +781,7 @@ static void assert_transaction_mac_failure_aborts(
     DfcFile* transaction = dfc_credential_create_file(&credential, 0, 2);
     munit_assert_not_null(transaction);
     transaction->type = DFC_FILE_TYPE_TRANSACTION_MAC;
+    transaction->access_rights = 0xEFFE;
     transaction->transaction_counter = 9;
     memset(transaction->transaction_mac_key, 0x42, sizeof(transaction->transaction_mac_key));
     munit_assert_true(dfc_file_resize(&credential, transaction, DFC_TRANSACTION_MAC_FILE_LENGTH));
@@ -853,6 +854,7 @@ static DfcEmulator*
     *transaction = dfc_credential_create_file(credential, 0, 2);
     munit_assert_not_null(*transaction);
     (*transaction)->type = DFC_FILE_TYPE_TRANSACTION_MAC;
+    (*transaction)->access_rights = 0xEFFE;
     memset((*transaction)->transaction_mac_key, 0x42, sizeof((*transaction)->transaction_mac_key));
     munit_assert_true(dfc_file_resize(credential, *transaction, DFC_TRANSACTION_MAC_FILE_LENGTH));
     DfcEmulator* emulator = dfc_emulator_alloc(credential);
@@ -860,6 +862,12 @@ static DfcEmulator*
     emulator->selected_application = DfcEmulatorSelectedApplicationApp;
     emulator->selected_app_index = 0;
     return emulator;
+}
+
+static void enable_transaction_reader_id_authentication(DfcEmulator* emulator, DfcFile* file) {
+    file->access_rights = 0xEFEE;
+    emulator->ev2_session_active = true;
+    emulator->ev2_authenticated_key_no = 0;
 }
 
 static MunitResult
@@ -915,6 +923,7 @@ static MunitResult
         16,
     };
     emulator = transaction_test_emulator(&credential, &value, &transaction);
+    enable_transaction_reader_id_authentication(emulator, transaction);
     emulator->transaction_input_len = DFC_TRANSACTION_INPUT_MAX_LENGTH - 3 * DFC_AES_KEY_LENGTH;
     response_len = fault_emulator_command(
         emulator, commit_reader_id, sizeof(commit_reader_id), response, true);
@@ -924,6 +933,7 @@ static MunitResult
     dfc_emulator_free(emulator);
 
     emulator = transaction_test_emulator(&credential, &value, &transaction);
+    enable_transaction_reader_id_authentication(emulator, transaction);
     emulator->transaction_input_len =
         DFC_TRANSACTION_INPUT_MAX_LENGTH - 3 * DFC_AES_KEY_LENGTH + 1;
     memset(emulator->transaction_input, 0x6C, emulator->transaction_input_len);
@@ -964,6 +974,7 @@ static MunitResult
 
     const uint8_t commit_reader_id[1 + DFC_TRANSACTION_READER_ID_LENGTH] = {
         DFC_CMD_COMMIT_READER_ID};
+    transaction->access_rights = 0xEFEE;
     response_len = fault_emulator_command(
         emulator, commit_reader_id, sizeof(commit_reader_id), response, true);
     munit_assert_size(response_len, ==, 1);
@@ -983,6 +994,7 @@ static MunitResult
     DfcFile* value;
     DfcFile* transaction;
     DfcEmulator* emulator = transaction_test_emulator(&credential, &value, &transaction);
+    enable_transaction_reader_id_authentication(emulator, transaction);
     (void)value;
     uint8_t original[DFC_TRANSACTION_READER_ID_LENGTH];
     uint8_t first[DFC_TRANSACTION_READER_ID_LENGTH];

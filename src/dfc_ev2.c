@@ -15,7 +15,6 @@ enum {
     DfcEv2ChangeFileSettingsHeaderLength = 1,
     DfcEv2SetConfigurationHeaderLength = 1,
     DfcEv2CreateTransactionMacHeaderLength = 5,
-    DfcEv2CommitReaderIdHeaderLength = 0,
     DfcEv2ChangeKeyHeaderLength = DFC_CHANGE_KEY_EV2_HEADER_LENGTH - 1,
     DfcEv2ChangeKeySettingsHeaderLength = 0,
 };
@@ -265,8 +264,6 @@ DfcEv2CommandSecurity dfc_ev2_prepare_command(
         encrypted_header_len = DfcEv2SetConfigurationHeaderLength, decrypt_data = true;
     if(command[0] == DFC_CMD_CREATE_TRANSACTION_MAC_FILE)
         encrypted_header_len = DfcEv2CreateTransactionMacHeaderLength, decrypt_data = true;
-    if(command[0] == DFC_CMD_COMMIT_READER_ID)
-        encrypted_header_len = DfcEv2CommitReaderIdHeaderLength, decrypt_data = true;
     if(command[0] == DFC_CMD_CHANGE_KEY_EV2)
         encrypted_header_len = DfcEv2ChangeKeyHeaderLength, decrypt_data = true;
     if(command[0] == DFC_CMD_CHANGE_KEY_SETTINGS)

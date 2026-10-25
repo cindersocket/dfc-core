@@ -56,6 +56,8 @@ typedef struct {
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
     size_t transaction_input_len;
+    bool transaction_reader_id_pending;
+    bool transaction_reader_id_persist;
 #endif
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
     size_t delegated_creation_header_length;
@@ -159,6 +161,7 @@ typedef struct {
 #endif
 #if DFC_ENABLE_TRANSACTION_MAC
     uint8_t transaction_input[DFC_TRANSACTION_INPUT_MAX_LENGTH];
+    uint8_t transaction_pending_reader_id[DFC_TRANSACTION_READER_ID_LENGTH];
 #endif
 
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
