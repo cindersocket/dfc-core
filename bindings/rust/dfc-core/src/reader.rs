@@ -3,6 +3,7 @@ use core::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 use dfc_core_sys as sys;
 
 const INITIAL_OUTPUT_CAPACITY: usize = 64;
+const SELECT_APPLICATION_INSTRUCTION: u8 = 0x5a;
 // Native commands carry at most 255 data bytes. ISO 7816 wrapping adds five
 // header bytes and Le; native framing needs less space than this same bound.
 const MAX_OUTPUT_CAPACITY: usize = 261;
@@ -72,29 +73,42 @@ fn grow_after_response(apdu: &mut ApduBuffer, incoming: &mut [u8]) -> Result<(),
     }
 }
 
+/// Transport used by [`Reader`] to exchange complete APDUs with a card.
 pub trait Transport {
+    /// Transport-specific failure.
     type Error;
+    /// Sends one command and returns the complete card response.
     fn transceive(&mut self, command: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
+/// Framing used on the card transport.
 pub enum Framing {
+    /// ISO 7816 command and response APDUs.
     Iso7816 = crate::layout::DFC_FFI_READER_FRAMING_ISO7816 as u32,
+    /// Native command bytes without ISO 7816 wrapping.
     Native = crate::layout::DFC_FFI_READER_FRAMING_NATIVE as u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+/// Secure-messaging mode requested for a command.
 pub enum CommunicationMode {
+    /// No command encryption or command MAC.
     Plain = crate::layout::DFC_FFI_COMM_PLAIN as u8,
+    /// Authenticate the command and response without encrypting their data.
     Mac = crate::layout::DFC_FFI_COMM_MAC as u8,
+    /// Encrypt and authenticate the protected command and response data.
     Enciphered = crate::layout::DFC_FFI_COMM_ENCIPHERED as u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Native command instruction and its data field.
 pub struct Command {
+    /// Native instruction byte.
     pub instruction: u8,
+    /// Command data excluding framing and status bytes.
     pub data: Vec<u8>,
 }
 
@@ -102,24 +116,32 @@ impl Command {
     /// Select an application using the AID order stored by the credential model.
     pub fn select_application(aid: [u8; 3]) -> Self {
         Self {
-            instruction: 0x5a,
+            instruction: SELECT_APPLICATION_INSTRUCTION,
             data: aid.into_iter().rev().collect(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Completed command response with status separated from response data.
 pub struct Response {
+    /// Native card status byte.
     pub status: u8,
+    /// Response data excluding the status byte.
     pub data: Vec<u8>,
 }
 
+/// Snapshot of the reader's authentication and chaining state.
 pub struct ReaderState(pub sys::DfcFfiReaderState);
 
 #[derive(Debug)]
+/// Error from reader processing, the card, or the supplied transport.
 pub enum ReaderError<E> {
+    /// Local reader or native-library failure.
     Dfc(Error),
+    /// Terminal status byte returned by the card.
     Card(u8),
+    /// Failure reported by [`Transport::transceive`].
     Transport(E),
 }
 
@@ -135,6 +157,10 @@ impl<E: core::fmt::Display> core::fmt::Display for ReaderError<E> {
 
 impl<E: std::error::Error + 'static> std::error::Error for ReaderError<E> {}
 
+/// Stateful command reader over a caller-supplied transport.
+///
+/// The reader owns the native session and exchange handles. It is `Send` when
+/// its transport is `Send`, but intentionally not `Sync`.
 pub struct Reader<T> {
     transport: T,
     framing: Framing,
@@ -158,9 +184,12 @@ pub(crate) fn reader_step_status(value: i32) -> Result<ReaderStepStatus, Error> 
     Ok(ReaderStepStatus::Complete)
 }
 
+// SAFETY: the native session and exchange handles are uniquely owned. All
+// operations require `&mut self`, and moving the reader also moves its transport.
 unsafe impl<T: Send> Send for Reader<T> {}
 
 impl<T: Transport> Reader<T> {
+    /// Creates a reader using `transport` and the selected wire framing.
     pub fn new(transport: T, framing: Framing) -> Result<Self, Error> {
         ensure_abi()?;
         let apdu = ApduBuffer::new()?;
@@ -188,6 +217,7 @@ impl<T: Transport> Reader<T> {
         })
     }
 
+    /// Returns a copy of the reader's current public state.
     pub fn state(&self) -> Result<ReaderState, Error> {
         let mut value = MaybeUninit::uninit();
         status(unsafe {
@@ -196,11 +226,13 @@ impl<T: Transport> Reader<T> {
         Ok(ReaderState(unsafe { value.assume_init() }))
     }
 
+    /// Clears authentication, chaining, and buffered APDU state.
     pub fn clear(&mut self) {
         unsafe { sys::dfc_ffi_reader_session_clear(self.session.as_ptr()) }
         self.apdu.wipe();
     }
 
+    /// Mutably borrows the transport, for example to configure timeouts.
     pub fn transport_mut(&mut self) -> &mut T {
         &mut self.transport
     }
@@ -239,6 +271,10 @@ impl<T: Transport> Reader<T> {
         self.run()
     }
 
+    /// Runs native D40, ISO, or AES authentication.
+    ///
+    /// `cipher` is the native authentication instruction, `key_no` selects the
+    /// card key, and `random_a` must have the challenge length for that cipher.
     pub fn authenticate(
         &mut self,
         cipher: u8,
@@ -263,6 +299,10 @@ impl<T: Transport> Reader<T> {
         self.run()
     }
 
+    /// Runs EV2 First or NonFirst authentication with caller-supplied RndA.
+    ///
+    /// `capabilities` is the optional reader capability block sent during EV2
+    /// First authentication and must be empty for NonFirst where required.
     pub fn authenticate_ev2(
         &mut self,
         first: bool,
@@ -288,6 +328,9 @@ impl<T: Transport> Reader<T> {
         self.run()
     }
 
+    /// Runs the ISO 7816 challenge/authenticate sequence.
+    ///
+    /// Both random values must have the same algorithm-specific length.
     pub fn authenticate_iso7816(
         &mut self,
         key_reference: u8,
@@ -316,6 +359,7 @@ impl<T: Transport> Reader<T> {
         self.run()
     }
 
+    /// Writes bytes to a standard or backup data file.
     pub fn write_data(
         &mut self,
         file_number: u8,
@@ -339,6 +383,7 @@ impl<T: Transport> Reader<T> {
         self.run()
     }
 
+    /// Appends or writes bytes in a record file.
     pub fn write_record(
         &mut self,
         file_number: u8,
@@ -362,6 +407,7 @@ impl<T: Transport> Reader<T> {
         self.run()
     }
 
+    /// Updates bytes in an existing record.
     pub fn update_record(
         &mut self,
         file_number: u8,
@@ -388,6 +434,10 @@ impl<T: Transport> Reader<T> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Creates a delegated application from a preassembled command header.
+    ///
+    /// The header and key inputs are consumed only for this exchange and are
+    /// not retained by the reader.
     pub fn create_delegated_application(
         &mut self,
         header: &[u8],
@@ -416,6 +466,10 @@ impl<T: Transport> Reader<T> {
         self.run()
     }
 
+    /// Builds the protected ChangeKey payload for the active legacy/EV1 session.
+    ///
+    /// `current_key` is required when changing a key other than the one used to
+    /// authenticate. The returned bytes exclude the command instruction.
     pub fn change_key_cryptogram(
         &self,
         key_no: u8,
@@ -440,6 +494,10 @@ impl<T: Transport> Reader<T> {
         })
     }
 
+    /// Builds the protected ChangeKey payload for the active EV2 session.
+    ///
+    /// `current_key` is required when the changed key differs from the
+    /// authenticated key. The returned bytes exclude the command instruction.
     pub fn change_key_ev2_data(
         &self,
         key_set_no: u8,

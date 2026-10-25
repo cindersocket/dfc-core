@@ -7,12 +7,21 @@ use crate::{Error, ensure_abi, status};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
+/// Key families supported by the diversification operation.
 pub enum DiversificationAlgorithm {
+    /// AES-128 diversification, producing a 16-byte key.
     Aes128 = 0,
+    /// Two-key TDEA diversification, producing a 16-byte key.
     Tdea2 = 1,
+    /// Three-key TDEA diversification, producing a 24-byte key.
     Tdea3 = 2,
 }
 
+/// Derives an application key from a master key and diversification input.
+///
+/// The master-key length must match `algorithm`. The returned key has the
+/// algorithm's natural length. Invalid key or input lengths are reported by
+/// the native implementation as [`Error::InvalidArgument`].
 pub fn diversify_key(
     algorithm: DiversificationAlgorithm,
     master_key: &[u8],

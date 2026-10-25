@@ -115,7 +115,16 @@ From the repository root:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo rustdoc -p dfc-core --lib -- -D warnings
+cargo rustdoc -p dfc-core --lib --no-default-features \
+  --features system,role-target,profile-full-ev3 -- -D warnings
 ```
+
+The safe crate denies missing rustdoc and broken intra-doc links at the crate
+root, so these commands are durable API-documentation gates. The
+`dfc-core-sys` declarations are generated from `ffi/dfc_ffi.h`; edit the native
+header and rerun `bindings/rust/regenerate-bindings.sh` rather than hand-editing
+the hosted raw bindings.
 
 The safe crate checks the native ABI version, structure sizes, and complete
 generated layout fingerprint before creating hosted handles. Random callbacks are contained at

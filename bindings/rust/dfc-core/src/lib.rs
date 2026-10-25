@@ -1,5 +1,7 @@
 //! Safe bindings for DFC credentials, virtual cards, and reader sessions.
 #![cfg_attr(feature = "role-target", no_std)]
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 extern crate alloc;
 
@@ -66,25 +68,42 @@ fn wipe<T>(value: &mut T) {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(not(feature = "role-target"))]
+/// Failure returned by the safe binding layer.
 pub enum Error {
+    /// An argument is outside its documented range or has the wrong length.
     InvalidArgument,
+    /// Caller-provided or internally bounded storage is too small.
     BufferTooSmall,
+    /// Native or Rust-owned storage could not be allocated.
     OutOfMemory,
+    /// The selected operation is unavailable in the linked build profile.
     Unsupported,
+    /// The configured random source failed or returned the wrong byte count.
     RandomSourceFailed,
+    /// The native library exposes a different FFI ABI version.
     AbiMismatch {
+        /// ABI version compiled into this crate.
         expected: u32,
+        /// ABI version reported by the loaded native library.
         actual: u32,
     },
+    /// Native structure offsets differ from the generated Rust declarations.
     LayoutMismatch {
+        /// Layout fingerprint compiled into this crate.
         expected: u64,
+        /// Layout fingerprint reported by the loaded native library.
         actual: u64,
     },
+    /// One generated Rust structure has a different size from its native peer.
     StructSizeMismatch {
+        /// Stable name of the mismatched structure.
         structure: &'static str,
+        /// Size compiled into this crate.
         expected: u32,
+        /// Size reported by the loaded native library.
         actual: u32,
     },
+    /// Native operation failed with an otherwise unmapped status code.
     Native(i32),
 }
 
@@ -237,10 +256,12 @@ fn output(mut call: impl FnMut(*mut u8, usize, *mut usize) -> i32) -> Result<Vec
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "role-target"))]
+/// Feature and capacity report for the linked native build.
 pub struct Capabilities(pub sys::DfcFfiCapabilities);
 
 #[cfg(not(feature = "role-target"))]
 impl Capabilities {
+    /// Reads capabilities after verifying ABI, layout, and structure sizes.
     pub fn get() -> Result<Self, Error> {
         ensure_abi()?;
         let mut value = MaybeUninit::uninit();
@@ -250,8 +271,10 @@ impl Capabilities {
 }
 
 #[cfg(not(feature = "role-target"))]
+/// RF activation parameters returned by a virtual card.
 pub struct Activation(pub sys::DfcFfiActivation);
 #[cfg(not(feature = "role-target"))]
+/// Public, non-secret virtual-card state snapshot.
 pub struct Snapshot(pub sys::DfcFfiSnapshot);
 
 /// Secret-bearing state for diagnostics and conformance tests.
@@ -266,12 +289,15 @@ impl DiagnosticSnapshot {
     fn clear(&mut self) {
         wipe(&mut self.0);
     }
+    /// Four-byte EV2 transaction identifier, or all zeroes outside EV2.
     pub fn transaction_identifier(&self) -> &[u8; 4] {
         &self.0.transaction_identifier
     }
+    /// Current diagnostic session encryption key.
     pub fn encryption_key(&self) -> &[u8; 16] {
         &self.0.encryption_key
     }
+    /// Current diagnostic session MAC key.
     pub fn mac_key(&self) -> &[u8; 16] {
         &self.0.mac_key
     }
@@ -310,6 +336,9 @@ unsafe extern "C" fn random_callback(
 }
 
 #[cfg(not(feature = "role-target"))]
+/// Stateful virtual card that owns a native emulator and credential model.
+///
+/// Native state and secrets are wiped and freed on drop.
 pub struct VirtualPicc {
     raw: NonNull<sys::DfcFfiPicc>,
     // Keeps the callback context alive for as long as native code may use it.
@@ -317,10 +346,13 @@ pub struct VirtualPicc {
 }
 
 #[cfg(not(feature = "role-target"))]
+// SAFETY: the native card handle is uniquely owned and every operation requires
+// `&mut self`; the retained random callback is also required to be `Send`.
 unsafe impl Send for VirtualPicc {}
 
 #[cfg(not(feature = "role-target"))]
 impl VirtualPicc {
+    /// Creates a virtual card by cloning `credential` into native ownership.
     pub fn new(credential: &Credential) -> Result<Self, Error> {
         ensure_abi()?;
         let mut raw = core::ptr::null_mut();
@@ -361,6 +393,11 @@ impl VirtualPicc {
         })
     }
 
+    /// Creates a virtual card with a caller-provided random source.
+    ///
+    /// The closure must return exactly the requested number of bytes. A panic
+    /// or wrong-length result becomes [`Error::RandomSourceFailed`]. The closure
+    /// is retained until the card is dropped.
     pub fn from_credential_with_random<F>(credential: Credential, random: F) -> Result<Self, Error>
     where
         F: FnMut(usize) -> Vec<u8> + Send + 'static,
@@ -392,6 +429,7 @@ impl VirtualPicc {
         })
     }
 
+    /// Starts a new RF activation and returns its transport parameters.
     pub fn activate(&mut self) -> Result<Activation, Error> {
         let mut value = MaybeUninit::uninit();
         let result =
@@ -400,10 +438,12 @@ impl VirtualPicc {
         Ok(Activation(unsafe { value.assume_init() }))
     }
 
+    /// Exchanges one complete native or ISO-wrapped command.
     pub fn exchange(&mut self, command: &[u8]) -> Result<Vec<u8>, Error> {
         self.exchange_inner(command, false)
     }
 
+    /// Exchanges one ISO-DEP frame, including transport chaining and retries.
     pub fn frame_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, Error> {
         self.exchange_inner(frame, true)
     }
@@ -456,25 +496,33 @@ impl VirtualPicc {
         Ok(response)
     }
 
+    /// Ends the RF field and clears protocol and authentication state.
     pub fn field_off(&mut self) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_picc_field_off(self.raw.as_ptr()) })
     }
+    /// Resets transport state while retaining the credential model.
     pub fn reset_protocol(&mut self) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_picc_reset_protocol(self.raw.as_ptr()) })
     }
+    /// Advances the virtual card's monotonic clock by `milliseconds`.
     pub fn advance_time(&mut self, milliseconds: u32) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_picc_advance_time(self.raw.as_ptr(), milliseconds) })
     }
+    /// Marks current credential state as persisted by the caller.
     pub fn mark_persisted(&mut self) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_picc_mark_persisted(self.raw.as_ptr()) })
     }
 
+    /// Returns a public, non-secret state snapshot.
     pub fn snapshot(&self) -> Result<Snapshot, Error> {
         let mut value = MaybeUninit::uninit();
         status(unsafe { sys::dfc_ffi_picc_snapshot(self.raw.as_ptr(), value.as_mut_ptr()) })?;
         Ok(Snapshot(unsafe { value.assume_init() }))
     }
 
+    /// Returns secret-bearing diagnostic session state.
+    ///
+    /// The returned value wipes its storage on drop.
     pub fn diagnostic_snapshot(&self) -> Result<DiagnosticSnapshot, Error> {
         let mut value = MaybeUninit::zeroed();
         status(unsafe {
@@ -483,6 +531,7 @@ impl VirtualPicc {
         Ok(DiagnosticSnapshot(unsafe { value.assume_init() }))
     }
 
+    /// Clones the card's current credential model into Rust ownership.
     pub fn export(&self) -> Result<Credential, Error> {
         let mut raw = core::ptr::null_mut();
         status(unsafe { sys::dfc_ffi_picc_export(self.raw.as_ptr(), &mut raw) })?;
@@ -726,4 +775,9 @@ mod tests {
         assert_eq!(snapshot.mac_key(), &[0; 16]);
     }
 }
+/// Raw generated FFI declarations for advanced integrations.
+///
+/// Prefer the safe types in this crate. Raw functions require callers to uphold
+/// the pointer, lifetime, buffer-size, and ownership contracts documented by
+/// the native FFI header.
 pub use dfc_core_sys as raw;

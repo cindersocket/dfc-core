@@ -5,11 +5,17 @@ use dfc_core_sys as sys;
 use crate::{Error, ensure_abi};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Failure returned when a clear command response cannot be decoded.
 pub enum DecodeError {
+    /// The loaded native library is incompatible with this crate.
     Abi(Error),
+    /// The response is truncated or has invalid field encoding.
     Malformed,
+    /// The response describes a form this build does not support.
     Unsupported,
+    /// The destination required by the native decoder was too small.
     BufferTooSmall,
+    /// The native decoder failed with this status code.
     Native(i32),
 }
 
@@ -28,13 +34,21 @@ fn decode_status(value: i32) -> Result<(), DecodeError> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Seven-byte hardware or software version tuple.
 pub struct VersionPart {
+    /// Manufacturer identifier.
     pub vendor_id: u8,
+    /// Product type identifier.
     pub kind: u8,
+    /// Product subtype identifier.
     pub subtype: u8,
+    /// Major version number.
     pub major_version: u8,
+    /// Minor version number.
     pub minor_version: u8,
+    /// Encoded storage-size field.
     pub storage_size: u8,
+    /// Protocol identifier.
     pub protocol: u8,
 }
 
@@ -51,15 +65,23 @@ fn version_part(bytes: &[u8]) -> VersionPart {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Fully assembled GetVersion response.
 pub struct Version {
+    /// Hardware version tuple.
     pub hardware: VersionPart,
+    /// Software version tuple.
     pub software: VersionPart,
+    /// Seven-byte card UID.
     pub uid: [u8; 7],
+    /// Five-byte production batch identifier.
     pub batch_number: [u8; 5],
+    /// Production week as encoded by the card.
     pub production_week: u8,
+    /// Production year as encoded by the card.
     pub production_year: u8,
 }
 
+/// Decodes an assembled 28-byte GetVersion response.
 pub fn decode_version(response: &[u8]) -> Result<Version, DecodeError> {
     ensure()?;
     let mut bytes = [0; 28];
@@ -81,6 +103,10 @@ pub fn decode_version(response: &[u8]) -> Result<Version, DecodeError> {
     })
 }
 
+/// Decodes application identifiers into model order.
+///
+/// Each returned AID is most-significant byte first, matching the credential
+/// model rather than the least-significant-byte-first wire representation.
 pub fn decode_application_ids(response: &[u8]) -> Result<Vec<[u8; 3]>, DecodeError> {
     ensure()?;
     let mut bytes = vec![0; response.len()];
@@ -101,6 +127,7 @@ pub fn decode_application_ids(response: &[u8]) -> Result<Vec<[u8; 3]>, DecodeErr
         .collect())
 }
 
+/// Decodes the list returned by GetFileIDs.
 pub fn decode_file_ids(response: &[u8]) -> Result<Vec<u8>, DecodeError> {
     ensure()?;
     let mut bytes = vec![0; response.len()];
@@ -119,9 +146,13 @@ pub fn decode_file_ids(response: &[u8]) -> Result<Vec<u8>, DecodeError> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Decoded two-bit access-right value.
 pub enum Access {
+    /// Authentication with the given key number is required.
     Key(u8),
+    /// Access is allowed without authentication.
     Free,
+    /// Access is denied.
     Denied,
 }
 
@@ -135,32 +166,53 @@ fn access(bytes: &[u8]) -> Result<Access, DecodeError> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Fields specific to the decoded file type.
 pub enum FileSettingsKind {
+    /// Standard or backup data file settings.
     Data {
+        /// Declared data length in bytes.
         size: u32,
     },
+    /// Value-file limits and limited-credit configuration.
     Value {
+        /// Smallest permitted signed value.
         lower_limit: i32,
+        /// Largest permitted signed value.
         upper_limit: i32,
+        /// Maximum limited-credit amount.
         limited_credit_value: i32,
+        /// Whether limited credit is enabled.
         limited_credit_enabled: bool,
     },
+    /// Linear or cyclic record-file settings.
     Records {
+        /// Size of one record in bytes.
         record_size: u32,
+        /// Maximum number of records.
         max_records: u32,
+        /// Number of records currently present.
         current_records: u32,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Decoded GetFileSettings response.
 pub struct FileSettings {
+    /// Native file-type byte.
     pub file_type: u8,
+    /// Native communication-mode byte.
     pub communication_mode: u8,
+    /// Unmodified 16-bit access-right field.
     pub access_rights_raw: u16,
+    /// Read access requirement.
     pub read: Access,
+    /// Write access requirement.
     pub write: Access,
+    /// Combined read/write access requirement.
     pub read_write: Access,
+    /// Change-settings access requirement.
     pub change: Access,
+    /// File-type-specific settings.
     pub kind: FileSettingsKind,
 }
 
@@ -172,6 +224,7 @@ fn i32_at(bytes: &[u8], offset: usize) -> i32 {
     i32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("fixed slice"))
 }
 
+/// Decodes a GetFileSettings response.
 pub fn decode_file_settings(response: &[u8]) -> Result<FileSettings, DecodeError> {
     ensure()?;
     let mut bytes = [0; 32];
@@ -212,14 +265,21 @@ pub fn decode_file_settings(response: &[u8]) -> Result<FileSettings, DecodeError
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Decoded application or PICC key settings.
 pub struct KeySettings {
+    /// First key-settings byte.
     pub settings_1: u8,
+    /// Second key-settings byte.
     pub settings_2: u8,
+    /// Native key-family identifier.
     pub key_type: u8,
+    /// Number of configured keys.
     pub key_count: u8,
+    /// Optional `(active_version, count, max_size, settings)` key-set tuple.
     pub key_set: Option<(u8, u8, u8, u8)>,
 }
 
+/// Decodes a GetKeySettings response.
 pub fn decode_key_settings(response: &[u8]) -> Result<KeySettings, DecodeError> {
     ensure()?;
     let mut bytes = [0; 9];
@@ -240,6 +300,7 @@ pub fn decode_key_settings(response: &[u8]) -> Result<KeySettings, DecodeError> 
     })
 }
 
+/// Decodes the single version byte returned by GetKeyVersion.
 pub fn decode_key_version(response: &[u8]) -> Result<u8, DecodeError> {
     ensure()?;
     let mut version = 0;

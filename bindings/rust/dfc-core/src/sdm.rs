@@ -6,32 +6,50 @@ use dfc_core_sys as sys;
 use crate::{Error, ensure_abi};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Byte range within the ASCII SDM message.
 pub struct SdmField {
+    /// Zero-based byte offset from the start of the message.
     pub offset: usize,
+    /// Field length in ASCII bytes.
     pub length: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Locations of mirrored fields and the authentication tag in an SDM message.
 pub struct SdmConfig {
+    /// First byte included in the MAC input.
     pub mac_input_offset: usize,
+    /// First byte of the 16-character hexadecimal MAC field.
     pub mac_offset: usize,
+    /// Optional plaintext UID field, expressed as decoded-byte length.
     pub plain_uid: Option<SdmField>,
+    /// Optional six-character hexadecimal read-counter field.
     pub plain_read_counter_offset: Option<usize>,
+    /// Optional encrypted PICC-data field in ASCII bytes.
     pub encrypted_picc_data: Option<SdmField>,
+    /// Optional encrypted file-data field in ASCII bytes.
     pub encrypted_file_data: Option<SdmField>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Authenticated values recovered from an SDM message.
 pub struct SdmResult {
+    /// Mirrored UID, when configured and authenticated.
     pub uid: Option<Vec<u8>>,
+    /// Mirrored read counter, when configured and authenticated.
     pub read_counter: Option<u32>,
+    /// Decrypted file data, or an empty vector when none was configured.
     pub decrypted_file_data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Failure returned while validating or authenticating an SDM message.
 pub enum SdmError {
+    /// The loaded native library is incompatible with this crate.
     Abi(Error),
+    /// A configured range is invalid for the supplied message.
     InvalidConfig,
+    /// The native verifier rejected the message with this status code.
     Native(i32),
 }
 
@@ -45,6 +63,11 @@ fn field_is_valid(field: Option<SdmField>, message_len: usize, scale: usize) -> 
     })
 }
 
+/// Authenticates an ASCII-encoded SDM message and returns only verified fields.
+///
+/// `file_read_key` authenticates the message and decrypts file data.
+/// `meta_read_key` is required when encrypted PICC data is configured. No
+/// mirrored value is returned until the MAC has been accepted.
 pub fn verify_sdm(
     message: &[u8],
     config: SdmConfig,
