@@ -21,7 +21,7 @@ dependencies {
 android {
     namespace = "com.cindersocket.dfc"
     compileSdk = 36
-    ndkVersion = "28.2.13676358"
+    ndkVersion = providers.gradleProperty("dfc.ndkVersion").get()
     testBuildType = "mismatch"
 
     defaultConfig {

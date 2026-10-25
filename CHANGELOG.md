@@ -26,6 +26,8 @@
   response FFI helpers only for enabled roles, treating parser initialization
   warnings as errors, and keeping the Rust transceive example unambiguous
   (#161, #162, #163, #164).
+- Retry incomplete Android NDK downloads before archive and binding builds
+  (#166).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`

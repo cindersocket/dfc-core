@@ -89,6 +89,9 @@ jobs:
           java-version: "17"
       - uses: astral-sh/setup-uv@v6
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install the Android NDK
+        if: matrix.entry_point == 'android'
+        run: ./scripts/install-android-ndk.sh
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libmbedtls-dev
       - name: Fetch tiny-crypto-c
@@ -397,6 +400,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: Install the Android NDK
+        run: ./scripts/install-android-ndk.sh
       - name: Build four-ABI AAR, minified sample, and lint
         working-directory: bindings/android
         run: >-
