@@ -1,4 +1,5 @@
 #include "dfc_emulator_i.h"
+#include "dfc_emulator_commands_i.h"
 #include "dfc_credential_i.h"
 #include "dfc_ev2.h"
 #include "dfc_ev2_crypto.h"
@@ -124,7 +125,7 @@ static uint8_t current_key_settings_2(DfcEmulator* emulator) {
 // supplied here, where the key is used, so a credential that omits the entry is
 // never rewritten to carry it. `factory` is the caller's scratch, used only when
 // the credential holds no material for this slot.
-static const uint8_t* emulator_auth_key(
+const uint8_t* dfc_emulator_command_auth_key(
     DfcEmulator* emulator,
     uint8_t key_no,
     uint8_t* factory,
@@ -151,7 +152,7 @@ static const uint8_t* emulator_auth_key(
 }
 
 #if DFC_ENABLE_SPECIAL_KEY_STATUS
-static bool picc_disabled_special_key(DfcEmulator* emulator, uint8_t key_no) {
+bool dfc_emulator_command_picc_disabled_special_key(DfcEmulator* emulator, uint8_t key_no) {
     if(emulator->selected_application != DfcEmulatorSelectedApplicationPicc) return false;
     if(key_no == DFC_DAM_AUTH_KEY_NUMBER) {
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
@@ -172,7 +173,7 @@ static bool allows_free_directory_access(uint8_t key_settings_1) {
 }
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
-static bool is_available_authentication_key(DfcEmulator* emulator, uint8_t key_no) {
+bool dfc_emulator_command_is_available_authentication_key(DfcEmulator* emulator, uint8_t key_no) {
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
     if(emulator->selected_application == DfcEmulatorSelectedApplicationPicc &&
        emulator->credential->picc_has_dam_keys && key_no == DFC_DAM_AUTH_KEY_NUMBER)
@@ -415,7 +416,7 @@ static bool has_card_file_capacity(const DfcCredential* credential, size_t alloc
     return used <= capacity && allocation <= capacity - used;
 }
 
-static void clear_pending_chain(DfcEmulator* emulator) {
+void dfc_emulator_command_clear_pending_chain(DfcEmulator* emulator) {
     if(emulator->pending_chain_len <= sizeof(emulator->pending_chain)) {
         dfc_secure_wipe(emulator->pending_chain, emulator->pending_chain_len);
     }
@@ -430,7 +431,7 @@ static void clear_pending_chain(DfcEmulator* emulator) {
     emulator->get_version_frame = 0;
 }
 
-static bool has_pending_additional_work(const DfcEmulator* emulator) {
+bool dfc_emulator_command_has_pending_additional_work(const DfcEmulator* emulator) {
     return emulator->awaiting_step2 ||
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
            emulator->delegated_creation_pending ||
@@ -480,7 +481,7 @@ static void emit_payload_with_chaining_comm(
     uint8_t comm,
     bool length_unknown) {
     bool iso_transport = emulator->pending_chain_last == DFC_ISO_DEP_RESPONSE_PENDING;
-    clear_pending_chain(emulator);
+    dfc_emulator_command_clear_pending_chain(emulator);
 
     // Secure the whole answer once, then split the result; intermediate frames
     // carry secured octets and the final frame carries the MAC where there is one.
@@ -629,7 +630,7 @@ static void emit_payload_with_chaining_comm(
 
 crypto_failure:
     dfc_secure_wipe(emulator->pending_chain, pending_used);
-    clear_pending_chain(emulator);
+    dfc_emulator_command_clear_pending_chain(emulator);
     dfc_emulator_reset_session(emulator);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
 }
@@ -649,12 +650,12 @@ static void emit_payload_with_chaining(
 
 static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     if(emulator->pending_chain_frame == DFC_ISO_DEP_RESPONSE_PENDING) {
-        clear_pending_chain(emulator);
+        dfc_emulator_command_clear_pending_chain(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
         return;
     }
     if(emulator->pending_chain_offset >= emulator->pending_chain_len) {
-        clear_pending_chain(emulator);
+        dfc_emulator_command_clear_pending_chain(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
         return;
     }
@@ -678,7 +679,7 @@ static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf*
         tx_buffer, status, emulator->pending_chain + emulator->pending_chain_offset, chunk);
     emulator->pending_chain_offset += chunk;
     if(status == DFC_STATUS_OK) {
-        clear_pending_chain(emulator);
+        dfc_emulator_command_clear_pending_chain(emulator);
     }
 }
 
@@ -709,7 +710,7 @@ static void handle_df_names_continuation(DfcEmulator* emulator, DfcByteBuf* tx_b
     while(index < credential->num_apps && !credential->apps[index].has_iso_file_id)
         index++;
     if(index >= credential->num_apps) {
-        clear_pending_chain(emulator);
+        dfc_emulator_command_clear_pending_chain(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         return;
     }
@@ -741,7 +742,7 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     // D40 does not add a response CMAC here. Every application still occupies
     // one frame, whether or not authentication is active.
     if(!ev1) {
-        clear_pending_chain(emulator);
+        dfc_emulator_command_clear_pending_chain(emulator);
         emulator->df_names_next = 0;
         handle_df_names_continuation(emulator, tx_buffer);
         return;
@@ -788,7 +789,7 @@ static void handle_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
         return;
     }
 
-    clear_pending_chain(emulator);
+    dfc_emulator_command_clear_pending_chain(emulator);
     emulator->response_secured = true;
     size_t first_len = record_lengths[0];
     emulator->pending_chain_len = secured_len;
@@ -1013,7 +1014,7 @@ static void handle_get_key_version(
         return;
     }
 #if DFC_ENABLE_SPECIAL_KEY_STATUS
-    if(picc_disabled_special_key(emulator, key_no)) {
+    if(dfc_emulator_command_picc_disabled_special_key(emulator, key_no)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
@@ -1721,879 +1722,6 @@ static void handle_change_file_settings(
 
     apply_change_file_settings(emulator, file, body, body_len, tx_buffer);
     dfc_secure_wipe(emulator->pending_chain, clear_len);
-}
-
-static bool storage_version_code(const DfcCard* card, uint8_t* code) {
-    // Match the legacy 8 KiB capacity of a zeroed, not yet configured card.
-    uint32_t storage = card->storage ? card->storage : DFC_EV1_PICC_STORAGE_BYTES;
-    // EV3 Tables 108 and 112 list only 2, 4, and 8 KiB devices.
-    if(card->generation == DfcGenerationEv3 && storage != 2048 && storage != 4096 &&
-       storage != 8192) {
-        return false;
-    }
-    switch(storage) {
-    case 1024:
-        *code = 0x14;
-        return true;
-    case 2048:
-        *code = 0x16;
-        return true;
-    case 4096:
-        *code = 0x18;
-        return true;
-    case 8192:
-        *code = 0x1A;
-        return true;
-    case 16384:
-        *code = 0x1C;
-        return true;
-    case 32768:
-        *code = 0x1E;
-        return true;
-    case 65536:
-        *code = 0x20;
-        return true;
-    case 131072:
-        *code = 0x22;
-        return true;
-    default:
-        return false;
-    }
-}
-
-static bool build_default_version_frame(const DfcCard* card, bool software, uint8_t frame[7]) {
-    static const uint8_t version[3][2][2] = {
-        {{0x01, 0x00}, {0x01, 0x03}},
-        {{0x12, 0x00}, {0x02, 0x01}},
-        {{0x33, 0x00}, {0x03, 0x00}},
-    };
-    size_t generation = 0;
-    if(card->generation == DfcGenerationEv2) generation = 1;
-    if(card->generation == DfcGenerationEv3) generation = 2;
-    frame[0] = 0x04;
-    frame[1] = 0x01;
-    frame[2] = 0x01;
-    frame[3] = version[generation][software ? 1 : 0][0];
-    frame[4] = version[generation][software ? 1 : 0][1];
-    if(!storage_version_code(card, &frame[5])) return false;
-    frame[6] = 0x05;
-    return true;
-}
-
-static void handle_get_version(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
-    uint8_t default_version[7];
-    const DfcCard* card = &emulator->credential->card;
-    clear_pending_chain(emulator);
-    emulator->get_version_frame = 0;
-    if(!card->has_hardware_version && !build_default_version_frame(card, false, default_version)) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
-        return;
-    }
-    const uint8_t* hardware_version = card->has_hardware_version ? card->hardware_version :
-                                                                   default_version;
-    emulator->get_version_frame = 1;
-    dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
-    dfc_bytebuf_append_bytes(tx_buffer, hardware_version, sizeof(default_version));
-}
-
-static void handle_get_version_continuation(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
-    static const uint8_t production_legacy[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x24};
-    static const uint8_t production_ev3[] = {0x00, 0x00, 0x00, '0', '0', 0x01, 0x24};
-
-    if(emulator->get_version_frame == 1) {
-        uint8_t default_version[7];
-        const DfcCard* card = &emulator->credential->card;
-        if(!card->has_software_version &&
-           !build_default_version_frame(card, true, default_version)) {
-            emulator->get_version_frame = 0;
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
-            return;
-        }
-        const uint8_t* software_version = card->has_software_version ? card->software_version :
-                                                                       default_version;
-        emulator->get_version_frame = 2;
-        dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
-        dfc_bytebuf_append_bytes(tx_buffer, software_version, sizeof(default_version));
-        return;
-    }
-
-    if(emulator->get_version_frame == 2) {
-        emulator->get_version_frame = 0;
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-        if(emulator->credential->picc_random_id) {
-            // With random ID enabled this frame carries zeros: the real UID is
-            // reachable only through GetCardUID under an authenticated session
-            // identifier is generated rather than allocated.
-            static const uint8_t zero_uid[DFC_DESFIRE_UID_LEN] = {0};
-            dfc_bytebuf_append_bytes(tx_buffer, zero_uid, DFC_DESFIRE_UID_LEN);
-        } else {
-            dfc_bytebuf_append_bytes(tx_buffer, emulator->credential->uid, DFC_DESFIRE_UID_LEN);
-        }
-        const uint8_t* production = emulator->credential->card.generation == DfcGenerationEv3 ?
-                                        production_ev3 :
-                                        production_legacy;
-        dfc_bytebuf_append_bytes(tx_buffer, production, sizeof(production_legacy));
-        return;
-    }
-
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-}
-
-#if DFC_ENABLE_STATIC_SIGNATURE
-static void handle_read_signature(
-    DfcEmulator* emulator,
-    const uint8_t* buffer,
-    size_t buffer_len,
-    DfcByteBuf* tx_buffer) {
-    if(emulator->credential->card.generation < DfcGenerationEv2) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-        return;
-    }
-    if(buffer_len != 2) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return;
-    }
-    if(buffer[1] != 0) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
-        return;
-    }
-    if(!emulator->credential->picc_has_static_signature) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-        return;
-    }
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_SPECIAL_SUCCESS);
-    dfc_bytebuf_append_bytes(
-        tx_buffer, emulator->credential->picc_static_signature, DFC_STATIC_SIGNATURE_LENGTH);
-}
-#endif
-
-#if DFC_ENABLE_PROXIMITY_CHECK
-static void proximity_abort(DfcEmulator* emulator, DfcByteBuf* tx_buffer, uint8_t status) {
-    emulator->proximity_active = false;
-    emulator->proximity_offset = 0;
-    dfc_secure_wipe(emulator->proximity_random, sizeof(emulator->proximity_random));
-    dfc_secure_wipe(emulator->proximity_transcript, sizeof(emulator->proximity_transcript));
-    emulator->proximity_transcript_len = 0;
-    dfc_bytebuf_append_byte(tx_buffer, status);
-}
-
-static bool proximity_wire_mac(
-    const uint8_t key[DFC_AES_KEY_LENGTH],
-    uint8_t prefix,
-    const DfcEmulator* emulator,
-    uint8_t output[DFC_WIRE_MAC_LENGTH]) {
-    if(!key || !output) return false;
-    memset(output, 0, DFC_WIRE_MAC_LENGTH);
-    uint8_t input[1 + sizeof(emulator->proximity_published) + DFC_PROXIMITY_TRANSCRIPT_MAX] = {0};
-    size_t input_len = 0;
-    input[input_len++] = prefix;
-    memcpy(input + input_len, emulator->proximity_published, emulator->proximity_published_len);
-    input_len += emulator->proximity_published_len;
-    memcpy(input + input_len, emulator->proximity_transcript, emulator->proximity_transcript_len);
-    input_len += emulator->proximity_transcript_len;
-
-    uint8_t full_mac[DFC_AES_CMAC_LENGTH] = {0};
-    bool ok = aes_cmac((uint8_t*)key, DFC_AES_KEY_LENGTH, input, input_len, full_mac);
-    if(ok) dfc_truncate_aes_wire_mac(full_mac, output);
-    dfc_secure_wipe(input, sizeof(input));
-    dfc_secure_wipe(full_mac, sizeof(full_mac));
-    return ok;
-}
-
-static bool handle_prepare_proximity_check(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
-    DfcCredential* credential = emulator->credential;
-    if(!credential->picc_has_proximity_key) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PROXIMITY_KEY_DISABLED);
-        return true;
-    }
-
-    uint8_t proximity_random[DFC_PROXIMITY_RANDOM_LENGTH] = {0};
-    if(!dfc_random_fill(proximity_random, sizeof(proximity_random))) {
-        dfc_secure_wipe(proximity_random, sizeof(proximity_random));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return false;
-    }
-    memcpy(emulator->proximity_random, proximity_random, sizeof(proximity_random));
-    emulator->proximity_offset = 0;
-    emulator->proximity_transcript_len = 0;
-    emulator->proximity_published[0] = credential->picc_proximity_option;
-    emulator->proximity_published[1] =
-        (uint8_t)(credential->picc_proximity_published_response_time >> 8);
-    emulator->proximity_published[2] = (uint8_t)credential->picc_proximity_published_response_time;
-    emulator->proximity_published_len = 1 + DFC_PROXIMITY_PUBLISHED_TIME_LENGTH;
-    if(credential->picc_has_proximity_bitrate) {
-        emulator->proximity_published[emulator->proximity_published_len++] =
-            credential->picc_proximity_bitrate;
-    }
-    emulator->proximity_active = true;
-    emulator->proximity_verified = false;
-
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_SPECIAL_SUCCESS);
-    dfc_bytebuf_append_bytes(
-        tx_buffer, emulator->proximity_published, emulator->proximity_published_len);
-    dfc_secure_wipe(proximity_random, sizeof(proximity_random));
-    return true;
-}
-
-static void handle_proximity_check(
-    DfcEmulator* emulator,
-    const uint8_t* buffer,
-    size_t buffer_len,
-    DfcByteBuf* tx_buffer) {
-    if(!emulator->proximity_active) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-        return;
-    }
-    if(buffer_len < 2) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return;
-    }
-
-    size_t round_len = buffer[1];
-    if(round_len == 0 || round_len > DFC_PROXIMITY_RANDOM_LENGTH || buffer_len != round_len + 2 ||
-       emulator->proximity_offset + round_len > DFC_PROXIMITY_RANDOM_LENGTH ||
-       emulator->proximity_transcript_len + round_len * 2 >
-           sizeof(emulator->proximity_transcript)) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return;
-    }
-
-    const uint8_t* response = emulator->proximity_random + emulator->proximity_offset;
-    memcpy(
-        emulator->proximity_transcript + emulator->proximity_transcript_len, response, round_len);
-    emulator->proximity_transcript_len += round_len;
-    memcpy(
-        emulator->proximity_transcript + emulator->proximity_transcript_len,
-        buffer + 2,
-        round_len);
-    emulator->proximity_transcript_len += round_len;
-    emulator->proximity_offset += round_len;
-
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_SPECIAL_SUCCESS);
-    dfc_bytebuf_append_bytes(tx_buffer, response, round_len);
-}
-
-static void handle_verify_proximity_check(
-    DfcEmulator* emulator,
-    const uint8_t* buffer,
-    size_t buffer_len,
-    DfcByteBuf* tx_buffer) {
-    if(!emulator->credential->picc_has_proximity_key) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PROXIMITY_KEY_DISABLED);
-        return;
-    }
-    if(!emulator->proximity_active) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-        return;
-    }
-    if(emulator->proximity_offset != DFC_PROXIMITY_RANDOM_LENGTH ||
-       buffer_len != 1 + DFC_WIRE_MAC_LENGTH) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return;
-    }
-
-    uint8_t expected[DFC_WIRE_MAC_LENGTH] = {0};
-    if(!proximity_wire_mac(
-           emulator->credential->picc_proximity_key,
-           DFC_CMD_VERIFY_PROXIMITY_CHECK,
-           emulator,
-           expected)) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-        goto cleanup;
-    }
-    if(!dfc_ct_equal(expected, buffer + 1, sizeof(expected))) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-        goto cleanup;
-    }
-
-    uint8_t response[DFC_WIRE_MAC_LENGTH] = {0};
-    if(!proximity_wire_mac(
-           emulator->credential->picc_proximity_key,
-           DFC_STATUS_SPECIAL_SUCCESS,
-           emulator,
-           response)) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-        goto cleanup_response;
-    }
-    emulator->proximity_active = false;
-    emulator->proximity_verified = true;
-    emulator->proximity_offset = 0;
-    emulator->proximity_transcript_len = 0;
-    dfc_secure_wipe(emulator->proximity_random, sizeof(emulator->proximity_random));
-    dfc_secure_wipe(emulator->proximity_transcript, sizeof(emulator->proximity_transcript));
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_SPECIAL_SUCCESS);
-    dfc_bytebuf_append_bytes(tx_buffer, response, sizeof(response));
-cleanup_response:
-    dfc_secure_wipe(response, sizeof(response));
-cleanup:
-    dfc_secure_wipe(expected, sizeof(expected));
-}
-#endif
-
-static void
-    reject_authentication_start(DfcEmulator* emulator, DfcByteBuf* tx_buffer, uint8_t status) {
-    dfc_emulator_clear_active_authentication(emulator);
-    dfc_bytebuf_append_byte(tx_buffer, status);
-}
-
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-static void clear_pending_ev2_authentication(DfcEmulator* emulator) {
-    emulator->ev2_authentication_pending = false;
-    emulator->ev2_authentication_non_first = false;
-    emulator->ev2_pending_authenticated_key_no = 0;
-    dfc_secure_wipe(emulator->ev2_static_key, sizeof(emulator->ev2_static_key));
-    dfc_secure_wipe(emulator->ev2_random_b, sizeof(emulator->ev2_random_b));
-    dfc_secure_wipe(
-        emulator->ev2_pending_transaction_identifier,
-        sizeof(emulator->ev2_pending_transaction_identifier));
-    dfc_secure_wipe(
-        emulator->ev2_pending_card_capabilities, sizeof(emulator->ev2_pending_card_capabilities));
-    dfc_secure_wipe(
-        emulator->ev2_pending_reader_capabilities,
-        sizeof(emulator->ev2_pending_reader_capabilities));
-}
-
-static void fail_pending_ev2_authentication(DfcEmulator* emulator) {
-    clear_pending_ev2_authentication(emulator);
-    dfc_emulator_clear_active_authentication(emulator);
-}
-
-static bool handle_authenticate_ev2_start(
-    DfcEmulator* emulator,
-    const uint8_t* apdu,
-    size_t apdu_len,
-    bool non_first,
-    DfcByteBuf* tx_buffer) {
-    clear_pending_ev2_authentication(emulator);
-    if(emulator->credential->card.generation < DfcGenerationEv2) {
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_ILLEGAL_COMMAND_CODE);
-        return true;
-    }
-    if((non_first && apdu_len != 2) || (!non_first && apdu_len < 3) ||
-       (!non_first && apdu_len != (size_t)3 + apdu[2])) {
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_LENGTH_ERROR);
-        return true;
-    }
-    if(non_first && !emulator->ev2_session_active) {
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return true;
-    }
-    uint8_t key_no = apdu[1];
-#if DFC_ENABLE_SPECIAL_KEY_STATUS
-    if(picc_disabled_special_key(emulator, key_no)) {
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-        return true;
-    }
-#endif
-    if(!is_available_authentication_key(emulator, key_no) ||
-       !emulator_accepts_auth_cipher(
-           emulator,
-           non_first ? DFC_CMD_AUTHENTICATE_EV2_NON_FIRST : DFC_CMD_AUTHENTICATE_EV2_FIRST)) {
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_NO_SUCH_KEY);
-        return true;
-    }
-
-    uint8_t factory[DFC_MAX_KEY_LEN];
-    size_t key_len = 0;
-    const uint8_t* key = emulator_auth_key(emulator, key_no, factory, sizeof(factory), &key_len);
-    if(key_len != DFC_AES_KEY_LENGTH) {
-        dfc_secure_wipe(factory, sizeof(factory));
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return true;
-    }
-    uint8_t random_material[DFC_EV2_RANDOM_LENGTH + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
-    size_t random_material_len = non_first ? DFC_EV2_RANDOM_LENGTH : sizeof(random_material);
-    if(!dfc_random_fill(random_material, random_material_len)) {
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_secure_wipe(random_material, sizeof(random_material));
-        if(!dfc_random_failure_is_retryable()) dfc_emulator_clear_active_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return false;
-    }
-    const uint8_t* random_b = random_material;
-    const uint8_t* transaction_identifier = random_material + DFC_EV2_RANDOM_LENGTH;
-    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
-    uint8_t encrypted[DFC_EV2_RANDOM_LENGTH];
-    if(!dfc_worker_aes_cbc_encrypt(key, key_len, iv, DFC_EV2_RANDOM_LENGTH, random_b, encrypted)) {
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_secure_wipe(random_material, sizeof(random_material));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(encrypted, sizeof(encrypted));
-        dfc_emulator_clear_active_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return false;
-    }
-
-    if(non_first) {
-        dfc_emulator_retire_ev2_non_first_authentication(emulator);
-    } else {
-        dfc_emulator_clear_active_authentication(emulator);
-    }
-
-    memcpy(emulator->ev2_static_key, key, DFC_AES_KEY_LENGTH);
-    emulator->ev2_pending_authenticated_key_no = key_no;
-    emulator->ev2_authentication_non_first = non_first;
-    emulator->ev2_authentication_pending = true;
-    memcpy(emulator->ev2_random_b, random_b, DFC_EV2_RANDOM_LENGTH);
-    if(!non_first) {
-        memcpy(
-            emulator->ev2_pending_transaction_identifier,
-            transaction_identifier,
-            DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
-#if DFC_ENABLE_APPLICATION_CAPABILITY_DATA
-        DfcApplication* app = dfc_emulator_current_app(emulator);
-        if(app && app->has_capability_data) {
-            memcpy(
-                emulator->ev2_pending_card_capabilities,
-                app->capability_data + DFC_APPLICATION_CARD_CAPABILITY_OFFSET,
-                DFC_EV2_CAPABILITY_LENGTH);
-        } else
-#endif
-        {
-            memset(
-                emulator->ev2_pending_card_capabilities,
-                0,
-                sizeof(emulator->ev2_pending_card_capabilities));
-            if(emulator->selected_application == DfcEmulatorSelectedApplicationPicc &&
-               emulator->credential->picc_has_ev2_capabilities) {
-                memcpy(
-                    emulator->ev2_pending_card_capabilities,
-                    emulator->credential->picc_ev2_capabilities,
-                    DFC_EV2_CAPABILITY_LENGTH);
-            }
-        }
-        memset(
-            emulator->ev2_pending_reader_capabilities,
-            0,
-            sizeof(emulator->ev2_pending_reader_capabilities));
-        size_t reader_capability_len = apdu[2];
-        if(reader_capability_len > DFC_EV2_CAPABILITY_LENGTH) {
-            reader_capability_len = DFC_EV2_CAPABILITY_LENGTH;
-        }
-        memcpy(emulator->ev2_pending_reader_capabilities, apdu + 3, reader_capability_len);
-    }
-
-    dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
-    dfc_bytebuf_append_bytes(tx_buffer, encrypted, sizeof(encrypted));
-    dfc_secure_wipe(factory, sizeof(factory));
-    dfc_secure_wipe(random_material, sizeof(random_material));
-    dfc_secure_wipe(iv, sizeof(iv));
-    dfc_secure_wipe(encrypted, sizeof(encrypted));
-    return true;
-}
-
-static void handle_authenticate_ev2_continuation(
-    DfcEmulator* emulator,
-    const uint8_t* apdu,
-    size_t apdu_len,
-    DfcByteBuf* tx_buffer) {
-    if(!emulator->ev2_authentication_pending) {
-        clear_pending_ev2_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-    if(apdu_len != 1 + DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH) {
-        fail_pending_ev2_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
-    uint8_t clear[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
-    if(!dfc_worker_aes_cbc_decrypt(
-           emulator->ev2_static_key, DFC_AES_KEY_LENGTH, iv, sizeof(clear), apdu + 1, clear)) {
-        fail_pending_ev2_authentication(emulator);
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-    uint8_t rotated_b[DFC_EV2_RANDOM_LENGTH];
-    dfc_ev2_rotate_left(emulator->ev2_random_b, rotated_b);
-    if(!dfc_ct_equal(clear + DFC_EV2_RANDOM_LENGTH, rotated_b, sizeof(rotated_b))) {
-        fail_pending_ev2_authentication(emulator);
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(rotated_b, sizeof(rotated_b));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-    uint8_t candidate_random_a[DFC_EV2_RANDOM_LENGTH];
-    uint8_t candidate_encryption_key[DFC_AES_KEY_LENGTH];
-    uint8_t candidate_mac_key[DFC_AES_KEY_LENGTH];
-    memcpy(candidate_random_a, clear, sizeof(candidate_random_a));
-    if(!dfc_ev2_derive_session_keys(
-           emulator->ev2_static_key,
-           candidate_random_a,
-           emulator->ev2_random_b,
-           candidate_encryption_key,
-           candidate_mac_key)) {
-        fail_pending_ev2_authentication(emulator);
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(rotated_b, sizeof(rotated_b));
-        dfc_secure_wipe(candidate_random_a, sizeof(candidate_random_a));
-        dfc_secure_wipe(candidate_encryption_key, sizeof(candidate_encryption_key));
-        dfc_secure_wipe(candidate_mac_key, sizeof(candidate_mac_key));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-
-    uint8_t rotated_a[DFC_EV2_RANDOM_LENGTH];
-    dfc_ev2_rotate_left(candidate_random_a, rotated_a);
-    uint8_t response[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH] = {0};
-    size_t response_len = DFC_EV2_RANDOM_LENGTH;
-    if(emulator->ev2_authentication_non_first) {
-        memcpy(response, rotated_a, sizeof(rotated_a));
-    } else {
-        memcpy(
-            response,
-            emulator->ev2_pending_transaction_identifier,
-            DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
-        memcpy(response + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH, rotated_a, sizeof(rotated_a));
-        memcpy(
-            response + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH + DFC_EV2_RANDOM_LENGTH,
-            emulator->ev2_pending_card_capabilities,
-            DFC_EV2_CAPABILITY_LENGTH);
-        memcpy(
-            response + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH + DFC_EV2_RANDOM_LENGTH +
-                DFC_EV2_CAPABILITY_LENGTH,
-            emulator->ev2_pending_reader_capabilities,
-            DFC_EV2_CAPABILITY_LENGTH);
-        response_len = sizeof(response);
-    }
-    memset(iv, 0, sizeof(iv));
-    uint8_t encrypted[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
-    if(!dfc_worker_aes_cbc_encrypt(
-           emulator->ev2_static_key, DFC_AES_KEY_LENGTH, iv, response_len, response, encrypted)) {
-        fail_pending_ev2_authentication(emulator);
-        dfc_secure_wipe(candidate_random_a, sizeof(candidate_random_a));
-        dfc_secure_wipe(candidate_encryption_key, sizeof(candidate_encryption_key));
-        dfc_secure_wipe(candidate_mac_key, sizeof(candidate_mac_key));
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(rotated_b, sizeof(rotated_b));
-        dfc_secure_wipe(rotated_a, sizeof(rotated_a));
-        dfc_secure_wipe(response, sizeof(response));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(encrypted, sizeof(encrypted));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-    memcpy(
-        emulator->ev2_session_encryption_key,
-        candidate_encryption_key,
-        sizeof(candidate_encryption_key));
-    memcpy(emulator->ev2_session_mac_key, candidate_mac_key, sizeof(candidate_mac_key));
-    emulator->ev2_authenticated_key_no = emulator->ev2_pending_authenticated_key_no;
-    if(!emulator->ev2_authentication_non_first) {
-        memcpy(
-            emulator->ev2_transaction_identifier,
-            emulator->ev2_pending_transaction_identifier,
-            sizeof(emulator->ev2_transaction_identifier));
-        memcpy(
-            emulator->ev2_card_capabilities,
-            emulator->ev2_pending_card_capabilities,
-            sizeof(emulator->ev2_card_capabilities));
-        memcpy(
-            emulator->ev2_reader_capabilities,
-            emulator->ev2_pending_reader_capabilities,
-            sizeof(emulator->ev2_reader_capabilities));
-    }
-    emulator->ev2_session_active = true;
-    emulator->ev2_command_counter = 0;
-    dfc_emulator_commit_auth_family(emulator, DfcEmulatorAuthFamilyEv2);
-    dfc_secure_wipe(clear, sizeof(clear));
-    dfc_secure_wipe(rotated_b, sizeof(rotated_b));
-    dfc_secure_wipe(candidate_random_a, sizeof(candidate_random_a));
-    dfc_secure_wipe(candidate_encryption_key, sizeof(candidate_encryption_key));
-    dfc_secure_wipe(candidate_mac_key, sizeof(candidate_mac_key));
-    dfc_secure_wipe(rotated_a, sizeof(rotated_a));
-    dfc_secure_wipe(response, sizeof(response));
-    dfc_secure_wipe(iv, sizeof(iv));
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-    dfc_bytebuf_append_bytes(tx_buffer, encrypted, response_len);
-    dfc_secure_wipe(encrypted, sizeof(encrypted));
-    clear_pending_ev2_authentication(emulator);
-}
-#endif
-
-// A 3K3DES key answers ISO authentication with sixteen-octet challenges over
-// its eight-octet block, which is what its session-key derivation reads.
-static size_t auth_challenge_length(uint8_t cipher, size_t key_len) {
-    if(cipher == DFC_CMD_AUTHENTICATE_AES) return 16;
-    if(cipher == DFC_CMD_AUTHENTICATE_ISO && key_len == 24) return 16;
-    return 8;
-}
-
-static void clear_pending_authentication(DfcEmulator* emulator) {
-    emulator->awaiting_step2 = false;
-    emulator->pending_auth_cipher = 0;
-    emulator->pending_auth_key_no = 0;
-    dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
-    dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
-}
-
-static void fail_pending_authentication(DfcEmulator* emulator) {
-    clear_pending_authentication(emulator);
-    dfc_emulator_clear_active_authentication(emulator);
-}
-
-bool dfc_emulator_abort_pending_native_work(DfcEmulator* emulator) {
-    if(!emulator || (!emulator->command_chain_active && !has_pending_additional_work(emulator))) {
-        return false;
-    }
-
-    dfc_emulator_discard_command_chain(emulator);
-    if(emulator->awaiting_step2) {
-        fail_pending_authentication(emulator);
-    } else {
-        clear_pending_authentication(emulator);
-    }
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-    if(emulator->ev2_authentication_pending) {
-        fail_pending_ev2_authentication(emulator);
-    } else {
-        clear_pending_ev2_authentication(emulator);
-    }
-#endif
-#if DFC_ENABLE_DELEGATED_APPLICATIONS
-    emulator->delegated_creation_pending = false;
-    emulator->delegated_creation_header_length = 0;
-    dfc_secure_wipe(
-        emulator->delegated_creation_header, sizeof(emulator->delegated_creation_header));
-#endif
-    clear_pending_chain(emulator);
-    return true;
-}
-
-static void handle_authenticate_step1(
-    DfcEmulator* emulator,
-    uint8_t cipher,
-    const uint8_t* apdu,
-    DfcByteBuf* tx_buffer) {
-    uint8_t key_no = apdu[1];
-    clear_pending_authentication(emulator);
-
-#if DFC_ENABLE_SPECIAL_KEY_STATUS
-    if(picc_disabled_special_key(emulator, key_no)) {
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-        return;
-    }
-#endif
-
-    if(key_no >= emulator_num_keys(emulator)) {
-        DFC_LOG_W(TAG, "Authenticate: key_no %u beyond the key count", key_no);
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_NO_SUCH_KEY);
-        return;
-    }
-    if(!emulator_accepts_auth_cipher(emulator, cipher)) {
-        // A handshake the key type does not answer is an authentication failure,
-        // not a missing key: the two statuses say different things and the key
-        // number here is perfectly valid.
-        DFC_LOG_W(TAG, "Authenticate: cipher %02X not this key type's", cipher);
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-
-    uint8_t factory[DFC_MAX_KEY_LEN];
-    size_t key_len = 0;
-    const uint8_t* key = emulator_auth_key(emulator, key_no, factory, sizeof(factory), &key_len);
-    size_t challenge_len = auth_challenge_length(cipher, key_len);
-    uint8_t rnd_b[DFC_EV2_RANDOM_LENGTH];
-    if(!dfc_random_fill(rnd_b, challenge_len)) {
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_secure_wipe(rnd_b, sizeof(rnd_b));
-        if(!dfc_random_failure_is_retryable()) dfc_emulator_clear_active_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-
-    uint8_t iv[16];
-    memset(iv, 0, sizeof(iv));
-    uint8_t encrypted[16];
-    bool encrypted_ok =
-        cipher == DFC_CMD_AUTHENTICATE_AES ?
-            dfc_worker_aes_cbc_encrypt(key, key_len, iv, challenge_len, rnd_b, encrypted) :
-            dfc_worker_des_cbc_encrypt(key, key_len, iv, challenge_len, rnd_b, encrypted);
-    if(!encrypted_ok) {
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_secure_wipe(rnd_b, sizeof(rnd_b));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(encrypted, sizeof(encrypted));
-        dfc_emulator_clear_active_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-    dfc_emulator_clear_active_authentication(emulator);
-    memcpy(emulator->rnd_b, rnd_b, challenge_len);
-    memcpy(emulator->enc_rnd_b, encrypted, challenge_len);
-
-    emulator->pending_auth_cipher = cipher;
-    emulator->pending_auth_key_no = key_no;
-    emulator->awaiting_step2 = true;
-
-    dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
-    dfc_bytebuf_append_bytes(tx_buffer, encrypted, challenge_len);
-    dfc_secure_wipe(factory, sizeof(factory));
-    dfc_secure_wipe(rnd_b, sizeof(rnd_b));
-    dfc_secure_wipe(iv, sizeof(iv));
-    dfc_secure_wipe(encrypted, sizeof(encrypted));
-}
-
-static void handle_authenticate_step2(
-    DfcEmulator* emulator,
-    const uint8_t* apdu,
-    size_t apdu_len,
-    DfcByteBuf* tx_buffer,
-    Dfc* dfc) {
-    if(!emulator->awaiting_step2) {
-        DFC_LOG_W(TAG, "Authenticate step 2: no authentication pending");
-        clear_pending_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-    uint8_t cipher = emulator->pending_auth_cipher;
-    size_t block_size = dfc_block_size_for_cipher(cipher);
-
-    uint8_t factory[DFC_MAX_KEY_LEN];
-    size_t key_len = 0;
-    const uint8_t* key = emulator_auth_key(
-        emulator, emulator->pending_auth_key_no, factory, sizeof(factory), &key_len);
-    size_t challenge_len = auth_challenge_length(cipher, key_len);
-
-    if(apdu_len != 1 + challenge_len * 2) {
-        DFC_LOG_W(TAG, "Authenticate step 2: unexpected frame");
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        fail_pending_authentication(emulator);
-        dfc_secure_wipe(factory, sizeof(factory));
-        return;
-    }
-
-    // ISO and AES chain from the last block of the challenge this card sent.
-    uint8_t iv[16];
-    memset(iv, 0, sizeof(iv));
-    if(cipher != DFC_CMD_AUTHENTICATE_LEGACY) {
-        memcpy(iv, emulator->enc_rnd_b + challenge_len - block_size, block_size);
-    }
-
-    uint8_t plain[32];
-    bool decrypted_ok = true;
-    if(cipher == DFC_CMD_AUTHENTICATE_AES) {
-        decrypted_ok =
-            dfc_worker_aes_cbc_decrypt(key, key_len, iv, challenge_len * 2, apdu + 1, plain);
-    } else if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        decrypted_ok = d40_receive_plain(key, key_len, apdu + 1, challenge_len * 2, plain);
-    } else {
-        decrypted_ok =
-            dfc_worker_des_cbc_decrypt(key, key_len, iv, challenge_len * 2, apdu + 1, plain);
-    }
-    if(!decrypted_ok) {
-        fail_pending_authentication(emulator);
-        dfc_secure_wipe(plain, sizeof(plain));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-
-    uint8_t* rnd_a = plain;
-    uint8_t* rnd_b_rot = plain + challenge_len;
-
-    uint8_t expected_rnd_b_rot[16];
-    memcpy(expected_rnd_b_rot, emulator->rnd_b, challenge_len);
-    dfc_rotate_left(expected_rnd_b_rot, challenge_len);
-
-    if(!dfc_ct_equal(rnd_b_rot, expected_rnd_b_rot, challenge_len)) {
-        DFC_LOG_W(TAG, "Authenticate step 2: RndB' mismatch");
-        fail_pending_authentication(emulator);
-        dfc_secure_wipe(expected_rnd_b_rot, sizeof(expected_rnd_b_rot));
-        dfc_secure_wipe(plain, sizeof(plain));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        return;
-    }
-
-    uint8_t rnd_a_rot[16];
-    memcpy(rnd_a_rot, rnd_a, challenge_len);
-    dfc_rotate_left(rnd_a_rot, challenge_len);
-
-    if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        memset(iv, 0, sizeof(iv));
-    }
-
-    uint8_t encrypted[16];
-    bool response_ok =
-        cipher == DFC_CMD_AUTHENTICATE_AES ?
-            dfc_worker_aes_cbc_encrypt(key, key_len, iv, challenge_len, rnd_a_rot, encrypted) :
-            dfc_worker_des_cbc_encrypt(key, key_len, iv, challenge_len, rnd_a_rot, encrypted);
-    if(!response_ok) {
-        fail_pending_authentication(emulator);
-        dfc_secure_wipe(encrypted, sizeof(encrypted));
-        dfc_secure_wipe(rnd_a_rot, sizeof(rnd_a_rot));
-        dfc_secure_wipe(expected_rnd_b_rot, sizeof(expected_rnd_b_rot));
-        dfc_secure_wipe(plain, sizeof(plain));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-
-    uint8_t session_key[DFC_MAX_KEY_LEN];
-    size_t session_key_len = 0;
-    dfc_derive_session_key(
-        cipher, key, key_len, rnd_a, emulator->rnd_b, session_key, &session_key_len);
-
-    DfcSecureMessaging candidate;
-    if(!dfc_secure_messaging_init(&candidate, cipher, session_key, session_key_len, NULL)) {
-        fail_pending_authentication(emulator);
-        dfc_secure_wipe(session_key, sizeof(session_key));
-        dfc_secure_wipe(encrypted, sizeof(encrypted));
-        dfc_secure_wipe(rnd_a_rot, sizeof(rnd_a_rot));
-        dfc_secure_wipe(expected_rnd_b_rot, sizeof(expected_rnd_b_rot));
-        dfc_secure_wipe(plain, sizeof(plain));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(factory, sizeof(factory));
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-        return;
-    }
-    if(!emulator->secure_messaging) {
-        emulator->secure_messaging =
-            dfc_secure_messaging_alloc(cipher, session_key, session_key_len, NULL);
-        if(!emulator->secure_messaging) {
-            fail_pending_authentication(emulator);
-            dfc_secure_wipe(&candidate, sizeof(candidate));
-            dfc_secure_wipe(session_key, sizeof(session_key));
-            dfc_secure_wipe(encrypted, sizeof(encrypted));
-            dfc_secure_wipe(rnd_a_rot, sizeof(rnd_a_rot));
-            dfc_secure_wipe(expected_rnd_b_rot, sizeof(expected_rnd_b_rot));
-            dfc_secure_wipe(plain, sizeof(plain));
-            dfc_secure_wipe(iv, sizeof(iv));
-            dfc_secure_wipe(factory, sizeof(factory));
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
-            return;
-        }
-    }
-    *emulator->secure_messaging = candidate;
-    dfc_secure_wipe(&candidate, sizeof(candidate));
-    emulator->auth_cipher = cipher;
-    emulator->auth_key_no = emulator->pending_auth_key_no;
-    memcpy(emulator->rnd_a, rnd_a, challenge_len);
-    dfc_emulator_commit_auth_family(emulator, DfcEmulatorAuthFamilyNative);
-    clear_pending_authentication(emulator);
-
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-    dfc_bytebuf_append_bytes(tx_buffer, encrypted, challenge_len);
-
-    if(dfc) {
-        dfc_port_notify(dfc, DfcEventAuthenticated);
-    }
-    dfc_secure_wipe(session_key, sizeof(session_key));
-    dfc_secure_wipe(encrypted, sizeof(encrypted));
-    dfc_secure_wipe(rnd_a_rot, sizeof(rnd_a_rot));
-    dfc_secure_wipe(expected_rnd_b_rot, sizeof(expected_rnd_b_rot));
-    dfc_secure_wipe(plain, sizeof(plain));
-    dfc_secure_wipe(iv, sizeof(iv));
-    dfc_secure_wipe(factory, sizeof(factory));
 }
 
 static void handle_get_application_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
@@ -5784,22 +4912,22 @@ static bool dispatch_native_command(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return true;
         }
-        if(handle_prepare_proximity_check(emulator, tx_buffer)) {
+        if(dfc_emulator_command_prepare_proximity_check(emulator, tx_buffer)) {
             commit_ev1_command_update(emulator, prepare_candidate_iv, prepare_has_candidate);
         }
         dfc_secure_wipe(prepare_candidate_iv, sizeof(prepare_candidate_iv));
         return true;
     }
     case DFC_CMD_PROXIMITY_CHECK:
-        handle_proximity_check(emulator, buffer, buffer_len, tx_buffer);
+        dfc_emulator_command_proximity_check(emulator, buffer, buffer_len, tx_buffer);
         return true;
     case DFC_CMD_VERIFY_PROXIMITY_CHECK:
-        handle_verify_proximity_check(emulator, buffer, buffer_len, tx_buffer);
+        dfc_emulator_command_verify_proximity_check(emulator, buffer, buffer_len, tx_buffer);
         return true;
 #endif
 #if DFC_ENABLE_STATIC_SIGNATURE
     case DFC_CMD_READ_SIGNATURE:
-        handle_read_signature(emulator, buffer, buffer_len, tx_buffer);
+        dfc_emulator_command_read_signature(emulator, buffer, buffer_len, tx_buffer);
         return true;
 #endif
     case DFC_CMD_CHANGE_KEY_SETTINGS:
@@ -5810,7 +4938,7 @@ static bool dispatch_native_command(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return true;
         }
-        handle_get_version(emulator, tx_buffer);
+        dfc_emulator_command_get_version(emulator, tx_buffer);
         return true;
     case DFC_CMD_GET_CARD_UID:
         if(buffer_len != 1) {
@@ -6018,7 +5146,7 @@ static bool dispatch_native_command(
     case DFC_CMD_AUTHENTICATE_ISO:
     case DFC_CMD_AUTHENTICATE_AES:
         if(buffer_len < 2) return false;
-        handle_authenticate_step1(emulator, cmd, buffer, tx_buffer);
+        dfc_emulator_command_authenticate_step1(emulator, cmd, buffer, tx_buffer);
         return true;
     case DFC_CMD_SET_CONFIGURATION:
         handle_set_configuration(emulator, buffer, buffer_len, tx_buffer);
@@ -6035,7 +5163,8 @@ static bool dispatch_native_command(
             return true;
         }
         bool non_first = cmd == DFC_CMD_AUTHENTICATE_EV2_NON_FIRST;
-        if(handle_authenticate_ev2_start(emulator, buffer, buffer_len, non_first, tx_buffer)) {
+        if(dfc_emulator_command_authenticate_ev2_start(
+               emulator, buffer, buffer_len, non_first, tx_buffer)) {
             commit_ev1_command_update(emulator, auth_candidate_iv, auth_has_candidate);
         }
         dfc_secure_wipe(auth_candidate_iv, sizeof(auth_candidate_iv));
@@ -6052,26 +5181,27 @@ static bool dispatch_native_command(
 #endif
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
             emulator->ev2_authentication_pending) {
-            handle_authenticate_ev2_continuation(emulator, buffer, buffer_len, tx_buffer);
+            dfc_emulator_command_authenticate_ev2_continuation(
+                emulator, buffer, buffer_len, tx_buffer);
         } else if(
 #endif
             emulator->awaiting_step2) {
-            handle_authenticate_step2(emulator, buffer, buffer_len, tx_buffer, dfc);
+            dfc_emulator_command_authenticate_step2(emulator, buffer, buffer_len, tx_buffer, dfc);
         } else if(emulator->get_version_frame != 0) {
             if(dfc_emulator_native_authentication_active(emulator)) {
                 if(!dfc_secure_messaging_update_ev1_command(
                        emulator->secure_messaging, cmd, buffer + 1, buffer_len - 1)) {
-                    clear_pending_chain(emulator);
+                    dfc_emulator_command_clear_pending_chain(emulator);
                     dfc_emulator_reset_session(emulator);
                     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
                     return true;
                 }
             }
             if(buffer_len != 1) {
-                clear_pending_chain(emulator);
+                dfc_emulator_command_clear_pending_chain(emulator);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             } else {
-                handle_get_version_continuation(emulator, tx_buffer);
+                dfc_emulator_command_get_version_continuation(emulator, tx_buffer);
             }
             apply_ev1_response_secure_messaging(emulator, DFC_CMD_GET_VERSION, tx_buffer);
         } else if(emulator->df_names_pending) {

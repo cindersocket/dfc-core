@@ -7,15 +7,23 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 
 
+def command_sources() -> str:
+    """Read every native command module as one policy-checking surface."""
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "src").glob("dfc_emulator_commands*.c"))
+    )
+
+
 def main() -> None:
     emulator = (ROOT / "src" / "dfc_emulator.c").read_text(encoding="utf-8")
-    commands = (ROOT / "src" / "dfc_emulator_commands.c").read_text(encoding="utf-8")
+    commands = command_sources()
     credential = (ROOT / "src" / "dfc_credential.c").read_text(encoding="utf-8")
     emulator_crypto = (ROOT / "src" / "dfc_emulator_crypto.c").read_text(encoding="utf-8")
     ffi = (ROOT / "ffi" / "dfc_ffi.c").read_text(encoding="utf-8")
     reader = (ROOT / "src" / "dfc_reader.c").read_text(encoding="utf-8")
     virtual_picc = (ROOT / "src" / "dfc_virtual_picc.c").read_text(encoding="utf-8")
-    emulator_commands = (ROOT / "src" / "dfc_emulator_commands.c").read_text(encoding="utf-8")
+    emulator_commands = commands
     required = {
         "emulator teardown": "dfc_secure_wipe(emulator, sizeof(*emulator))",
         "credential teardown": "dfc_secure_wipe(credential, sizeof(*credential))",

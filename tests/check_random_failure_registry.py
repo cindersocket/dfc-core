@@ -15,15 +15,15 @@ REGISTRY = {
     ): "test_random_failures_are_atomic",
     ("src/dfc_virtual_picc.c", "random_uid_tail"): "test_random_failures_are_atomic",
     (
-        "src/dfc_emulator_commands.c",
+        "src/dfc_emulator_commands_proximity.c",
         "proximity_random",
     ): "test_random_failures_are_atomic",
     (
-        "src/dfc_emulator_commands.c",
+        "src/dfc_emulator_commands_auth.c",
         "random_material",
     ): "test_random_generation_failures_report_memory_error",
     (
-        "src/dfc_emulator_commands.c",
+        "src/dfc_emulator_commands_auth.c",
         "rnd_b",
     ): "test_random_generation_failures_report_memory_error",
     (
