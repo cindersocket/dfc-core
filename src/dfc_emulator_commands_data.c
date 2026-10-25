@@ -107,6 +107,16 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
 
     uint32_t counter = ++file->sdm_read_counter;
     if(file->sdm_has_counter_limit && counter > file->sdm_counter_limit) goto cleanup;
+    DfcApplication* app = dfc_emulator_current_app(emulator);
+    uint8_t* file_read_key = NULL;
+    if(file->sdm_has_encrypted_file_offset ||
+       (file->sdm_has_mac_input_offset && file->sdm_has_mac_offset)) {
+        uint8_t file_read_key_number =
+            (uint8_t)((file->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) & DFC_SDM_ACCESS_MASK);
+        file_read_key = app ? dfc_credential_key(emulator->credential, app, file_read_key_number) :
+                              NULL;
+        if(!file_read_key) goto cleanup;
+    }
     if(file->sdm_has_uid_offset) {
         size_t encoded_uid_len = emulator->credential->uid_len * DFC_SDM_HEX_EXPANSION;
         if(!sdm_range_fits(file, file->sdm_uid_offset, encoded_uid_len)) goto cleanup;
@@ -158,7 +168,6 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
                 picc_clear[payload_offset++] = (uint8_t)(counter >> 16);
             }
         }
-        DfcApplication* app = dfc_emulator_current_app(emulator);
         uint8_t* meta_key = app ? dfc_credential_key(emulator->credential, app, 0) : NULL;
         if(!meta_key) goto cleanup;
         if(!dfc_worker_aes_cbc_encrypt(
@@ -166,38 +175,6 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
             goto cleanup;
         sdm_write_ascii_hex(
             emulator->sdm_read_cache + file->sdm_picc_data_offset, picc_encrypted, clear_len);
-
-        if(file->sdm_has_mac_input_offset && file->sdm_has_mac_offset) {
-            uint8_t file_read_key_number =
-                (uint8_t)((file->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) &
-                          DFC_SDM_ACCESS_MASK);
-            uint8_t* file_read_key =
-                app ? dfc_credential_key(emulator->credential, app, file_read_key_number) : NULL;
-            if(!file_read_key) goto cleanup;
-            if(!sdm_derive_key(
-                   file_read_key,
-                   DFC_SDM_MAC_LABEL_HIGH,
-                   DFC_SDM_MAC_LABEL_LOW,
-                   emulator->credential,
-                   file,
-                   counter,
-                   session_mac_key))
-                goto cleanup;
-            if(file->sdm_mac_offset < file->sdm_mac_input_offset ||
-               !sdm_range_fits(
-                   file, file->sdm_mac_offset, DFC_WIRE_MAC_LENGTH * DFC_SDM_HEX_EXPANSION))
-                goto cleanup;
-            if(!aes_cmac(
-                   session_mac_key,
-                   DFC_AES_KEY_LENGTH,
-                   emulator->sdm_read_cache + file->sdm_mac_input_offset,
-                   file->sdm_mac_offset - file->sdm_mac_input_offset,
-                   full_mac))
-                goto cleanup;
-            dfc_truncate_aes_wire_mac(full_mac, wire_mac);
-            sdm_write_ascii_hex(
-                emulator->sdm_read_cache + file->sdm_mac_offset, wire_mac, sizeof(wire_mac));
-        }
     }
     if(file->sdm_has_encrypted_file_offset) {
         if(file->sdm_encrypted_file_length == 0 ||
@@ -207,12 +184,6 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
            file->sdm_encrypted_file_length / DFC_SDM_HEX_EXPANSION >
                sizeof(emulator->sdm_read_cache))
             goto cleanup;
-        DfcApplication* app = dfc_emulator_current_app(emulator);
-        uint8_t file_read_key_number =
-            (uint8_t)((file->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) & DFC_SDM_ACCESS_MASK);
-        uint8_t* file_read_key =
-            app ? dfc_credential_key(emulator->credential, app, file_read_key_number) : NULL;
-        if(!file_read_key) goto cleanup;
         if(!sdm_derive_key(
                file_read_key,
                DFC_SDM_ENCRYPTION_LABEL_HIGH,
@@ -243,15 +214,8 @@ static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFil
         sdm_write_ascii_hex(
             emulator->sdm_read_cache + file->sdm_encrypted_file_offset, encrypted, clear_len);
     }
-    if(!file->sdm_has_picc_data_offset && file->sdm_has_mac_input_offset &&
-       file->sdm_has_mac_offset) {
-        DfcApplication* app = dfc_emulator_current_app(emulator);
-        uint8_t file_read_key_number =
-            (uint8_t)((file->sdm_access_rights >> DFC_SDM_FILE_READ_SHIFT) & DFC_SDM_ACCESS_MASK);
-        uint8_t* file_read_key =
-            app ? dfc_credential_key(emulator->credential, app, file_read_key_number) : NULL;
-        if(!file_read_key ||
-           !sdm_derive_key(
+    if(file->sdm_has_mac_input_offset && file->sdm_has_mac_offset) {
+        if(!sdm_derive_key(
                file_read_key,
                DFC_SDM_MAC_LABEL_HIGH,
                DFC_SDM_MAC_LABEL_LOW,

@@ -2,8 +2,10 @@
 // DesfirePiccSimulatorTests (EV1-native command subset).
 
 #include "dfc_virtual_picc_test_helpers.h"
+#include "aes_cmac.h"
 #include "dfc_der.h"
 #include "dfc_emulator_i.h"
+#include "dfc_sdm_i.h"
 
 #include <string.h>
 
@@ -1909,6 +1911,103 @@ static MunitResult
 }
 
 #if DFC_ENABLE_SDM
+static void encode_upper_hex(const uint8_t* input, size_t input_len, uint8_t* output) {
+    static const uint8_t digits[] = "0123456789ABCDEF";
+    for(size_t i = 0; i < input_len; i++) {
+        output[i * 2] = digits[input[i] >> 4];
+        output[i * 2 + 1] = digits[input[i] & 0x0F];
+    }
+}
+
+static void assert_sdm_mac_covers_final_rendered_bytes(bool encrypted_range_overlaps_mac_input) {
+    DfcCredential credential;
+    uint8_t contents[96];
+    memset(contents, '0', sizeof(contents));
+    DfcVirtualPiccSession* session =
+        open_file_policy(&credential, 0x0F, 0xEEEE, DFC_COMM_PLAIN, contents, sizeof(contents));
+    credential.card.generation = DfcGenerationEv3;
+    DfcApplication* app = &credential.apps[0];
+    app->key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    munit_assert_true(dfc_credential_keys_resize(&credential, app, 1, DFC_AES_KEY_LENGTH));
+    uint8_t* file_read_key = dfc_credential_key(&credential, app, 0);
+    munit_assert_not_null(file_read_key);
+    for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++)
+        file_read_key[i] = (uint8_t)(0x10 + i);
+
+    DfcFile* file = dfc_credential_find_file_in_app(&credential, 0, 1);
+    munit_assert_not_null(file);
+    uint8_t* file_data = dfc_file_data(&credential, file);
+    munit_assert_not_null(file_data);
+    for(size_t i = 32; i < 64; i++)
+        file_data[i] = (uint8_t)('A' + (i % 26));
+    file->sdm_enabled = true;
+    file->sdm_options = DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
+                        DFC_SDM_ENCRYPTED_FILE_MASK | DFC_SDM_ASCII_ENCODING_MASK;
+    file->sdm_access_rights = 0;
+    file->sdm_has_picc_data_offset = true;
+    file->sdm_picc_data_offset = 0;
+    file->sdm_has_encrypted_file_offset = true;
+    file->sdm_encrypted_file_offset = 32;
+    file->sdm_encrypted_file_length = 32;
+    file->sdm_has_mac_input_offset = true;
+    file->sdm_mac_input_offset = encrypted_range_overlaps_mac_input ? 32 : 64;
+    file->sdm_has_mac_offset = true;
+    file->sdm_mac_offset = 80;
+    file->sdm_read_counter = 0;
+
+    session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    session->emulator->selected_app_index = 0;
+    munit_assert_true(dfc_emulator_render_sdm_read(session->emulator, file));
+
+    uint8_t session_mac_key[DFC_AES_KEY_LENGTH];
+    uint8_t full_mac[DFC_AES_CMAC_LENGTH];
+    uint8_t wire_mac[DFC_WIRE_MAC_LENGTH];
+    uint8_t expected_ascii[DFC_WIRE_MAC_LENGTH * DFC_SDM_HEX_EXPANSION];
+    munit_assert_true(dfc_sdm_derive_session_key(
+        file_read_key,
+        DFC_SDM_MAC_LABEL_HIGH,
+        DFC_SDM_MAC_LABEL_LOW,
+        credential.uid,
+        credential.uid_len,
+        true,
+        file->sdm_read_counter,
+        true,
+        session_mac_key));
+    munit_assert_true(aes_cmac(
+        session_mac_key,
+        sizeof(session_mac_key),
+        session->emulator->sdm_read_cache + file->sdm_mac_input_offset,
+        file->sdm_mac_offset - file->sdm_mac_input_offset,
+        full_mac));
+    dfc_truncate_aes_wire_mac(full_mac, wire_mac);
+    encode_upper_hex(wire_mac, sizeof(wire_mac), expected_ascii);
+    munit_assert_memory_equal(
+        sizeof(expected_ascii),
+        expected_ascii,
+        session->emulator->sdm_read_cache + file->sdm_mac_offset);
+
+    dfc_secure_wipe(session_mac_key, sizeof(session_mac_key));
+    dfc_secure_wipe(full_mac, sizeof(full_mac));
+    dfc_secure_wipe(wire_mac, sizeof(wire_mac));
+    dfc_virtual_picc_session_free(session);
+}
+
+static MunitResult
+    test_sdm_mac_covers_overlapping_encrypted_file(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    assert_sdm_mac_covers_final_rendered_bytes(true);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_sdm_mac_non_overlapping_encrypted_file_control(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    assert_sdm_mac_covers_final_rendered_bytes(false);
+    return MUNIT_OK;
+}
+
 static void set_sdm_settings_sentinels(DfcVirtualPiccSession* session, DfcFile* file) {
     file->comm_settings = DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN;
     file->access_rights = 0xEEEE;
@@ -2578,6 +2677,18 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
 #if DFC_ENABLE_SDM
+    {"/sdm-mac-covers-overlapping-encrypted-file",
+     test_sdm_mac_covers_overlapping_encrypted_file,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/sdm-mac-non-overlapping-encrypted-file-control",
+     test_sdm_mac_non_overlapping_encrypted_file_control,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/change-file-settings-rejections-are-atomic",
      test_change_file_settings_rejections_are_atomic,
      NULL,
