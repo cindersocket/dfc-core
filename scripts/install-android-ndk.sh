@@ -13,7 +13,27 @@ case "$ndk_version" in
 esac
 
 : "${ANDROID_SDK_ROOT:?ANDROID_SDK_ROOT must name the Android SDK directory}"
-sdkmanager_command="${SDKMANAGER:-sdkmanager}"
+
+if [[ -n "${SDKMANAGER:-}" ]]; then
+    sdkmanager_command="$SDKMANAGER"
+elif command -v sdkmanager >/dev/null 2>&1; then
+    sdkmanager_command="$(command -v sdkmanager)"
+else
+    sdkmanager_command=""
+    for candidate in \
+        "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+        "$ANDROID_SDK_ROOT"/cmdline-tools/*/bin/sdkmanager; do
+        if [[ -x "$candidate" ]]; then
+            sdkmanager_command="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$sdkmanager_command" ]]; then
+        echo "sdkmanager was not found under $ANDROID_SDK_ROOT" >&2
+        exit 1
+    fi
+fi
+
 attempt=1
 max_attempts=3
 

@@ -158,7 +158,8 @@ class ReleaseProcessTests(unittest.TestCase):
             partial.mkdir(parents=True)
             (partial / "partial-download").touch()
             attempts = root / "attempts"
-            fake_sdkmanager = root / "sdkmanager"
+            fake_sdkmanager = sdk / "cmdline-tools" / "latest" / "bin" / "sdkmanager"
+            fake_sdkmanager.parent.mkdir(parents=True)
             fake_sdkmanager.write_text(
                 "#!/usr/bin/env bash\n"
                 "count=0\n"
@@ -173,7 +174,6 @@ class ReleaseProcessTests(unittest.TestCase):
             environment.update(
                 {
                     "ANDROID_SDK_ROOT": str(sdk),
-                    "SDKMANAGER": str(fake_sdkmanager),
                     "SDKMANAGER_ATTEMPTS": str(attempts),
                 }
             )
