@@ -30,7 +30,7 @@ class SecurityPolicyTests(unittest.TestCase):
         policy = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
-        version = re.search(r"project\([^)]*VERSION ([0-9]+\.[0-9]+\.[0-9]+)", cmake, re.S)
+        version = re.search(r"project\([^)]*VERSION ([0-9]+\.[0-9]+\.[0-9]+)", cmake, re.DOTALL)
 
         self.assertIsNotNone(version)
         current = version.group(1)
@@ -64,7 +64,9 @@ class SecurityPolicyTests(unittest.TestCase):
 
         project = (ROOT / "bindings/dotnet/src/Dfc/Dfc.csproj").read_text(encoding="utf-8")
         self.assertIn("<PackageReadmeFile>README.md</PackageReadmeFile>", project)
-        self.assertIn("<RepositoryUrl>https://github.com/cindersocket/dfc-core</RepositoryUrl>", project)
+        self.assertIn(
+            "<RepositoryUrl>https://github.com/cindersocket/dfc-core</RepositoryUrl>", project
+        )
 
 
 if __name__ == "__main__":

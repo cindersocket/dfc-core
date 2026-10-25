@@ -64,15 +64,13 @@ def validate() -> dict[str, object]:
     version = cmake_version()
     if document.get("version") != version:
         raise ValueError("release inventory version differs from CMake")
-    mismatches = {
-        name: value for name, value in metadata_versions().items() if value != version
-    }
+    mismatches = {name: value for name, value in metadata_versions().items() if value != version}
     if mismatches:
         raise ValueError(f"package versions differ from {version}: {mismatches}")
 
     artifacts = document.get("artifacts")
     if not isinstance(artifacts, list):
-        raise ValueError("artifacts must be a list")
+        raise TypeError("artifacts must be a list")
     ids = [entry.get("id") for entry in artifacts if isinstance(entry, dict)]
     if len(ids) != len(set(ids)):
         raise ValueError("release artifact ids must be unique")
@@ -110,9 +108,7 @@ def verify_files(document: dict[str, object], directory: Path) -> None:
             if placeholder in rendered:
                 targets = entry.get("targets")
                 assert isinstance(targets, list)
-                patterns.extend(
-                    rendered.replace(placeholder, str(target)) for target in targets
-                )
+                patterns.extend(rendered.replace(placeholder, str(target)) for target in targets)
             else:
                 patterns.append(rendered)
 
@@ -125,9 +121,7 @@ def verify_files(document: dict[str, object], directory: Path) -> None:
         if not any(fnmatch.fnmatch(name, pattern) for name in actual)
     ]
     extra = [
-        name
-        for name in actual
-        if not any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
+        name for name in actual if not any(fnmatch.fnmatch(name, pattern) for pattern in patterns)
     ]
     if missing or extra:
         raise ValueError(f"release files differ: missing={missing}, extra={extra}")

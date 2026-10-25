@@ -4,7 +4,6 @@ import json
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / ".github/dependabot.yml"
 
@@ -39,9 +38,7 @@ def scalar(value: str) -> object:
     if value.isdecimal():
         return int(value)
     if value.startswith("[") and value.endswith("]"):
-        return [
-            item.strip().strip('"') for item in value[1:-1].split(",") if item.strip()
-        ]
+        return [item.strip().strip('"') for item in value[1:-1].split(",") if item.strip()]
     return value
 
 
@@ -114,11 +111,7 @@ def manifest_owner(path: Path) -> tuple[str, str] | None:
         return ("cargo", "/unowned")
 
     if name in {"pyproject.toml", "uv.lock"}:
-        root = (
-            "/bindings/python"
-            if relative.startswith("bindings/python/")
-            else "/unowned"
-        )
+        root = "/bindings/python" if relative.startswith("bindings/python/") else "/unowned"
         return ("uv", root)
     if (name.startswith("requirements") and name.endswith((".txt", ".in"))) or name in {
         "Pipfile",
@@ -188,9 +181,7 @@ class DependabotConfigTests(unittest.TestCase):
         for update in updates:
             self.assertIsInstance(update, dict)
             self.assertEqual(set(update), required)
-            identities.append(
-                (str(update["package-ecosystem"]), str(update["directory"]))
-            )
+            identities.append((str(update["package-ecosystem"]), str(update["directory"])))
             self.assertEqual(
                 update["schedule"],
                 {
@@ -202,9 +193,7 @@ class DependabotConfigTests(unittest.TestCase):
             )
             self.assertEqual(update["target-branch"], "master")
             self.assertEqual(update["open-pull-requests-limit"], 5)
-            self.assertEqual(
-                update["commit-message"], {"prefix": "deps", "include": "scope"}
-            )
+            self.assertEqual(update["commit-message"], {"prefix": "deps", "include": "scope"})
             self.assertEqual(
                 update["groups"],
                 {

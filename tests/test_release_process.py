@@ -46,17 +46,13 @@ class ReleaseProcessTests(unittest.TestCase):
     def test_requires_every_ci_job(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         jobs_section = workflow.split("\njobs:\n", 1)[1]
-        workflow_jobs = set(
-            re.findall(r"^  ([a-z][a-z0-9-]*):$", jobs_section, re.MULTILINE)
-        )
+        workflow_jobs = set(re.findall(r"^  ([a-z][a-z0-9-]*):$", jobs_section, re.MULTILINE))
         documented = re.search(
             r"Required CI jobs \(exact IDs\):\n\n((?:- `[a-z][a-z0-9-]*`\n)+)",
             self.guide,
         )
         self.assertIsNotNone(documented)
-        documented_jobs = set(
-            re.findall(r"^- `([^`]+)`$", documented.group(1), re.MULTILINE)
-        )
+        documented_jobs = set(re.findall(r"^- `([^`]+)`$", documented.group(1), re.MULTILINE))
         self.assertEqual(documented_jobs, workflow_jobs)
 
     def test_uses_the_cmake_dependency_pin_for_immutable_checkout(self) -> None:

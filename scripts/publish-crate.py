@@ -34,9 +34,7 @@ def dependency(
 
 def metadata(archive: Path) -> dict[str, Any]:
     with tarfile.open(archive, "r:gz") as crate:
-        manifest_name = next(
-            name for name in crate.getnames() if name.endswith("/Cargo.toml")
-        )
+        manifest_name = next(name for name in crate.getnames() if name.endswith("/Cargo.toml"))
         archive_root = manifest_name.rsplit("/", 1)[0]
         member = crate.extractfile(manifest_name)
         if member is None:
@@ -56,11 +54,7 @@ def metadata(archive: Path) -> dict[str, Any]:
         for name, values in declared_features.items()
         if any(value.startswith("dep:") or "?/" in value for value in values)
     }
-    features = {
-        name: values
-        for name, values in declared_features.items()
-        if name not in features2
-    }
+    features = {name: values for name, values in declared_features.items() if name not in features2}
     dependencies: list[dict[str, Any]] = []
     for table, kind in (
         ("dependencies", "normal"),
@@ -68,8 +62,7 @@ def metadata(archive: Path) -> dict[str, Any]:
         ("build-dependencies", "build"),
     ):
         dependencies.extend(
-            dependency(name, value, kind, None)
-            for name, value in manifest.get(table, {}).items()
+            dependency(name, value, kind, None) for name, value in manifest.get(table, {}).items()
         )
     for target, tables in manifest.get("target", {}).items():
         for table, kind in (
@@ -108,9 +101,7 @@ def metadata(archive: Path) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
-    parser.add_argument(
-        "--check", action="store_true", help="validate metadata without uploading"
-    )
+    parser.add_argument("--check", action="store_true", help="validate metadata without uploading")
     args = parser.parse_args()
     document = metadata(args.archive)
     if args.check:
@@ -121,12 +112,7 @@ def main() -> None:
         raise SystemExit("CARGO_REGISTRY_TOKEN is required")
     crate = args.archive.read_bytes()
     encoded = json.dumps(document, separators=(",", ":")).encode()
-    body = (
-        struct.pack("<I", len(encoded))
-        + encoded
-        + struct.pack("<I", len(crate))
-        + crate
-    )
+    body = struct.pack("<I", len(encoded)) + encoded + struct.pack("<I", len(crate)) + crate
     request = urllib.request.Request(
         "https://crates.io/api/v1/crates/new",
         data=body,

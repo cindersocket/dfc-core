@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Regression tests for the machine-readable release artifact contract."""
 
 from __future__ import annotations
@@ -22,9 +21,7 @@ class ReleaseInventoryTests(unittest.TestCase):
         cls.workflow = (ROOT / ".github/workflows/release.yml").read_text()
 
     def test_inventory_validator_passes(self) -> None:
-        subprocess.run(
-            ["python3", str(ROOT / "scripts/check-release-inventory.py")], check=True
-        )
+        subprocess.run(["python3", str(ROOT / "scripts/check-release-inventory.py")], check=True)
 
     def test_artifact_directory_verification_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -35,6 +32,7 @@ class ReleaseInventoryTests(unittest.TestCase):
                     "--directory",
                     directory,
                 ],
+                check=False,
                 capture_output=True,
                 text=True,
             )
@@ -112,9 +110,7 @@ class ReleaseInventoryTests(unittest.TestCase):
         self.assertNotIn("pull_request_target", self.workflow)
         self.assertIn("bootstrap_crates:", self.workflow)
         self.assertIn("CARGO_BOOTSTRAP_TOKEN", self.workflow)
-        self.assertIn(
-            "needs: [validate, checksum, publish-pypi, publish-rust,", self.workflow
-        )
+        self.assertIn("needs: [validate, checksum, publish-pypi, publish-rust,", self.workflow)
 
     def test_release_actions_are_immutably_pinned(self) -> None:
         uses = re.findall(r"^\s*- uses: ([^\s#]+)", self.workflow, re.MULTILINE)
@@ -161,18 +157,14 @@ class ReleaseInventoryTests(unittest.TestCase):
                 check=True,
             )
             self.assertTrue((package / "native/CMakeLists.txt").is_file())
-            self.assertTrue(
-                (package / "native/cmake/dfc-core-config.cmake.in").is_file()
-            )
+            self.assertTrue((package / "native/cmake/dfc-core-config.cmake.in").is_file())
             self.assertIn(
                 'cmake.source-dir = "native"',
                 (package / "pyproject.toml").read_text(encoding="utf-8"),
             )
 
     def test_android_inventory_excludes_repository_metadata(self) -> None:
-        android = next(
-            item for item in self.inventory["artifacts"] if item["id"] == "android"
-        )
+        android = next(item for item in self.inventory["artifacts"] if item["id"] == "android")
         self.assertNotIn("dfc-core-android-{version}.module", android["files"])
         self.assertIn("dfc-core-android-{version}-javadoc.jar", android["files"])
 
@@ -198,6 +190,7 @@ class ReleaseInventoryTests(unittest.TestCase):
                 archive.writestr("runtimes/linux-x64/native/unexpected.so", b"")
             result = subprocess.run(
                 ["python3", str(ROOT / "scripts/verify-nuget-layout.py"), str(package)],
+                check=False,
                 capture_output=True,
                 text=True,
             )

@@ -25,9 +25,7 @@ def main() -> None:
         actual = {
             name
             for name in archive.namelist()
-            if name.startswith("runtimes/")
-            and "/native/" in name
-            and not name.endswith("/")
+            if name.startswith("runtimes/") and "/native/" in name and not name.endswith("/")
         }
     expected = {f"runtimes/{rid}/native/{library}" for rid, library in EXPECTED.items()}
     if actual != expected:
