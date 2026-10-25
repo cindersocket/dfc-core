@@ -482,7 +482,7 @@ static bool opt_nonnegative_int32(P* p, const char* key, int32_t* out) {
 }
 
 static bool req_bool(P* p, const char* key, bool* out) {
-    Line l;
+    Line l = {0};
     if(!required(p, key, &l)) return false;
     if(l.value_len != 1 || (l.value[0] != '0' && l.value[0] != '1')) {
         return fail(p, l.number, "%s: boolean shall be 0 or 1", key);
@@ -495,7 +495,7 @@ static bool req_bool(P* p, const char* key, bool* out) {
 // non-canonical input; the writer omits it (rule 5).
 static bool opt_bool(P* p, const char* key, bool* out) {
     *out = false;
-    Line l;
+    Line l = {0};
     if(!lookup(p, key, &l, true)) return !p->failed;
     if(l.value_len != 1 || (l.value[0] != '0' && l.value[0] != '1')) {
         return fail(p, l.number, "%s: boolean shall be 0 or 1", key);

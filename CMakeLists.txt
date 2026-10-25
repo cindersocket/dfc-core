@@ -161,6 +161,9 @@ if(MSVC)
     set(DFC_WARNINGS /W4 /wd4100 /wd4127 /wd4200 /wd4204 /wd4221 /wd4244 /wd4267 /wd4389)
 else()
     set(DFC_WARNINGS -Wall -Wextra)
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        list(APPEND DFC_WARNINGS -Werror=maybe-uninitialized)
+    endif()
 endif()
 
 # -------------------------------------------------------------- libraries ---
