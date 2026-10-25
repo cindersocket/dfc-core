@@ -117,16 +117,16 @@ def main() -> None:
         raise SystemExit("change-key cryptogram must use one cleanup return")
 
     ev2_change_key = emulator_commands[
-        emulator_commands.index("static void handle_change_key_ev2(") : emulator_commands.index(
-            "#endif\n\n#if DFC_ENABLE_DELEGATED_APPLICATIONS"
-        )
+        emulator_commands.index(
+            "void dfc_emulator_command_change_key_ev2("
+        ) : emulator_commands.index("#endif\n\nvoid dfc_emulator_command_set_configuration(")
     ]
     if ev2_change_key.count("dfc_secure_wipe(new_key, sizeof(new_key))") < 2:
         raise SystemExit("EV2 ChangeKey must wipe its candidate key on CRC failure and success")
 
     commit_transaction = emulator_commands[
         emulator_commands.index("static void handle_commit_transaction(") : emulator_commands.index(
-            "static void handle_abort_transaction("
+            "void dfc_emulator_command_abort_transaction("
         )
     ]
     mac_failure = commit_transaction[
