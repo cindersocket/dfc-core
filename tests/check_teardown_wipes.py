@@ -15,6 +15,50 @@ def command_sources() -> str:
     )
 
 
+def emulator_auth_cleanup_problems(source: str) -> list[str]:
+    """Require each secret-bearing authentication handler to have one exit."""
+    functions = (
+        (
+            "EV2 start",
+            "dfc_emulator_command_authenticate_ev2_start",
+            "ev2_start_cleanup:",
+        ),
+        (
+            "EV2 continuation",
+            "dfc_emulator_command_authenticate_ev2_continuation",
+            "ev2_continuation_cleanup:",
+        ),
+        (
+            "native start",
+            "dfc_emulator_command_authenticate_step1",
+            "auth_start_cleanup:",
+        ),
+        (
+            "native continuation",
+            "dfc_emulator_command_authenticate_step2",
+            "auth_step2_cleanup:",
+        ),
+    )
+    problems = []
+    for index, (name, signature, label) in enumerate(functions):
+        start = source.index(signature)
+        end = (
+            source.index(functions[index + 1][1], start)
+            if index + 1 < len(functions)
+            else len(source)
+        )
+        function = source[start:end]
+        secret_start = function.find("Secrets secrets;")
+        cleanup_start = function.find(label)
+        wipe = "dfc_secure_wipe(&secrets, sizeof(secrets))"
+        if secret_start < 0 or cleanup_start < 0 or function.count(wipe) != 1:
+            problems.append(f"{name} does not use one secret cleanup")
+            continue
+        if "return" in function[secret_start:cleanup_start]:
+            problems.append(f"{name} returns before secret cleanup")
+    return problems
+
+
 def main() -> None:
     emulator = (ROOT / "src" / "dfc_emulator.c").read_text(encoding="utf-8")
     emulator_header = (ROOT / "src" / "dfc_emulator.h").read_text(encoding="utf-8")
@@ -24,10 +68,18 @@ def main() -> None:
     commands = command_sources()
     credential = (ROOT / "src" / "dfc_credential.c").read_text(encoding="utf-8")
     emulator_crypto = (ROOT / "src" / "dfc_emulator_crypto.c").read_text(encoding="utf-8")
+    emulator_auth = (ROOT / "src" / "dfc_emulator_commands_auth.c").read_text(encoding="utf-8")
     ffi = (ROOT / "ffi" / "dfc_ffi.c").read_text(encoding="utf-8")
     reader = (ROOT / "src" / "dfc_reader.c").read_text(encoding="utf-8")
     virtual_picc = (ROOT / "src" / "dfc_virtual_picc.c").read_text(encoding="utf-8")
     emulator_commands = commands
+    auth_cleanup_failures = emulator_auth_cleanup_problems(emulator_auth)
+    if auth_cleanup_failures:
+        raise SystemExit("; ".join(auth_cleanup_failures))
+    cleanup_wipe = "dfc_secure_wipe(&secrets, sizeof(secrets));"
+    mutant = emulator_auth.replace(cleanup_wipe, "", 1)
+    if not emulator_auth_cleanup_problems(mutant):
+        raise SystemExit("emulator authentication cleanup guard failed its mutation self-test")
     if "rnd_a[" in emulator_header or "->rnd_a" in production:
         raise SystemExit("completed host challenges must remain operation-local")
     required = {
