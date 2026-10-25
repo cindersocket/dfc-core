@@ -13,10 +13,10 @@ def main() -> None:
     normalized = " ".join(source.split())
     required = (
         (
-            "dfc_ct_equal( secrets.clear + DFC_EV2_RANDOM_LENGTH, secrets.rotated_b, "
-            "sizeof(secrets.rotated_b))"
+            "dfc_ct_equal( secrets.clear + DFC_EV2_RANDOM_LENGTH, secrets.response, "
+            "DFC_EV2_RANDOM_LENGTH)"
         ),
-        "dfc_ct_equal(rnd_b_rot, secrets.expected_random_b_rotated, challenge_len)",
+        "dfc_ct_equal(rnd_b_rot, secrets.session_key, challenge_len)",
         "dfc_ct_equal(expected_dam_mac, dam_mac, sizeof(expected_dam_mac))",
     )
     missing = [expression for expression in required if expression not in normalized]

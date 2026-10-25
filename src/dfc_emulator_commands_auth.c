@@ -39,13 +39,9 @@ typedef struct {
 typedef struct {
     uint8_t iv[DFC_AES_KEY_LENGTH];
     uint8_t clear[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
-    uint8_t rotated_b[DFC_EV2_RANDOM_LENGTH];
-    uint8_t candidate_random_a[DFC_EV2_RANDOM_LENGTH];
     uint8_t candidate_encryption_key[DFC_AES_KEY_LENGTH];
     uint8_t candidate_mac_key[DFC_AES_KEY_LENGTH];
-    uint8_t rotated_a[DFC_EV2_RANDOM_LENGTH];
     uint8_t response[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
-    uint8_t encrypted[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH];
 } Ev2ContinuationSecrets;
 
 static void clear_pending_ev2_authentication(DfcEmulator* emulator) {
@@ -210,17 +206,18 @@ void dfc_emulator_command_authenticate_ev2_continuation(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
         goto ev2_continuation_cleanup;
     }
-    dfc_ev2_rotate_left(emulator->pending_authentication.ev2.random_b, secrets.rotated_b);
+    // The response is not assembled until authentication succeeds, so use its
+    // first block as comparison scratch while validating the reader token.
+    dfc_ev2_rotate_left(emulator->pending_authentication.ev2.random_b, secrets.response);
     if(!dfc_ct_equal(
-           secrets.clear + DFC_EV2_RANDOM_LENGTH, secrets.rotated_b, sizeof(secrets.rotated_b))) {
+           secrets.clear + DFC_EV2_RANDOM_LENGTH, secrets.response, DFC_EV2_RANDOM_LENGTH)) {
         fail_pending_ev2_authentication(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         goto ev2_continuation_cleanup;
     }
-    memcpy(secrets.candidate_random_a, secrets.clear, sizeof(secrets.candidate_random_a));
     if(!dfc_ev2_derive_session_keys(
            emulator->pending_authentication.ev2.static_key,
-           secrets.candidate_random_a,
+           secrets.clear,
            emulator->pending_authentication.ev2.random_b,
            secrets.candidate_encryption_key,
            secrets.candidate_mac_key)) {
@@ -229,10 +226,12 @@ void dfc_emulator_command_authenticate_ev2_continuation(
         goto ev2_continuation_cleanup;
     }
 
-    dfc_ev2_rotate_left(secrets.candidate_random_a, secrets.rotated_a);
+    // Session derivation has consumed RndA, so it can now become RndA' in
+    // place. This keeps the candidate keys intact until publication.
+    dfc_rotate_left(secrets.clear, DFC_EV2_RANDOM_LENGTH);
     size_t response_len = DFC_EV2_RANDOM_LENGTH;
     if(emulator->ev2_authentication_non_first) {
-        memcpy(secrets.response, secrets.rotated_a, sizeof(secrets.rotated_a));
+        memcpy(secrets.response, secrets.clear, DFC_EV2_RANDOM_LENGTH);
     } else {
         memcpy(
             secrets.response,
@@ -240,8 +239,8 @@ void dfc_emulator_command_authenticate_ev2_continuation(
             DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH);
         memcpy(
             secrets.response + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH,
-            secrets.rotated_a,
-            sizeof(secrets.rotated_a));
+            secrets.clear,
+            DFC_EV2_RANDOM_LENGTH);
         memcpy(
             secrets.response + DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH + DFC_EV2_RANDOM_LENGTH,
             emulator->pending_authentication.ev2.card_capabilities,
@@ -260,7 +259,7 @@ void dfc_emulator_command_authenticate_ev2_continuation(
            secrets.iv,
            response_len,
            secrets.response,
-           secrets.encrypted)) {
+           secrets.response)) {
         fail_pending_ev2_authentication(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
         goto ev2_continuation_cleanup;
@@ -292,7 +291,7 @@ void dfc_emulator_command_authenticate_ev2_continuation(
     emulator->ev2_command_counter = 0;
     dfc_emulator_commit_auth_family(emulator, DfcEmulatorAuthFamilyEv2);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
-    dfc_bytebuf_append_bytes(tx_buffer, secrets.encrypted, response_len);
+    dfc_bytebuf_append_bytes(tx_buffer, secrets.response, response_len);
     authentication_complete = true;
 
 ev2_continuation_cleanup:
@@ -327,13 +326,15 @@ typedef struct {
 
 typedef struct {
     uint8_t factory[DFC_MAX_KEY_LEN];
-    uint8_t iv[16];
-    uint8_t plain[32];
-    uint8_t expected_random_b_rotated[16];
-    uint8_t random_a_rotated[16];
+    union {
+        struct {
+            uint8_t iv[16];
+            uint8_t plain[32];
+        } exchange;
+        DfcSecureMessaging candidate;
+    } phase;
     uint8_t encrypted[16];
     uint8_t session_key[DFC_MAX_KEY_LEN];
-    DfcSecureMessaging candidate;
 } AuthStep2Secrets;
 
 bool dfc_emulator_abort_pending_native_work(DfcEmulator* emulator) {
@@ -446,7 +447,7 @@ void dfc_emulator_command_authenticate_step2(
     size_t block_size = dfc_block_size_for_cipher(cipher);
 
     AuthStep2Secrets secrets;
-    memset(secrets.iv, 0, sizeof(secrets.iv));
+    memset(secrets.phase.exchange.iv, 0, sizeof(secrets.phase.exchange.iv));
     size_t key_len = 0;
     const uint8_t* key = dfc_emulator_command_auth_key(
         emulator,
@@ -466,7 +467,7 @@ void dfc_emulator_command_authenticate_step2(
     // ISO and AES chain from the last block of the challenge this card sent.
     if(cipher != DFC_CMD_AUTHENTICATE_LEGACY) {
         memcpy(
-            secrets.iv,
+            secrets.phase.exchange.iv,
             emulator->pending_authentication.native.encrypted_random_b + challenge_len -
                 block_size,
             block_size);
@@ -475,12 +476,23 @@ void dfc_emulator_command_authenticate_step2(
     bool decrypted_ok = true;
     if(cipher == DFC_CMD_AUTHENTICATE_AES) {
         decrypted_ok = dfc_worker_aes_cbc_decrypt(
-            key, key_len, secrets.iv, challenge_len * 2, apdu + 1, secrets.plain);
+            key,
+            key_len,
+            secrets.phase.exchange.iv,
+            challenge_len * 2,
+            apdu + 1,
+            secrets.phase.exchange.plain);
     } else if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        decrypted_ok = d40_receive_plain(key, key_len, apdu + 1, challenge_len * 2, secrets.plain);
+        decrypted_ok = d40_receive_plain(
+            key, key_len, apdu + 1, challenge_len * 2, secrets.phase.exchange.plain);
     } else {
         decrypted_ok = dfc_worker_des_cbc_decrypt(
-            key, key_len, secrets.iv, challenge_len * 2, apdu + 1, secrets.plain);
+            key,
+            key_len,
+            secrets.phase.exchange.iv,
+            challenge_len * 2,
+            apdu + 1,
+            secrets.phase.exchange.plain);
     }
     if(!decrypted_ok) {
         fail_pending_authentication(emulator);
@@ -488,46 +500,17 @@ void dfc_emulator_command_authenticate_step2(
         goto auth_step2_cleanup;
     }
 
-    uint8_t* rnd_a = secrets.plain;
-    uint8_t* rnd_b_rot = secrets.plain + challenge_len;
+    uint8_t* rnd_a = secrets.phase.exchange.plain;
+    uint8_t* rnd_b_rot = secrets.phase.exchange.plain + challenge_len;
 
-    memcpy(
-        secrets.expected_random_b_rotated,
-        emulator->pending_authentication.native.random_b,
-        challenge_len);
-    dfc_rotate_left(secrets.expected_random_b_rotated, challenge_len);
+    // This scratch becomes the derived session key after the challenge check.
+    memcpy(secrets.session_key, emulator->pending_authentication.native.random_b, challenge_len);
+    dfc_rotate_left(secrets.session_key, challenge_len);
 
-    if(!dfc_ct_equal(rnd_b_rot, secrets.expected_random_b_rotated, challenge_len)) {
+    if(!dfc_ct_equal(rnd_b_rot, secrets.session_key, challenge_len)) {
         DFC_LOG_W(TAG, "Authenticate step 2: RndB' mismatch");
         fail_pending_authentication(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-        goto auth_step2_cleanup;
-    }
-
-    memcpy(secrets.random_a_rotated, rnd_a, challenge_len);
-    dfc_rotate_left(secrets.random_a_rotated, challenge_len);
-
-    if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        memset(secrets.iv, 0, sizeof(secrets.iv));
-    }
-
-    bool response_ok = cipher == DFC_CMD_AUTHENTICATE_AES ? dfc_worker_aes_cbc_encrypt(
-                                                                key,
-                                                                key_len,
-                                                                secrets.iv,
-                                                                challenge_len,
-                                                                secrets.random_a_rotated,
-                                                                secrets.encrypted) :
-                                                            dfc_worker_des_cbc_encrypt(
-                                                                key,
-                                                                key_len,
-                                                                secrets.iv,
-                                                                challenge_len,
-                                                                secrets.random_a_rotated,
-                                                                secrets.encrypted);
-    if(!response_ok) {
-        fail_pending_authentication(emulator);
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
         goto auth_step2_cleanup;
     }
 
@@ -541,8 +524,27 @@ void dfc_emulator_command_authenticate_step2(
         secrets.session_key,
         &session_key_len);
 
+    // RndA has been consumed by derivation. Rotate it in place before the
+    // response encryption, then retire the exchange arm of the scratch union.
+    dfc_rotate_left(rnd_a, challenge_len);
+    if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
+        memset(secrets.phase.exchange.iv, 0, sizeof(secrets.phase.exchange.iv));
+    }
+
+    bool response_ok =
+        cipher == DFC_CMD_AUTHENTICATE_AES ?
+            dfc_worker_aes_cbc_encrypt(
+                key, key_len, secrets.phase.exchange.iv, challenge_len, rnd_a, secrets.encrypted) :
+            dfc_worker_des_cbc_encrypt(
+                key, key_len, secrets.phase.exchange.iv, challenge_len, rnd_a, secrets.encrypted);
+    if(!response_ok) {
+        fail_pending_authentication(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
+        goto auth_step2_cleanup;
+    }
+
     if(!dfc_secure_messaging_init(
-           &secrets.candidate, cipher, secrets.session_key, session_key_len, NULL)) {
+           &secrets.phase.candidate, cipher, secrets.session_key, session_key_len, NULL)) {
         fail_pending_authentication(emulator);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
         goto auth_step2_cleanup;
@@ -556,7 +558,7 @@ void dfc_emulator_command_authenticate_step2(
             goto auth_step2_cleanup;
         }
     }
-    *emulator->secure_messaging = secrets.candidate;
+    *emulator->secure_messaging = secrets.phase.candidate;
     emulator->auth_cipher = cipher;
     emulator->auth_key_no = emulator->pending_auth_key_no;
     dfc_emulator_commit_auth_family(emulator, DfcEmulatorAuthFamilyNative);
