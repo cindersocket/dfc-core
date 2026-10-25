@@ -757,9 +757,59 @@
       "size": 567
     },
     {
+      "path": "v6/synthetic/authenticated-change-file-settings-requires-protection.vec",
+      "sha256": "4775d5fe1a0ba4bada1e70a5562f1d710606dafa616b467218fa164b68620c26",
+      "size": 2149
+    },
+    {
+      "path": "v6/synthetic/authentication-random-retry-aes.vec",
+      "sha256": "325e30f59ae34172ca8e7616ac23d0e12600e7cea3f818b5d326681ad47414cd",
+      "size": 750
+    },
+    {
+      "path": "v6/synthetic/authentication-random-retry-d40-iso.vec",
+      "sha256": "64721b89d72d42b13dc3eb7373d0217130e81f93d3f62e9c99ad02f8a55efa1d",
+      "size": 917
+    },
+    {
+      "path": "v6/synthetic/binding-picc-response-capacity-retry.vec",
+      "sha256": "ff770ab43152dd7ff655bfe0b5c6200096e2f93511387e8cb48882f4a97a1d4d",
+      "size": 2655
+    },
+    {
+      "path": "v6/synthetic/corrupted-d40-command-mac.vec",
+      "sha256": "225e0a5eda9023430053456564b088cf6b6c247dce67452cf2432c33ff16a47f",
+      "size": 742
+    },
+    {
+      "path": "v6/synthetic/corrupted-ev1-command-mac.vec",
+      "sha256": "49c5f337aa4201b7623aebc933d310097b2ee04ee804885a9bd46400688968cc",
+      "size": 770
+    },
+    {
+      "path": "v6/synthetic/corrupted-ev2-command-mac.vec",
+      "sha256": "47076c2f661e3562602314af03efbb46f714365a1487ae3056253c4e29eb2725",
+      "size": 919
+    },
+    {
       "path": "v6/synthetic/d40-terminal-command-error-retains-session.vec",
       "sha256": "f8deb7ed5503182f74c2208dcba0302e9e019238e25ed19d7fdcfa8a65f43c2b",
       "size": 1385
+    },
+    {
+      "path": "v6/synthetic/delegated-format-disabled.vec",
+      "sha256": "56c11c8c6c0185380e3d82fbfc3a21b1cb747cddff56f5050b03a7ef0e36388b",
+      "size": 3102
+    },
+    {
+      "path": "v6/synthetic/delegated-format-scope.vec",
+      "sha256": "0bcb7a8cce97de7d59f2d02a5ff6023b7b4adeee77470a03b0c92b1322f1b44e",
+      "size": 4441
+    },
+    {
+      "path": "v6/synthetic/ev1-get-version-terminal-mac.vec",
+      "sha256": "e7ed2efd40c53903c21bf35aa891d22bd0553d353dd04c3fd003f3e120ff8480",
+      "size": 1308
     },
     {
       "path": "v6/synthetic/ev1-terminal-command-error-rolls-back.vec",
@@ -782,6 +832,46 @@
       "size": 703
     },
     {
+      "path": "v6/synthetic/format-application-boundaries.vec",
+      "sha256": "b962914144084ac19458bea7dde66c4d61cfeec427ba7934b3859d3538cbe61a",
+      "size": 2257
+    },
+    {
+      "path": "v6/synthetic/get-card-uid-10-byte-format.vec",
+      "sha256": "6b2c33b9c4e67252a012d7d7c3575c2c497b4178b6ec3c27651675e847b98a16",
+      "size": 903
+    },
+    {
+      "path": "v6/synthetic/get-card-uid-d40-full.vec",
+      "sha256": "2247b1193e9325c03f2935c1c44c2dbf8993b359f0fecaa06317bfccef9fa8c8",
+      "size": 1005
+    },
+    {
+      "path": "v6/synthetic/get-card-uid-ev1-full.vec",
+      "sha256": "ab9726ae159526d32cdee91d59ee398c15563322285b28dae8b5051d1a67016e",
+      "size": 1478
+    },
+    {
+      "path": "v6/synthetic/get-card-uid-ev2-full.vec",
+      "sha256": "8178f8d43b04449e2ffd8beb612ccd76f2815f195c1c79e17db20a05c60b2a0d",
+      "size": 1371
+    },
+    {
+      "path": "v6/synthetic/get-card-uid-iso-full.vec",
+      "sha256": "0e7c90c11ee1e58c61d8acf7ed5b6f0ac735cb65ce12d720cf3a2e812adf681f",
+      "size": 904
+    },
+    {
+      "path": "v6/synthetic/get-file-counters-access-and-full.vec",
+      "sha256": "fd9593a03a3cbc4497d8c7ee4ddfe25db285d2e8f4801045429c984780b91611",
+      "size": 2270
+    },
+    {
+      "path": "v6/synthetic/get-file-settings-limited-credit-limit.vec",
+      "sha256": "6b1e02c9a15a987957a96737461298ec97a4decc0cbbba2822f51f6494dc7760",
+      "size": 1689
+    },
+    {
       "path": "v6/synthetic/iso-command-aborts-native-chain.vec",
       "sha256": "26b8e2f3ac81d8a2426653a3502dbf1a71bab282cff0d0ccfd41f9305dcd56f3",
       "size": 491
@@ -792,19 +882,49 @@
       "size": 1653
     },
     {
+      "path": "v6/synthetic/limited-credit-transaction-semantics.vec",
+      "sha256": "1ff8d6fc9a0112198a64a9f64c4b636424fe3b1367d924458564d1d239696020",
+      "size": 4769
+    },
+    {
+      "path": "v6/synthetic/picc-format-disabled-boundaries.vec",
+      "sha256": "9d92c881e7d632f519420c99e56aadbcd0063eeaa30d4000686e1623ec90a9b9",
+      "size": 1656
+    },
+    {
+      "path": "v6/synthetic/picc-set-configuration-format-disabled.vec",
+      "sha256": "6a5308223910942213be4fb7abd5b3afe060c813d67bc419f2619a3d61fa7c48",
+      "size": 2343
+    },
+    {
+      "path": "v6/synthetic/protected-change-key-settings-ev1.vec",
+      "sha256": "a73f884bb7ee6e54a4e68b15980615f52104acb68a4b48042071c5894b2243fd",
+      "size": 2836
+    },
+    {
+      "path": "v6/synthetic/protected-change-key-settings-ev2.vec",
+      "sha256": "93940430e2530e48201c6a239303e1af1d6e172bec1c48cbffec9db01dc23cf8",
+      "size": 3052
+    },
+    {
       "path": "v6/synthetic/random-failure-preserves-activation.vec",
       "sha256": "adb2cb9b5960000c3b5a35556e6b3c00495c4a36cf355c199db1e4f14ea80a28",
       "size": 504
     },
     {
       "path": "v6/synthetic/random-failure-preserves-ev1-ev2-first.vec",
-      "sha256": "a3096b6f226b700106ad0150d64107a3f30faac9f90cceb5cb3043b52b14efac",
-      "size": 1181
+      "sha256": "377d0144bab36dd2f54d45aaaccd3a7c6b9d019ad659df722f35d2d19dab5999",
+      "size": 1342
     },
     {
       "path": "v6/synthetic/random-failure-preserves-ev1-prepare-pc.vec",
       "sha256": "9ae97d3595bd8ee098278c979249496d8140d643e74057a743acbaffdb46835d",
       "size": 1387
+    },
+    {
+      "path": "v6/synthetic/read-data-file-type-matrix.vec",
+      "sha256": "d5096590eb40a9703415f56e912a21d07cf337f4449b755ae945b9cecd8e1768",
+      "size": 3157
     },
     {
       "path": "v6/synthetic/rejected-ev2-authentication-retires-session.vec",

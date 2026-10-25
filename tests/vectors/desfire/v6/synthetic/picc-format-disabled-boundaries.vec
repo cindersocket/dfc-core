@@ -1,0 +1,53 @@
+# A disabled PICC rejects FormatPicc with the disabled status. Malformed input
+# is rejected first, and neither path changes the seeded application data.
+name: PICC format-disabled boundaries
+origin: synthetic
+case-id: picc-format-disabled-boundaries
+feature-version: 6
+requires: auth-d40
+source: dfc-core issue 130 regression coverage
+issues: https://github.com/cindersocket/dfc-core/issues/130
+uid: 04223344556677
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-format-disabled: 1
+
+scan
+status   90CA000005C3B2A10F0100 => 00
+status   905A000003C3B2A100 => 00
+status   90CD0000070100EEEE04000000 => 00
+status   903D00000B01000000040000E1E2E3E400 => 00
+exchange native-apdu 90BD0000070100000004000000 => E1E2E3E49100
+status   905A00000300000000 => 00
+clear-dirty
+
+status   90FC000001AA00 => 7E
+assert   credential.num_apps = 1
+assert   credential.num_files = 1
+assert   files[0].data = E1E2E3E4
+assert   credential.dirty = 0
+
+inject-random 0001020304050607
+exchange native-apdu 900A0000010000 => 491E890DE9ACE93291AF
+exchange native-apdu 90AF000010491E890DE9ACE932E9416AD3B58C583700 => B7D1DA7CE0DD986B9100
+status   90FC000000 => 1C
+
+assert   credential.num_apps = 1
+assert   credential.num_files = 1
+assert   apps[0].aid = A1B2C3
+assert   apps[0].key_settings_1 = 15
+assert   apps[0].key_settings_2 = 1
+assert   files[0].app_index = 0
+assert   files[0].number = 1
+assert   files[0].data_len = 4
+assert   files[0].data = E1E2E3E4
+assert   credential.dirty = 0
+
+field-off
+scan
+status   905A000003C3B2A100 => 00
+exchange native-apdu 90BD0000070100000004000000 => E1E2E3E49100

@@ -4,6 +4,7 @@ case-id: random-failure-preserves-ev1-ev2-first
 origin: synthetic
 feature-version: 6
 source: generated failure-injection regression
+issues: https://github.com/cindersocket/dfc-core/issues/131
 requires: ev3,iso7816-auth,ev2-secure-messaging
 uid: 048222F2CF1890
 picc-generation: EV3
@@ -24,4 +25,6 @@ random-source finite
 inject-random 11111111111111111111111111111111
 expect-error random-source exchange native-apdu 9071000002000000
 exchange native-apdu 9045000000 => 0F84C16ECF469EDD5EC19100
+inject-random A1B2C3D4
+exchange native-apdu 9071000002000000 => FFA3C7ED04710B98067DAE6815E2751F91AF
 field-off

@@ -1,0 +1,30 @@
+# PROVENANCE: Synthetic cross-binding regression for authentication random-source retries.
+name: D40 and ISO authentication random failures are retryable
+case-id: authentication-random-retry-d40-iso
+origin: synthetic
+feature-version: 6
+source: generated authentication failure-atomicity regression
+issues: https://github.com/cindersocket/dfc-core/issues/131
+requires: ev1,auth-iso
+uid: 045704EA916F80
+picc-generation: EV1
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+random-source finite
+
+scan
+inject-random CCF53270
+expect-error random-source exchange native-apdu 900A0000010000
+inject-random 570A7669
+exchange native-apdu 900A0000010000 => DF6AB29AAE46BA2791AF
+field-off
+
+scan
+inject-random BE0A8CC7
+expect-error random-source exchange native-apdu 901A0000010000
+inject-random 458DF222
+exchange native-apdu 901A0000010000 => 2D397440D93DF1B291AF
+field-off

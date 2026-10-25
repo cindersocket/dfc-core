@@ -1,0 +1,26 @@
+# PROVENANCE: Synthetic regression for ISO-authenticated GetCardUID protection.
+name: ISO-authenticated GetCardUID uses Full response protection
+case-id: iso-get-card-uid-full-response
+origin: synthetic
+feature-version: 6
+source: generated GetCardUID response-protection regression
+issues: https://github.com/cindersocket/dfc-core/issues/126
+requires: ev1,auth-iso
+uid: 045704EA916F80
+picc-generation: EV1
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+scan
+
+inject-random BE0A8CC7458DF222
+exchange native-apdu 901A0000010000 => 2D397440D93DF1B291AF
+exchange native-apdu 90AF000010A68DDE9E5CC36DA35F88CCF2809D1FD400 => 49FD4910528962FB9100
+exchange native-apdu 9051000000 => B5A66FB62BA02AF3E02A2FD53591DD279100
+
+exchange native-apdu 90510000010000 => 917E
+assert emulator.secure_messaging = null
+exchange native-apdu 9051000000 => 91AE
+field-off

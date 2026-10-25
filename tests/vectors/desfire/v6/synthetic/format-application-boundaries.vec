@@ -1,0 +1,54 @@
+# FormatPicc is a PICC command unless the selected application is delegated.
+# An ordinary application must not be changed by the rejected command.
+name: format application boundaries
+origin: synthetic
+case-id: format-ordinary-application-boundaries
+feature-version: 6
+requires: auth-aes
+source: dfc-core issue 130 regression coverage
+issues: https://github.com/cindersocket/dfc-core/issues/130
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+
+scan
+status   90CA0000050100000F8100             => 00
+status   905A00000301000000                 => 00
+status   90CD0000070100EEEE04000000         => 00
+status   903D00000B01000000040000A1A2A3A400 => 00
+exchange native-apdu 90BD0000070100000004000000 => A1A2A3A49100
+clear-dirty
+
+# A malformed command is rejected without changing the selected application.
+status   90FC000001AA00                     => 7E
+assert   emulator.selected_application = 2
+assert   credential.num_apps            = 1
+assert   apps[0].aid                     = 000001
+assert   apps[0].key_settings_1          = 15
+assert   apps[0].key_settings_2          = 129
+assert   apps[0].keys[0]                 = 00000000000000000000000000000000
+assert   credential.num_files            = 1
+assert   files[0].number                  = 1
+assert   files[0].data_len                = 4
+assert   files[0].data                    = A1A2A3A4
+assert   credential.dirty                = 0
+
+# A well-formed command is also refused for an ordinary application.
+status   90FC000000                       => 9D
+assert   emulator.selected_application = 2
+assert   credential.num_apps            = 1
+assert   apps[0].aid                     = 000001
+assert   apps[0].key_settings_1          = 15
+assert   apps[0].key_settings_2          = 129
+assert   apps[0].keys[0]                 = 00000000000000000000000000000000
+assert   credential.num_files            = 1
+assert   files[0].number                  = 1
+assert   files[0].data_len                = 4
+assert   files[0].data                    = A1A2A3A4
+assert   credential.dirty                = 0
+exchange native-apdu 90BD0000070100000004000000 => A1A2A3A49100
