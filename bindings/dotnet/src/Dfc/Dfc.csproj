@@ -8,6 +8,9 @@
     <Description>DESFire-compatible credentials, virtual card and reader for .NET, over the native DFC core.</Description>
     <PackageLicenseExpression>GPL-2.0-or-later</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/cindersocket/dfc-core</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/cindersocket/dfc-core</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
   <ItemGroup>

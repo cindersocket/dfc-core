@@ -54,3 +54,8 @@ buffers on every exit. Android runtime or application copies of Java arrays
 cannot be recalled, so callers should close `DfcCredential` promptly and clear
 mutable key arrays they own. A cleaner clears owned credential and diagnostic
 buffers if explicit close is missed, with runtime-dependent timing.
+
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).

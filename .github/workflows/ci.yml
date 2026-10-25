@@ -59,6 +59,8 @@ jobs:
         run: python3 tests/test_release_process.py
       - name: Test dependency graph inventory
         run: python3 tests/test_dependency_graph.py
+      - name: Test security policy
+        run: python3 tests/test_security_policy.py
       - name: Check documentation links
         run: python3 scripts/check-docs.py
       - name: Check version metadata

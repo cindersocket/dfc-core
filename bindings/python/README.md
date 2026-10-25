@@ -88,6 +88,11 @@ operation already in progress finishes before its native handle is released.
 Calls on one handle are serialized. A physical transport remains responsible for
 its own thread safety.
 
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).
+
 ## Reader commands and errors
 
 Use the named `Command` constructors for common operations, such as

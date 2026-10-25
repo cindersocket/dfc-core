@@ -92,3 +92,8 @@ and temporary output buffers on every exit. Java arrays cannot prevent copies
 made by the VM or application, so callers should close `DfcCredential` promptly
 and clear arrays they own. A cleaner clears owned credential and diagnostic
 buffers if explicit close is missed; its timing is intentionally unspecified.
+
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).

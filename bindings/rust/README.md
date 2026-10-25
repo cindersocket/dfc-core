@@ -102,6 +102,11 @@ generated layout fingerprint before creating hosted handles. Random callbacks ar
 the FFI boundary: they must return exactly the requested byte count, and panic
 or length mismatch is reported after native control returns.
 
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).
+
 ## Reader clear-header length
 
 `Reader::exchange(command, mode, clear_header)` derives the clear head of an

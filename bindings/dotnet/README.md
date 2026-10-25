@@ -80,3 +80,8 @@ it promptly to clear its managed buffers. The runtime may retain copies created
 by application code. Credential records expose mutable `byte[]` fields whose
 lifetime belongs to the caller; native marshalling temporaries are cleared on
 every exit.
+
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).

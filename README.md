@@ -10,7 +10,8 @@ DFC core is a portable DESFire-compatible engine. It provides these parts:
 - A reader with command encoding and secure messaging
 - A flat interface for foreign runtimes, with .NET, Java/Android, Python, and Rust libraries over it
 
-See the [changelog](CHANGELOG.md) for release notes.
+See the [changelog](CHANGELOG.md) for release notes. Report suspected
+vulnerabilities through the private process in the [security policy](SECURITY.md).
 The [credential format specification](docs/credential-format-v6.md) defines
 `.dfc` and `.dfcb` versions 4 through 6. The
 [full v6 schema](docs/credential-schema-v6.md) lists every field and binary
