@@ -322,7 +322,8 @@ jobs:
           unzip -t dist/nuget/*.nupkg
           python3 scripts/verify-nuget-layout.py dist/nuget/Dfc."$VERSION".nupkg
           dotnet run --project tests/package-consumer/dotnet/Dfc.PackageConsumer.csproj \
-            -p:DfcVersion="$VERSION" -p:RestoreSources="$PWD/dist/nuget" -- \
+            -p:DfcUsePackage=true -p:DfcVersion="$VERSION" \
+            -p:RestoreSources="$PWD/dist/nuget" -- \
             examples/credentials/v6-minimal.dfcb
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

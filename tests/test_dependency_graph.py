@@ -6,6 +6,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -125,6 +126,21 @@ class DependencyGraphTests(unittest.TestCase):
     def test_inventory_check_runs_in_pull_request_ci(self) -> None:
         text = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("python3 tests/test_dependency_graph.py", text)
+
+    def test_dotnet_package_consumer_defaults_to_the_local_project(self) -> None:
+        project = ET.parse(
+            ROOT / "tests/package-consumer/dotnet/Dfc.PackageConsumer.csproj"
+        ).getroot()
+        package = project.find("./ItemGroup/PackageReference[@Include='Dfc']")
+        local = project.find("./ItemGroup/ProjectReference[@Include]")
+
+        self.assertIsNotNone(package)
+        self.assertEqual("'$(DfcUsePackage)' == 'true'", package.get("Condition"))
+        self.assertIsNotNone(local)
+        self.assertEqual("'$(DfcUsePackage)' != 'true'", local.get("Condition"))
+
+        release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn("-p:DfcUsePackage=true", release)
 
     def test_native_snapshot_tracks_the_cmake_pin(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

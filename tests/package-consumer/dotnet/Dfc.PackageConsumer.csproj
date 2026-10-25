@@ -7,7 +7,8 @@
     <DfcVersion Condition="'$(DfcVersion)' == ''">2.0.0</DfcVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Dfc" Version="$(DfcVersion)" />
+    <PackageReference Include="Dfc" Version="$(DfcVersion)" Condition="'$(DfcUsePackage)' == 'true'" />
+    <ProjectReference Include="../../../bindings/dotnet/src/Dfc/Dfc.csproj" Condition="'$(DfcUsePackage)' != 'true'" />
     <Compile Include="../../../examples/dotnet/Program.cs" Link="Program.cs" />
   </ItemGroup>
 </Project>
