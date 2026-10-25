@@ -13,6 +13,13 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
             ROOT
             / "examples/android/src/androidTest/java/com/cindersocket/dfc/sample/MinifiedExceptionTest.java"
         ).read_text()
+        smoke_manifest = (
+            ROOT / "examples/android/src/minifiedSmoke/AndroidManifest.xml"
+        ).read_text()
+        smoke_probe = (
+            ROOT
+            / "examples/android/src/minifiedSmoke/java/com/cindersocket/dfc/sample/MinifiedExceptionProbeActivity.java"
+        ).read_text()
         sample_source = (
             ROOT / "examples/android/src/main/java/com/cindersocket/dfc/sample/MainActivity.java"
         ).read_text()
@@ -29,19 +36,23 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
         self.assertNotIn("-keep class com.cindersocket.dfc.**", consumer_rules)
         self.assertIn("isMinifyEnabled = true", sample_build)
         self.assertNotIn("isDebuggable = true", sample_build)
-        self.assertIn('testBuildType = "release"', sample_build)
+        self.assertIn('testBuildType = "minifiedSmoke"', sample_build)
+        self.assertIn('create("minifiedSmoke")', sample_build)
         self.assertIn(
             'androidTestImplementation("com.google.errorprone:error_prone_annotations:2.30.0")',
             sample_build,
         )
         self.assertIn('testProguardFiles("proguard-rules.pro")', sample_build)
         self.assertIn("-dontwarn javax.lang.model.element.Modifier", sample_rules)
-        self.assertIn("new DfcReader", smoke_test)
-        self.assertIn("Integer.MAX_VALUE", smoke_test)
+        self.assertNotIn("import com.cindersocket.dfc.", smoke_test)
+        self.assertIn(".MinifiedExceptionProbeActivity", smoke_manifest)
+        self.assertIn('android:exported="false"', smoke_manifest)
+        self.assertIn("new DfcReader", smoke_probe)
+        self.assertIn("Integer.MAX_VALUE", smoke_probe)
         self.assertIn("DfcReader.Communication.PLAIN, -1", sample_source)
         self.assertIn(
             "script: bindings/android/gradlew --no-daemon -p bindings/android "
-            ":sample:connectedReleaseAndroidTest :dfc:connectedMismatchAndroidTest",
+            ":sample:connectedMinifiedSmokeAndroidTest :dfc:connectedMismatchAndroidTest",
             workflow,
         )
         self.assertNotIn("cd bindings/android\n", workflow)

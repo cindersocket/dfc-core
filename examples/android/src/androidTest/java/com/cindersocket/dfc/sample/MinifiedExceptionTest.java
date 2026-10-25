@@ -1,28 +1,32 @@
 package com.cindersocket.dfc.sample;
 
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertTrue;
 
+import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.widget.TextView;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
-import com.cindersocket.dfc.DfcCommand;
-import com.cindersocket.dfc.DfcException;
-import com.cindersocket.dfc.DfcReader;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public final class MinifiedExceptionTest {
   @Test
-  public void nativeExceptionKeepsItsClassAndConstructor() throws Exception {
-    try (DfcReader reader = new DfcReader(command -> {
-      fail("invalid arguments must fail before transport");
-      return new byte[0];
-    })) {
-      reader.exchange(DfcCommand.getVersion(), DfcReader.Framing.ISO_7816,
-          DfcReader.Communication.PLAIN, Integer.MAX_VALUE);
-      fail("invalid clear-header length must fail in native code");
-    } catch (DfcException expected) {
-      assertNotEquals(0, expected.status());
+  public void nativeExceptionKeepsItsClassAndConstructor() {
+    Intent intent = new Intent();
+    intent.setComponent(new ComponentName(ApplicationProvider.getApplicationContext(),
+        "com.cindersocket.dfc.sample.MinifiedExceptionProbeActivity"));
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+    Activity activity = InstrumentationRegistry.getInstrumentation().startActivitySync(intent);
+    try {
+      TextView result = activity.findViewById(android.R.id.text1);
+      assertTrue(result.getText().toString(), result.getText().toString().startsWith("PASS:"));
+    } finally {
+      activity.finish();
     }
   }
 }

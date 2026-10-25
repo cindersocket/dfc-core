@@ -11,13 +11,17 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    testBuildType = "release"
+    testBuildType = "minifiedSmoke"
     buildTypes {
         release {
             isMinifyEnabled = true
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             testProguardFiles("proguard-rules.pro")
+        }
+        create("minifiedSmoke") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
         }
     }
     compileOptions {
