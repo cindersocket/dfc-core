@@ -55,7 +55,8 @@ static void fail(VectorState* st, const char* fmt, ...) {
 static int parse_hex(const char* s, uint8_t* out, bool* mask, size_t cap) {
     size_t n = 0;
     while(*s) {
-        while(*s == ' ' || *s == '\t') s++;
+        while(*s == ' ' || *s == '\t')
+            s++;
         if(!*s) break;
         if(!s[1]) return -1;
         if(n >= cap) return -1;
@@ -78,7 +79,8 @@ static int parse_hex(const char* s, uint8_t* out, bool* mask, size_t cap) {
 }
 
 static void hexdump(FILE* f, const uint8_t* b, size_t n) {
-    for(size_t i = 0; i < n; i++) fprintf(f, "%02X", b[i]);
+    for(size_t i = 0; i < n; i++)
+        fprintf(f, "%02X", b[i]);
 }
 
 // A tolerance clause: the little-endian integer at `offset` may differ from the
@@ -93,7 +95,8 @@ typedef struct {
 
 static uint64_t read_le(const uint8_t* bytes, size_t length) {
     uint64_t value = 0;
-    for(size_t i = 0; i < length; i++) value |= (uint64_t)bytes[i] << (8 * i);
+    for(size_t i = 0; i < length; i++)
+        value |= (uint64_t)bytes[i] << (8 * i);
     return value;
 }
 
@@ -116,7 +119,8 @@ static int parse_tolerances(char* text, VectorTolerance* out, size_t cap) {
         out[n].delta = delta;
         n++;
         cursor += used;
-        while(*cursor == ' ' || *cursor == '\t') cursor++;
+        while(*cursor == ' ' || *cursor == '\t')
+            cursor++;
         if(!*cursor) break;
         if(strncmp(cursor, "tolerance", strlen("tolerance")) != 0) return -1;
         cursor += strlen("tolerance");
@@ -389,9 +393,11 @@ static bool feature_supported(const char* name, size_t len) {
 static bool requires_satisfied(const char* list) {
     const char* cursor = list;
     while(*cursor) {
-        while(*cursor == ' ' || *cursor == ',') cursor++;
+        while(*cursor == ' ' || *cursor == ',')
+            cursor++;
         const char* start = cursor;
-        while(*cursor && *cursor != ',' && *cursor != ' ') cursor++;
+        while(*cursor && *cursor != ',' && *cursor != ' ')
+            cursor++;
         if(cursor > start && !feature_supported(start, (size_t)(cursor - start))) return false;
     }
     return true;
@@ -400,7 +406,8 @@ static bool requires_satisfied(const char* list) {
 // ----------------------------------------------------------------- asserts --
 
 // Match "prefix[N].field" and yield N plus the field name.
-static bool split_indexed(const char* path, const char* prefix, size_t* index, const char** field) {
+static bool
+    split_indexed(const char* path, const char* prefix, size_t* index, const char** field) {
     size_t plen = strlen(prefix);
     if(strncmp(path, prefix, plen) != 0 || path[plen] != '[') return false;
     char* end = NULL;
@@ -445,8 +452,8 @@ static bool cmp_num(VectorState* st, const char* path, unsigned long actual, con
     return true;
 }
 
-static bool set_model_path(
-    VectorState* st, DfcCredential* c, const char* path, const char* value_text) {
+static bool
+    set_model_path(VectorState* st, DfcCredential* c, const char* path, const char* value_text) {
     char* end = NULL;
     unsigned long value = strtoul(value_text, &end, 0);
     if(!*value_text || !end || *end != '\0' || value > UINT32_MAX) {
@@ -460,14 +467,19 @@ static bool set_model_path(
     const char* field;
     if(split_indexed(path, "apps", &i, &field) && i < c->num_apps) {
         DfcApplication* app = &c->apps[i];
-        if(strcmp(field, "key_len") == 0) app->key_len = (size_t)value;
-        else if(strcmp(field, "key_settings_2") == 0) app->key_settings_2 = (uint8_t)value;
-        else if(strcmp(field, "has_auth_commands") == 0) app->has_auth_commands = value != 0;
+        if(strcmp(field, "key_len") == 0)
+            app->key_len = (size_t)value;
+        else if(strcmp(field, "key_settings_2") == 0)
+            app->key_settings_2 = (uint8_t)value;
+        else if(strcmp(field, "has_auth_commands") == 0)
+            app->has_auth_commands = value != 0;
         else if(strcmp(field, "has_preferred_auth_command") == 0)
             app->has_preferred_auth_command = value != 0;
 #if DFC_ENABLE_KEY_SETS
-        else if(strcmp(field, "key_storage_len") == 0) app->key_storage_len = (size_t)value;
-        else if(strcmp(field, "max_key_size") == 0) app->max_key_size = (uint8_t)value;
+        else if(strcmp(field, "key_storage_len") == 0)
+            app->key_storage_len = (size_t)value;
+        else if(strcmp(field, "max_key_size") == 0)
+            app->max_key_size = (uint8_t)value;
         else if(sscanf(field, "key_set_types[%zu]", &k) == 1 && k < app->num_key_sets)
             app->key_set_types[k] = (uint8_t)value;
         else if(sscanf(field, "key_set_versions[%zu]", &k) == 1 && k < app->num_key_sets)
@@ -484,7 +496,8 @@ static bool set_model_path(
     if(split_indexed(path, "files", &i, &field) && i < c->num_files) {
 #if DFC_ENABLE_SDM
         DfcFile* file = &c->files[i];
-        if(strcmp(field, "sdm_enabled") == 0) file->sdm_enabled = value != 0;
+        if(strcmp(field, "sdm_enabled") == 0)
+            file->sdm_enabled = value != 0;
         else if(strcmp(field, "sdm_has_encrypted_file_offset") == 0)
             file->sdm_has_encrypted_file_offset = value != 0;
         else if(strcmp(field, "sdm_encrypted_file_offset") == 0)
@@ -536,14 +549,12 @@ static bool assert_path(
         return false;
     }
 
-    if(strcmp(path, "credential.dirty") == 0)
-        return cmp_num(st, path, c->dirty ? 1u : 0u, want);
+    if(strcmp(path, "credential.dirty") == 0) return cmp_num(st, path, c->dirty ? 1u : 0u, want);
     if(strcmp(path, "credential.num_apps") == 0)
         return cmp_num(st, path, (unsigned long)c->num_apps, want);
     if(strcmp(path, "credential.num_files") == 0)
         return cmp_num(st, path, (unsigned long)c->num_files, want);
-    if(strcmp(path, "credential.uid") == 0)
-        return cmp_bytes(st, path, c->uid, c->uid_len, want);
+    if(strcmp(path, "credential.uid") == 0) return cmp_bytes(st, path, c->uid, c->uid_len, want);
     if(strcmp(path, "credential.model_status") == 0) {
         DfcModelStatus status = dfc_credential_validate_model(c);
         const char* actual = status == DfcModelOk ? "ok" : "malformed";
@@ -616,18 +627,10 @@ static bool assert_path(
     }
     if(strcmp(path, "session.encryption_key") == 0)
         return cmp_bytes(
-            st,
-            path,
-            session->emulator->ev2_session_encryption_key,
-            DFC_AES_KEY_LENGTH,
-            want);
+            st, path, session->emulator->ev2_session_encryption_key, DFC_AES_KEY_LENGTH, want);
     if(strcmp(path, "session.mac_key") == 0)
         return cmp_bytes(
-            st,
-            path,
-            session->emulator->ev2_session_mac_key,
-            DFC_AES_KEY_LENGTH,
-            want);
+            st, path, session->emulator->ev2_session_mac_key, DFC_AES_KEY_LENGTH, want);
 #endif
 
     if(split_indexed(path, "apps", &i, &field)) {
@@ -639,12 +642,11 @@ static bool assert_path(
         // Most significant byte first, the one AID order the format uses.
         // CreateApplication carries the reverse of this on the wire.
         if(strcmp(field, "aid") == 0) return cmp_bytes(st, path, a->aid, 3, want);
-        if(strcmp(field, "key_settings_1") == 0)
-            return cmp_num(st, path, a->key_settings_1, want);
-        if(strcmp(field, "key_settings_2") == 0)
-            return cmp_num(st, path, a->key_settings_2, want);
+        if(strcmp(field, "key_settings_1") == 0) return cmp_num(st, path, a->key_settings_1, want);
+        if(strcmp(field, "key_settings_2") == 0) return cmp_num(st, path, a->key_settings_2, want);
         if(strcmp(field, "auth_command") == 0) return cmp_num(st, path, a->auth_command, want);
-        if(strcmp(field, "num_keys") == 0) return cmp_num(st, path, (unsigned long)a->num_keys, want);
+        if(strcmp(field, "num_keys") == 0)
+            return cmp_num(st, path, (unsigned long)a->num_keys, want);
         if(strcmp(field, "key_len") == 0)
             return cmp_num(st, path, (unsigned long)a->key_len, want);
         if(strcmp(field, "has_iso_file_id") == 0)
@@ -718,7 +720,8 @@ static bool vector_is_runnable(const char* path) {
     bool runnable = true;
     while(fgets(line, sizeof(line), f)) {
         char* cursor = line;
-        while(*cursor == ' ' || *cursor == '\t') cursor++;
+        while(*cursor == ' ' || *cursor == '\t')
+            cursor++;
         if(*cursor == '#' || *cursor == '\n' || *cursor == '\r') continue;
         if(strncmp(cursor, "replayable:", 11) == 0) {
             if(strstr(cursor + 11, "false") != NULL) runnable = false;
@@ -730,9 +733,11 @@ static bool vector_is_runnable(const char* path) {
             continue;
         }
         char* value = cursor + 9;
-        while(*value == ' ') value++;
+        while(*value == ' ')
+            value++;
         char* end = value + strlen(value);
-        while(end > value && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ')) end--;
+        while(end > value && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' '))
+            end--;
         *end = '\0';
         runnable = runnable && requires_satisfied(value);
     }
@@ -790,7 +795,8 @@ static bool run_vector(const char* path) {
     while(fgets(line, sizeof(line), f)) {
         st.line_no++;
         char* p = line;
-        while(*p == ' ' || *p == '\t') p++;
+        while(*p == ' ' || *p == '\t')
+            p++;
         char* nl = strpbrk(p, "\r\n");
         if(nl) *nl = 0;
         if(*p == 0 || *p == '#') continue;
@@ -801,7 +807,8 @@ static bool run_vector(const char* path) {
         if(in_header && colon && (!space || colon < space)) {
             *colon = 0;
             char* v = colon + 1;
-            while(*v == ' ' || *v == '\t') v++;
+            while(*v == ' ' || *v == '\t')
+                v++;
             apply_header(&credential, p, v);
             continue;
         }
@@ -891,8 +898,8 @@ static bool run_vector(const char* path) {
         if(strcmp(verb, "advance-time") == 0) {
             char* milliseconds_text = strtok(NULL, " \t");
             char* end = NULL;
-            unsigned long milliseconds =
-                milliseconds_text ? strtoul(milliseconds_text, &end, 10) : 0;
+            unsigned long milliseconds = milliseconds_text ? strtoul(milliseconds_text, &end, 10) :
+                                                             0;
             if(!milliseconds_text || !*milliseconds_text || !end || *end != '\0' ||
                milliseconds > UINT32_MAX) {
                 fail(&st, "advance-time needs milliseconds");
@@ -975,8 +982,8 @@ static bool run_vector(const char* path) {
                              session, command, (size_t)command_len, got, sizeof(got), &got_len);
             }
             size_t remaining_after = dfc_host_random_remaining();
-            if(!replay_random_failed() || rc != DfcVirtualPiccStatusProtocolError || got_len != 0 ||
-               remaining_after != remaining_before) {
+            if(!replay_random_failed() || rc != DfcVirtualPiccStatusProtocolError ||
+               got_len != 0 || remaining_after != remaining_before) {
                 fail(
                     &st,
                     "random-source failure was not atomic "
@@ -1020,7 +1027,8 @@ static bool run_vector(const char* path) {
             fail(&st, "syntax: %s <apdu> => <expected>", verb);
             break;
         }
-        while(*exp_hex == ' ' || *exp_hex == '\t') exp_hex++;
+        while(*exp_hex == ' ' || *exp_hex == '\t')
+            exp_hex++;
         VectorTolerance tolerances[VectorMaximumTolerances];
         int tolerance_count = parse_tolerances(exp_hex, tolerances, VectorMaximumTolerances);
         if(tolerance_count < 0 || (is_status && tolerance_count > 0)) {
@@ -1073,13 +1081,15 @@ static bool run_vector(const char* path) {
             }
             bool bad_tolerance = false;
             for(int t = 0; t < tolerance_count; t++) {
-                if(tolerances[t].offset + tolerances[t].length > (size_t)want_len) bad_tolerance = true;
+                if(tolerances[t].offset + tolerances[t].length > (size_t)want_len)
+                    bad_tolerance = true;
                 for(size_t i = tolerances[t].offset;
                     !bad_tolerance && i < tolerances[t].offset + tolerances[t].length;
                     i++) {
                     if(!mask[i]) bad_tolerance = true;
                     for(int u = t + 1; u < tolerance_count; u++) {
-                        if(i >= tolerances[u].offset && i < tolerances[u].offset + tolerances[u].length)
+                        if(i >= tolerances[u].offset &&
+                           i < tolerances[u].offset + tolerances[u].length)
                             bad_tolerance = true;
                     }
                 }
@@ -1092,8 +1102,7 @@ static bool run_vector(const char* path) {
 
         if(!session) session = dfc_virtual_picc_session_alloc(&credential);
         if(!have_activation) {
-            if(dfc_virtual_picc_scan_iso14443a(session, &activation) !=
-               DfcVirtualPiccStatusOk) {
+            if(dfc_virtual_picc_scan_iso14443a(session, &activation) != DfcVirtualPiccStatusOk) {
                 fail(&st, "exchange activation refused");
                 break;
             }
@@ -1101,21 +1110,11 @@ static bool run_vector(const char* path) {
         }
         uint8_t got[VectorMaximumByteCount];
         size_t got_len = 0;
-        DfcVirtualPiccStatus rc = is_frame ?
-                                      dfc_virtual_picc_iso_dep_frame_exchange(
-                                          session,
-                                          cmd,
-                                          (size_t)cmd_len,
-                                          got,
-                                          sizeof(got),
-                                          &got_len) :
-                                      dfc_virtual_picc_iso_dep_exchange(
-                                          session,
-                                          cmd,
-                                          (size_t)cmd_len,
-                                          got,
-                                          sizeof(got),
-                                          &got_len);
+        DfcVirtualPiccStatus rc =
+            is_frame ? dfc_virtual_picc_iso_dep_frame_exchange(
+                           session, cmd, (size_t)cmd_len, got, sizeof(got), &got_len) :
+                       dfc_virtual_picc_iso_dep_exchange(
+                           session, cmd, (size_t)cmd_len, got, sizeof(got), &got_len);
         (void)dialect;
         if(rc != DfcVirtualPiccStatusOk) {
             fail(&st, "transport error %d", (int)rc);
@@ -1129,11 +1128,7 @@ static bool run_vector(const char* path) {
     dfc_host_clear_random_buffer();
     fclose(f);
 
-    printf(
-        "  %-52s %s (%d steps)\n",
-        path,
-        st.failed ? "FAIL" : "ok",
-        st.steps_run);
+    printf("  %-52s %s (%d steps)\n", path, st.failed ? "FAIL" : "ok", st.steps_run);
     return !st.failed;
 }
 
@@ -1145,7 +1140,8 @@ static bool compile_vector(const char* path, const char* output_path) {
     char line[VectorMaximumLineLength];
     while(fgets(line, sizeof(line), input)) {
         char* p = line;
-        while(*p == ' ' || *p == '\t') p++;
+        while(*p == ' ' || *p == '\t')
+            p++;
         char* nl = strpbrk(p, "\r\n");
         if(nl) *nl = 0;
         if(*p == 0 || *p == '#') continue;
@@ -1154,7 +1150,8 @@ static bool compile_vector(const char* path, const char* output_path) {
         if(!colon || (space && space < colon)) break;
         *colon = 0;
         char* value = colon + 1;
-        while(*value == ' ' || *value == '\t') value++;
+        while(*value == ' ' || *value == '\t')
+            value++;
         apply_header(&credential, p, value);
     }
     fclose(input);
@@ -1164,7 +1161,8 @@ static bool compile_vector(const char* path, const char* output_path) {
         return false;
     }
     uint8_t* encoded = malloc(encoded_length);
-    if(!encoded || dfc_der_encode(&credential, encoded, encoded_length, &encoded_length) != DfcDerOk) {
+    if(!encoded ||
+       dfc_der_encode(&credential, encoded, encoded_length, &encoded_length) != DfcDerOk) {
         free(encoded);
         return false;
     }
