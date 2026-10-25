@@ -518,6 +518,7 @@ static MunitResult
     emulator->transaction_snapshot_pool = dfc_platform_alloc(snapshot_length, DfcAllocEmulator);
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     emulator->transaction_snapshot_pool_length = snapshot_length;
+    emulator->transaction_snapshot_pool_capacity = snapshot_length;
     memset(emulator->transaction_snapshot_pool, 0x5A, snapshot_length);
 #else
     const size_t snapshot_length = 0;
@@ -680,6 +681,7 @@ static MunitResult test_activation_reset_wipes_retained_and_released_storage(
     emulator->transaction_snapshot_pool = dfc_platform_alloc(snapshot_length, DfcAllocEmulator);
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     emulator->transaction_snapshot_pool_length = snapshot_length;
+    emulator->transaction_snapshot_pool_capacity = snapshot_length;
     memset(emulator->transaction_snapshot_pool, 0x5A, snapshot_length);
 #endif
     memset(emulator->rnd_b, 0xC3, sizeof(emulator->rnd_b));

@@ -90,6 +90,7 @@ static void expect_credential_unchanged(const DfcCredential* before, const DfcCr
 static void begin_transaction_snapshot(FormatFixture* fixture, size_t app_index) {
     DfcEmulator* emulator = fixture->session->emulator;
     emulator->transaction_snapshot_pool_length = fixture->credential.file_pool_used;
+    emulator->transaction_snapshot_pool_capacity = emulator->transaction_snapshot_pool_length;
     emulator->transaction_snapshot_pool =
         dfc_platform_alloc(emulator->transaction_snapshot_pool_length, DfcAllocEmulator);
     munit_assert_not_null(emulator->transaction_snapshot_pool);
