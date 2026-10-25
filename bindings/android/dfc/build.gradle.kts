@@ -1,6 +1,7 @@
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.api.tasks.javadoc.Javadoc
+import org.gradle.external.javadoc.StandardJavadocDocletOptions
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.tasks.Jar
 
@@ -68,7 +69,11 @@ android {
 val androidJavadocs by tasks.registering(Javadoc::class) {
     source = android.sourceSets["main"].java.getSourceFiles()
     classpath += files(android.bootClasspath)
-    isFailOnError = false
+    isFailOnError = true
+    (options as StandardJavadocDocletOptions).apply {
+        addBooleanOption("Werror", true)
+        addBooleanOption("Xdoclint:all", true)
+    }
 }
 
 val androidJavadocsJar by tasks.registering(Jar::class) {

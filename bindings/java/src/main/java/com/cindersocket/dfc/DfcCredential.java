@@ -32,12 +32,25 @@ public final class DfcCredential implements AutoCloseable {
     stableHashCode = Arrays.hashCode(binary);
     cleanable = DfcCleaner.register(this, state);
   }
+  /**
+   * Returns canonical binary form.
+   * @return a new copy of the key-bearing bytes
+   */
   public byte[] encode() {
     return state.requireOpen().clone();
   }
+  /**
+   * Renders canonical text form.
+   * @return text representation
+   * @throws DfcException if native encoding fails
+   */
   public String writeText() throws DfcException {
     return DfcNative.credentialText(state.requireOpen());
   }
+  /**
+   * Validates the decoded model.
+   * @throws DfcException if this credential violates a model invariant
+   */
   public void validate() throws DfcException {
     DfcNative.credentialValidate(state.requireOpen());
   }

@@ -1,4 +1,5 @@
 import com.cindersocket.dfc.DfcKeyDiversification;
+import com.cindersocket.dfc.DfcReader;
 import com.cindersocket.dfc.DfcResponses;
 import com.cindersocket.dfc.DfcSdm;
 import com.cindersocket.dfc.DfcTransactionMacVerifier;
@@ -39,6 +40,61 @@ public final class DfcAdvancedApiTest {
       return;
     }
     throw new AssertionError(message);
+  }
+
+  private static void requireIllegalArgument(CheckedOperation operation, String message) {
+    try {
+      operation.run();
+    } catch (IllegalArgumentException expected) {
+      return;
+    } catch (Exception other) {
+      throw new AssertionError(message + ": wrong exception", other);
+    }
+    throw new AssertionError(message);
+  }
+
+  private static void testReaderAuthenticationValidation() throws Exception {
+    try (var reader = new DfcReader(frame -> {
+      throw new AssertionError("invalid authentication reached the transport");
+    })) {
+      requireIllegalArgument(()
+                                 -> reader.authenticate(DfcReader.Cipher.AES, 0, new byte[15],
+                                     DfcReader.Framing.NATIVE),
+          "short native-authentication key accepted");
+      requireIllegalArgument(()
+                                 -> reader.authenticateForReplay(DfcReader.Cipher.AES, 256,
+                                     new byte[16], DfcReader.Framing.NATIVE, new byte[16]),
+          "wide native-authentication key number accepted");
+      requireIllegalArgument(
+          ()
+              -> reader.authenticateIso7816(0x20, DfcReader.Iso7816Algorithm.TDEA2, new byte[16]),
+          "reserved ISO key-reference bits accepted");
+      requireIllegalArgument(
+          ()
+              -> reader.authenticateIso7816(0x0e, DfcReader.Iso7816Algorithm.TDEA2, new byte[16]),
+          "out-of-range ISO key number accepted");
+      requireIllegalArgument(
+          ()
+              -> reader.authenticateIso7816(0, DfcReader.Iso7816Algorithm.TDEA3, new byte[16]),
+          "short ISO three-key TDEA key accepted");
+      requireIllegalArgument(
+          ()
+              -> reader.authenticateIso7816ForReplay(
+                  0, DfcReader.Iso7816Algorithm.AES, new byte[16], new byte[8], new byte[16]),
+          "short ISO replay challenge accepted");
+      requireIllegalArgument(()
+                                 -> reader.authenticateEv2First(
+                                     0, new byte[16], new byte[1], DfcReader.Framing.NATIVE),
+          "partial EV2 capabilities accepted");
+      requireIllegalArgument(()
+                                 -> reader.authenticateEv2ForReplay(false, 0, new byte[16],
+                                     new byte[6], DfcReader.Framing.NATIVE, new byte[16]),
+          "non-first EV2 capabilities accepted");
+      requireIllegalArgument(()
+                                 -> reader.authenticateEv2ForReplay(true, 0, new byte[16],
+                                     new byte[0], DfcReader.Framing.NATIVE, new byte[15]),
+          "short EV2 replay challenge accepted");
+    }
   }
 
   private static void testDiversification() throws Exception {
@@ -221,5 +277,6 @@ public final class DfcAdvancedApiTest {
     testResponseDecoders();
     testSdm();
     testTransactionMac();
+    testReaderAuthenticationValidation();
   }
 }

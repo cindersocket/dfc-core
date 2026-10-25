@@ -27,15 +27,27 @@ public final class DfcDiagnosticSnapshot implements AutoCloseable {
     state = new State(bytes);
     cleanable = DfcCleaner.register(this, state);
   }
-  /** Compares the transaction identifier without returning another secret copy. */
+  /**
+   * Compares the transaction identifier without returning another secret copy.
+   * @param expected expected four-byte identifier
+   * @return whether it matches in constant time
+   */
   public boolean transactionIdentifierEquals(byte[] expected) {
     return equalsRange(expected, 0, 4);
   }
-  /** Compares the encryption key without returning another secret copy. */
+  /**
+   * Compares the encryption key without returning another secret copy.
+   * @param expected expected 16-byte key
+   * @return whether it matches in constant time
+   */
   public boolean encryptionKeyEquals(byte[] expected) {
     return equalsRange(expected, 4, 16);
   }
-  /** Compares the authentication key without returning another secret copy. */
+  /**
+   * Compares the authentication key without returning another secret copy.
+   * @param expected expected 16-byte key
+   * @return whether it matches in constant time
+   */
   public boolean macKeyEquals(byte[] expected) {
     return equalsRange(expected, 20, 16);
   }
