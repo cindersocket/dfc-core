@@ -423,9 +423,10 @@ static MunitResult test_ev2_direct_retry_preserves_overlapping_response(
     munit_assert_memory_equal(4, response + 1, ((uint8_t[]){0x69, 0x69, 0x69, 0x69}));
     munit_assert_uint16(emulator->ev2_command_counter, ==, 5);
     munit_assert_memory_equal(
-        sizeof(session->pending_response),
-        session->pending_response,
-        ((uint8_t[sizeof(session->pending_response)]){0}));
+        sizeof(session->emulator->tx_buffer->data),
+        session->emulator->tx_buffer->data,
+        ((uint8_t[sizeof(session->emulator->tx_buffer->data)]){0}));
+    munit_assert_size(session->emulator->tx_buffer->size_bytes, ==, 0);
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;

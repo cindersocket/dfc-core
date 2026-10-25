@@ -1342,7 +1342,8 @@ static MunitResult
     session->pending_command_len = 3;
     memset(session->pending_command, 0xA5, 3);
     session->pending_response_len = 3;
-    memset(session->pending_response, 0xA5, 3);
+    memset(session->emulator->tx_buffer->data, 0xA5, 3);
+    session->emulator->tx_buffer->size_bytes = 3;
     session->random_uid_valid = true;
     memset(session->random_uid, 0xA5, sizeof(session->random_uid));
     munit_assert_int(dfc_virtual_picc_advance_time(session, 999), ==, DfcVirtualPiccStatusOk);

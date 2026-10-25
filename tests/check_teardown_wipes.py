@@ -136,7 +136,6 @@ def main() -> None:
     native_required = {
         "native command scratch": "dfc_secure_wipe(command_scratch, command_scratch_capacity)",
         "borrowed native clear command": "dfc_emulator_discard_command_chain(session->emulator)",
-        "native secured response": "dfc_secure_wipe(session->pending_response, sizeof(session->pending_response))",
         "native response bytebuf": "dfc_secure_wipe(tx, sizeof(*tx))",
     }
     native_missing = [
@@ -146,8 +145,8 @@ def main() -> None:
         raise SystemExit("missing native-exchange wipe coverage: " + ", ".join(native_missing))
     if "dfc_bytebuf_free(tx)" in native_exchange:
         raise SystemExit("native exchange must not free the emulator-owned response buffer")
-    if "secured_response[" in native_exchange:
-        raise SystemExit("native exchange must reuse session response scratch")
+    if "secured_response[" in native_exchange or "pending_response[" in virtual_picc:
+        raise SystemExit("native exchange must reuse the emulator response buffer")
     if "short_clear_command[" in native_exchange:
         raise SystemExit("native exchange must reuse its caller-owned command scratch")
     native_cleanup = native_exchange[native_exchange.index("cleanup:") :]

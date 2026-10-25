@@ -74,7 +74,7 @@ static bool iso_response_is_staged(const DfcVirtualPiccSession* session) {
 
 static uint8_t* response_storage(DfcVirtualPiccSession* session) {
     return session->pending_response_staged ? session->emulator->pending_chain :
-                                              session->pending_response;
+                                              session->emulator->tx_buffer->data;
 }
 
 static void release_iso_response(DfcVirtualPiccSession* session) {
@@ -115,10 +115,9 @@ static void truncate_pending_command(DfcVirtualPiccSession* session, size_t reta
 
 static void clear_direct_response(DfcVirtualPiccSession* session) {
     truncate_pending_command(session, 0);
-    if(!session->pending_response_staged) {
-        size_t length = session->pending_response_len;
-        if(length > sizeof(session->pending_response)) length = sizeof(session->pending_response);
-        dfc_secure_wipe(session->pending_response, length);
+    if(!session->pending_response_staged && session->emulator->tx_buffer) {
+        dfc_secure_wipe(session->emulator->tx_buffer, sizeof(*session->emulator->tx_buffer));
+        dfc_bytebuf_reset(session->emulator->tx_buffer);
     }
     release_iso_response(session);
     session->pending_response_len = 0;
@@ -130,7 +129,10 @@ static void clear_transport_storage(DfcVirtualPiccSession* session) {
     if(!session->emulator->command_chain_active && session->emulator->command_chain)
         dfc_emulator_discard_command_chain(session->emulator);
     dfc_secure_wipe(session->pending_command, sizeof(session->pending_command));
-    dfc_secure_wipe(session->pending_response, sizeof(session->pending_response));
+    if(session->emulator->tx_buffer) {
+        dfc_secure_wipe(session->emulator->tx_buffer, sizeof(*session->emulator->tx_buffer));
+        dfc_bytebuf_reset(session->emulator->tx_buffer);
+    }
     dfc_secure_wipe(session->pending_response_prefix, sizeof(session->pending_response_prefix));
     dfc_secure_wipe(session->last_picc_block, sizeof(session->last_picc_block));
     session->pending_command_len = 0;
@@ -153,7 +155,9 @@ static bool pending_response_is_valid(const DfcVirtualPiccSession* session) {
                session->pending_response_len == session->emulator->pending_chain_len &&
                session->pending_response_len <= sizeof(session->emulator->pending_chain);
     }
-    return session->pending_response_len <= sizeof(session->pending_response);
+    return session->emulator->tx_buffer && session->pending_response_len <= DFC_BYTEBUF_MAX &&
+           (session->pending_response_len == 0 ||
+            session->emulator->tx_buffer->size_bytes == session->pending_response_len);
 }
 
 static bool validate_pending_response(DfcVirtualPiccSession* session) {
@@ -188,21 +192,25 @@ static bool stage_direct_response(
     const uint8_t* native_response,
     size_t native_response_len,
     bool iso_wrapped) {
-    if(!command || command_len > sizeof(session->pending_command) || native_response_len == 0)
+    if(!command || command_len > sizeof(session->pending_command) || native_response_len == 0 ||
+       !session->emulator->tx_buffer)
         return false;
     size_t required = native_response_len + (iso_wrapped ? 1 : 0);
-    if(required > sizeof(session->pending_response)) return false;
+    if(required > DFC_BYTEBUF_MAX) return false;
 
+    DfcByteBuf* tx = session->emulator->tx_buffer;
+    if(iso_wrapped) {
+        size_t wrapped_len = 0;
+        if(!dfc_wrap_native_response_as_iso7816(
+               native_response, native_response_len, 0, tx->data, sizeof(tx->data), &wrapped_len) ||
+           wrapped_len != required)
+            return false;
+    } else {
+        memmove(tx->data, native_response, native_response_len);
+    }
+    tx->size_bytes = required;
     memcpy(session->pending_command, command, command_len);
     session->pending_command_len = command_len;
-    if(iso_wrapped) {
-        size_t data_len = native_response_len - 1;
-        if(data_len) memmove(session->pending_response, native_response + 1, data_len);
-        session->pending_response[data_len] = 0x91;
-        session->pending_response[data_len + 1] = native_response[0];
-    } else {
-        memmove(session->pending_response, native_response, native_response_len);
-    }
     session->pending_response_len = required;
     session->pending_response_offset = DFC_DIRECT_RESPONSE_PENDING;
     session->pending_response_prefix_len = 0;
@@ -1489,7 +1497,6 @@ static DfcVirtualPiccStatus handle_native_exchange(
     uint8_t* clear_command = command_scratch;
     size_t clear_capacity = command_scratch_capacity;
     size_t clear_command_len = 0;
-    bool response_uses_session_scratch = false;
     DfcByteBuf* tx = NULL;
     DfcVirtualPiccStatus status = DfcVirtualPiccStatusProtocolError;
     const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
@@ -1559,25 +1566,22 @@ static DfcVirtualPiccStatus handle_native_exchange(
                            !dfc_random_failure_is_retryable();
 #endif
     if(protect_ev2_response) {
-        // The session's direct-response storage is idle after replay handling.
-        // Use it as operation-local scratch, then retain it only when this
-        // exchange must be replayed or the caller deliberately supplied it.
-        response_uses_session_scratch = true;
+        // The emulator response buffer already owns the clear response. Protect
+        // it in place so the same storage can be retained for a delivery retry.
         if(!dfc_ev2_protect_response(
                session->emulator,
                clear_command,
                clear_command_len,
                tx_data,
                tx_len,
-               staged_iso_response ? session->emulator->pending_chain : session->pending_response,
-               staged_iso_response ? sizeof(session->emulator->pending_chain) :
-                                     sizeof(session->pending_response),
+               staged_iso_response ? session->emulator->pending_chain : tx->data,
+               staged_iso_response ? sizeof(session->emulator->pending_chain) : sizeof(tx->data),
                &secured_response_len)) {
             goto cleanup;
         }
-        tx_data = staged_iso_response ? session->emulator->pending_chain :
-                                        session->pending_response;
+        tx_data = staged_iso_response ? session->emulator->pending_chain : tx->data;
         tx_len = secured_response_len;
+        if(!staged_iso_response) tx->size_bytes = tx_len;
     }
 
     status = DfcVirtualPiccStatusOk;
@@ -1634,12 +1638,14 @@ cleanup:
     dfc_secure_wipe(command_scratch, command_scratch_capacity);
     if(!session->emulator->command_chain_active && session->emulator->command_chain)
         dfc_emulator_discard_command_chain(session->emulator);
-    if(response_uses_session_scratch && !direct_response_is_pending(session) &&
-       !(status == DfcVirtualPiccStatusOk && response == session->pending_response))
-        dfc_secure_wipe(session->pending_response, sizeof(session->pending_response));
     if(tx) {
-        dfc_secure_wipe(tx, sizeof(*tx));
-        dfc_bytebuf_reset(tx);
+        bool retain_tx_response =
+            (!session->pending_response_staged && session->pending_response_len > 0) ||
+            (status == DfcVirtualPiccStatusOk && response == tx->data);
+        if(!retain_tx_response) {
+            dfc_secure_wipe(tx, sizeof(*tx));
+            dfc_bytebuf_reset(tx);
+        }
     }
     return status;
 }
@@ -1939,19 +1945,14 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
         // its two-byte wrapped form. Preserve those bytes without copying the
         // full response buffer on every embedded exchange.
         uint8_t retry_response_before[DFC_ISO7816_STATUS_WORD_LENGTH];
-        memcpy(retry_response_before, session->pending_response, sizeof(retry_response_before));
+        DfcByteBuf* tx = session->emulator->tx_buffer;
+        if(!tx) return DfcVirtualPiccStatusProtocolError;
+        memcpy(retry_response_before, tx->data, sizeof(retry_response_before));
         size_t apdu_response_len = 0;
         DfcVirtualPiccStatus status = virtual_picc_iso_dep_exchange(
-            session,
-            inf,
-            inf_len,
-            session->pending_response,
-            sizeof(session->pending_response),
-            &apdu_response_len,
-            false);
+            session, inf, inf_len, tx->data, sizeof(tx->data), &apdu_response_len, false);
         if(dfc_random_failure_is_retryable()) {
-            memcpy(
-                session->pending_response, retry_response_before, sizeof(retry_response_before));
+            memcpy(tx->data, retry_response_before, sizeof(retry_response_before));
             truncate_pending_command(session, pending_command_len_before);
             return DfcVirtualPiccStatusProtocolError;
         }
@@ -1965,6 +1966,7 @@ DfcVirtualPiccStatus dfc_virtual_picc_iso_dep_frame_exchange(
         }
         truncate_pending_command(session, 0);
         session->pending_response_len = apdu_response_len;
+        tx->size_bytes = apdu_response_len;
         session->pending_response_offset = 0;
         session->picc_sequence = sequence;
         if(offset > 1) {

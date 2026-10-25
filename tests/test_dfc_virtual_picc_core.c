@@ -1503,7 +1503,8 @@ static MunitResult test_virtual_picc_reset_and_free_wipe_transport_storage(
     load_standard_credential(&credential);
     DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(&credential);
     memset(session->pending_command, 0xA1, sizeof(session->pending_command));
-    memset(session->pending_response, 0xA2, sizeof(session->pending_response));
+    memset(session->emulator->tx_buffer->data, 0xA2, sizeof(session->emulator->tx_buffer->data));
+    session->emulator->tx_buffer->size_bytes = 8;
     memset(session->pending_response_prefix, 0xA3, sizeof(session->pending_response_prefix));
     memset(session->last_picc_block, 0xA4, sizeof(session->last_picc_block));
     session->pending_command_len = 7;
@@ -1517,9 +1518,10 @@ static MunitResult test_virtual_picc_reset_and_free_wipe_transport_storage(
         session->pending_command,
         ((uint8_t[sizeof(session->pending_command)]){0}));
     munit_assert_memory_equal(
-        sizeof(session->pending_response),
-        session->pending_response,
-        ((uint8_t[sizeof(session->pending_response)]){0}));
+        sizeof(session->emulator->tx_buffer->data),
+        session->emulator->tx_buffer->data,
+        ((uint8_t[sizeof(session->emulator->tx_buffer->data)]){0}));
+    munit_assert_size(session->emulator->tx_buffer->size_bytes, ==, 0);
     munit_assert_memory_equal(
         sizeof(session->pending_response_prefix),
         session->pending_response_prefix,
@@ -1530,7 +1532,6 @@ static MunitResult test_virtual_picc_reset_and_free_wipe_transport_storage(
         ((uint8_t[sizeof(session->last_picc_block)]){0}));
 
     memset(session->pending_command, 0xB1, sizeof(session->pending_command));
-    memset(session->pending_response, 0xB2, sizeof(session->pending_response));
     memset(session->last_picc_block, 0xB3, sizeof(session->last_picc_block));
     VirtualPiccFreeAudit audit = {
         .target = session,
@@ -1563,8 +1564,9 @@ static MunitResult
     session->last_picc_block_len = 51;
     session->last_picc_block[0] = 0x12;
     for(unsigned i = 0; i < 60; i++)
-        session->pending_response[i] = (uint8_t)i;
-    memcpy(session->last_picc_block + 1, session->pending_response, 50);
+        session->emulator->tx_buffer->data[i] = (uint8_t)i;
+    session->emulator->tx_buffer->size_bytes = 60;
+    memcpy(session->last_picc_block + 1, session->emulator->tx_buffer->data, 50);
     uint8_t response[128];
     size_t response_len = 0;
     const uint8_t retry[] = {0xA2};
@@ -1584,7 +1586,7 @@ static MunitResult
         DfcVirtualPiccStatusOk);
     munit_assert_size(response_len, ==, 11);
     munit_assert_uint8(response[0], ==, 0x03);
-    munit_assert_memory_equal(10, response + 1, session->pending_response + 50);
+    munit_assert_memory_equal(10, response + 1, session->emulator->tx_buffer->data + 50);
     const uint8_t select[] = {0x02, 0x00, 0xA4, 0x04, 0x00, 0x07, 0xD2, 0x76, 0, 0, 0x85, 1, 0};
     munit_assert_int(
         dfc_virtual_picc_iso_dep_frame_exchange(
@@ -1617,7 +1619,8 @@ static MunitResult
     session->last_picc_block[0] = 0x03;
     session->last_picc_block_len = 1;
     for(size_t i = 0; i < session->pending_response_len; i++)
-        session->pending_response[i] = (uint8_t)i;
+        session->emulator->tx_buffer->data[i] = (uint8_t)i;
+    session->emulator->tx_buffer->size_bytes = session->pending_response_len;
 
     uint8_t response[128];
     size_t response_len = 0;
@@ -1630,7 +1633,7 @@ static MunitResult
     munit_assert_size(response_len, ==, 50);
     munit_assert_uint8(response[0], ==, 0x1A);
     munit_assert_uint8(response[1], ==, 0x00);
-    munit_assert_memory_equal(48, response + 2, session->pending_response);
+    munit_assert_memory_equal(48, response + 2, session->emulator->tx_buffer->data);
 
     const uint8_t next[] = {0xA9, 0x00};
     munit_assert_int(
@@ -1641,7 +1644,7 @@ static MunitResult
     munit_assert_size(response_len, ==, 12);
     munit_assert_uint8(response[0], ==, 0x0B);
     munit_assert_uint8(response[1], ==, 0x00);
-    munit_assert_memory_equal(10, response + 2, session->pending_response + 48);
+    munit_assert_memory_equal(10, response + 2, session->emulator->tx_buffer->data + 48);
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
