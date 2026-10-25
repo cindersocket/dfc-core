@@ -30,7 +30,7 @@
     },
     {
       "id": "python-binding",
-      "ecosystem": "pip",
+      "ecosystem": "uv",
       "ingestion": "not-applicable",
       "manifests": [
         "bindings/python/pyproject.toml",
