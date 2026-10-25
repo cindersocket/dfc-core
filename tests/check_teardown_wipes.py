@@ -125,9 +125,9 @@ def main() -> None:
         raise SystemExit("EV2 ChangeKey must wipe its candidate key on CRC failure and success")
 
     commit_transaction = emulator_commands[
-        emulator_commands.index("static void handle_commit_transaction(") : emulator_commands.index(
-            "void dfc_emulator_command_abort_transaction("
-        )
+        emulator_commands.index(
+            "void dfc_emulator_command_commit_transaction("
+        ) : emulator_commands.index("void dfc_emulator_command_abort_transaction(")
     ]
     mac_failure = commit_transaction[
         commit_transaction.index("if(!transaction_mac_calculate(") : commit_transaction.index(

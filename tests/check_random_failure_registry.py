@@ -27,7 +27,7 @@ REGISTRY = {
         "rnd_b",
     ): "test_random_generation_failures_report_memory_error",
     (
-        "src/dfc_emulator_commands.c",
+        "src/dfc_emulator_commands_data.c",
         "picc_clear + random_offset",
     ): "test_sdm_random_padding_failure_is_atomic",
 }

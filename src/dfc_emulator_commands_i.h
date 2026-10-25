@@ -4,6 +4,15 @@
 
 #if DFC_ENABLE_EMULATOR
 
+#if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
+enum {
+    RecordTransactionNone = 0,
+    RecordTransactionWrite,
+    RecordTransactionUpdate,
+    RecordTransactionClear,
+};
+#endif
+
 /* Private seams shared by the native command-family translation units. */
 int32_t dfc_emulator_command_read_int32_le(const uint8_t* data);
 void dfc_emulator_command_append_int32_le(DfcByteBuf* tx_buffer, int32_t value);
@@ -32,6 +41,21 @@ void dfc_emulator_command_emit_payload_with_chaining(
     const uint8_t* payload,
     size_t payload_len,
     size_t entry);
+void dfc_emulator_command_emit_payload_with_chaining_comm(
+    DfcEmulator* emulator,
+    DfcByteBuf* tx_buffer,
+    uint8_t cmd,
+    const uint8_t* payload,
+    size_t payload_len,
+    size_t entry,
+    uint8_t comm,
+    bool length_unknown);
+bool dfc_emulator_command_file_allows_read(const DfcFile* file, const DfcEmulator* emulator);
+bool dfc_emulator_command_file_allows_write(const DfcFile* file, const DfcEmulator* emulator);
+#if DFC_ENABLE_RECORD_FILES
+bool dfc_emulator_command_file_allows_read_write(const DfcFile* file, const DfcEmulator* emulator);
+#endif
+uint8_t dfc_emulator_command_file_access_refusal_status(const DfcFile* file, bool write);
 #if DFC_ENABLE_DELEGATED_APPLICATIONS
 uint16_t
     dfc_emulator_command_delegated_application_overhead_blocks(uint8_t num_keys, size_t key_length);
@@ -141,6 +165,77 @@ void dfc_emulator_command_create_transaction_mac_file(
     DfcEmulator* emulator,
     const uint8_t* buffer,
     size_t buffer_len,
+    DfcByteBuf* tx_buffer);
+#endif
+
+void dfc_emulator_command_get_value(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_value_delta(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer,
+    uint8_t cmd,
+    bool debit,
+    bool limited_credit);
+#if DFC_ENABLE_TRANSACTION_MAC
+void dfc_emulator_command_commit_reader_id(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer);
+#endif
+bool dfc_emulator_command_transaction_snapshot_begin(DfcEmulator* emulator);
+size_t
+    dfc_emulator_command_transaction_file_index(const DfcEmulator* emulator, const DfcFile* file);
+uint8_t dfc_emulator_command_transaction_record_operation(
+    const DfcEmulator* emulator,
+    const DfcFile* file);
+void dfc_emulator_command_transaction_set_record_operation(
+    DfcEmulator* emulator,
+    const DfcFile* file,
+    uint8_t operation,
+    uint32_t record_number);
+void dfc_emulator_command_commit_transaction(
+    DfcEmulator* emulator,
+    bool return_transaction_mac,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_clear_selected_app_pending_values(DfcEmulator* emulator);
+bool dfc_emulator_command_read_data(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer,
+    Dfc* dfc);
+#if DFC_ENABLE_SDM
+void dfc_emulator_command_get_file_counters(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer);
+#endif
+void dfc_emulator_command_write_data(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer);
+#if DFC_ENABLE_RECORD_FILES
+void dfc_emulator_command_write_record(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_update_record(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_clear_record_file(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
     DfcByteBuf* tx_buffer);
 #endif
 #if DFC_ENABLE_KEY_SETS

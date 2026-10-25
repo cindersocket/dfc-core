@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Keep split command-family modules wired into every CMake build."""
 
+import re
 from pathlib import Path
 
 
@@ -45,15 +46,35 @@ def main() -> None:
             "delete_file",
             "create_transaction_mac_file",
         ),
+        "data": (
+            "read_data",
+            "get_file_counters",
+            "write_data",
+        ),
+        "records": (
+            "write_record",
+            "update_record",
+            "clear_record_file",
+        ),
+        "transactions": (
+            "get_value",
+            "value_delta",
+            "commit_reader_id",
+            "commit_transaction",
+            "abort_transaction",
+        ),
     }
     for family, names in families.items():
         module = (ROOT / "src" / f"dfc_emulator_commands_{family}.c").read_text(encoding="utf-8")
         for name in names:
             handler = f"dfc_emulator_command_{name}"
-            definition = f"{handler}("
-            if definition not in module:
+            definition = re.compile(
+                rf"^(?:static\s+)?(?:bool|void)\s+{re.escape(handler)}\(",
+                re.MULTILINE,
+            )
+            if not definition.search(module):
                 raise SystemExit(f"{family} command module is missing {handler}")
-            if f"void {definition}" in monolith or f"static void {definition}" in monolith:
+            if definition.search(monolith):
                 raise SystemExit(f"{family} handler moved back into command monolith: {handler}")
 
 
