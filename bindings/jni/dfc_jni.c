@@ -779,8 +779,8 @@ JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_piccCreate(
             return 0;
         }
     }
-    int32_t status = dfc_ffi_picc_create(
-        credential, random_script == NULL ? NULL : scripted_random, wrapper, &wrapper->picc);
+    int32_t status = dfc_ffi_picc_create_take(
+        &credential, random_script == NULL ? NULL : scripted_random, wrapper, &wrapper->picc);
     dfc_ffi_credential_free(credential);
     if(status != DFC_FFI_OK) {
         secure_free(wrapper->random, wrapper->random_len);

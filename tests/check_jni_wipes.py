@@ -36,6 +36,16 @@ def problems(source: str) -> list[str]:
         failures.append(
             "JNI stack or heap result bypasses post-copy wipe:\n" + "\n".join(direct_array_returns)
         )
+
+    picc_create = re.search(
+        r"JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_piccCreate\(.*?\n}\n",
+        source,
+        re.DOTALL,
+    )
+    if picc_create is None or not re.search(
+        r"dfc_ffi_picc_create_take\s*\(\s*&credential\b", picc_create.group()
+    ):
+        failures.append("JNI PICC creation copies rather than transfers its decoded credential")
     return failures
 
 
@@ -45,6 +55,12 @@ def main() -> None:
     mutants = (
         source.replace("dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));", ""),
         source.replace("make_array_and_wipe", "make_array"),
+        re.sub(
+            r"dfc_ffi_picc_create_take\s*\(\s*&credential\b",
+            "dfc_ffi_picc_create(credential",
+            source,
+            count=1,
+        ),
     )
     if any(not problems(mutant) for mutant in mutants):
         failures.append("JNI wipe policy failed its mutation self-test")
