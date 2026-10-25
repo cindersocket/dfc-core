@@ -5,6 +5,7 @@
 #include "aes_cmac.h"
 #include "dfc_der.h"
 #include "dfc_emulator_i.h"
+#include "dfc_emulator_commands_i.h"
 #include "dfc_sdm_i.h"
 
 #include <string.h>
@@ -406,6 +407,36 @@ static MunitResult test_write_past_file_end(const MunitParameter params[], void*
         0x90, 0xBD, 0x00, 0x00, 0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     exchange(session, read, sizeof(read), response, sizeof(response), &response_len);
     munit_assert_memory_equal(6, response, ((uint8_t[]){0x00, 0x00, 0x00, 0x00, 0x91, 0x00}));
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_plain_write_data_borrows_apdu_payload(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    uint8_t zeros[4] = {0};
+    DfcVirtualPiccSession* session =
+        open_file_policy(&credential, 0x0F, 0xEEEE, DFC_COMM_PLAIN, zeros, sizeof(zeros));
+    session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    session->emulator->selected_app_index = 0;
+    memset(session->emulator->pending_chain, 0xA5, sizeof(session->emulator->pending_chain));
+
+    const uint8_t write[] = {
+        DFC_CMD_WRITE_DATA, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x11, 0x22};
+    dfc_bytebuf_reset(session->emulator->tx_buffer);
+    dfc_emulator_command_write_data(
+        session->emulator, write, sizeof(write), session->emulator->tx_buffer);
+
+    munit_assert_size(dfc_bytebuf_get_size_bytes(session->emulator->tx_buffer), ==, 1);
+    munit_assert_uint8(dfc_bytebuf_get_byte(session->emulator->tx_buffer, 0), ==, DFC_STATUS_OK);
+    for(size_t i = 0; i < sizeof(session->emulator->pending_chain); i++) {
+        munit_assert_uint8(session->emulator->pending_chain[i], ==, 0xA5);
+    }
+    munit_assert_memory_equal(
+        2, dfc_file_data(&credential, &credential.files[0]), ((uint8_t[]){0x11, 0x22}));
 
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
@@ -2766,6 +2797,12 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/write-past-file-end", test_write_past_file_end, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/plain-write-data-borrows-apdu-payload",
+     test_plain_write_data_borrows_apdu_payload,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/read-past-file-end", test_read_past_file_end, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/create-duplicate-file", test_create_duplicate_file, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/restricted-app-directory",
