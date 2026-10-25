@@ -17,6 +17,18 @@ READER_CARD_ERROR = 6
 INITIAL_OUTPUT_CAPACITY = 64
 
 
+def _validate_challenge(value: bytes | None, length: int, name: str) -> None:
+    """Reject a supplied replay challenge whose length is not exact."""
+    if value is not None and len(value) != length:
+        raise ValueError(f"{name} must be exactly {length} bytes")
+
+
+def _challenge(value: bytes | None, length: int, name: str) -> bytearray:
+    """Return an exact replay challenge, drawing randomness only when omitted."""
+    _validate_challenge(value, length, name)
+    return bytearray(secrets.token_bytes(length) if value is None else value)
+
+
 @dataclass(frozen=True, slots=True)
 class Command:
     instruction: int
@@ -212,9 +224,8 @@ class Reader:
         cipher_id = N.unsigned(cipher, 8, "cipher")
         key_number = N.unsigned(key_no, 8, "key_no")
         framing = self._native_framing()
-        challenge = bytearray(
-            random_a or secrets.token_bytes(16 if cipher_id == N.AUTH_AES or len(key) == 24 else 8)
-        )
+        challenge_length = 16 if cipher_id == N.AUTH_AES or len(key) == 24 else 8
+        challenge = _challenge(random_a, challenge_length, "random_a")
         keybuf, keyptr = N.byte_pointer(key)
         randbuf, randptr = N.byte_pointer(challenge)
         try:
@@ -248,7 +259,7 @@ class Reader:
     ) -> Response:
         key_number = N.unsigned(key_no, 8, "key_no")
         framing = self._native_framing()
-        challenge = bytearray(random_a or secrets.token_bytes(16))
+        challenge = _challenge(random_a, 16, "random_a")
         kb, kp = N.byte_pointer(key)
         rb, rp = N.byte_pointer(challenge)
         _cb, cp = N.byte_pointer(capabilities)
@@ -283,10 +294,12 @@ class Reader:
         key_ref = N.unsigned(key_reference, 8, "key_reference")
         algorithm_id = N.unsigned(algorithm, 8, "algorithm")
         length = 8 if algorithm_id == N.ISO_AUTH_TDEA2 else 16
-        first = bytearray(random_first or secrets.token_bytes(length))
-        second = bytearray(random_second or secrets.token_bytes(length))
-        if len(first) != length or len(second) != length:
-            raise ValueError(f"algorithm requires {length}-byte challenges")
+        # Validate both replay inputs before drawing either omitted challenge.
+        # This keeps rejected calls free of observable random-source side effects.
+        _validate_challenge(random_first, length, "random_first")
+        _validate_challenge(random_second, length, "random_second")
+        first = _challenge(random_first, length, "random_first")
+        second = _challenge(random_second, length, "random_second")
         kb, kp = N.byte_pointer(key)
         fb, fp = N.byte_pointer(first)
         sb, sp = N.byte_pointer(second)
