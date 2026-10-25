@@ -66,7 +66,7 @@ public static unsafe class DfcResponseDecoders
         return status == Native.ResponseOk ? output[..(int)length] : DfcError.FromStatus(status, "response decode failed");
     }
 
-    /// <summary>Decodes a GetApplicationIDs response in wire-order AID bytes.</summary>
+    /// <summary>Decodes a GetApplicationIDs response in human-readable AID order.</summary>
     public static Result<IReadOnlyList<byte[]>, DfcError> DecodeApplicationIds(ReadOnlySpan<byte> response) =>
         List(response, Native.dfc_ffi_response_decode_application_ids).Map(value =>
         {
