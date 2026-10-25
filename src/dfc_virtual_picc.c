@@ -286,125 +286,95 @@ static bool iso_auth_key(
     return true;
 }
 
-static DfcVirtualPiccStatus handle_iso_authenticate(
-    DfcVirtualPiccSession* session,
+static DfcVirtualPiccStatus handle_iso_external_authenticate(
+    DfcEmulator* emulator,
     const uint8_t* apdu,
     size_t apdu_len,
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len) {
-    DfcEmulator* emulator = session->emulator;
-    if(response_capacity < DFC_ISO7816_STATUS_WORD_LENGTH)
-        return DfcVirtualPiccStatusBufferTooSmall;
-    uint8_t ins = apdu[1];
-    if(ins == DFC_ISO7816_INS_GET_CHALLENGE) {
-        if(apdu_len != 5)
-            return iso_auth_status(0x67, 0x00, response, response_capacity, response_len);
-        if(apdu[2] != 0 || apdu[3] != 0)
-            return iso_auth_status(0x6A, 0x86, response, response_capacity, response_len);
-        size_t challenge_len = apdu[4];
-        if(challenge_len != DFC_ISO7816_AUTH_CHALLENGE_2TDEA &&
-           challenge_len != DFC_ISO7816_AUTH_CHALLENGE_LONG) {
-            return iso_auth_status(
-                DFC_ISO7816_SW_WRONG_LE_HI,
-                DFC_ISO7816_SW_WRONG_LE_LO,
-                response,
-                response_capacity,
-                response_len);
-        }
-        if(response_capacity < challenge_len + DFC_ISO7816_STATUS_WORD_LENGTH)
-            return DfcVirtualPiccStatusBufferTooSmall;
-        uint8_t challenge[DFC_ISO7816_AUTH_CHALLENGE_LONG];
-        if(!dfc_random_fill(challenge, challenge_len)) return DfcVirtualPiccStatusProtocolError;
-        dfc_emulator_clear_iso_authentication(emulator);
-        dfc_emulator_clear_active_authentication(emulator);
-        memcpy(emulator->iso_auth_card_first, challenge, challenge_len);
-        emulator->iso_auth_challenge_len = (uint8_t)challenge_len;
-        emulator->iso_auth_phase = 1;
-        memcpy(response, emulator->iso_auth_card_first, challenge_len);
-        response[challenge_len] = DFC_ISO7816_SW_OK_HI;
-        response[challenge_len + 1] = DFC_ISO7816_SW_OK_LO;
-        *response_len = challenge_len + DFC_ISO7816_STATUS_WORD_LENGTH;
-        return DfcVirtualPiccStatusOk;
-    }
-
-    if(ins == DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE) {
-        if(emulator->iso_auth_phase != 1) {
-            return iso_auth_status(
-                DFC_ISO7816_SW_INSTRUCTION_HI,
-                DFC_ISO7816_SW_INSTRUCTION_LO,
-                response,
-                response_capacity,
-                response_len);
-        }
-        size_t challenge_len = emulator->iso_auth_challenge_len;
-        if(response_capacity < DFC_ISO7816_STATUS_WORD_LENGTH)
-            return DfcVirtualPiccStatusBufferTooSmall;
-        if(apdu_len < 5 || apdu_len != (size_t)5 + apdu[4]) {
-            dfc_emulator_clear_iso_authentication(emulator);
-            return iso_auth_status(
-                DFC_ISO7816_SW_WRONG_LENGTH_HI,
-                DFC_ISO7816_SW_WRONG_LENGTH_LO,
-                response,
-                response_capacity,
-                response_len);
-        }
-        if(apdu[4] != challenge_len * 2 ||
-           !iso_auth_key(emulator, apdu[2], apdu[3], challenge_len)) {
-            dfc_emulator_clear_iso_authentication(emulator);
-            return iso_auth_status(
-                DFC_ISO7816_SW_SECURITY_HI,
-                DFC_ISO7816_SW_SECURITY_LO,
-                response,
-                response_capacity,
-                response_len);
-        }
-        uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];
-        uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
-        bool decrypted = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
-                             dfc_worker_aes_cbc_decrypt(
-                                 emulator->iso_auth_key,
-                                 emulator->iso_auth_key_len,
-                                 iv,
-                                 challenge_len * 2,
-                                 apdu + 5,
-                                 clear) :
-                             dfc_worker_des_cbc_decrypt(
-                                 emulator->iso_auth_key,
-                                 emulator->iso_auth_key_len,
-                                 iv,
-                                 challenge_len * 2,
-                                 apdu + 5,
-                                 clear);
-        if(!decrypted) {
-            dfc_secure_wipe(clear, sizeof(clear));
-            dfc_secure_wipe(iv, sizeof(iv));
-            return DfcVirtualPiccStatusProtocolError;
-        }
-        if(!dfc_ct_equal(clear + challenge_len, emulator->iso_auth_card_first, challenge_len)) {
-            dfc_secure_wipe(clear, sizeof(clear));
-            dfc_secure_wipe(iv, sizeof(iv));
-            dfc_emulator_clear_iso_authentication(emulator);
-            return iso_auth_status(
-                DFC_ISO7816_SW_SECURITY_HI,
-                DFC_ISO7816_SW_SECURITY_LO,
-                response,
-                response_capacity,
-                response_len);
-        }
-        memcpy(emulator->iso_auth_host_first, clear, challenge_len);
-        size_t block_len = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
-                               DFC_AES_KEY_LENGTH :
-                               DFC_SM_LEGACY_BLOCK_SIZE;
-        memcpy(
-            emulator->iso_auth_external_iv, apdu + 5 + challenge_len * 2 - block_len, block_len);
-        emulator->iso_auth_phase = 2;
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(iv, sizeof(iv));
+    if(emulator->iso_auth_phase != 1) {
         return iso_auth_status(
-            DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO, response, response_capacity, response_len);
+            DFC_ISO7816_SW_INSTRUCTION_HI,
+            DFC_ISO7816_SW_INSTRUCTION_LO,
+            response,
+            response_capacity,
+            response_len);
+    }
+    size_t challenge_len = emulator->iso_auth_challenge_len;
+    if(apdu_len < 5 || apdu_len != (size_t)5 + apdu[4]) {
+        dfc_emulator_clear_iso_authentication(emulator);
+        return iso_auth_status(
+            DFC_ISO7816_SW_WRONG_LENGTH_HI,
+            DFC_ISO7816_SW_WRONG_LENGTH_LO,
+            response,
+            response_capacity,
+            response_len);
+    }
+    if(apdu[4] != challenge_len * 2 || !iso_auth_key(emulator, apdu[2], apdu[3], challenge_len)) {
+        dfc_emulator_clear_iso_authentication(emulator);
+        return iso_auth_status(
+            DFC_ISO7816_SW_SECURITY_HI,
+            DFC_ISO7816_SW_SECURITY_LO,
+            response,
+            response_capacity,
+            response_len);
     }
 
+    uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];
+    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+    DfcVirtualPiccStatus result;
+    bool decrypted = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
+                         dfc_worker_aes_cbc_decrypt(
+                             emulator->iso_auth_key,
+                             emulator->iso_auth_key_len,
+                             iv,
+                             challenge_len * 2,
+                             apdu + 5,
+                             clear) :
+                         dfc_worker_des_cbc_decrypt(
+                             emulator->iso_auth_key,
+                             emulator->iso_auth_key_len,
+                             iv,
+                             challenge_len * 2,
+                             apdu + 5,
+                             clear);
+    if(!decrypted) {
+        result = DfcVirtualPiccStatusProtocolError;
+        goto iso_external_cleanup;
+    }
+    if(!dfc_ct_equal(clear + challenge_len, emulator->iso_auth_card_first, challenge_len)) {
+        dfc_emulator_clear_iso_authentication(emulator);
+        result = iso_auth_status(
+            DFC_ISO7816_SW_SECURITY_HI,
+            DFC_ISO7816_SW_SECURITY_LO,
+            response,
+            response_capacity,
+            response_len);
+        goto iso_external_cleanup;
+    }
+    memcpy(emulator->iso_auth_host_first, clear, challenge_len);
+    size_t block_len = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
+                           DFC_AES_KEY_LENGTH :
+                           DFC_SM_LEGACY_BLOCK_SIZE;
+    memcpy(emulator->iso_auth_external_iv, apdu + 5 + challenge_len * 2 - block_len, block_len);
+    emulator->iso_auth_phase = 2;
+    result = iso_auth_status(
+        DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO, response, response_capacity, response_len);
+
+iso_external_cleanup:
+    dfc_secure_wipe(clear, sizeof(clear));
+    dfc_secure_wipe(iv, sizeof(iv));
+    return result;
+}
+
+static DfcVirtualPiccStatus handle_iso_internal_authenticate(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    uint8_t* response,
+    size_t response_capacity,
+    size_t* response_len) {
     if(emulator->iso_auth_phase != 2) {
         return iso_auth_status(
             DFC_ISO7816_SW_INSTRUCTION_HI,
@@ -435,13 +405,16 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
     }
     if(response_capacity < challenge_len * 2 + DFC_ISO7816_STATUS_WORD_LENGTH)
         return DfcVirtualPiccStatusBufferTooSmall;
-    uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2];
-    if(!dfc_random_fill(clear, challenge_len)) {
-        dfc_secure_wipe(clear, sizeof(clear));
-        return DfcVirtualPiccStatusProtocolError;
-    }
-    memcpy(clear + challenge_len, apdu + 5, challenge_len);
+
+    uint8_t clear[DFC_ISO7816_AUTH_CHALLENGE_LONG * 2] = {0};
     uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+    uint8_t session_key[DFC_MAX_KEY_LEN] = {0};
+    DfcSecureMessaging candidate = {0};
+    DfcVirtualPiccStatus result = DfcVirtualPiccStatusProtocolError;
+    bool wipe_response = false;
+    size_t session_key_len = 0;
+    if(!dfc_random_fill(clear, challenge_len)) goto iso_internal_cleanup;
+    memcpy(clear + challenge_len, apdu + 5, challenge_len);
     memcpy(
         iv,
         emulator->iso_auth_external_iv,
@@ -463,13 +436,9 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
                              clear,
                              response);
     if(!encrypted) {
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(response, challenge_len * 2);
-        return DfcVirtualPiccStatusProtocolError;
+        wipe_response = true;
+        goto iso_internal_cleanup;
     }
-    uint8_t session_key[DFC_MAX_KEY_LEN];
-    size_t session_key_len = 0;
     dfc_derive_session_key(
         emulator->iso_auth_cipher,
         emulator->iso_auth_key,
@@ -478,40 +447,89 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
         clear,
         session_key,
         &session_key_len);
-    DfcSecureMessaging candidate;
     if(!dfc_secure_messaging_init(
            &candidate, emulator->iso_auth_cipher, session_key, session_key_len, NULL)) {
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(session_key, sizeof(session_key));
-        dfc_secure_wipe(response, challenge_len * 2);
-        return DfcVirtualPiccStatusProtocolError;
+        wipe_response = true;
+        goto iso_internal_cleanup;
     }
     if(!emulator->secure_messaging) {
         emulator->secure_messaging = dfc_secure_messaging_alloc(
             emulator->iso_auth_cipher, session_key, session_key_len, NULL);
         if(!emulator->secure_messaging) {
-            dfc_secure_wipe(&candidate, sizeof(candidate));
-            dfc_secure_wipe(clear, sizeof(clear));
-            dfc_secure_wipe(iv, sizeof(iv));
-            dfc_secure_wipe(session_key, sizeof(session_key));
-            dfc_secure_wipe(response, challenge_len * 2);
-            return DfcVirtualPiccStatusProtocolError;
+            wipe_response = true;
+            goto iso_internal_cleanup;
         }
     }
     *emulator->secure_messaging = candidate;
-    dfc_secure_wipe(&candidate, sizeof(candidate));
     emulator->auth_cipher = emulator->iso_auth_cipher;
     emulator->auth_key_no = emulator->iso_auth_key_no;
     dfc_emulator_commit_auth_family(emulator, DfcEmulatorAuthFamilyNative);
-    dfc_secure_wipe(clear, sizeof(clear));
-    dfc_secure_wipe(iv, sizeof(iv));
-    dfc_secure_wipe(session_key, sizeof(session_key));
     dfc_emulator_clear_iso_authentication(emulator);
     response[challenge_len * 2] = DFC_ISO7816_SW_OK_HI;
     response[challenge_len * 2 + 1] = DFC_ISO7816_SW_OK_LO;
     *response_len = challenge_len * 2 + DFC_ISO7816_STATUS_WORD_LENGTH;
-    return DfcVirtualPiccStatusOk;
+    result = DfcVirtualPiccStatusOk;
+
+iso_internal_cleanup:
+    if(wipe_response) dfc_secure_wipe(response, challenge_len * 2);
+    dfc_secure_wipe(clear, sizeof(clear));
+    dfc_secure_wipe(iv, sizeof(iv));
+    dfc_secure_wipe(session_key, sizeof(session_key));
+    dfc_secure_wipe(&candidate, sizeof(candidate));
+    return result;
+}
+
+static DfcVirtualPiccStatus handle_iso_authenticate(
+    DfcVirtualPiccSession* session,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    uint8_t* response,
+    size_t response_capacity,
+    size_t* response_len) {
+    DfcEmulator* emulator = session->emulator;
+    if(response_capacity < DFC_ISO7816_STATUS_WORD_LENGTH)
+        return DfcVirtualPiccStatusBufferTooSmall;
+    uint8_t ins = apdu[1];
+    if(ins == DFC_ISO7816_INS_GET_CHALLENGE) {
+        if(apdu_len != 5)
+            return iso_auth_status(0x67, 0x00, response, response_capacity, response_len);
+        if(apdu[2] != 0 || apdu[3] != 0)
+            return iso_auth_status(0x6A, 0x86, response, response_capacity, response_len);
+        size_t challenge_len = apdu[4];
+        if(challenge_len != DFC_ISO7816_AUTH_CHALLENGE_2TDEA &&
+           challenge_len != DFC_ISO7816_AUTH_CHALLENGE_LONG) {
+            return iso_auth_status(
+                DFC_ISO7816_SW_WRONG_LE_HI,
+                DFC_ISO7816_SW_WRONG_LE_LO,
+                response,
+                response_capacity,
+                response_len);
+        }
+        if(response_capacity < challenge_len + DFC_ISO7816_STATUS_WORD_LENGTH)
+            return DfcVirtualPiccStatusBufferTooSmall;
+        uint8_t challenge[DFC_ISO7816_AUTH_CHALLENGE_LONG] = {0};
+        DfcVirtualPiccStatus result = DfcVirtualPiccStatusProtocolError;
+        if(dfc_random_fill(challenge, challenge_len)) {
+            dfc_emulator_clear_iso_authentication(emulator);
+            dfc_emulator_clear_active_authentication(emulator);
+            memcpy(emulator->iso_auth_card_first, challenge, challenge_len);
+            emulator->iso_auth_challenge_len = (uint8_t)challenge_len;
+            emulator->iso_auth_phase = 1;
+            memcpy(response, emulator->iso_auth_card_first, challenge_len);
+            response[challenge_len] = DFC_ISO7816_SW_OK_HI;
+            response[challenge_len + 1] = DFC_ISO7816_SW_OK_LO;
+            *response_len = challenge_len + DFC_ISO7816_STATUS_WORD_LENGTH;
+            result = DfcVirtualPiccStatusOk;
+        }
+        dfc_secure_wipe(challenge, sizeof(challenge));
+        return result;
+    }
+
+    if(ins == DFC_ISO7816_INS_EXTERNAL_AUTHENTICATE)
+        return handle_iso_external_authenticate(
+            emulator, apdu, apdu_len, response, response_capacity, response_len);
+    return handle_iso_internal_authenticate(
+        emulator, apdu, apdu_len, response, response_capacity, response_len);
 }
 #endif
 
@@ -561,9 +579,12 @@ static DfcVirtualPiccStatus handle_virtual_card_select(
     DfcEmulator* emulator = session->emulator;
     uint8_t virtual_card_challenge[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH] = {0};
     uint8_t virtual_card_clear_data[DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH] = {0};
+    uint8_t clear[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH + DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH] = {0};
+    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
+    uint8_t encrypted[sizeof(clear)] = {0};
+    DfcVirtualPiccStatus result = DfcVirtualPiccStatusProtocolError;
     if(!dfc_random_fill(virtual_card_challenge, sizeof(virtual_card_challenge))) {
-        dfc_secure_wipe(virtual_card_challenge, sizeof(virtual_card_challenge));
-        return DfcVirtualPiccStatusProtocolError;
+        goto virtual_card_select_cleanup;
     }
     virtual_card_clear_data[DfcVirtualCardClearInformationOffset] =
         credential->virtual_card_information;
@@ -576,14 +597,11 @@ static DfcVirtualPiccStatus handle_virtual_card_select(
         credential->virtual_card_uid,
         credential->virtual_card_uid_len);
 
-    uint8_t clear[DFC_VIRTUAL_CARD_CHALLENGE_LENGTH + DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH] = {0};
     memcpy(clear, virtual_card_challenge, DFC_VIRTUAL_CARD_CHALLENGE_LENGTH);
     memcpy(
         clear + DFC_VIRTUAL_CARD_CHALLENGE_LENGTH,
         virtual_card_clear_data,
         DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH);
-    uint8_t iv[DFC_AES_KEY_LENGTH] = {0};
-    uint8_t encrypted[sizeof(clear)] = {0};
     if(!dfc_worker_aes_cbc_encrypt(
            credential->virtual_card_select_encryption_key,
            DFC_AES_KEY_LENGTH,
@@ -591,12 +609,7 @@ static DfcVirtualPiccStatus handle_virtual_card_select(
            sizeof(clear),
            clear,
            encrypted)) {
-        dfc_secure_wipe(clear, sizeof(clear));
-        dfc_secure_wipe(encrypted, sizeof(encrypted));
-        dfc_secure_wipe(iv, sizeof(iv));
-        dfc_secure_wipe(virtual_card_challenge, sizeof(virtual_card_challenge));
-        dfc_secure_wipe(virtual_card_clear_data, sizeof(virtual_card_clear_data));
-        return DfcVirtualPiccStatusProtocolError;
+        goto virtual_card_select_cleanup;
     }
 
     response[0] = DfcVirtualCardFciTag;
@@ -615,12 +628,15 @@ static DfcVirtualPiccStatus handle_virtual_card_select(
         sizeof(virtual_card_clear_data));
     emulator->virtual_card_authentication_expected = true;
     emulator->virtual_card_selection_pending = true;
+    result = DfcVirtualPiccStatusOk;
+
+virtual_card_select_cleanup:
     dfc_secure_wipe(clear, sizeof(clear));
     dfc_secure_wipe(encrypted, sizeof(encrypted));
     dfc_secure_wipe(iv, sizeof(iv));
     dfc_secure_wipe(virtual_card_challenge, sizeof(virtual_card_challenge));
     dfc_secure_wipe(virtual_card_clear_data, sizeof(virtual_card_clear_data));
-    return DfcVirtualPiccStatusOk;
+    return result;
 }
 
 static DfcVirtualPiccStatus handle_virtual_card_external_authenticate(
@@ -654,34 +670,36 @@ static DfcVirtualPiccStatus handle_virtual_card_external_authenticate(
         input + DFC_VIRTUAL_CARD_CHALLENGE_LENGTH,
         emulator->virtual_card_clear_data,
         DFC_VIRTUAL_CARD_CLEAR_DATA_LENGTH);
-    uint8_t full_mac[DFC_AES_CMAC_LENGTH];
-    uint8_t wire_mac[DFC_WIRE_MAC_LENGTH];
+    uint8_t full_mac[DFC_AES_CMAC_LENGTH] = {0};
+    uint8_t wire_mac[DFC_WIRE_MAC_LENGTH] = {0};
+    DfcVirtualPiccStatus result;
     if(!aes_cmac(
            session->credential->virtual_card_select_mac_key,
            DFC_AES_KEY_LENGTH,
            input,
            sizeof(input),
            full_mac)) {
-        dfc_secure_wipe(input, sizeof(input));
-        dfc_secure_wipe(full_mac, sizeof(full_mac));
-        dfc_secure_wipe(wire_mac, sizeof(wire_mac));
         emulator->virtual_card_authentication_expected = false;
         emulator->virtual_card_selection_pending = false;
         emulator->virtual_card_selected = false;
-        return DfcVirtualPiccStatusProtocolError;
+        result = DfcVirtualPiccStatusProtocolError;
+        goto virtual_card_auth_cleanup;
     }
     dfc_truncate_aes_wire_mac(full_mac, wire_mac);
     emulator->virtual_card_selected =
         emulator->virtual_card_selection_pending &&
         dfc_ct_equal(
             wire_mac, command + DfcVirtualCardExternalAuthenticateDataOffset, DFC_WIRE_MAC_LENGTH);
+    emulator->virtual_card_authentication_expected = false;
+    emulator->virtual_card_selection_pending = false;
+    result = write_status_word(
+        DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO, response, response_capacity, response_len);
+
+virtual_card_auth_cleanup:
     dfc_secure_wipe(input, sizeof(input));
     dfc_secure_wipe(full_mac, sizeof(full_mac));
     dfc_secure_wipe(wire_mac, sizeof(wire_mac));
-    emulator->virtual_card_authentication_expected = false;
-    emulator->virtual_card_selection_pending = false;
-    return write_status_word(
-        DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO, response, response_capacity, response_len);
+    return result;
 }
 #endif
 
