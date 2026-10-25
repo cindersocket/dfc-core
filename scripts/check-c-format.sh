@@ -6,11 +6,6 @@ cd "$root"
 
 # Keep this directory-based so newly added maintained C files join the gate.
 # munit is vendored; generated bindings and unrelated languages live elsewhere.
-git ls-files -z -- \
-    ':(glob)src/**/*.[ch]' \
-    ':(glob)ffi/**/*.[ch]' \
-    ':(glob)port/**/*.[ch]' \
-    ':(glob)bindings/jni/**/*.[ch]' \
-    ':(glob)tests/**/*.[ch]' \
-    ':(exclude,glob)tests/munit/**' \
+find src ffi port bindings/jni tests -type f \( -name '*.c' -o -name '*.h' \) \
+    ! -path 'tests/munit/*' -print0 \
     | xargs -0 uvx --from clang-format==21.1.7 clang-format --dry-run --Werror
