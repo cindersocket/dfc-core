@@ -765,6 +765,25 @@ static void
 
     munit_assert_int(status, ==, expected_status);
     munit_assert_size(audit.count, ==, 0);
+
+    if(status == DfcVirtualPiccStatusBufferTooSmall) {
+        DfcByteBuf* tx = picc->emulator->tx_buffer;
+        munit_assert_size(tx->size_bytes, >, 0);
+        munit_assert_size(picc->pending_response_len, ==, tx->size_bytes);
+        uint8_t expected[DFC_BYTEBUF_MAX];
+        size_t expected_len = tx->size_bytes;
+        memcpy(expected, tx->data, expected_len);
+
+        response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                picc, command, sizeof(command), response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_size(response_len, ==, expected_len);
+        munit_assert_memory_equal(expected_len, response, expected);
+    }
+
     munit_assert_memory_equal(
         sizeof(*picc->emulator->tx_buffer),
         picc->emulator->tx_buffer,
