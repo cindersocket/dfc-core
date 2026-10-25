@@ -81,6 +81,7 @@ CONFORMANCE_COMMON := $(CORE_SRC) dfc_vector_replay_random.c \
 	$(HOST)/dfc_bytebuf_host.c $(CRYPTO_SRC)
 
 TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_secure_messaging test_dfc_desfire_protocol \
+	test_munit_parameters \
 	test_dfc_virtual_picc_core test_dfc_virtual_picc_secure \
 	test_dfc_transaction_selection \
 	test_dfc_transaction_snapshot \
