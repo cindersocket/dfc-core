@@ -1620,7 +1620,7 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
         uint8_t raw[2];
         if(!r_octets(fid, 2, raw)) return DfcDerMalformed;
         uint16_t v = (uint16_t)((raw[0] << 8) | raw[1]);
-        if(v == 0x0000 || v == 0x3F00 || v == 0x3FFF || v == 0xFFFF) return DfcDerMalformed;
+        if(dfc_iso_file_id_is_reserved(v)) return DfcDerMalformed;
         file->has_iso_file_id = true;
         file->iso_file_id = v;
     }
@@ -2035,7 +2035,7 @@ static DfcDerStatus decode_credential(DfcCredential* credential, const uint8_t* 
             uint8_t raw[2];
             if(!r_octets(afid, 2, raw)) return DfcDerMalformed;
             uint16_t v = (uint16_t)((raw[0] << 8) | raw[1]);
-            if(v == 0x0000 || v == 0x3F00 || v == 0x3FFF || v == 0xFFFF) return DfcDerMalformed;
+            if(dfc_iso_file_id_is_reserved(v)) return DfcDerMalformed;
             app->has_iso_file_id = true;
             app->iso_file_id = v;
         }

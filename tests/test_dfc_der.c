@@ -62,6 +62,19 @@ static DfcFile* add_data_file(
     return f;
 }
 
+static size_t find_unique_u16(uint8_t* encoded, size_t length, uint16_t value) {
+    const uint8_t high = (uint8_t)(value >> 8);
+    const uint8_t low = (uint8_t)value;
+    size_t found = SIZE_MAX;
+    for(size_t i = 0; i + 1 < length; i++) {
+        if(encoded[i] != high || encoded[i + 1] != low) continue;
+        munit_assert_size(found, ==, SIZE_MAX);
+        found = i;
+    }
+    munit_assert_size(found, !=, SIZE_MAX);
+    return found;
+}
+
 static void downgrade_v6_auth_fields(uint8_t* encoded, size_t length, uint8_t version) {
     bool changed_version = false;
     bool changed_picc_auth = false;
@@ -449,6 +462,50 @@ static MunitResult test_rejections(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static MunitResult test_reserved_iso_file_id_decode(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential src = {0};
+    build_basic(&src);
+    src.apps[0].iso_file_id = 0xA1A2;
+    DfcFile* file = add_data_file(&src, 0x01, 32, NULL, 0, false);
+    file->has_iso_file_id = true;
+    file->iso_file_id = 0xB1B2;
+
+    uint8_t encoded[DFC_DER_MAX_SIZE];
+    size_t encoded_len = 0;
+    munit_assert_int(dfc_der_encode(&src, encoded, sizeof(encoded), &encoded_len), ==, DfcDerOk);
+    const size_t app_fid_offset = find_unique_u16(encoded, encoded_len, src.apps[0].iso_file_id);
+    const size_t file_fid_offset = find_unique_u16(encoded, encoded_len, file->iso_file_id);
+
+    static const uint16_t reserved[] = {0x0000, 0x3F00, 0x3FFF, 0xFFFF};
+    static const uint16_t adjacent_valid[] = {0x0001, 0x3EFF, 0x3F01, 0x3FFE, 0x4000, 0xFFFE};
+    DfcCredential decoded;
+    for(size_t field = 0; field < 2; field++) {
+        const size_t offset = field == 0 ? app_fid_offset : file_fid_offset;
+        for(size_t i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++) {
+            uint8_t candidate[DFC_DER_MAX_SIZE];
+            memcpy(candidate, encoded, encoded_len);
+            candidate[offset] = (uint8_t)(reserved[i] >> 8);
+            candidate[offset + 1] = (uint8_t)reserved[i];
+            memset(&decoded, 0xA5, sizeof(decoded));
+            munit_assert_int(
+                dfc_der_decode(&decoded, candidate, encoded_len), ==, DfcDerMalformed);
+        }
+        for(size_t i = 0; i < sizeof(adjacent_valid) / sizeof(adjacent_valid[0]); i++) {
+            uint8_t candidate[DFC_DER_MAX_SIZE];
+            memcpy(candidate, encoded, encoded_len);
+            candidate[offset] = (uint8_t)(adjacent_valid[i] >> 8);
+            candidate[offset + 1] = (uint8_t)adjacent_valid[i];
+            munit_assert_int(dfc_der_decode(&decoded, candidate, encoded_len), ==, DfcDerOk);
+            const uint16_t decoded_fid = field == 0 ? decoded.apps[0].iso_file_id :
+                                                      decoded.files[0].iso_file_id;
+            munit_assert_uint16(decoded_fid, ==, adjacent_valid[i]);
+        }
+    }
+    return MUNIT_OK;
+}
+
 static MunitResult test_model_validation(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -750,6 +807,12 @@ static MunitTest tests[] = {
      NULL},
     {"/picc-level-file", test_picc_level_file, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/rejections", test_rejections, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/reserved-iso-file-id-decode",
+     test_reserved_iso_file_id_decode,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/model-validation", test_model_validation, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #if DFC_ENABLE_KEY_SETS
     {"/mixed-key-set-round-trip",
