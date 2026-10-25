@@ -22,7 +22,9 @@
 # key and three-key DES CMAC are measured rather than assumed.
 
 name: genuine EV1 8K, ISO 3K3DES session read and write in every comm mode
+case-id: hardware-genuine-ev1-8k-3k3des-comm-modes
 origin: physical-card
+source: captured hardware trace
 requires: auth-iso
 uid: 04304622216A80
 picc-key-settings-1: 0F

@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: EV3 secure dynamic messaging counter and MAC
+case-id: hardware-genuine-ev3-4k-sdm-counter
 origin: physical-card
 requires: ev3,sdm
 source: captured hardware setup, unauthenticated read, and file counter responses

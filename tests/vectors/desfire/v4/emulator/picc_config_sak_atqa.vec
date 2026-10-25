@@ -5,6 +5,7 @@
 # expectations the recorder asserts; see tests/vectors/desfire/README.md.
 
 name: picc config: sak and atqa
+case-id: picc-config-sak-atqa
 origin: synthetic
 source: recorded from the reference engine, see tests/vectors/desfire/README.md
 uid: 04112233445566

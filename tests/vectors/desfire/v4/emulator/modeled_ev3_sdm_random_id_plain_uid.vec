@@ -1,5 +1,6 @@
 # PROVENANCE: Modeled from captured EV3 dynamic messaging wire shapes.
 name: EV3 Random ID plain UID mirror
+case-id: modeled-ev3-sdm-random-id-plain-uid
 origin: synthetic
 requires: ev3,sdm
 source: deterministic modeled fixture

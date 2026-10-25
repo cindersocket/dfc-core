@@ -6,6 +6,7 @@
 # recording exactly, 0 mismatches.
 
 name: ev1 conformance: iso-select-picc-df
+case-id: ev1-iso-select-picc-df
 origin: synthetic
 source: tests/test_dfc_ev1_conformance.c /iso-select-picc-df
 uid: 04A1B2C3D4E5F6

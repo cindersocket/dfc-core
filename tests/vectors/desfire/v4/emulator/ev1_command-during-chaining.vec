@@ -11,6 +11,7 @@
 # the setup line up byte for byte with the original.
 
 name: ev1 conformance: command-during-chaining
+case-id: ev1-command-during-chaining
 origin: synthetic
 source: tests/test_dfc_ev1_conformance.c /command-during-chaining
 uid: 04A1B2C3D4E5F6

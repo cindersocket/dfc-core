@@ -7,6 +7,7 @@
 # the recording exactly.
 
 name: value files across a delete
+case-id: value-multi-file-delete
 origin: synthetic
 source: tests/test_dfc_virtual_picc_value_vectors.c#/multi-file-delete
 uid: 0476616C756531

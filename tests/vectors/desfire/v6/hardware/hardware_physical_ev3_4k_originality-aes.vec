@@ -1,12 +1,12 @@
 # PROVENANCE: measured from the physical EV3 4K card over PC/SC.
 # Factory key material is unknown; continuation intentionally fails.
 name: physical EV3 special authentication originality-aes
+case-id: hardware-physical-ev3-4k-originality-aes
 origin: physical-card
-requires: auth-aes
+requires: auth-aes,ev3
 feature-version: 6
 source: physical-card-pcsc
 replayable: false
-requires: ev3
 uid: 048222F2CF1890
 picc-generation: EV3
 picc-storage: 4096

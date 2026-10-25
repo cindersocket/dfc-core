@@ -12,6 +12,7 @@
 # rescan in the original test.
 
 name: value file transactions
+case-id: value-transactions
 origin: synthetic
 source: tests/test_dfc_virtual_picc_value_vectors.c#/transactions
 uid: 0476616C756531

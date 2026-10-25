@@ -24,7 +24,9 @@
 # change reads 55.
 
 name: genuine EV1 8K, ISO authentication and ChangeKey on a 3K3DES key
+case-id: hardware-genuine-ev1-8k-3k3des-handshakes
 origin: physical-card
+source: captured hardware trace
 issues: https://github.com/cindersocket/dfc-core/issues/10
 requires: auth-iso,auth-aes
 uid: 04304622216A80

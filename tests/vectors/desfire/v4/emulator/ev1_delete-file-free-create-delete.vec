@@ -9,6 +9,7 @@
 # credential struct; here the same state is reached over the wire.
 
 name: ev1 conformance: delete-file-free-create-delete
+case-id: ev1-delete-file-free-create-delete
 origin: synthetic
 source: tests/test_dfc_ev1_conformance.c /delete-file-free-create-delete
 uid: 04A1B2C3D4E5F6

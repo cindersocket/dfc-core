@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: EV3 encrypted file data through ISO and native continuation reads
+case-id: hardware-genuine-ev3-sdm-encrypted-file-native-iso
 origin: physical-card
 requires: ev3,sdm
 source: captured hardware setup and unauthenticated reads

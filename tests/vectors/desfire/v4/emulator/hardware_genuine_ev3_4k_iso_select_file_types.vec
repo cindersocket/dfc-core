@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: genuine EV3 ISO selection modes and record file types
+case-id: hardware-genuine-ev3-4k-iso-select-file-types
 origin: physical-card
 requires: ev1,record-files
 source: captured hardware behavior

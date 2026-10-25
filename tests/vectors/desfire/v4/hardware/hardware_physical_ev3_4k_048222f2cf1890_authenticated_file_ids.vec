@@ -5,9 +5,10 @@
 # Records exact FID frame boundaries over a 32-file directory.
 
 name: physical EV3 4K, authenticated ISO file IDs
+case-id: hardware-physical-ev3-4k-048222f2cf1890-authenticated-file-ids
 origin: physical-card
-requires: auth-iso
-requires: ev3
+source: captured hardware trace
+requires: auth-iso,ev3
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

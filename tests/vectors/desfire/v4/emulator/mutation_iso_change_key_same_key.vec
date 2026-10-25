@@ -20,6 +20,7 @@
 # credential.apps[0].
 
 name: ISO ChangeKey on the authenticated key
+case-id: mutation-iso-change-key-same-key
 origin: synthetic
 requires: auth-iso
 source: tests/test_dfc_virtual_picc_mutation_vectors.c#/iso-change-key-same-key-round-trip

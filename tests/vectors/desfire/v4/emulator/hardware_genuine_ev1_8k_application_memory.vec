@@ -46,7 +46,9 @@
 # An application with no keys was answered 9E.
 
 name: genuine EV1 8K, memory each application consumes, by key type and count
+case-id: hardware-genuine-ev1-8k-application-memory
 origin: physical-card
+source: captured hardware trace
 uid: 04304622216A80
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

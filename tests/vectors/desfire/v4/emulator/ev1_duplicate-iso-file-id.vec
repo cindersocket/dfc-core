@@ -6,6 +6,7 @@
 # recording exactly, 0 mismatches.
 
 name: ev1 conformance: duplicate-iso-file-id
+case-id: ev1-duplicate-iso-file-id
 origin: synthetic
 source: tests/test_dfc_ev1_conformance.c /duplicate-iso-file-id
 uid: 04A1B2C3D4E5F6

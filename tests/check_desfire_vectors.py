@@ -8,6 +8,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent
 VECTOR_ROOT = ROOT / "vectors" / "desfire"
@@ -58,6 +59,61 @@ UNSIGNED_HEADERS = {
     "vc-auth-mandatory",
     "vc-pc-mandatory",
 }
+REQUIRED_HEADERS = {"case-id", "name", "origin", "source"}
+CASE_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+ENUM_HEADERS = {
+    "binding-applicability": {"core-model-only"},
+    "origin": {"physical-card", "synthetic"},
+    "picc-auth-mode": {"AES", "D40", "ISO"},
+    "picc-generation": {"EV1", "EV2", "EV3"},
+    "replayable": {"false", "true"},
+}
+HEX_HEADER_LENGTHS = {
+    "delegated-default-key": {16, 24},
+    "new-key": {8, 16, 24},
+    "picc-atqa": {2},
+    "picc-ats": set(range(1, 33)),
+    "picc-auth-commands": {1},
+    "picc-dam-auth-key": {16},
+    "picc-dam-encryption-key": {16},
+    "picc-dam-mac-key": {16},
+    "picc-ev2-card-capabilities": {6},
+    "picc-hardware-version": {7},
+    "picc-key": {8, 16, 24},
+    "picc-key-settings-1": {1},
+    "picc-key-settings-2": {1},
+    "picc-key-version": {1},
+    "picc-proximity-bitrate": {1},
+    "picc-proximity-key": {16},
+    "picc-proximity-option": {1},
+    "picc-proximity-published-response-time": {2},
+    "picc-sak": {1},
+    "picc-software-version": {7},
+    "picc-static-signature": {56},
+    "uid": {4, 7, 10},
+    "vc-capabilities": {2},
+    "vc-iid": {3, 7},
+    "vc-info": {1},
+    "vc-select-enc-key": {16},
+    "vc-select-mac-key": {16},
+    "vc-uid": {4, 7, 10},
+}
+BOOLEAN_INTEGER_HEADERS = {
+    "picc-format-disabled",
+    "picc-random-id",
+    "vc-auth-mandatory",
+    "vc-pc-mandatory",
+}
+UNSIGNED_HEADER_MAXIMUMS = {
+    "delegated-default-key-version": 0xFF,
+    "feature-version": 0xFF,
+    "new-key-version": 0xFF,
+    "picc-key-len": 24,
+    "picc-storage": 0xFFFFFFFF,
+    "target-key-number": 13,
+    "target-key-set": 15,
+    "target-key-set-version": 0xFF,
+}
 BYTE_ASSERTION_PATH = re.compile(
     r"(?:credential\.uid|apps\[\d+\]\.(?:aid|keys\[\d+\])|files\[\d+\]\.data|"
     r"session\.(?:transaction_identifier|command_counter|encryption_key|mac_key)|"
@@ -65,6 +121,16 @@ BYTE_ASSERTION_PATH = re.compile(
 )
 ENUM_ASSERTION_PATHS = {"credential.model_status", "emulator.secure_messaging"}
 INDEXED_PATH = re.compile(r"(?:apps|files)\[\d+\](?:\.[a-z0-9_]+(?:\[\d+\])?)+\Z")
+
+
+class VectorMetadata(NamedTuple):
+    path: str
+    name: str
+    case_id: str
+    source: str
+    origin: str
+    replayable: bool
+    steps: int
 
 
 def parse_hex(text: str, *, wildcards: bool = False) -> int:
@@ -220,22 +286,45 @@ def vector_paths() -> list[Path]:
     return sorted(VECTOR_ROOT.glob("v[0-9]/*/*.vec"))
 
 
-def validate_vector(path: Path, vocabulary: dict[str, object]) -> tuple[str, int, bool]:
+def validate_header(location: str, key: str, value: str) -> None:
+    if key == "case-id" and not CASE_ID.fullmatch(value):
+        raise ValueError(f"{location}: invalid case-id header")
+    if key == "source" and (not value.isprintable() or value != value.strip()):
+        raise ValueError(f"{location}: invalid source header")
+    if key in ENUM_HEADERS and value not in ENUM_HEADERS[key]:
+        raise ValueError(f"{location}: invalid enum header {key!r}")
+    if key in HEX_HEADERS:
+        try:
+            length = parse_hex(value)
+        except ValueError as error:
+            raise ValueError(f"{location}: invalid hex header {key!r}") from error
+        lengths = HEX_HEADER_LENGTHS[key]
+        if length not in lengths:
+            raise ValueError(f"{location}: invalid length for header {key!r}")
+    if key in UNSIGNED_HEADERS:
+        try:
+            parsed = parse_unsigned(value, maximum=UNSIGNED_HEADER_MAXIMUMS.get(key, 1))
+        except ValueError as error:
+            raise ValueError(f"{location}: invalid integer header {key!r}") from error
+        if key in BOOLEAN_INTEGER_HEADERS and parsed not in {0, 1}:
+            raise ValueError(f"{location}: invalid boolean header {key!r}")
+        if key == "picc-key-len" and parsed not in {8, 16, 24}:
+            raise ValueError(f"{location}: invalid key length header {key!r}")
+
+
+def validate_vector(path: Path, vocabulary: dict[str, object]) -> VectorMetadata:
     headers = set(vocabulary["headers"])
     steps = set(vocabulary["steps"])
     dialects = set(vocabulary["dialects"])
     values: dict[str, str] = {}
     step_count = 0
     saw_step = False
-    saw_provenance = False
 
     text = path.read_text(encoding="utf-8")
     for number, raw in enumerate(text.splitlines(), 1):
         if len(raw.encode("utf-8")) > MAXIMUM_LINE_BYTES:
             raise ValueError(f"{path.relative_to(ROOT)}:{number}: line is too long")
         line = raw.strip()
-        if line.startswith("# PROVENANCE:"):
-            saw_provenance = True
         if not line or line.startswith("#"):
             continue
         location = f"{path.relative_to(ROOT)}:{number}"
@@ -245,24 +334,9 @@ def validate_vector(path: Path, vocabulary: dict[str, object]) -> tuple[str, int
                 raise ValueError(f"{location}: unknown header {key!r}")
             if not value:
                 raise ValueError(f"{location}: empty header {key!r}")
-            if key in values and key in {
-                "name",
-                "origin",
-                "source",
-                "case-id",
-                "feature-version",
-            }:
+            if key in values:
                 raise ValueError(f"{location}: duplicate header {key!r}")
-            if key in HEX_HEADERS:
-                try:
-                    parse_hex(value)
-                except ValueError as error:
-                    raise ValueError(f"{location}: invalid hex header {key!r}") from error
-            if key in UNSIGNED_HEADERS:
-                try:
-                    parse_unsigned(value, maximum=0xFFFFFFFF)
-                except ValueError as error:
-                    raise ValueError(f"{location}: invalid integer header {key!r}") from error
+            validate_header(location, key, value)
             values[key] = value
             continue
 
@@ -276,30 +350,58 @@ def validate_vector(path: Path, vocabulary: dict[str, object]) -> tuple[str, int
             raise ValueError(f"{location}: {error}") from error
         step_count += 1
 
-    for required in ("name", "origin"):
+    for required in sorted(REQUIRED_HEADERS):
         if required not in values:
             raise ValueError(f"{path.relative_to(ROOT)}: missing {required} header")
-    if "source" not in values and not saw_provenance:
-        raise ValueError(f"{path.relative_to(ROOT)}: missing source provenance")
-    if values["origin"] not in {"physical-card", "synthetic"}:
-        raise ValueError(f"{path.relative_to(ROOT)}: invalid origin")
     version = int(path.relative_to(VECTOR_ROOT).parts[0][1:])
     if int(values.get("feature-version", version)) > version:
         raise ValueError(f"{path.relative_to(ROOT)}: feature-version exceeds directory version")
-    replayable = values.get("replayable", "true") != "false"
+    replayable = values.get("replayable", "true") == "true"
     if replayable and not saw_step:
         raise ValueError(f"{path.relative_to(ROOT)}: replayable vector has no steps")
-    return values["name"], step_count, replayable
+    return VectorMetadata(
+        path=path.relative_to(VECTOR_ROOT).as_posix(),
+        name=values["name"],
+        case_id=values["case-id"],
+        source=values["source"],
+        origin=values["origin"],
+        replayable=replayable,
+        steps=step_count,
+    )
 
 
-def build_manifest() -> dict[str, object]:
+def validate_catalog(paths: list[Path], vocabulary: dict[str, object]) -> list[VectorMetadata]:
+    metadata: list[VectorMetadata] = []
+    identities: dict[str, dict[str, Path]] = {"name": {}, "case-id": {}}
+    for path in paths:
+        item = validate_vector(path, vocabulary)
+        for header, value in (("name", item.name), ("case-id", item.case_id)):
+            previous = identities[header].get(value)
+            if previous is not None:
+                raise ValueError(f"duplicate vector {header} {value!r}: {previous} and {path}")
+            identities[header][value] = path
+        metadata.append(item)
+    return metadata
+
+
+def build_manifest(metadata: list[VectorMetadata]) -> dict[str, object]:
+    by_path = {item.path: item for item in metadata}
     return {
-        "schema": 1,
+        "schema": 2,
         "files": [
             {
                 "path": path.relative_to(VECTOR_ROOT).as_posix(),
                 "sha256": digest(path),
                 "size": path.stat().st_size,
+                "role": "emulator-vector",
+                "metadata": {
+                    "name": by_path[path.relative_to(VECTOR_ROOT).as_posix()].name,
+                    "case-id": by_path[path.relative_to(VECTOR_ROOT).as_posix()].case_id,
+                    "source": by_path[path.relative_to(VECTOR_ROOT).as_posix()].source,
+                    "origin": by_path[path.relative_to(VECTOR_ROOT).as_posix()].origin,
+                    "replayable": by_path[path.relative_to(VECTOR_ROOT).as_posix()].replayable,
+                    "steps": by_path[path.relative_to(VECTOR_ROOT).as_posix()].steps,
+                },
             }
             for path in vector_paths()
         ],
@@ -311,19 +413,9 @@ def main() -> int:
     parser.add_argument("--write-manifest", action="store_true")
     args = parser.parse_args()
     vocabulary = json.loads(VOCABULARY.read_text(encoding="utf-8"))
-    names: dict[str, Path] = {}
-    total_steps = 0
-    replayable = 0
     try:
-        for path in vector_paths():
-            name, steps, can_replay = validate_vector(path, vocabulary)
-            if name in names:
-                raise ValueError(f"duplicate vector name {name!r}: {names[name]} and {path}")
-            names[name] = path
-            if can_replay:
-                replayable += 1
-                total_steps += steps
-        expected = build_manifest()
+        metadata = validate_catalog(vector_paths(), vocabulary)
+        expected = build_manifest(metadata)
         if args.write_manifest:
             MANIFEST.write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
         elif json.loads(MANIFEST.read_text(encoding="utf-8")) != expected:
@@ -331,7 +423,11 @@ def main() -> int:
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
         print(f"DESFire vector check failed: {error}", file=sys.stderr)
         return 1
-    print(f"DESFire vectors: {len(names)} files, {replayable} replayable, {total_steps} steps")
+    replayable = [item for item in metadata if item.replayable]
+    print(
+        f"DESFire vectors: {len(metadata)} files, {len(replayable)} replayable, "
+        f"{sum(item.steps for item in replayable)} steps"
+    )
     return 0
 
 

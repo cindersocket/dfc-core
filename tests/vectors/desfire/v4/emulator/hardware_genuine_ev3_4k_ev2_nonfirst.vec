@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: EV2 NonFirst key refresh and encrypted read on genuine EV3
+case-id: hardware-genuine-ev3-4k-ev2-nonfirst
 origin: physical-card
 requires: ev2,ev2-secure-messaging
 source: captured hardware behavior with default AES application key

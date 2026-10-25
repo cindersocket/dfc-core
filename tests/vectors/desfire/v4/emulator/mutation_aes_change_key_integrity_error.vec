@@ -18,6 +18,7 @@
 # key-preservation check the original makes on credential.apps[0].
 
 name: AES ChangeKey with a tampered cryptogram
+case-id: mutation-aes-change-key-integrity-error
 origin: synthetic
 requires: auth-aes
 source: tests/test_dfc_virtual_picc_mutation_vectors.c#/aes-change-key-integrity-error-preserves-key

@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: genuine EV3 native transaction and standard ISO file access
+case-id: hardware-genuine-ev3-4k-transactions
 origin: physical-card
 requires: ev1,backup-files,record-files
 source: captured hardware behavior

@@ -14,6 +14,7 @@
 # the vector does not depend on the engine's default generator.
 
 name: D40 ChangeKey mutation and re-authentication
+case-id: mutation-pcsc-change-key
 origin: synthetic
 source: tests/test_dfc_virtual_picc_mutation_vectors.c#/pcsc-change-key-mutation-proves-auth-behavior
 uid: 04334455667788

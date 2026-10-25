@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: genuine EV3 identity, version chain, and copyable static signature
+case-id: hardware-genuine-ev3-4k-identity
 origin: physical-card
 requires: ev3,static-signature
 source: captured hardware behavior

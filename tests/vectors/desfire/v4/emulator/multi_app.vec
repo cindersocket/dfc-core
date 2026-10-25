@@ -14,6 +14,7 @@
 # inject-random so RndB comes from the vector rather than the engine default.
 
 name: multi-application file pool and dirty tracking
+case-id: multi-app
 origin: synthetic
 source: tests/test_dfc_virtual_picc_multi_app_vectors.c
 uid: 04707172737475

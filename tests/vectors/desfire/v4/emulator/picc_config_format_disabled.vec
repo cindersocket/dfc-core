@@ -9,6 +9,7 @@
 # inject-random pins RndB for the D40 handshake.
 
 name: picc config: format disabled
+case-id: picc-config-format-disabled
 origin: synthetic
 source: recorded from the reference engine, see tests/vectors/desfire/README.md
 uid: 04223344556677

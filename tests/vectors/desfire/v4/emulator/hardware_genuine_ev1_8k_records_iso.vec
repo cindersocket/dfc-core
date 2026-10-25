@@ -30,14 +30,15 @@
 #   a cleared record file answers ReadRecords with BE
 
 name: genuine EV1 8K, linear and cyclic record files under an ISO 2K3DES session
+case-id: hardware-genuine-ev1-8k-records-iso
 origin: physical-card
-requires: auth-iso
+source: captured hardware trace
+requires: auth-iso,ev1,record-files
 uid: 04304622216A80
 picc-key-settings-1: 0F
 picc-key-settings-2: 01
 picc-auth-mode: D40
 picc-key-len: 16
-requires: ev1,record-files
 picc-generation: EV1
 picc-storage: 8192
 

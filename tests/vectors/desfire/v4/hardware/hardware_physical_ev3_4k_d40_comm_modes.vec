@@ -24,7 +24,9 @@
 # so measuring it is worth more here than anywhere.
 
 name: genuine EV3 4K, D40 session read and write in every comm mode
+case-id: hardware-physical-ev3-4k-d40-comm-modes
 origin: physical-card
+source: captured hardware trace
 requires: ev3
 uid: 048222F2CF1890
 picc-key-settings-1: 0F

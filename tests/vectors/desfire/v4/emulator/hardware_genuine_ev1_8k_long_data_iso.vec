@@ -23,7 +23,9 @@
 # every communication mode.
 
 name: genuine EV1 8K, writes sent in frames and whole-file reads that chain, under an ISO 2K3DES session
+case-id: hardware-genuine-ev1-8k-long-data-iso
 origin: physical-card
+source: captured hardware trace
 uid: 04304622216A80
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

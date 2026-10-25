@@ -23,9 +23,10 @@
 # every communication mode.
 
 name: genuine EV3 4K, writes sent in frames and whole-file reads that chain, under an AES session
+case-id: hardware-physical-ev3-4k-long-data
 origin: physical-card
-requires: auth-aes
-requires: ev3
+source: captured hardware trace
+requires: auth-aes,ev3
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

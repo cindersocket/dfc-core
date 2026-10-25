@@ -1,5 +1,6 @@
 # PROVENANCE: Modeled from observed DESFire EV3 virtual-card wire behavior.
 name: EV3 authenticated virtual-card selection
+case-id: modeled-ev3-virtual-card-authenticated
 origin: synthetic
 requires: ev2,virtual-card
 source: deterministic simulator fixture

@@ -27,7 +27,9 @@
 # have.
 
 name: genuine EV1 4K, issued credential read-only surface
+case-id: hardware-genuine-ev1-4k-issued
 origin: physical-card
+source: captured hardware trace
 feature-version: 5
 uid: 045704EA916F80
 picc-storage: 8192

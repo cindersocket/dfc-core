@@ -30,9 +30,10 @@
 #   a cleared record file answers ReadRecords with BE
 
 name: genuine EV3 4K, linear and cyclic record files under an ISO 2K3DES session
+case-id: hardware-physical-ev3-4k-records-iso
 origin: physical-card
-requires: auth-iso
-requires: ev3,record-files
+source: captured hardware trace
+requires: auth-iso,ev3,record-files
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

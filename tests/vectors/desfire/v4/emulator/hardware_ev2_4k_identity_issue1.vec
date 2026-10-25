@@ -1,5 +1,6 @@
 # PROVENANCE: Physical EV2 4K card capture attached to dfc-core issue 1.
 name: captured EV2 identity, version chain, and static signature
+case-id: hardware-ev2-4k-identity-issue1
 origin: physical-card
 requires: ev2,static-signature
 source: dfc-core issue 1 card capture

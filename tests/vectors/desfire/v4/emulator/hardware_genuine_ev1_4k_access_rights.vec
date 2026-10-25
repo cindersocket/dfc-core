@@ -30,7 +30,9 @@
 # writing is 0xAE.
 
 name: genuine EV1 4K, asymmetric access rights under authentication
+case-id: hardware-genuine-ev1-4k-access-rights
 origin: physical-card
+source: captured hardware trace
 requires: auth-aes
 uid: 045704EA916F80
 picc-key-settings-1: 0F

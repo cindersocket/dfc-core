@@ -1,5 +1,6 @@
 # PROVENANCE: Synthetic 10-byte UID case retained because matching capture hardware is unavailable.
 name: EV3 ten-byte UID encrypted PICC data
+case-id: modeled-ev3-sdm-ten-byte-encrypted-uid
 origin: synthetic
 requires: ev3,sdm
 source: deterministic synthetic fixture with independently calculated cipher and MAC

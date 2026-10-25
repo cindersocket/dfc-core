@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: genuine EV3 native, ISO-wrapped native, and standard ISO commands
+case-id: hardware-genuine-ev3-4k-wire-dialects
 origin: physical-card
 source: captured hardware behavior
 uid: 0483B4F2CF1890

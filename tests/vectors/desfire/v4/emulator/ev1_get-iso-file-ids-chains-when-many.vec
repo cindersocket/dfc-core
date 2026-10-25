@@ -12,6 +12,7 @@
 # original test match this setup byte for byte.
 
 name: ev1 conformance: get-iso-file-ids-chains-when-many
+case-id: ev1-get-iso-file-ids-chains-when-many
 origin: synthetic
 source: tests/test_dfc_ev1_conformance.c /get-iso-file-ids-chains-when-many
 uid: 04A1B2C3D4E5F6

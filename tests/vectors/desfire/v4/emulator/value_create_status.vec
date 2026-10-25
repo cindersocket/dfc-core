@@ -8,6 +8,7 @@
 # the recording exactly.
 
 name: value file creation status codes
+case-id: value-create-status
 origin: synthetic
 source: tests/test_dfc_virtual_picc_value_vectors.c#/create-status-vectors
 uid: 0476616C756531

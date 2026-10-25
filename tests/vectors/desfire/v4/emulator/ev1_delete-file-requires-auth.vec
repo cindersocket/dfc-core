@@ -11,6 +11,7 @@
 # rescans so the DeleteFile that follows is unauthenticated, as in the source.
 
 name: ev1 conformance: delete-file-requires-auth
+case-id: ev1-delete-file-requires-auth
 origin: synthetic
 source: tests/test_dfc_ev1_conformance.c /delete-file-requires-auth
 uid: 04A1B2C3D4E5F6

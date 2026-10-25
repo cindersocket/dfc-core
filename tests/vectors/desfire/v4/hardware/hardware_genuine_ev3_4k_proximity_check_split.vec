@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: EV3 proximity check with split challenge rounds
+case-id: hardware-genuine-ev3-4k-proximity-check-split
 origin: physical-card
 requires: ev3,proximity-check
 source: captured hardware behavior with an enabled zero-value AES proximity key

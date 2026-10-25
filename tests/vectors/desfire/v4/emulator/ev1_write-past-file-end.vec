@@ -9,6 +9,7 @@
 # credential struct; here the same state is reached over the wire.
 
 name: ev1 conformance: write-past-file-end
+case-id: ev1-write-past-file-end
 origin: synthetic
 source: tests/test_dfc_ev1_conformance.c /write-past-file-end
 uid: 04A1B2C3D4E5F6

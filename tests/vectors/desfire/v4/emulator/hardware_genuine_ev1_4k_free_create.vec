@@ -39,7 +39,9 @@
 # the suspicion is closed as unfounded.
 
 name: genuine EV1 4K, application-level free file creation
+case-id: hardware-genuine-ev1-4k-free-create
 origin: physical-card
+source: captured hardware trace
 uid: 045704EA916F80
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

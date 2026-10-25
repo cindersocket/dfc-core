@@ -23,7 +23,9 @@
 # every communication mode.
 
 name: genuine EV3 4K, writes sent in frames and whole-file reads that chain, under a D40 session
+case-id: hardware-physical-ev3-4k-long-data-d40
 origin: physical-card
+source: captured hardware trace
 requires: ev3
 uid: 048222F2CF1890
 picc-key-settings-1: 0F

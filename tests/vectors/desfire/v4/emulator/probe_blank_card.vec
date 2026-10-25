@@ -11,6 +11,7 @@
 # the PICC header.
 
 name: pcsc blank card probe
+case-id: probe-blank-card
 origin: synthetic
 source: tests/test_dfc_virtual_picc_probe_vectors.c
 uid: 04112233445566

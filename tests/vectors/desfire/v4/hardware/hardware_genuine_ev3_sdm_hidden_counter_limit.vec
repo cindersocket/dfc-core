@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: EV3 hidden dynamic messaging counter continuation and limit
+case-id: hardware-genuine-ev3-sdm-hidden-counter-limit
 origin: physical-card
 requires: ev3,sdm
 source: captured hardware setup, counter queries, and boundary reads

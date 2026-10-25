@@ -10,6 +10,7 @@
 # random identifier a literal byte string here.
 
 name: picc config: random id activation
+case-id: picc-random-id-activation
 origin: synthetic
 source: recorded from the reference engine, see tests/vectors/desfire/README.md
 uid: 04A1B2C3D4E5F6

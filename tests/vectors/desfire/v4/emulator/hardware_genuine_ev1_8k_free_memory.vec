@@ -31,7 +31,9 @@
 # close, and a reading outside the tolerance is a real divergence.
 
 name: genuine EV1 8K, free memory as applications and files come and go
+case-id: hardware-genuine-ev1-8k-free-memory
 origin: physical-card
+source: captured hardware trace
 uid: 04304622216A80
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

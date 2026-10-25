@@ -1,11 +1,11 @@
 # PROVENANCE: measured from the physical EV3 4K card over PC/SC.
 # Factory key material is unknown; continuation intentionally fails.
 name: physical EV3 special authentication vc-config-disabled
+case-id: hardware-physical-ev3-4k-vc-config-disabled
 origin: physical-card
-requires: auth-aes
+requires: auth-aes,ev3,special-key-status
 feature-version: 6
 source: physical-card-pcsc
-requires: ev3, special-key-status
 uid: 048222F2CF1890
 picc-generation: EV3
 picc-storage: 4096

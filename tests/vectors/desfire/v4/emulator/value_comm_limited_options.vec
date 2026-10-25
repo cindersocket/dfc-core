@@ -13,6 +13,7 @@
 # stayed 0x9D when access-rights refusals moved to 0xAE.
 
 name: value file comm settings and LimitedCredit
+case-id: value-comm-limited-options
 origin: synthetic
 source: tests/test_dfc_virtual_picc_value_vectors.c#/comm-limited-options
 uid: 0476616C756531

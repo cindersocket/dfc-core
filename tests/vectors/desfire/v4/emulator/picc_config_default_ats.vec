@@ -8,6 +8,7 @@
 # ATS differs from this one in TA(1) so that neither vector can pass by accident.
 
 name: picc config: default activation record
+case-id: picc-config-default-ats
 origin: synthetic
 source: recorded from the reference engine, see tests/vectors/desfire/README.md
 uid: 04112233445566

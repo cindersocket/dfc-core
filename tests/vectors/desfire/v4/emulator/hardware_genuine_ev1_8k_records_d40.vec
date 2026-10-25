@@ -30,7 +30,9 @@
 #   a cleared record file answers ReadRecords with BE
 
 name: genuine EV1 8K, linear and cyclic record files under a D40 session
+case-id: hardware-genuine-ev1-8k-records-d40
 origin: physical-card
+source: captured hardware trace
 uid: 04304622216A80
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

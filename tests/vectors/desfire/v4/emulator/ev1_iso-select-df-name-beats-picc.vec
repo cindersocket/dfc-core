@@ -14,6 +14,7 @@
 # claiming the name, the same SELECT still reaches PICC level.
 
 name: ev1: iso select by df name beats the picc-level name
+case-id: ev1-iso-select-df-name-beats-picc
 origin: synthetic
 source: recorded from the reference engine, see tests/vectors/desfire/README.md
 uid: 04112233445566

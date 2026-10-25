@@ -1,5 +1,6 @@
 # PROVENANCE: Captured from genuine DESFire EV3 4K silicon through Proxmark3.
 name: EV3 application transaction timer capability and expiry
+case-id: hardware-genuine-ev3-4k-transaction-timer
 origin: physical-card
 requires: ev3,transaction-timer
 source: captured hardware setup and capability response with deterministic expiry control

@@ -16,6 +16,7 @@
 # builds from the live application's key settings (0F 02).
 
 name: reader probe sequence
+case-id: probe-reader-sequence
 origin: synthetic
 source: tests/test_dfc_virtual_picc_probe_vectors.c
 uid: 04112233445566

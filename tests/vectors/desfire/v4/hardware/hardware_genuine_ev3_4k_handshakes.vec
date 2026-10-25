@@ -25,7 +25,9 @@
 # merely produced a plausible-looking frame.
 
 name: genuine EV3 4K, freshly captured D40 ISO and AES authentication
+case-id: hardware-genuine-ev3-4k-handshakes
 origin: physical-card
+source: captured hardware trace
 requires: auth-iso,auth-aes
 uid: 048222F2CF1890
 picc-key-settings-1: 0F

@@ -23,7 +23,9 @@
 # and we differ from it on both, which is the divergence recorded below.
 
 name: genuine EV1 4K, chained read under an AES session
+case-id: hardware-genuine-ev1-4k-chaining
 origin: physical-card
+source: captured hardware trace
 requires: auth-aes
 uid: 045704EA916F80
 picc-key-settings-1: 0F

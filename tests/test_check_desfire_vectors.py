@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).with_name("check_desfire_vectors.py")
 SPEC = importlib.util.spec_from_file_location("check_desfire_vectors", MODULE_PATH)
@@ -14,6 +17,49 @@ SPEC.loader.exec_module(CHECKER)
 
 
 class DesfireVectorGrammarTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        self.vector_root = self.root / "vectors" / "desfire"
+        self.vocabulary = json.loads(CHECKER.VOCABULARY.read_text(encoding="utf-8"))
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    def write_vector(
+        self,
+        relative_path: str,
+        *,
+        name: str = "Unique vector",
+        case_id: str = "unique-vector",
+        extra_headers: str = "",
+    ) -> Path:
+        path = self.vector_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "\n".join(
+                (
+                    f"name: {name}",
+                    f"case-id: {case_id}",
+                    "source: generated test fixture",
+                    "origin: synthetic",
+                    "uid: 04112233445566",
+                    extra_headers,
+                    "scan",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def validate_catalog(self, paths: list[Path]) -> None:
+        with (
+            patch.object(CHECKER, "ROOT", self.root),
+            patch.object(CHECKER, "VECTOR_ROOT", self.vector_root),
+        ):
+            CHECKER.validate_catalog(paths, self.vocabulary)
+
     def test_hex_rejects_signs_and_contextual_wildcards(self) -> None:
         for text in ("-1", "+1", "GG", "0"):
             with self.subTest(text=text), self.assertRaises(ValueError):
@@ -59,6 +105,56 @@ class DesfireVectorGrammarTests(unittest.TestCase):
         ):
             with self.subTest(step=step), self.assertRaises(ValueError):
                 CHECKER.validate_step(step, {"native-apdu"})
+
+    def test_catalog_rejects_duplicate_identity_and_names_both_files(self) -> None:
+        first = self.write_vector("v4/emulator/first.vec", name="Repeated name", case_id="first")
+        second = self.write_vector(
+            "v5/synthetic/second.vec", name="Repeated name", case_id="second"
+        )
+        with self.assertRaisesRegex(ValueError, r"first\.vec.*second\.vec"):
+            self.validate_catalog([first, second])
+
+        second = self.write_vector("v5/synthetic/second.vec", name="Second", case_id="first")
+        with self.assertRaisesRegex(ValueError, r"first\.vec.*second\.vec"):
+            self.validate_catalog([first, second])
+
+    def test_metadata_requires_explicit_stable_identity_and_source(self) -> None:
+        for header, value in (("case-id", "Upper_Case"), ("source", "")):
+            path = self.write_vector("v4/emulator/invalid.vec")
+            text = path.read_text(encoding="utf-8")
+            text = text.replace(
+                f"{header}: "
+                + ("unique-vector" if header == "case-id" else "generated test fixture"),
+                f"{header}: {value}",
+            )
+            path.write_text(text, encoding="utf-8")
+            with (
+                self.subTest(header=header),
+                self.assertRaisesRegex(ValueError, header),
+            ):
+                self.validate_catalog([path])
+
+    def test_repeated_semantic_header_is_rejected(self) -> None:
+        path = self.write_vector("v4/emulator/duplicate.vec", extra_headers="origin: physical-card")
+        with self.assertRaisesRegex(ValueError, "duplicate header 'origin'"):
+            self.validate_catalog([path])
+
+    def test_typed_headers_require_exact_values_lengths_and_ranges(self) -> None:
+        invalid = {
+            "replayable": "maybe",
+            "picc-generation": "EV4",
+            "picc-atqa": "000102",
+            "picc-random-id": "2",
+            "picc-key-len": "32",
+            "target-key-number": "14",
+        }
+        for header, value in invalid.items():
+            path = self.write_vector("v4/emulator/invalid.vec", extra_headers=f"{header}: {value}")
+            with (
+                self.subTest(header=header),
+                self.assertRaisesRegex(ValueError, header),
+            ):
+                self.validate_catalog([path])
 
 
 if __name__ == "__main__":

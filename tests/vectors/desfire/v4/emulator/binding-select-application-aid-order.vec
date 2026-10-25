@@ -4,6 +4,7 @@
 # fails as an observable card response, not merely as an encoder assertion.
 
 name: binding SelectApplication uses model AID order
+case-id: binding-select-application-aid-order
 origin: synthetic
 source: cross-binding public API contract
 uid: 04A1B2C3D4E5F6

@@ -24,7 +24,9 @@
 # change reads 55.
 
 name: genuine EV3 4K, freshly captured ISO authentication and ChangeKey on a 3K3DES key
+case-id: hardware-genuine-ev3-4k-3k3des-handshakes
 origin: physical-card
+source: captured hardware trace
 requires: auth-iso,auth-aes
 uid: 048222F2CF1890
 picc-key-settings-1: 0F

@@ -1,6 +1,7 @@
 # PROVENANCE: Read responses from physical EV2 4K card capture attached to dfc-core issue 1.
 # The create commands reconstruct the captured application and file for replay.
 name: captured EV2 application directory and file settings
+case-id: hardware-ev2-4k-directory-issue1
 origin: physical-card
 requires: ev2
 source: dfc-core issue 1 card capture

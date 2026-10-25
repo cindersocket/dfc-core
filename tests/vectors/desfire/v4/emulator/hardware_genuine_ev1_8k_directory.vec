@@ -26,7 +26,9 @@
 # GetDFNames sends one application per frame.
 
 name: genuine EV1 8K, directory listings that chain across frames
+case-id: hardware-genuine-ev1-8k-directory
 origin: physical-card
+source: captured hardware trace
 uid: 04304622216A80
 picc-key-settings-1: 0F
 picc-key-settings-2: 01
