@@ -2,42 +2,48 @@ from __future__ import annotations
 
 
 class DfcError(Exception):
+    """Base error carrying the stable native status code."""
+
     def __init__(self, status: int, message: str | None = None) -> None:
         self.status = status
         super().__init__(message or f"dfc operation failed with status {status}")
 
 
 class InvalidArgumentError(DfcError, ValueError):
-    pass
+    """A caller value cannot be represented or is invalid for the operation."""
 
 
 class BufferTooSmallError(DfcError):
-    pass
+    """Caller-provided storage cannot hold the complete result."""
 
 
 class DfcMemoryError(DfcError, MemoryError):
-    pass
+    """Native allocation or bounded scratch storage was unavailable."""
 
 
 class UnsupportedError(DfcError):
-    pass
+    """The loaded role or profile does not support the requested operation."""
 
 
 class RandomSourceError(DfcError):
-    pass
+    """A random source failed or returned the wrong number of bytes."""
 
 
 class CredentialError(DfcError):
+    """Credential parsing, decoding, encoding, or model validation failed."""
+
     def __init__(self, status: int, message: str, line: int = 0) -> None:
         self.line = line
         super().__init__(status, f"line {line}: {message}" if line else message)
 
 
 class ProtocolError(DfcError):
-    pass
+    """Reader or virtual-card protocol processing failed."""
 
 
 class CardError(ProtocolError):
+    """A card returned a terminal status byte instead of command data."""
+
     def __init__(self, status: int, card_status: int) -> None:
         self.card_status = card_status
         super().__init__(status, f"card returned status 0x{card_status:02X}")

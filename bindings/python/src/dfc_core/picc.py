@@ -22,7 +22,13 @@ def _retry_capacity(reported: int) -> int | None:
 
 
 class VirtualPicc:
-    """An owned virtual PICC. Creating it consumes ``credential`` on success."""
+    """An owned virtual PICC.
+
+    Construction transfers ``credential`` into the card on success. A failed
+    construction leaves the credential owned by its caller. Pass ``random``
+    only for deterministic testing; it must return exactly the requested
+    number of bytes.
+    """
 
     def __init__(
         self, credential: Credential, random: Callable[[int], bytes] | None = None
@@ -38,24 +44,13 @@ class VirtualPicc:
         out = N.Handle()
         with credential._lock:
             source = credential._open()
-            if hasattr(N.library(), "dfc_ffi_picc_create_take"):
-                N.library().dfc_ffi_picc_create_take.argtypes = [
-                    C.POINTER(N.Handle),
-                    C.c_void_p,
-                    C.c_void_p,
-                    C.POINTER(N.Handle),
-                ]
-                moving = N.Handle(source.value)
-                status = N.library().dfc_ffi_picc_create_take(
-                    C.byref(moving), callback_pointer, None, C.byref(out)
-                )
-                if status == 0:
-                    credential._finalizer.detach()
-                    credential._handle = N.Handle()
-            else:
-                status = N.library().dfc_ffi_picc_create(
-                    source, callback_pointer, None, C.byref(out)
-                )
+            moving = N.Handle(source.value)
+            status = N.library().dfc_ffi_picc_create_take(
+                C.byref(moving), callback_pointer, None, C.byref(out)
+            )
+            if status == 0:
+                credential._finalizer.detach()
+                credential._handle = N.Handle()
         N.raise_status(status)
         self._handle = out
         self._finalizer = weakref.finalize(self, N.library().dfc_ffi_picc_free, out)
@@ -101,6 +96,11 @@ class VirtualPicc:
             raise RandomSourceError(N.RANDOM_FAILED, "virtual PICC random source failed") from error
 
     def close(self) -> None:
+        """Release the card after any in-flight operation finishes.
+
+        New operations fail as soon as closing begins. Repeated calls are safe.
+        """
+
         with self._lifetime_lock:
             if self._closed:
                 return
@@ -118,6 +118,8 @@ class VirtualPicc:
         self.close()
 
     def activate(self) -> Activation:
+        """Return the card's activation data without changing protocol state."""
+
         with self._lock, self._lease() as handle:
             value = N.Activation()
             status = N.library().dfc_ffi_picc_activate(handle, C.byref(value))
@@ -162,13 +164,17 @@ class VirtualPicc:
             return bytes(output[: length.value])
 
     def exchange(self, command: bytes) -> bytes:
+        """Exchange one complete native command or ISO 7816 APDU."""
+
         return self._exchange("exchange", command)
 
     def transceive(self, command: bytes) -> bytes:
-        """Use this PICC directly as a blocking reader transport."""
+        """Exchange reader framing bytes, making this PICC a blocking transport."""
         return self.exchange(command)
 
     def frame_exchange(self, frame: bytes) -> bytes:
+        """Exchange one complete ISO-DEP block."""
+
         return self._exchange("frame_exchange", frame)
 
     def _simple(self, name: str, *args: int) -> None:
@@ -176,18 +182,28 @@ class VirtualPicc:
             N.raise_status(getattr(N.library(), f"dfc_ffi_picc_{name}")(handle, *args))
 
     def field_off(self) -> None:
+        """End the RF session, clearing authentication and transient protocol state."""
+
         self._simple("field_off")
 
     def reset_protocol(self) -> None:
+        """Reset protocol state while retaining the card's persistent model."""
+
         self._simple("reset_protocol")
 
     def advance_time(self, milliseconds: int) -> None:
+        """Advance the card timer by a nonnegative number of milliseconds."""
+
         self._simple("advance_time", N.unsigned(milliseconds, 32, "milliseconds"))
 
     def mark_persisted(self) -> None:
+        """Mark the current card model clean after the caller persists an export."""
+
         self._simple("mark_persisted")
 
     def snapshot(self) -> Snapshot:
+        """Return non-secret selection, authentication, and transaction state."""
+
         with self._lock, self._lease() as handle:
             s = N.Snapshot()
             N.raise_status(N.library().dfc_ffi_picc_snapshot(handle, C.byref(s)))
@@ -230,6 +246,8 @@ class VirtualPicc:
                 N.library().dfc_ffi_secure_zero(C.byref(native), C.sizeof(native))
 
     def export(self) -> Credential:
+        """Return a newly owned credential containing the card's current model."""
+
         with self._lock, self._lease() as handle:
             out = N.Handle()
             N.raise_status(N.library().dfc_ffi_picc_export(handle, C.byref(out)))

@@ -8,7 +8,7 @@ from .errors import DfcError
 
 
 class TransactionMacError(DfcError):
-    pass
+    """The native Transaction MAC verifier rejected an operation or receipt."""
 
 
 def _unsigned(name: str, value: int, bits: int) -> int:
@@ -18,7 +18,11 @@ def _unsigned(name: str, value: int, bits: int) -> int:
 
 
 class TransactionMacVerifier:
-    """Collect plain transaction inputs and verify one returned receipt."""
+    """Collect transaction inputs in card order and verify one returned receipt.
+
+    The native verifier owns private key and transcript copies until ``close``.
+    Use the object as a context manager so those copies are wiped promptly.
+    """
 
     def __init__(self, key: bytes, uid: bytes, counter: int, capacity: int = 128) -> None:
         if len(key) != 16 or len(uid) not in (4, 7) or capacity <= 0:
@@ -46,6 +50,8 @@ class TransactionMacVerifier:
             )
 
     def close(self) -> None:
+        """Wipe and release the native verifier; repeated calls are safe."""
+
         handle = getattr(self, "_handle", None)
         if handle:
             _native.library().dfc_ffi_transaction_mac_verifier_free(handle)
@@ -79,6 +85,8 @@ class TransactionMacVerifier:
     def add_data(
         self, command: int, file_number: int, offset: int, length: int, data: bytes
     ) -> None:
+        """Append a data-file operation and its plain bytes to the transcript."""
+
         self._data("add_data", command, file_number, offset, length, data)
 
     def add_record_update(
@@ -90,6 +98,8 @@ class TransactionMacVerifier:
         length: int,
         data: bytes,
     ) -> None:
+        """Append a record update and its plain record bytes to the transcript."""
+
         _unsigned("command", command, 8)
         _unsigned("file number", file_number, 8)
         _unsigned("record number", record_number, 32)
@@ -113,6 +123,8 @@ class TransactionMacVerifier:
             _native.secure_zero(raw)
 
     def add_value(self, command: int, file_number: int, value: int) -> None:
+        """Append a value-file operation using its unsigned 32-bit wire value."""
+
         _unsigned("command", command, 8)
         _unsigned("file number", file_number, 8)
         _unsigned("value", value, 32)
@@ -123,12 +135,16 @@ class TransactionMacVerifier:
         )
 
     def add_clear_record(self, file_number: int) -> None:
+        """Append a clear-record-file operation to the transcript."""
+
         _unsigned("file number", file_number, 8)
         self._raise(
             _native.library().dfc_ffi_transaction_mac_add_clear_record(self._handle, file_number)
         )
 
     def add_reader_id(self, current: bytes, encrypted_previous: bytes) -> None:
+        """Append the current and encrypted previous 16-byte reader identifiers."""
+
         if len(current) != 16 or len(encrypted_previous) != 16:
             raise ValueError("reader IDs must be 16 bytes")
         current_raw, current_pointer = _native.byte_pointer(current)
@@ -144,6 +160,8 @@ class TransactionMacVerifier:
             _native.secure_zero(previous_raw)
 
     def verify(self, mac: bytes) -> bool:
+        """Return whether ``mac`` is the eight-byte receipt for this transcript."""
+
         if len(mac) != 8:
             raise ValueError("transaction MAC must be 8 bytes")
         raw, pointer = _native.byte_pointer(mac)

@@ -136,18 +136,26 @@ class Credential:
 
     @classmethod
     def parse(cls, text: str) -> Credential:
+        """Parse one textual credential into a newly owned native handle."""
+
         return cls._read("parse_text", text.encode("utf-8"))
 
     @classmethod
     def decode(cls, content: bytes) -> Credential:
+        """Decode one binary credential into a newly owned native handle."""
+
         return cls._read("decode", content)
 
     @classmethod
     def load(cls, content: bytes | str) -> Credential:
+        """Load text or binary credential content, detecting bytes by their first octet."""
+
         return cls._read("load", content.encode() if isinstance(content, str) else content)
 
     @property
     def closed(self) -> bool:
+        """Return whether this object has released or transferred its native handle."""
+
         return not self._finalizer.alive
 
     def _open(self) -> N.Handle:
@@ -156,6 +164,8 @@ class Credential:
         return self._handle
 
     def close(self) -> None:
+        """Release the native credential; repeated calls are safe."""
+
         with self._lock:
             self._finalizer()
 
@@ -167,20 +177,33 @@ class Credential:
         self.close()
 
     def encode(self) -> bytes:
+        """Return the validated credential in canonical binary form."""
+
         with self._lock:
             return N.variable_output(N.library().dfc_ffi_credential_encode, self._open())
 
     def to_text(self) -> str:
+        """Return the validated credential in canonical UTF-8 text form."""
+
         with self._lock:
             return N.variable_output(
                 N.library().dfc_ffi_credential_write_text, self._open()
             ).decode()
 
     def validate(self) -> None:
+        """Raise ``CredentialError`` if the current native model is invalid."""
+
         with self._lock:
             N.raise_status(N.library().dfc_ffi_credential_validate(self._open()))
 
     def model(self) -> CredentialModel:
+        """Copy the credential into immutable Python values.
+
+        The returned model owns its byte strings. Closing this credential does
+        not invalidate them, and Python cannot securely wipe those immutable
+        copies.
+        """
+
         with self._lock:
             lib, handle = N.library(), self._open()
             card, picc = N.Card(), N.PiccSettings()
