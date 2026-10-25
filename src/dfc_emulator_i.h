@@ -61,6 +61,15 @@ void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator);
 bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator);
 bool dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t file_index);
 void dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t file_index);
+bool dfc_emulator_transaction_snapshot_capture_file(DfcEmulator* emulator, size_t file_index);
+const uint8_t* dfc_emulator_transaction_snapshot_committed_data(
+    const DfcEmulator* emulator,
+    size_t file_index,
+    bool* all_zero);
+uint32_t dfc_emulator_transaction_snapshot_committed_record_count(
+    const DfcEmulator* emulator,
+    size_t file_index);
+void dfc_emulator_transaction_snapshot_note_persistent_change(DfcEmulator* emulator);
 bool dfc_emulator_transaction_snapshot_can_mirror_write(
     const DfcEmulator* emulator,
     size_t file_index,
@@ -84,6 +93,36 @@ static inline void
     dfc_emulator_transaction_snapshot_delete_file(DfcEmulator* emulator, size_t file_index) {
     DFC_UNUSED(emulator);
     DFC_UNUSED(file_index);
+}
+
+static inline bool
+    dfc_emulator_transaction_snapshot_capture_file(DfcEmulator* emulator, size_t file_index) {
+    DFC_UNUSED(emulator);
+    DFC_UNUSED(file_index);
+    return true;
+}
+
+static inline const uint8_t* dfc_emulator_transaction_snapshot_committed_data(
+    const DfcEmulator* emulator,
+    size_t file_index,
+    bool* all_zero) {
+    DFC_UNUSED(emulator);
+    DFC_UNUSED(file_index);
+    if(all_zero) *all_zero = false;
+    return NULL;
+}
+
+static inline uint32_t dfc_emulator_transaction_snapshot_committed_record_count(
+    const DfcEmulator* emulator,
+    size_t file_index) {
+    if(!emulator || !emulator->credential || file_index >= emulator->credential->num_files)
+        return 0;
+    return emulator->credential->files[file_index].record_count;
+}
+
+static inline void
+    dfc_emulator_transaction_snapshot_note_persistent_change(DfcEmulator* emulator) {
+    DFC_UNUSED(emulator);
 }
 static inline bool dfc_emulator_transaction_snapshot_mirror_write(
     DfcEmulator* emulator,

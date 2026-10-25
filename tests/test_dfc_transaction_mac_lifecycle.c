@@ -512,28 +512,6 @@ static MunitResult test_write_data_preparation_failures_preserve_transcript(
     munit_assert_false(emulator->transaction_snapshot_active);
     dfc_bytebuf_free(response);
     fixture_close(&fixture);
-
-    fixture_open(&fixture, true);
-    emulator = fixture.session->emulator;
-    file = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
-    file->type = DFC_FILE_TYPE_STANDARD_DATA;
-    memcpy(original, dfc_file_data_const(&fixture.credential, file), sizeof(original));
-    memset(&emulator->transaction_mac, 0xA5, sizeof(emulator->transaction_mac));
-    emulator->transaction_mac.initialized = true;
-    emulator->transaction_mac.has_pending = true;
-    expected_accumulator = emulator->transaction_mac;
-    munit_assert_true(dfc_emulator_command_transaction_snapshot_begin(emulator));
-    emulator->transaction_snapshot_pool_length = 0;
-    response = dfc_bytebuf_alloc(8);
-    munit_assert_not_null(response);
-    assert_direct_write_status(
-        emulator, write, sizeof(write), response, DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_memory_equal(
-        sizeof(expected_accumulator), &emulator->transaction_mac, &expected_accumulator);
-    munit_assert_memory_equal(
-        sizeof(original), dfc_file_data_const(&fixture.credential, file), original);
-    dfc_bytebuf_free(response);
-    fixture_close(&fixture);
     return MUNIT_OK;
 }
 

@@ -8,7 +8,22 @@
 #include "dfc_secure_messaging.h"
 #include "dfc_transaction_mac_i.h"
 
-#define DFC_SDM_READ_CACHE_SIZE 192
+#define DFC_SDM_READ_CACHE_SIZE          192
+#define DFC_TRANSACTION_FILE_BITMAP_SIZE ((DFC_MAX_FILES + 7u) / 8u)
+
+#if DFC_FILE_POOL_SIZE <= UINT16_MAX
+typedef uint16_t DfcTransactionSnapshotOffset;
+typedef uint16_t DfcTransactionSnapshotRecordCount;
+#else
+typedef uint32_t DfcTransactionSnapshotOffset;
+typedef uint32_t DfcTransactionSnapshotRecordCount;
+#endif
+_Static_assert(
+    sizeof(DfcTransactionSnapshotOffset) == (DFC_FILE_POOL_SIZE <= UINT16_MAX ? 2u : 4u),
+    "transaction journal offset width must follow file-pool capacity");
+_Static_assert(
+    sizeof(DfcTransactionSnapshotRecordCount) == (DFC_FILE_POOL_SIZE <= UINT16_MAX ? 2u : 4u),
+    "transaction journal record-count width must follow file-pool capacity");
 
 typedef enum {
     DfcEmulatorSelectedApplicationNone,
@@ -68,13 +83,18 @@ typedef struct {
     uint32_t transaction_timer_elapsed_milliseconds;
 #endif
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
-    uint32_t transaction_snapshot_record_counts[DFC_MAX_FILES];
+    DfcTransactionSnapshotRecordCount transaction_snapshot_record_counts[DFC_MAX_FILES];
+    // Offsets into transaction_snapshot_pool for lazily captured preimages.
+    DfcTransactionSnapshotOffset transaction_snapshot_offsets[DFC_MAX_FILES];
     uint32_t transaction_record_numbers[DFC_MAX_FILES];
     // 0 none, 1 WriteRecord, 2 UpdateRecord, 3 ClearRecordFile.
     uint8_t transaction_record_operations[DFC_MAX_FILES];
+    uint8_t transaction_snapshot_captured[DFC_TRANSACTION_FILE_BITMAP_SIZE];
+    uint8_t transaction_snapshot_created[DFC_TRANSACTION_FILE_BITMAP_SIZE];
     bool transaction_snapshot_active;
     bool transaction_snapshot_dirty;
 #endif
+    bool pending_chain_zero;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     uint16_t ev2_command_counter;
     bool ev2_response_plain;

@@ -169,10 +169,11 @@ bool dfc_transaction_mac_accumulator_init(
     return true;
 }
 
-static bool accumulator_add_segments(
+static bool accumulator_add_segments_and_zeroes(
     DfcTransactionMacAccumulator* accumulator,
     const DfcCryptoSegment* segments,
-    size_t segment_count) {
+    size_t segment_count,
+    size_t zero_length) {
     if(!accumulator || !accumulator->initialized || !segments || segment_count == 0) return false;
 
     DfcTransactionMacAccumulator candidate = *accumulator;
@@ -180,7 +181,7 @@ static bool accumulator_add_segments(
     uint8_t block[DFC_AES_KEY_LENGTH] = {0};
     uint8_t chained[DFC_AES_KEY_LENGTH] = {0};
     size_t block_length = 0;
-    size_t total_length = 0;
+    size_t total_length = zero_length;
     bool ok = false;
 
     if(!dfc_aes_cmac_context_init(&context, candidate.session_key, sizeof(candidate.session_key)))
@@ -198,11 +199,9 @@ static bool accumulator_add_segments(
             data += take;
             remaining -= take;
             if(block_length != sizeof(block)) continue;
-
             if(candidate.has_pending) {
-                for(size_t index = 0; index < sizeof(chained); index++) {
+                for(size_t index = 0; index < sizeof(chained); index++)
                     chained[index] = candidate.chain[index] ^ candidate.pending[index];
-                }
                 if(!dfc_crypto_aes_block_encrypt(&context.cipher, chained, candidate.chain))
                     goto clear_context;
             }
@@ -210,6 +209,22 @@ static bool accumulator_add_segments(
             candidate.has_pending = true;
             block_length = 0;
         }
+    }
+    while(zero_length) {
+        size_t take = DFC_MIN(sizeof(block) - block_length, zero_length);
+        memset(block + block_length, 0, take);
+        block_length += take;
+        zero_length -= take;
+        if(block_length != sizeof(block)) continue;
+        if(candidate.has_pending) {
+            for(size_t index = 0; index < sizeof(chained); index++)
+                chained[index] = candidate.chain[index] ^ candidate.pending[index];
+            if(!dfc_crypto_aes_block_encrypt(&context.cipher, chained, candidate.chain))
+                goto clear_context;
+        }
+        memcpy(candidate.pending, block, sizeof(candidate.pending));
+        candidate.has_pending = true;
+        block_length = 0;
     }
     if(total_length == 0 || block_length != 0 || total_length % DFC_AES_KEY_LENGTH != 0)
         goto clear_context;
@@ -223,6 +238,13 @@ cleanup:
     dfc_secure_wipe(block, sizeof(block));
     dfc_secure_wipe(chained, sizeof(chained));
     return ok;
+}
+
+static bool accumulator_add_segments(
+    DfcTransactionMacAccumulator* accumulator,
+    const DfcCryptoSegment* segments,
+    size_t segment_count) {
+    return accumulator_add_segments_and_zeroes(accumulator, segments, segment_count, 0);
 }
 
 static bool accumulator_add_entry(
@@ -265,6 +287,33 @@ bool dfc_transaction_mac_accumulator_add_data(
     write_uint24_le(header + 2, offset);
     write_uint24_le(header + 5, length);
     return accumulator_add_entry(accumulator, header, sizeof(header), data, data_length);
+}
+
+bool dfc_transaction_mac_accumulator_add_zero_data(
+    DfcTransactionMacAccumulator* accumulator,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t offset,
+    uint32_t length,
+    size_t data_length) {
+    if(!uint24_is_valid(offset) || !uint24_is_valid(length)) return false;
+    uint8_t header[TransactionDataHeaderLength] = {command, file_number};
+    write_uint24_le(header + 2, offset);
+    write_uint24_le(header + 5, length);
+    uint8_t padded_header[DFC_AES_KEY_LENGTH] = {0};
+    memcpy(padded_header, header, sizeof(header));
+    if(data_length > SIZE_MAX - (DFC_AES_KEY_LENGTH - 1)) {
+        dfc_secure_wipe(header, sizeof(header));
+        dfc_secure_wipe(padded_header, sizeof(padded_header));
+        return false;
+    }
+    size_t padded_data_length =
+        (data_length + DFC_AES_KEY_LENGTH - 1) / DFC_AES_KEY_LENGTH * DFC_AES_KEY_LENGTH;
+    DfcCryptoSegment segment = {.data = padded_header, .length = sizeof(padded_header)};
+    bool ok = accumulator_add_segments_and_zeroes(accumulator, &segment, 1, padded_data_length);
+    dfc_secure_wipe(header, sizeof(header));
+    dfc_secure_wipe(padded_header, sizeof(padded_header));
+    return ok;
 }
 
 bool dfc_transaction_mac_accumulator_add_record_update(

@@ -50,6 +50,12 @@ void dfc_emulator_command_emit_payload_with_chaining_comm(
     size_t entry,
     uint8_t comm,
     bool length_unknown);
+bool dfc_emulator_command_emit_zero_payload_with_chaining_comm(
+    DfcEmulator* emulator,
+    DfcByteBuf* tx_buffer,
+    uint8_t cmd,
+    size_t payload_len,
+    uint8_t comm);
 bool dfc_emulator_command_file_allows_read(const DfcFile* file, const DfcEmulator* emulator);
 bool dfc_emulator_command_file_allows_write(const DfcFile* file, const DfcEmulator* emulator);
 #if DFC_ENABLE_RECORD_FILES
@@ -195,6 +201,13 @@ bool dfc_emulator_command_transaction_mac_add_data(
     uint32_t offset,
     uint32_t length,
     const uint8_t* data,
+    size_t data_length);
+bool dfc_emulator_command_transaction_mac_add_zero_data(
+    DfcEmulator* emulator,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t offset,
+    uint32_t length,
     size_t data_length);
 bool dfc_emulator_command_transaction_mac_can_add_data(
     const DfcEmulator* emulator,

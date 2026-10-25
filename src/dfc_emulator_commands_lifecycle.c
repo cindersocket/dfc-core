@@ -898,6 +898,7 @@ static void publish_created_file(DfcEmulator* emulator, DfcFile* file, DfcByteBu
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
+    dfc_emulator_transaction_snapshot_note_persistent_change(emulator);
     dfc_credential_mark_dirty(credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
 }
@@ -1108,6 +1109,7 @@ void dfc_emulator_command_delete_file(
             emulator, (size_t)(file - emulator->credential->files));
     }
     if(dfc_credential_delete_file(emulator->credential, emulator->selected_app_index, file_no)) {
+        dfc_emulator_transaction_snapshot_note_persistent_change(emulator);
         dfc_credential_mark_dirty(emulator->credential);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         return;

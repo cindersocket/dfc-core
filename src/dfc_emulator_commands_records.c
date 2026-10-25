@@ -73,7 +73,9 @@ void dfc_emulator_command_write_record(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
         return;
     }
-    if(!dfc_emulator_command_transaction_snapshot_begin(emulator)) {
+    size_t file_index = dfc_emulator_command_transaction_file_index(emulator, file);
+    if(!dfc_emulator_command_transaction_snapshot_begin(emulator) ||
+       !dfc_emulator_transaction_snapshot_capture_file(emulator, file_index)) {
         dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
@@ -98,8 +100,7 @@ void dfc_emulator_command_write_record(
             return;
         }
 #endif
-        size_t index = dfc_emulator_command_transaction_file_index(emulator, file);
-        record_index = emulator->transaction_record_numbers[index];
+        record_index = emulator->transaction_record_numbers[file_index];
     } else {
         // A linear file with no room left refuses the first write in a
         // transaction. Further writes target the record that call created.
@@ -229,7 +230,9 @@ void dfc_emulator_command_update_record(
     bool transaction_snapshot_was_active = emulator->transaction_snapshot_active;
 #endif
     uint8_t* data = dfc_file_data(emulator->credential, file);
-    if(!data || !dfc_emulator_command_transaction_snapshot_begin(emulator)) {
+    size_t file_index = dfc_emulator_command_transaction_file_index(emulator, file);
+    if(!data || !dfc_emulator_command_transaction_snapshot_begin(emulator) ||
+       !dfc_emulator_transaction_snapshot_capture_file(emulator, file_index)) {
         dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
@@ -242,8 +245,7 @@ void dfc_emulator_command_update_record(
     uint8_t operation = dfc_emulator_command_transaction_record_operation(emulator, file);
     if(operation == RecordTransactionWrite || operation == RecordTransactionClear ||
        (operation == RecordTransactionUpdate &&
-        emulator->transaction_record_numbers[dfc_emulator_command_transaction_file_index(
-            emulator, file)] != record_number)) {
+        emulator->transaction_record_numbers[file_index] != record_number)) {
         dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
@@ -298,7 +300,9 @@ void dfc_emulator_command_clear_record_file(
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES && DFC_ENABLE_TRANSACTION_MAC
     bool transaction_snapshot_was_active = emulator->transaction_snapshot_active;
 #endif
-    if(!dfc_emulator_command_transaction_snapshot_begin(emulator)) {
+    size_t file_index = dfc_emulator_command_transaction_file_index(emulator, file);
+    if(!dfc_emulator_command_transaction_snapshot_begin(emulator) ||
+       !dfc_emulator_transaction_snapshot_capture_file(emulator, file_index)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }

@@ -265,6 +265,7 @@ void dfc_emulator_command_clear_pending_chain(DfcEmulator* emulator) {
     emulator->pending_chain_last = 0;
     emulator->pending_chain_chunk_count = 0;
     emulator->pending_chain_chunk_index = 0;
+    emulator->pending_chain_zero = false;
     emulator->df_names_pending = false;
     emulator->df_names_next = 0;
     emulator->get_version_frame = 0;
@@ -463,6 +464,14 @@ void dfc_emulator_command_emit_payload_with_chaining_comm(
     if(remaining > sizeof(emulator->pending_chain)) {
         remaining = sizeof(emulator->pending_chain);
     }
+    if(payload == emulator->pending_chain) {
+        dfc_emulator_command_append_status_payload(
+            tx_buffer, DFC_CMD_ADDITIONAL_FRAME, payload, frame);
+        memmove(emulator->pending_chain, payload + frame, remaining);
+        emulator->pending_chain_len = remaining;
+        emulator->pending_chain_offset = 0;
+        return;
+    }
     memcpy(emulator->pending_chain, payload + frame, remaining);
     emulator->pending_chain_len = remaining;
     emulator->pending_chain_offset = 0;
@@ -488,6 +497,36 @@ void dfc_emulator_command_emit_payload_with_chaining(
     size_t entry) {
     dfc_emulator_command_emit_payload_with_chaining_comm(
         emulator, tx_buffer, cmd, payload, payload_len, entry, DFC_COMM_PLAIN, false);
+}
+
+bool dfc_emulator_command_emit_zero_payload_with_chaining_comm(
+    DfcEmulator* emulator,
+    DfcByteBuf* tx_buffer,
+    uint8_t cmd,
+    size_t payload_len,
+    uint8_t comm) {
+    if(payload_len <= sizeof(emulator->pending_chain)) {
+        memset(emulator->pending_chain, 0, payload_len);
+        dfc_emulator_command_emit_payload_with_chaining_comm(
+            emulator, tx_buffer, cmd, emulator->pending_chain, payload_len, 1, comm, false);
+        return true;
+    }
+    if(dfc_emulator_native_authentication_active(emulator) || comm != DFC_COMM_PLAIN ||
+       cmd == DFC_CMD_READ_RECORDS_ISO)
+        return false;
+
+    static const uint8_t zero_frame[DFC_EV3_MAX_RESPONSE_PAYLOAD] = {0};
+    dfc_emulator_command_clear_pending_chain(emulator);
+    size_t frame = ev1_frame_payload(emulator, 1, false);
+    if(frame == 0 || frame > sizeof(zero_frame) || payload_len <= frame) return false;
+    emulator->pending_chain_frame = frame;
+    emulator->pending_chain_last = frame;
+    emulator->pending_chain_len = payload_len;
+    emulator->pending_chain_offset = frame;
+    emulator->pending_chain_zero = true;
+    dfc_emulator_command_append_status_payload(
+        tx_buffer, DFC_CMD_ADDITIONAL_FRAME, zero_frame, frame);
+    return true;
 }
 
 static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
@@ -517,8 +556,18 @@ static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf*
     // These octets were secured as one response before being split.
     if(dfc_emulator_native_authentication_active(emulator)) emulator->response_secured = true;
     uint8_t status = final_frame ? DFC_STATUS_OK : DFC_CMD_ADDITIONAL_FRAME;
-    dfc_emulator_command_append_status_payload(
-        tx_buffer, status, emulator->pending_chain + emulator->pending_chain_offset, chunk);
+    if(emulator->pending_chain_zero) {
+        static const uint8_t zero_frame[DFC_EV3_MAX_RESPONSE_PAYLOAD] = {0};
+        if(chunk > sizeof(zero_frame)) {
+            dfc_emulator_command_clear_pending_chain(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+            return;
+        }
+        dfc_emulator_command_append_status_payload(tx_buffer, status, zero_frame, chunk);
+    } else {
+        dfc_emulator_command_append_status_payload(
+            tx_buffer, status, emulator->pending_chain + emulator->pending_chain_offset, chunk);
+    }
     emulator->pending_chain_offset += chunk;
     if(status == DFC_STATUS_OK) {
         dfc_emulator_command_clear_pending_chain(emulator);
@@ -966,11 +1015,11 @@ static void
     if(emulator->transaction_snapshot_active &&
        emulator->transaction_snapshot_app_index == emulator->selected_app_index) {
         size_t index = dfc_emulator_command_transaction_file_index(emulator, file);
-        record_count = emulator->transaction_snapshot_record_counts[index];
-        if(file->data_offset != DFC_FILE_POOL_NONE &&
-           file->data_offset <= emulator->transaction_snapshot_pool_length) {
-            data = emulator->transaction_snapshot_pool + file->data_offset;
-        }
+        bool committed_data_is_zero = false;
+        record_count = dfc_emulator_transaction_snapshot_committed_record_count(emulator, index);
+        data = dfc_emulator_transaction_snapshot_committed_data(
+            emulator, index, &committed_data_is_zero);
+        if(committed_data_is_zero) data = NULL;
     }
 #endif
 

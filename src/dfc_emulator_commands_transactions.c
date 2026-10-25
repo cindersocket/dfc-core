@@ -90,6 +90,27 @@ bool dfc_emulator_command_transaction_mac_add_data(
     return transaction_mac_publish_candidate(emulator, &candidate, result);
 }
 
+bool dfc_emulator_command_transaction_mac_add_zero_data(
+    DfcEmulator* emulator,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t offset,
+    uint32_t length,
+    size_t data_length) {
+    if(!transaction_mac_file(emulator)) return true;
+    DfcTransactionMacAccumulator candidate;
+    TransactionMacUpdateResult result = transaction_mac_candidate(emulator, &candidate);
+    if(result != TransactionMacUpdateOk) {
+        emulator->transaction_mac_retryable_failure = result == TransactionMacUpdateCryptoFailed;
+        return false;
+    }
+    if(offset > 0xFFFFFFu || length > 0xFFFFFFu ||
+       !dfc_transaction_mac_accumulator_add_zero_data(
+           &candidate, command, file_number, offset, length, data_length))
+        result = TransactionMacUpdateCryptoFailed;
+    return transaction_mac_publish_candidate(emulator, &candidate, result);
+}
+
 bool dfc_emulator_command_transaction_mac_add_record_update(
     DfcEmulator* emulator,
     uint8_t command,
@@ -602,27 +623,36 @@ bool dfc_emulator_command_transaction_snapshot_begin(DfcEmulator* emulator) {
         return emulator->transaction_snapshot_app_index == emulator->selected_app_index;
     }
 
-    size_t length = emulator->credential->file_pool_used;
-    uint8_t* snapshot = dfc_platform_alloc(length ? length : 1, DfcAllocTransactionSnapshot);
+    size_t capacity = 0;
+    for(size_t index = 0; index < emulator->credential->num_files; index++) {
+        const DfcFile* file = &emulator->credential->files[index];
+        if(file->app_index != emulator->selected_app_index ||
+           (file->type != DFC_FILE_TYPE_BACKUP_DATA && file->type != DFC_FILE_TYPE_LINEAR_RECORD &&
+            file->type != DFC_FILE_TYPE_CYCLIC_RECORD))
+            continue;
+        if(file->data_len > DFC_FILE_POOL_SIZE - capacity) return false;
+        capacity += file->data_len;
+    }
+    uint8_t* snapshot = dfc_platform_alloc(capacity ? capacity : 1, DfcAllocTransactionSnapshot);
     if(!snapshot) return false;
     emulator->transaction_snapshot_pool = snapshot;
     emulator->transaction_snapshot_active = true;
     emulator->transaction_snapshot_app_index = emulator->selected_app_index;
-    emulator->transaction_snapshot_pool_length = length;
-    emulator->transaction_snapshot_pool_capacity = length ? length : 1;
+    emulator->transaction_snapshot_pool_length = 0;
+    emulator->transaction_snapshot_pool_capacity = capacity ? capacity : 1;
     emulator->transaction_snapshot_dirty = emulator->credential->dirty;
-    memcpy(
-        emulator->transaction_snapshot_pool,
-        emulator->credential->file_pool,
-        emulator->transaction_snapshot_pool_length);
-    for(size_t index = 0; index < emulator->credential->num_files; index++) {
-        const DfcFile* file = &emulator->credential->files[index];
-        emulator->transaction_snapshot_record_counts[index] =
-            (file->type == DFC_FILE_TYPE_LINEAR_RECORD ||
-             file->type == DFC_FILE_TYPE_CYCLIC_RECORD) ?
-                file->record_count :
-                0;
-    }
+    memset(
+        emulator->transaction_snapshot_record_counts,
+        0,
+        sizeof(emulator->transaction_snapshot_record_counts));
+    memset(
+        emulator->transaction_snapshot_offsets, 0, sizeof(emulator->transaction_snapshot_offsets));
+    memset(
+        emulator->transaction_snapshot_captured,
+        0,
+        sizeof(emulator->transaction_snapshot_captured));
+    memset(
+        emulator->transaction_snapshot_created, 0, sizeof(emulator->transaction_snapshot_created));
     memset(
         emulator->transaction_record_operations,
         RecordTransactionNone,

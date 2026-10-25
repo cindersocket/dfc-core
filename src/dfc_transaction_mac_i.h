@@ -33,6 +33,13 @@ bool dfc_transaction_mac_accumulator_add_data(
     uint32_t length,
     const uint8_t* data,
     size_t data_length);
+bool dfc_transaction_mac_accumulator_add_zero_data(
+    DfcTransactionMacAccumulator* accumulator,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t offset,
+    uint32_t length,
+    size_t data_length);
 bool dfc_transaction_mac_accumulator_add_record_update(
     DfcTransactionMacAccumulator* accumulator,
     uint8_t command,

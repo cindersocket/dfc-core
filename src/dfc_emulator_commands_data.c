@@ -336,15 +336,12 @@ bool dfc_emulator_command_read_data(
 #endif
 
     const uint8_t* file_bytes = dfc_file_data_const(emulator->credential, file);
+    bool committed_data_is_zero = false;
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
     // Backup reads keep showing the committed image until CommitTransaction.
-    if(file->type == DFC_FILE_TYPE_BACKUP_DATA && emulator->transaction_snapshot_active &&
-       emulator->transaction_snapshot_app_index == emulator->selected_app_index &&
-       file->data_offset != DFC_FILE_POOL_NONE &&
-       file->data_offset <= emulator->transaction_snapshot_pool_length &&
-       file->data_len <= emulator->transaction_snapshot_pool_length - file->data_offset) {
-        file_bytes = emulator->transaction_snapshot_pool + file->data_offset;
-    }
+    if(file->type == DFC_FILE_TYPE_BACKUP_DATA)
+        file_bytes = dfc_emulator_transaction_snapshot_committed_data(
+            emulator, (size_t)(file - emulator->credential->files), &committed_data_is_zero);
 #endif
 #if DFC_ENABLE_SDM
     if(file->sdm_enabled) {
@@ -365,20 +362,22 @@ bool dfc_emulator_command_read_data(
         file_bytes = emulator->sdm_read_cache;
     }
 #endif
-    if(read_len > 0 && !file_bytes) {
+    const uint8_t* read_data = read_len && file_bytes ? file_bytes + offset : NULL;
+    if(read_len > 0 && !read_data && !committed_data_is_zero) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
         return true;
     }
 #if DFC_ENABLE_TRANSACTION_MAC
-    if(file->type != DFC_FILE_TYPE_TRANSACTION_MAC &&
-       !dfc_emulator_command_transaction_mac_add_data(
-           emulator,
-           apdu[0],
-           file_no,
-           offset,
-           (uint32_t)read_len,
-           read_len ? file_bytes + offset : NULL,
-           read_len)) {
+    bool transaction_mac_added = true;
+    if(file->type != DFC_FILE_TYPE_TRANSACTION_MAC) {
+        transaction_mac_added =
+            committed_data_is_zero ?
+                dfc_emulator_command_transaction_mac_add_zero_data(
+                    emulator, apdu[0], file_no, offset, (uint32_t)read_len, read_len) :
+                dfc_emulator_command_transaction_mac_add_data(
+                    emulator, apdu[0], file_no, offset, (uint32_t)read_len, read_data, read_len);
+    }
+    if(!transaction_mac_added) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return true;
     }
@@ -386,15 +385,21 @@ bool dfc_emulator_command_read_data(
 
     uint8_t comm = dfc_emulator_file_effective_comm_settings(
         emulator, file, DfcFileAccessRead, file->comm_settings);
-    dfc_emulator_command_emit_payload_with_chaining_comm(
-        emulator,
-        tx_buffer,
-        DFC_CMD_READ_DATA,
-        read_len ? file_bytes + offset : NULL,
-        read_len,
-        1,
-        comm,
-        requested_len == 0);
+    if(committed_data_is_zero) {
+        if(!dfc_emulator_command_emit_zero_payload_with_chaining_comm(
+               emulator, tx_buffer, DFC_CMD_READ_DATA, read_len, comm))
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
+    } else {
+        dfc_emulator_command_emit_payload_with_chaining_comm(
+            emulator,
+            tx_buffer,
+            DFC_CMD_READ_DATA,
+            read_data,
+            read_len,
+            1,
+            comm,
+            requested_len == 0);
+    }
 
     if(dfc && read_len > 0) {
         dfc_port_notify(dfc, DfcEventFileRequested);
@@ -554,9 +559,11 @@ void dfc_emulator_command_write_data(
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES && DFC_ENABLE_TRANSACTION_MAC
     bool transaction_snapshot_was_active = emulator->transaction_snapshot_active;
 #endif
+    size_t file_index = (size_t)(file - emulator->credential->files);
 #if DFC_ENABLE_BACKUP_FILES
     if(file->type == DFC_FILE_TYPE_BACKUP_DATA &&
-       !dfc_emulator_command_transaction_snapshot_begin(emulator)) {
+       (!dfc_emulator_command_transaction_snapshot_begin(emulator) ||
+        !dfc_emulator_transaction_snapshot_capture_file(emulator, file_index))) {
         dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
@@ -564,7 +571,7 @@ void dfc_emulator_command_write_data(
 #endif
     if(file->type == DFC_FILE_TYPE_STANDARD_DATA &&
        !dfc_emulator_transaction_snapshot_can_mirror_write(
-           emulator, (size_t)(file - emulator->credential->files), offset, clear, out_len)) {
+           emulator, file_index, offset, clear, out_len)) {
         dfc_secure_wipe(emulator->pending_chain, scratch_len);
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
         return;
@@ -584,7 +591,7 @@ void dfc_emulator_command_write_data(
 #endif
     if(file->type == DFC_FILE_TYPE_STANDARD_DATA) {
         bool mirrored = dfc_emulator_transaction_snapshot_mirror_write(
-            emulator, (size_t)(file - emulator->credential->files), offset, clear, out_len);
+            emulator, file_index, offset, clear, out_len);
         DFC_ASSERT(mirrored);
         DFC_UNUSED(mirrored);
     }

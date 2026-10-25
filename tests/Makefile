@@ -116,7 +116,9 @@ KEY_SET_WIPE_TEST := test_dfc_roll_key_set_wipe
 REDUCED_PROFILE_TEST := test_dfc_ffi_reduced_profile
 REDUCED_READER_TEST := test_dfc_reader_reduced_command
 REDUCED_FORMAT_TEST := test_dfc_format_picc_reduced
-REDUCED_TESTS := $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST)
+LARGE_SNAPSHOT_TEST := test_dfc_transaction_snapshot_large
+REDUCED_TESTS := $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT_TEST) \
+	$(LARGE_SNAPSHOT_TEST)
 
 TESTS += test_dfc_ev2_capabilities test_dfc_static_signature
 
@@ -201,6 +203,11 @@ test_dfc_reader_reduced_command: test_dfc_reader_reduced_command.c $(COMMON)
 
 test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpers.c $(COMMON)
 	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV1 -o $@ $^ $(LDFLAGS)
+
+test_dfc_transaction_snapshot_large: test_dfc_transaction_snapshot.c \
+		dfc_virtual_picc_test_helpers.c $(COMMON)
+	$(CC) $(CFLAGS) -DDFC_FILE_POOL_SIZE=65536 -DDFC_MAX_FILE_DATA=8192 \
+		-DDFC_EMULATOR_CHAIN_BUFFER_SIZE=2080 -o $@ $^ $(LDFLAGS)
 
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
