@@ -41,6 +41,7 @@ def main() -> None:
     assert "#include <stdio.h>" not in source
     assert "dfc_log_buffer" not in source
     assert "dfc_log_buffer" not in header
+    assert "DfcAuthParameters" not in header
 
     with tempfile.TemporaryDirectory() as directory:
         obj = Path(directory) / "dfc_common.o"

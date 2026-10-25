@@ -485,16 +485,6 @@ void dfc_truncate_aes_wire_mac(
 #endif
 #define DFC_LEGACY_RANDOM_UID_FIRST_BYTE 0x80
 
-// Active DESFire authentication session, used to secure ReadData/WriteData
-// after a successful Authenticate(D40/ISO/AES) exchange.
-typedef struct {
-    uint8_t cipher; // DFC_CMD_AUTHENTICATE_LEGACY / _ISO / _AES
-    uint8_t key[DFC_MAX_KEY_LEN];
-    size_t key_len;
-    uint8_t session_key[DFC_MAX_KEY_LEN];
-    uint8_t iv[16];
-} DfcAuthParameters;
-
 size_t dfc_key_len_for_cipher(uint8_t cipher);
 size_t dfc_block_size_for_cipher(uint8_t cipher);
 
