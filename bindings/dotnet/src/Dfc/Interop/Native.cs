@@ -17,6 +17,8 @@ internal static unsafe partial class Native
     internal const int RandomFailed = (int)DFC_FFI_RANDOM_FAILED;
     internal const int PiccBufferTooSmall = (int)DFC_FFI_PICC_BUFFER_TOO_SMALL;
     internal const int OwnerPicc = (int)DFC_FFI_OWNER_PICC;
+    internal const int ResponseOk = 0;
+    internal const int TransactionMacOk = 0;
 
     private static readonly Lazy<bool> Checked = new(CheckAbi);
 
@@ -99,6 +101,77 @@ internal static unsafe partial class Native
 
     [LibraryImport(Library)]
     internal static partial void dfc_ffi_struct_sizes(NativeStructSizes* output);
+
+    // ---------------------------------------------------- standalone APIs ---
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_an10922_diversify(uint algorithm, byte* masterKey,
+        nuint masterKeyLength, byte* input, nuint inputLength, byte* output,
+        nuint outputCapacity, nuint* outputLength);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_response_decode_version(
+        byte* response, nuint responseLength, byte* output, nuint outputCapacity);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_response_decode_application_ids(byte* response,
+        nuint responseLength, byte* output, nuint outputCapacity, nuint* outputLength);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_response_decode_file_ids(byte* response,
+        nuint responseLength, byte* output, nuint outputCapacity, nuint* outputLength);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_response_decode_file_settings(
+        byte* response, nuint responseLength, byte* output, nuint outputCapacity);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_response_decode_key_settings(
+        byte* response, nuint responseLength, byte* output, nuint outputCapacity);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_response_decode_key_version(
+        byte* response, nuint responseLength, byte* output);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_sdm_verify_ascii(byte* message, nuint messageLength,
+        uint fields, nuint plainUidOffset, nuint plainUidLength, nuint plainCounterOffset,
+        nuint encryptedPiccOffset, nuint encryptedPiccLength, nuint encryptedFileOffset,
+        nuint encryptedFileLength, nuint macInputOffset, nuint macOffset, byte* metaReadKey,
+        byte* fileReadKey, byte* decrypted, nuint decryptedCapacity, nuint* requiredDecrypted,
+        byte* result, nuint resultCapacity);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_transaction_mac_verifier_new(nuint inputCapacity,
+        byte* key, byte* uid, nuint uidLength, uint counter, nint* output);
+
+    [LibraryImport(Library)]
+    internal static partial void dfc_ffi_transaction_mac_verifier_free(nint verifier);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_transaction_mac_add_data(nint verifier, byte command,
+        byte fileNumber, uint offset, uint length, byte* data, nuint dataLength);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_transaction_mac_add_record_update(nint verifier,
+        byte command, byte fileNumber, uint recordNumber, uint offset, uint length, byte* data,
+        nuint dataLength);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_transaction_mac_add_value(
+        nint verifier, byte command, byte fileNumber, uint value);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_transaction_mac_add_clear_record(
+        nint verifier, byte fileNumber);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_transaction_mac_add_reader_id(
+        nint verifier, byte* currentReaderId, byte* encryptedPreviousReaderId);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_ffi_transaction_mac_verify(
+        nint verifier, byte* mac, byte* verified);
 
     // --------------------------------------------------------- credential ---
 

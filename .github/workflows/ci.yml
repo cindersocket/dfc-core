@@ -364,8 +364,11 @@ jobs:
             tests/java/DfcReaderHeaderBoundsTest.java tests/java/DfcJniNarrowingTest.java \
             tests/java/DfcLayoutCompatibilityTest.java tests/java/DfcSecretLifetimeTest.java \
             tests/java/DfcCommandRangeTest.java \
+            tests/java/DfcNativeLoaderTest.java \
+            tests/java/DfcAdvancedApiTest.java \
             examples/java/DfcTransceiveExample.java
           java -cp build-jni/java com.cindersocket.dfc.DfcCommandRangeTest
+          java -cp build-jni/java com.cindersocket.dfc.DfcNativeLoaderTest
           java -cp build-jni/java com.cindersocket.dfc.DfcSecretLifetimeTest
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
             examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
@@ -375,6 +378,7 @@ jobs:
             com.cindersocket.dfc.DfcReaderHeaderBoundsTest examples/credentials/v6-minimal.dfc
           java -Djava.library.path=build-jni -cp build-jni/java \
             com.cindersocket.dfc.DfcJniNarrowingTest examples/credentials/v6-minimal.dfc
+          java -Djava.library.path=build-jni -cp build-jni/java DfcAdvancedApiTest
           java -cp build-jni/java com.cindersocket.dfc.DfcLayoutCompatibilityTest
           java -Djava.library.path=build-jni-mismatch -cp build-jni/java \
             com.cindersocket.dfc.DfcLayoutCompatibilityTest native

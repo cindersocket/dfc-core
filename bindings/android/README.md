@@ -6,6 +6,20 @@ DFC engine in one AAR. It supports API 26 and later on `arm64-v8a`,
 `DfcException` class and constructor that native error reporting resolves, so
 applications may safely enable R8 shrinking and obfuscation.
 
+The AAR includes the Java typed response decoders, key diversification, SDM
+verification, and Transaction MAC verifier. SDM verification authenticates one
+message; the backend must persist the last accepted read counter for its card
+and application context and reject duplicate or older counters. The binding
+does not store replay state.
+
+Install the published AAR from Maven Central:
+
+```kotlin
+dependencies {
+    implementation("com.cindersocket:dfc-core-android:2.0.0")
+}
+```
+
 ## Read a physical card
 
 Connect an `IsoDep` tag before constructing the transport. Keep the work off
@@ -27,9 +41,9 @@ try (DfcReader reader = new DfcReader(new IsoDepTransport(isoDep))) {
 `DfcReader` owns native session state and must be closed. The caller still owns
 the Android `IsoDep` connection and must close it separately.
 
-The runnable [NFC example](../../examples/android/README.md) includes reader
+The runnable [NFC example](https://github.com/cindersocket/dfc-core/tree/master/examples/android) includes reader
 mode, lifecycle handling, background execution, and a real `GetVersion`
-transceive. The [Java host example](../../examples/java/README.md) verifies the
+transceive. The [Java host example](https://github.com/cindersocket/dfc-core/tree/master/examples/java) verifies the
 same public reader flow without NFC hardware.
 
 ## Build
@@ -38,7 +52,8 @@ The checked-in Gradle wrapper builds the AAR, example APK, and Android lint:
 
 ```sh
 cd bindings/android
-./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease :dfc:lintRelease
+./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease \
+  :dfc:lintRelease :dfc:testDebugUnitTest
 ```
 
 The artifacts are `dfc/build/outputs/aar/dfc-release.aar` and

@@ -208,6 +208,22 @@ static bool jlong_to_u32(JNIEnv* env, jlong value, const char* name, uint32_t* o
     return true;
 }
 
+static bool jlong_to_size(JNIEnv* env, jlong value, const char* name, size_t* out) {
+    if(value < 0 || (uint64_t)value > SIZE_MAX) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, name);
+        return false;
+    }
+    *out = (size_t)value;
+    return true;
+}
+
+static DfcFfiTransactionMacVerifier* transaction_mac_handle(JNIEnv* env, jlong handle) {
+    DfcFfiTransactionMacVerifier* verifier = (DfcFfiTransactionMacVerifier*)(uintptr_t)handle;
+    if(verifier == NULL)
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "invalid transaction MAC handle");
+    return verifier;
+}
+
 static void reader_clear_pending(JniReader* wrapper) {
     secure_free(wrapper->pending_data, wrapper->pending_data_len);
     wrapper->pending_data = NULL;
@@ -225,6 +241,428 @@ JNIEXPORT jlong JNICALL
     (void)env;
     (void)type;
     return (jlong)dfc_ffi_layout_fingerprint();
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_an10922Diversify(
+    JNIEnv* env,
+    jclass type,
+    jint algorithm,
+    jbyteArray master,
+    jbyteArray input) {
+    (void)type;
+    uint32_t algorithm_id = 0;
+    if(!jint_to_u32(env, algorithm, "algorithm out of range", &algorithm_id)) return NULL;
+    size_t master_len = 0, input_len = 0;
+    uint8_t* master_bytes = copy_array(env, master, &master_len, false);
+    uint8_t* input_bytes = copy_array(env, input, &input_len, false);
+    if((*env)->ExceptionCheck(env)) {
+        secure_free(master_bytes, master_len);
+        secure_free(input_bytes, input_len);
+        return NULL;
+    }
+    uint8_t output[24] = {0};
+    size_t output_len = 0;
+    int32_t status = dfc_ffi_an10922_diversify(
+        algorithm_id,
+        master_bytes,
+        master_len,
+        input_bytes,
+        input_len,
+        output,
+        sizeof(output),
+        &output_len);
+    secure_free(master_bytes, master_len);
+    secure_free(input_bytes, input_len);
+    if(status != DFC_FFI_OK) {
+        dfc_ffi_secure_zero(output, sizeof(output));
+        throw_dfc(env, status, 0, 0, "key diversification failed");
+        return NULL;
+    }
+    return make_array_and_wipe(env, output, output_len, sizeof(output));
+}
+
+typedef int32_t (*JniFixedDecoder)(const uint8_t*, size_t, uint8_t*, size_t);
+
+static jbyteArray
+    decode_fixed(JNIEnv* env, jbyteArray response, size_t output_len, JniFixedDecoder decoder) {
+    size_t response_len = 0;
+    uint8_t* response_bytes = copy_array(env, response, &response_len, false);
+    if((*env)->ExceptionCheck(env)) return NULL;
+    uint8_t output[DFC_FFI_RESPONSE_FILE_SETTINGS_SIZE] = {0};
+    int32_t status = decoder(response_bytes, response_len, output, output_len);
+    secure_free(response_bytes, response_len);
+    if(status != DFC_FFI_RESPONSE_OK) {
+        dfc_ffi_secure_zero(output, sizeof(output));
+        throw_dfc(env, status, 0, 0, "response decode failed");
+        return NULL;
+    }
+    return make_array_and_wipe(env, output, output_len, sizeof(output));
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_responseDecodeVersion(
+    JNIEnv* env,
+    jclass type,
+    jbyteArray response) {
+    (void)type;
+    return decode_fixed(
+        env, response, DFC_FFI_RESPONSE_VERSION_SIZE, dfc_ffi_response_decode_version);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_responseDecodeFileSettings(
+    JNIEnv* env,
+    jclass type,
+    jbyteArray response) {
+    (void)type;
+    return decode_fixed(
+        env, response, DFC_FFI_RESPONSE_FILE_SETTINGS_SIZE, dfc_ffi_response_decode_file_settings);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_responseDecodeKeySettings(
+    JNIEnv* env,
+    jclass type,
+    jbyteArray response) {
+    (void)type;
+    return decode_fixed(
+        env, response, DFC_FFI_RESPONSE_KEY_SETTINGS_SIZE, dfc_ffi_response_decode_key_settings);
+}
+
+typedef int32_t (*JniListDecoder)(const uint8_t*, size_t, uint8_t*, size_t, size_t*);
+
+static jbyteArray decode_list(JNIEnv* env, jbyteArray response, JniListDecoder decoder) {
+    size_t response_len = 0;
+    uint8_t* response_bytes = copy_array(env, response, &response_len, false);
+    if((*env)->ExceptionCheck(env)) return NULL;
+    size_t capacity = response_len;
+    uint8_t* output = capacity == 0 ? NULL : malloc(capacity);
+    if(capacity != 0 && output == NULL) {
+        secure_free(response_bytes, response_len);
+        throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
+        return NULL;
+    }
+    size_t output_len = 0;
+    int32_t status = decoder(response_bytes, response_len, output, capacity, &output_len);
+    secure_free(response_bytes, response_len);
+    if(status != DFC_FFI_RESPONSE_OK) {
+        secure_free(output, capacity);
+        throw_dfc(env, status, 0, 0, "response decode failed");
+        return NULL;
+    }
+    jbyteArray result = make_array(env, output, output_len);
+    secure_free(output, capacity);
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_responseDecodeApplicationIds(
+    JNIEnv* env,
+    jclass type,
+    jbyteArray response) {
+    (void)type;
+    return decode_list(env, response, dfc_ffi_response_decode_application_ids);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_responseDecodeFileIds(
+    JNIEnv* env,
+    jclass type,
+    jbyteArray response) {
+    (void)type;
+    return decode_list(env, response, dfc_ffi_response_decode_file_ids);
+}
+
+JNIEXPORT jint JNICALL Java_com_cindersocket_dfc_DfcNative_responseDecodeKeyVersion(
+    JNIEnv* env,
+    jclass type,
+    jbyteArray response) {
+    (void)type;
+    size_t response_len = 0;
+    uint8_t* response_bytes = copy_array(env, response, &response_len, false);
+    if((*env)->ExceptionCheck(env)) return 0;
+    uint8_t version = 0;
+    int32_t status = dfc_ffi_response_decode_key_version(response_bytes, response_len, &version);
+    secure_free(response_bytes, response_len);
+    if(status != DFC_FFI_RESPONSE_OK) {
+        throw_dfc(env, status, 0, 0, "response decode failed");
+        return 0;
+    }
+    return version;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_sdmVerify(
+    JNIEnv* env,
+    jclass type,
+    jbyteArray message,
+    jint fields,
+    jlong plain_uid_offset,
+    jlong plain_uid_len,
+    jlong plain_counter_offset,
+    jlong encrypted_picc_offset,
+    jlong encrypted_picc_len,
+    jlong encrypted_file_offset,
+    jlong encrypted_file_len,
+    jlong mac_input_offset,
+    jlong mac_offset,
+    jbyteArray meta_key,
+    jbyteArray file_key) {
+    (void)type;
+    uint32_t field_flags = 0;
+    size_t values[9] = {0};
+    jlong java_values[9] = {
+        plain_uid_offset,
+        plain_uid_len,
+        plain_counter_offset,
+        encrypted_picc_offset,
+        encrypted_picc_len,
+        encrypted_file_offset,
+        encrypted_file_len,
+        mac_input_offset,
+        mac_offset};
+    if(!jint_to_u32(env, fields, "SDM fields out of range", &field_flags)) return NULL;
+    for(size_t i = 0; i < 9; i++)
+        if(!jlong_to_size(env, java_values[i], "SDM offset or length out of range", &values[i]))
+            return NULL;
+    size_t message_len = 0, meta_len = 0, file_len = 0;
+    uint8_t* message_bytes = copy_array(env, message, &message_len, false);
+    uint8_t* meta_bytes = copy_array(env, meta_key, &meta_len, true);
+    uint8_t* file_bytes = copy_array(env, file_key, &file_len, false);
+    if((*env)->ExceptionCheck(env) || file_len != 16 || (meta_key != NULL && meta_len != 16)) {
+        secure_free(message_bytes, message_len);
+        secure_free(meta_bytes, meta_len);
+        secure_free(file_bytes, file_len);
+        if(!(*env)->ExceptionCheck(env))
+            throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "SDM keys must be 16 bytes");
+        return NULL;
+    }
+    if(values[6] > message_len || values[6] > (size_t)INT32_MAX - DFC_FFI_SDM_RESULT_SIZE) {
+        secure_free(message_bytes, message_len);
+        secure_free(meta_bytes, meta_len);
+        secure_free(file_bytes, file_len);
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "encrypted file range is too large");
+        return NULL;
+    }
+    size_t decrypted_len = values[6] / 2;
+    size_t packed_len = DFC_FFI_SDM_RESULT_SIZE + decrypted_len;
+    uint8_t* packed = calloc(1, packed_len);
+    if(!packed) {
+        secure_free(message_bytes, message_len);
+        secure_free(meta_bytes, meta_len);
+        secure_free(file_bytes, file_len);
+        throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
+        return NULL;
+    }
+    size_t required = 0;
+    int32_t status = dfc_ffi_sdm_verify_ascii(
+        message_bytes,
+        message_len,
+        field_flags,
+        values[0],
+        values[1],
+        values[2],
+        values[3],
+        values[4],
+        values[5],
+        values[6],
+        values[7],
+        values[8],
+        meta_bytes,
+        file_bytes,
+        decrypted_len ? packed + DFC_FFI_SDM_RESULT_SIZE : NULL,
+        decrypted_len,
+        &required,
+        packed,
+        DFC_FFI_SDM_RESULT_SIZE);
+    secure_free(message_bytes, message_len);
+    secure_free(meta_bytes, meta_len);
+    secure_free(file_bytes, file_len);
+    if(status != DFC_FFI_SDM_OK || required != decrypted_len) {
+        secure_free(packed, packed_len);
+        throw_dfc(env, status, 0, 0, "SDM verification failed");
+        return NULL;
+    }
+    jbyteArray result = make_array(env, packed, packed_len);
+    secure_free(packed, packed_len);
+    return result;
+}
+
+JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacCreate(
+    JNIEnv* env,
+    jclass type,
+    jint capacity,
+    jbyteArray key,
+    jbyteArray uid,
+    jlong counter) {
+    (void)type;
+    uint32_t counter_value = 0;
+    if(capacity <= 0 || !jlong_to_u32(env, counter, "counter out of range", &counter_value)) {
+        if(capacity <= 0 && !(*env)->ExceptionCheck(env))
+            throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "capacity must be positive");
+        return 0;
+    }
+    size_t key_len = 0, uid_len = 0;
+    uint8_t* key_bytes = copy_array(env, key, &key_len, false);
+    uint8_t* uid_bytes = copy_array(env, uid, &uid_len, false);
+    if((*env)->ExceptionCheck(env)) {
+        secure_free(key_bytes, key_len);
+        secure_free(uid_bytes, uid_len);
+        return 0;
+    }
+    DfcFfiTransactionMacVerifier* verifier = NULL;
+    int32_t status = dfc_ffi_transaction_mac_verifier_new(
+        (size_t)capacity, key_bytes, uid_bytes, uid_len, counter_value, &verifier);
+    secure_free(key_bytes, key_len);
+    secure_free(uid_bytes, uid_len);
+    if(status != DFC_FFI_TRANSACTION_MAC_OK) {
+        throw_dfc(env, status, 0, 0, "transaction MAC initialization failed");
+        return 0;
+    }
+    return (jlong)(uintptr_t)verifier;
+}
+
+JNIEXPORT void JNICALL
+    Java_com_cindersocket_dfc_DfcNative_transactionMacFree(JNIEnv* env, jclass type, jlong handle) {
+    (void)env;
+    (void)type;
+    dfc_ffi_transaction_mac_verifier_free((DfcFfiTransactionMacVerifier*)(uintptr_t)handle);
+}
+
+static bool transaction_mac_status(JNIEnv* env, int32_t status) {
+    if(status == DFC_FFI_TRANSACTION_MAC_OK) return true;
+    throw_dfc(env, status, 0, 0, "transaction MAC operation failed");
+    return false;
+}
+
+JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacAddData(
+    JNIEnv* env,
+    jclass type,
+    jlong handle,
+    jint command,
+    jint file_number,
+    jlong offset,
+    jlong length,
+    jbyteArray data) {
+    (void)type;
+    DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
+    uint8_t command_id = 0, file_id = 0;
+    uint32_t offset_value = 0, length_value = 0;
+    if(!verifier || !jint_to_u8(env, command, "command out of range", &command_id) ||
+       !jint_to_u8(env, file_number, "file number out of range", &file_id) ||
+       !jlong_to_u32(env, offset, "offset out of range", &offset_value) ||
+       !jlong_to_u32(env, length, "length out of range", &length_value))
+        return;
+    size_t data_len = 0;
+    uint8_t* bytes = copy_array(env, data, &data_len, false);
+    if((*env)->ExceptionCheck(env)) return;
+    int32_t status = dfc_ffi_transaction_mac_add_data(
+        verifier, command_id, file_id, offset_value, length_value, bytes, data_len);
+    secure_free(bytes, data_len);
+    transaction_mac_status(env, status);
+}
+
+JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacAddRecord(
+    JNIEnv* env,
+    jclass type,
+    jlong handle,
+    jint command,
+    jint file_number,
+    jlong record_number,
+    jlong offset,
+    jlong length,
+    jbyteArray data) {
+    (void)type;
+    DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
+    uint8_t command_id = 0, file_id = 0;
+    uint32_t record_value = 0, offset_value = 0, length_value = 0;
+    if(!verifier || !jint_to_u8(env, command, "command out of range", &command_id) ||
+       !jint_to_u8(env, file_number, "file number out of range", &file_id) ||
+       !jlong_to_u32(env, record_number, "record number out of range", &record_value) ||
+       !jlong_to_u32(env, offset, "offset out of range", &offset_value) ||
+       !jlong_to_u32(env, length, "length out of range", &length_value))
+        return;
+    size_t data_len = 0;
+    uint8_t* bytes = copy_array(env, data, &data_len, false);
+    if((*env)->ExceptionCheck(env)) return;
+    int32_t status = dfc_ffi_transaction_mac_add_record_update(
+        verifier, command_id, file_id, record_value, offset_value, length_value, bytes, data_len);
+    secure_free(bytes, data_len);
+    transaction_mac_status(env, status);
+}
+
+JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacAddValue(
+    JNIEnv* env,
+    jclass type,
+    jlong handle,
+    jint command,
+    jint file_number,
+    jlong value) {
+    (void)type;
+    DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
+    uint8_t command_id = 0, file_id = 0;
+    uint32_t amount = 0;
+    if(!verifier || !jint_to_u8(env, command, "command out of range", &command_id) ||
+       !jint_to_u8(env, file_number, "file number out of range", &file_id) ||
+       !jlong_to_u32(env, value, "value out of range", &amount))
+        return;
+    transaction_mac_status(
+        env, dfc_ffi_transaction_mac_add_value(verifier, command_id, file_id, amount));
+}
+
+JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacAddClearRecord(
+    JNIEnv* env,
+    jclass type,
+    jlong handle,
+    jint file_number) {
+    (void)type;
+    DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
+    uint8_t file_id = 0;
+    if(!verifier || !jint_to_u8(env, file_number, "file number out of range", &file_id)) return;
+    transaction_mac_status(env, dfc_ffi_transaction_mac_add_clear_record(verifier, file_id));
+}
+
+JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacAddReaderId(
+    JNIEnv* env,
+    jclass type,
+    jlong handle,
+    jbyteArray current,
+    jbyteArray previous) {
+    (void)type;
+    DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
+    if(!verifier) return;
+    size_t current_len = 0, previous_len = 0;
+    uint8_t* current_bytes = copy_array(env, current, &current_len, false);
+    uint8_t* previous_bytes = copy_array(env, previous, &previous_len, false);
+    if((*env)->ExceptionCheck(env) || current_len != 16 || previous_len != 16) {
+        secure_free(current_bytes, current_len);
+        secure_free(previous_bytes, previous_len);
+        if(!(*env)->ExceptionCheck(env))
+            throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "reader IDs must be 16 bytes");
+        return;
+    }
+    int32_t status =
+        dfc_ffi_transaction_mac_add_reader_id(verifier, current_bytes, previous_bytes);
+    secure_free(current_bytes, current_len);
+    secure_free(previous_bytes, previous_len);
+    transaction_mac_status(env, status);
+}
+
+JNIEXPORT jboolean JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacVerify(
+    JNIEnv* env,
+    jclass type,
+    jlong handle,
+    jbyteArray mac) {
+    (void)type;
+    DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
+    if(!verifier) return JNI_FALSE;
+    size_t mac_len = 0;
+    uint8_t* mac_bytes = copy_array(env, mac, &mac_len, false);
+    if((*env)->ExceptionCheck(env) || mac_len != 8) {
+        secure_free(mac_bytes, mac_len);
+        if(!(*env)->ExceptionCheck(env))
+            throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "transaction MAC must be 8 bytes");
+        return JNI_FALSE;
+    }
+    uint8_t verified = 0;
+    int32_t status = dfc_ffi_transaction_mac_verify(verifier, mac_bytes, &verified);
+    secure_free(mac_bytes, mac_len);
+    if(!transaction_mac_status(env, status)) return JNI_FALSE;
+    return verified ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jlong JNICALL
