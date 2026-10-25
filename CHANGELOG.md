@@ -28,6 +28,7 @@
   (#161, #162, #163, #164).
 - Retry incomplete Android NDK downloads before archive and binding builds
   (#166).
+- Remove dormant hosted formatting code from target common builds (#167).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`

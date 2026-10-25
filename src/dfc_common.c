@@ -114,8 +114,6 @@ uint32_t dfc_crc32(const uint8_t* data, size_t length) {
     return dfc_crc32_extend(0xFFFFFFFFu, data, length);
 }
 
-#include <stdio.h>
-
 const uint8_t DFC_ISO_AID[7] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x00};
 
 size_t dfc_key_len_for_cipher(uint8_t cipher) {
@@ -253,22 +251,6 @@ bool dfc_wrap_native_response_as_iso7816(
     output[offset++] = native_status;
     *output_len = offset;
     return true;
-}
-
-void dfc_log_buffer(char* TAG, char* prefix, uint8_t* buffer, size_t buffer_len) {
-    (void)TAG;
-    char display[DFC_WORKER_MAX_BUFFER_SIZE * 2 + 1];
-
-    size_t limit = DFC_MIN((size_t)DFC_WORKER_MAX_BUFFER_SIZE, buffer_len);
-    memset(display, 0, sizeof(display));
-    for(uint8_t i = 0; i < limit; i++) {
-        snprintf(display + (i * 2), sizeof(display), "%02x", buffer[i]);
-    }
-    if(prefix) {
-        DFC_LOG_T(TAG, "%s %d: %s", prefix, limit, display);
-    } else {
-        DFC_LOG_T(TAG, "Buffer %d: %s", limit, display);
-    }
 }
 
 void dfc_rotate_left(uint8_t* buffer, size_t len) {

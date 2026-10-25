@@ -484,7 +484,6 @@ typedef struct {
 size_t dfc_key_len_for_cipher(uint8_t cipher);
 size_t dfc_block_size_for_cipher(uint8_t cipher);
 
-void dfc_log_buffer(char* TAG, char* prefix, uint8_t* buffer, size_t buffer_len);
 bool dfc_desfire_uid_is_detectable(const uint8_t* uid, size_t uid_len);
 const char* dfc_authentication_mode_to_string(uint8_t auth_command);
 bool dfc_authentication_mode_from_string(const char* value, uint8_t* auth_command);
