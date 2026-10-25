@@ -137,6 +137,45 @@ static void assert_round_trips(const DfcCredential* source) {
     munit_assert_memory_equal(text_length, text_again, text);
 }
 
+static MunitResult test_copy_preserves_complete_value(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static DfcCredential source;
+    static DfcCredential copy;
+    memset(&source, 0xA5, sizeof(source));
+    dfc_credential_clear(&source);
+
+    // Poison inactive tails to represent future inline fields. Copying only the
+    // active model would silently drop them.
+    memset(
+        source.apps + source.num_apps,
+        0x3C,
+        sizeof(source.apps) - (source.num_apps * sizeof(source.apps[0])));
+    memset(
+        source.files + source.num_files,
+        0xC3,
+        sizeof(source.files) - (source.num_files * sizeof(source.files[0])));
+    memset(
+        source.file_pool + source.file_pool_used,
+        0x5A,
+        sizeof(source.file_pool) - source.file_pool_used);
+    memset(
+        source.key_pool + source.key_pool_used,
+        0xA5,
+        sizeof(source.key_pool) - source.key_pool_used);
+#if DFC_ENABLE_KEY_SETS
+    memset(
+        source.key_set_metadata_pool + source.key_set_metadata_pool_used,
+        0x69,
+        sizeof(source.key_set_metadata_pool) - source.key_set_metadata_pool_used);
+#endif
+
+    memset(&copy, 0, sizeof(copy));
+    dfc_credential_copy_model(&copy, &source);
+    munit_assert_memory_equal(sizeof(source), &copy, &source);
+    return MUNIT_OK;
+}
+
 static void assert_model_rejected(const DfcCredential* credential) {
     static uint8_t binary[DFC_DER_MAX_SIZE];
     static char text[DFC_TEXT_MAX_SIZE];
@@ -569,6 +608,12 @@ static MunitTest tests[] = {
 #endif
     {"/shared-primitive-boundaries",
      test_shared_primitive_boundaries,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/copy-preserves-complete-value",
+     test_copy_preserves_complete_value,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

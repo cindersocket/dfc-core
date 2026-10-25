@@ -97,8 +97,15 @@ static void set_error(DfcFfiError* error, int32_t status, uint32_t line, const c
     }
 }
 
+// Decode and clone publish every model byte before returning. Keeping their
+// allocation raw avoids clearing a large credential immediately before those
+// writes. Callers that expose a new model must use credential_alloc instead.
+static DfcFfiCredential* credential_alloc_uninitialized(void) {
+    return malloc(sizeof(DfcFfiCredential));
+}
+
 static DfcFfiCredential* credential_alloc(void) {
-    DfcFfiCredential* credential = calloc(1, sizeof(*credential));
+    DfcFfiCredential* credential = credential_alloc_uninitialized();
     if(credential) dfc_credential_clear(&credential->model);
     return credential;
 }
@@ -200,7 +207,7 @@ int32_t dfc_ffi_credential_parse_text(
     }
     *out = NULL;
 #if DFC_ENABLE_TEXT_CODEC
-    DfcFfiCredential* credential = credential_alloc();
+    DfcFfiCredential* credential = credential_alloc_uninitialized();
     if(!credential) return DFC_FFI_OUT_OF_MEMORY;
     DfcTextError detail = {0};
     DfcTextStatus st = dfc_text_parse(&credential->model, text, len, &detail);
@@ -230,7 +237,7 @@ int32_t dfc_ffi_credential_decode(
         return DFC_FFI_INVALID_ARGUMENT;
     }
     *out = NULL;
-    DfcFfiCredential* credential = credential_alloc();
+    DfcFfiCredential* credential = credential_alloc_uninitialized();
     if(!credential) return DFC_FFI_OUT_OF_MEMORY;
     DfcDerStatus st = dfc_der_decode(&credential->model, dfcb, len);
     if(st != DfcDerOk) {
@@ -297,7 +304,7 @@ int32_t dfc_ffi_credential_validate(const DfcFfiCredential* credential) {
 
 int32_t dfc_ffi_credential_clone(const DfcFfiCredential* credential, DfcFfiCredential** out) {
     if(!credential || !out) return DFC_FFI_INVALID_ARGUMENT;
-    *out = credential_alloc();
+    *out = credential_alloc_uninitialized();
     if(!*out) return DFC_FFI_OUT_OF_MEMORY;
     dfc_credential_copy_model(&(*out)->model, &credential->model);
     return DfcDerOk;

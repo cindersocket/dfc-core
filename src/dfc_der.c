@@ -2159,7 +2159,6 @@ static DfcDerStatus decode_credential(DfcCredential* credential, const uint8_t* 
         if(!r_fields(tlv.body, aorder, TAG_COUNT(aorder), &af)) return DfcDerMalformed;
 
         DfcApplication* app = &credential->apps[credential->num_apps];
-        dfc_credential_reset_application(app);
         if(!r_octets(f_get(&af, APP_AID), 3, app->aid)) return DfcDerMalformed;
         for(size_t i = 0; i < credential->num_apps; i++) {
             if(memcmp(credential->apps[i].aid, app->aid, 3) == 0) return DfcDerMalformed;
