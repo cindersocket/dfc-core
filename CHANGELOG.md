@@ -2,6 +2,20 @@
 
 ## 2.0.0 (Unreleased)
 
+- Add allocation-free AN10922 key diversification for AES-128, two-key TDEA,
+  and three-key TDEA, including DESFire key-version preservation (#19).
+- Add allocation-free typed decoders for GetVersion, application and file
+  identifiers, file settings, key settings, and key versions (#20).
+- Add allocation-free verification for authenticated ASCII SDM messages,
+  including encrypted PICC and file data from captured card responses (#21).
+- Add structured Transaction MAC receipt verification with helpers for the
+  supported transaction inputs and Reader ID handling (#22).
+- Expose the new diversification, decoder, SDM, and Transaction MAC APIs through
+  the Python, Rust, Java, Android, and .NET bindings.
+- Add installable native and binding packages with one verified release
+  inventory and package-consumer smoke tests (#156).
+- Publish complete dependency metadata, configure automated dependency updates,
+  and document private security reporting (#155, #157, #158).
 - Add Java and Android JNI bindings and an Android library.
 - Preserve JNI exception delivery in minified Android consumers (#141).
 - Keep minified Android instrumentation builds complete when AndroidX exposes

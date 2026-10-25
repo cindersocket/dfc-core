@@ -96,6 +96,42 @@ Use `src/dfc_build_config.h` to select a feature profile. A reduced profile
 rejects a known feature when the profile does not support that feature. It does
 not silently discard data.
 
+Use `dfc_an10922_diversify` from `src/dfc_an10922.h` to derive AES-128,
+two-key TDEA, or three-key TDEA keys from a master key and diversification
+input. The helper allocates no heap storage and preserves DESFire key-version
+bits in TDEA outputs.
+
+Successful reader responses remain available as raw bytes. Applications that
+want named fields can pass the clear payload to the allocation-free decoders in
+`src/dfc_response.h`:
+
+```c
+DfcResponseFileSettings settings;
+if(dfc_response_decode_file_settings(data, data_len, &settings) ==
+   DfcResponseDecodeOk) {
+    printf("file type %u, communication mode %u\n",
+           settings.type,
+           settings.communication_mode);
+}
+```
+
+The list decoders use caller-owned arrays and report the required item count
+when capacity is insufficient.
+
+`src/dfc_sdm.h` verifies ASCII Secure Dynamic Messaging responses without heap
+allocation. It authenticates the configured external byte range before
+publishing mirrored card data or decrypted file bytes. Applications remain
+responsible for storing read-counter history and rejecting replayed messages.
+
+`src/dfc_transaction_mac.h` builds authenticated transaction input from typed
+operations and verifies the returned transaction counter and MAC. Applications
+remain responsible for retaining counter history and rejecting duplicate
+receipts.
+
+The Python, Rust, Java, Android, and .NET bindings expose these APIs with typed
+results. Their examples transceive commands through a virtual card, decode
+responses, and verify SDM or Transaction MAC output.
+
 ## Build the shared library
 
 The CMake build produces the core as a static archive and as a shared library
