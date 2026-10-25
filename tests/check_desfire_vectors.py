@@ -310,6 +310,8 @@ def validate_header(location: str, key: str, value: str) -> None:
             raise ValueError(f"{location}: invalid boolean header {key!r}")
         if key == "picc-key-len" and parsed not in {8, 16, 24}:
             raise ValueError(f"{location}: invalid key length header {key!r}")
+        if key == "picc-storage" and parsed == 0:
+            raise ValueError(f"{location}: invalid storage header {key!r}")
 
 
 def validate_vector(path: Path, vocabulary: dict[str, object]) -> VectorMetadata:
@@ -337,6 +339,16 @@ def validate_vector(path: Path, vocabulary: dict[str, object]) -> VectorMetadata
             if key in values:
                 raise ValueError(f"{location}: duplicate header {key!r}")
             validate_header(location, key, value)
+            if key == "requires":
+                requirements = [item.strip() for item in value.split(",")]
+                known = set(vocabulary["requirements"])
+                if (
+                    not requirements
+                    or "" in requirements
+                    or len(set(requirements)) != len(requirements)
+                    or set(requirements) - known
+                ):
+                    raise ValueError(f"{location}: invalid requires header")
             values[key] = value
             continue
 
@@ -354,8 +366,8 @@ def validate_vector(path: Path, vocabulary: dict[str, object]) -> VectorMetadata
         if required not in values:
             raise ValueError(f"{path.relative_to(ROOT)}: missing {required} header")
     version = int(path.relative_to(VECTOR_ROOT).parts[0][1:])
-    if int(values.get("feature-version", version)) > version:
-        raise ValueError(f"{path.relative_to(ROOT)}: feature-version exceeds directory version")
+    if int(values.get("feature-version", version)) != version:
+        raise ValueError(f"{path.relative_to(ROOT)}: feature-version does not match directory")
     replayable = values.get("replayable", "true") == "true"
     if replayable and not saw_step:
         raise ValueError(f"{path.relative_to(ROOT)}: replayable vector has no steps")

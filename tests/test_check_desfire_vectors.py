@@ -146,7 +146,10 @@ class DesfireVectorGrammarTests(unittest.TestCase):
             "picc-atqa": "000102",
             "picc-random-id": "2",
             "picc-key-len": "32",
+            "picc-storage": "0",
             "target-key-number": "14",
+            "requires": "ev1,unknown-feature",
+            "feature-version": "3",
         }
         for header, value in invalid.items():
             path = self.write_vector("v4/emulator/invalid.vec", extra_headers=f"{header}: {value}")
