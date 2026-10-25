@@ -20,11 +20,11 @@ REGISTRY = {
     ): "test_random_failures_are_atomic",
     (
         "src/dfc_emulator_commands_auth.c",
-        "random_material",
+        "secrets.random_material",
     ): "test_random_generation_failures_report_memory_error",
     (
         "src/dfc_emulator_commands_auth.c",
-        "rnd_b",
+        "secrets.random_b",
     ): "test_random_generation_failures_report_memory_error",
     (
         "src/dfc_emulator_commands_data.c",
