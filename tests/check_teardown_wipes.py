@@ -68,6 +68,7 @@ def main() -> None:
     commands = command_sources()
     credential = (ROOT / "src" / "dfc_credential.c").read_text(encoding="utf-8")
     emulator_crypto = (ROOT / "src" / "dfc_emulator_crypto.c").read_text(encoding="utf-8")
+    des_chain = (ROOT / "src" / "dfc_crypto_des_chain.c").read_text(encoding="utf-8")
     emulator_auth = (ROOT / "src" / "dfc_emulator_commands_auth.c").read_text(encoding="utf-8")
     ffi = (ROOT / "ffi" / "dfc_ffi.c").read_text(encoding="utf-8")
     reader = (ROOT / "src" / "dfc_reader.c").read_text(encoding="utf-8")
@@ -153,7 +154,7 @@ def main() -> None:
     if "session->emulator->command_chain_len = command_len" not in native_exchange:
         raise SystemExit("borrowed native clear command must retain its used length for wiping")
 
-    d40_helpers = {
+    d40_callers = {
         "emulator D40 receive": emulator_crypto[
             emulator_crypto.index("bool dfc_emulator_d40_receive_plain(") : emulator_crypto.index(
                 "uint8_t dfc_emulator_des_key_version("
@@ -163,13 +164,15 @@ def main() -> None:
             reader.index("static bool\n    d40_send(") : reader.index("static void put_le32(")
         ],
     }
-    for name, helper in d40_helpers.items():
-        if "dfc_secure_wipe(block, sizeof(block))" not in helper:
-            raise SystemExit(f"missing {name} block wipe")
-        if helper.count("return") != 1:
-            raise SystemExit(f"{name} must use one cleanup return")
-        if helper.index("dfc_secure_wipe(block, sizeof(block))") > helper.index("return"):
-            raise SystemExit(f"{name} returns before wiping its local block")
+    for name, caller in d40_callers.items():
+        if "dfc_crypto_des_chain(" not in caller:
+            raise SystemExit(f"{name} bypasses the wiping DES chain helper")
+    if "dfc_secure_wipe(block, sizeof(block))" not in des_chain:
+        raise SystemExit("DES chain helper does not wipe its local block")
+    if "dfc_crypto_des_block_clear(&cipher)" not in des_chain:
+        raise SystemExit("DES chain helper does not clear its cipher state")
+    if des_chain.count("return") != 1:
+        raise SystemExit("DES chain helper must use one cleanup return")
 
     reader_auth_functions = {
         "ISO": reader[

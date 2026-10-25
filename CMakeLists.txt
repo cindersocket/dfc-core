@@ -62,6 +62,7 @@ set(DFC_CORE_SOURCES
     src/dfc_common.c
     src/dfc_credential.c
     src/dfc_crypto.c
+    src/dfc_crypto_des_chain.c
     src/dfc_der.c
     src/dfc_emulator.c
     src/dfc_emulator_access.c

@@ -108,6 +108,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_se
 READER_LINK_TESTS := test_dfc_reader test_dfc_reader_header_bounds test_dfc_format_configuration
 
 FAULT_TEST := test_cmac_failures
+DES_CHAIN_FAULT_TEST := test_des_chain_failures
 SECURE_MESSAGING_FAULT_TEST := test_secure_messaging_failures
 AUTH_BACKEND_FAULT_TEST := test_dfc_auth_backend_failures
 EV2_RESPONSE_FAULT_TEST := test_dfc_ev2_response_atomicity
@@ -166,6 +167,9 @@ test_cmac_failures: test_cmac_failures.c $(CORE)/aes_cmac.c $(CORE)/des_cmac.c \
 		$(CORE)/dfc_an10922.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+test_des_chain_failures: test_des_chain_failures.c $(CORE)/dfc_crypto_des_chain.c munit/munit.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 FAULT_CORE_SRC := $(filter-out $(CORE)/dfc_crypto.c,$(CORE_SRC))
 
 test_secure_messaging_failures: test_secure_messaging_failures.c \
@@ -213,9 +217,10 @@ test_dfc_transaction_snapshot_large: test_dfc_transaction_snapshot.c \
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
+	./$(DES_CHAIN_FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
 	./$(AUTH_BACKEND_FAULT_TEST)
 	./$(EV2_RESPONSE_FAULT_TEST)
@@ -354,4 +359,4 @@ codecs-disabled-link:
 	echo "  target, no codecs ok"
 
 clean:
-	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) $(CONFORMANCE_RUNNER) $(CONFORMANCE_PROFILE_RUNNERS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) $(CONFORMANCE_RUNNER) $(CONFORMANCE_PROFILE_RUNNERS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)

@@ -175,29 +175,9 @@ static bool cbc_decrypt(
 // C[i] = D(P[i] ^ C[i-1]), from a zero IV.
 static bool
     d40_send(const uint8_t* key, size_t key_len, const uint8_t* in, size_t len, uint8_t* out) {
-    uint8_t previous[8] = {0};
-    uint8_t block[8] = {0};
-    DfcCryptoDesBlock cipher = {0};
-    bool ok = false;
-    if(!key || !in || !out || len % 8 != 0) goto cleanup;
-    ok = dfc_crypto_des_block_init(&cipher, false, key, key_len);
-    if(!ok) {
-        dfc_secure_wipe(out, len);
-        goto cleanup;
-    }
-    for(size_t off = 0; off + 8 <= len; off += 8) {
-        for(size_t i = 0; i < 8; i++)
-            block[i] = in[off + i] ^ previous[i];
-        ok = dfc_crypto_des_block_crypt(&cipher, block, out + off);
-        if(!ok) break;
-        memcpy(previous, out + off, 8);
-    }
-    if(!ok) dfc_secure_wipe(out, len);
-cleanup:
-    dfc_crypto_des_block_clear(&cipher);
-    dfc_secure_wipe(previous, sizeof(previous));
-    dfc_secure_wipe(block, sizeof(block));
-    return ok;
+    static const uint8_t zero_iv[8] = {0};
+    return dfc_crypto_des_chain(
+        false, DfcCryptoDesChainForward, key, key_len, zero_iv, in, out, len);
 }
 
 static void put_le32(uint8_t* out, uint32_t value) {
