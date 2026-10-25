@@ -48,6 +48,7 @@ static void build_encrypted_picc_message(
 static MunitResult test_captured_encrypted_picc_data(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
+    // Captured response: tests/vectors/desfire/v4/hardware/hardware_genuine_ev3_sdm_picc_native_iso.vec
     static const uint8_t message[] = "342FFCCF91C2B0730E2F4735A009A666A63259C3FD050C6E";
     DfcSdmVerifyConfig config = {
         .encrypted_picc_data = {.present = true, .offset = 0},
@@ -74,6 +75,7 @@ static MunitResult test_captured_encrypted_picc_data(const MunitParameter params
 static MunitResult test_captured_encrypted_file_data(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
+    // Captured response: tests/vectors/desfire/v4/hardware/hardware_genuine_ev3_sdm_encrypted_file_native_iso.vec
     static const uint8_t message[] =
         "0483B4F2CF1890000001163F0AC4319102F37F4B61FE6BFDE1469CF53E287D682A2E";
     static const uint8_t expected[] = {
