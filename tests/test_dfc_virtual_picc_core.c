@@ -193,7 +193,6 @@ static MunitResult test_iso_command_aborts_pending_native_authentication(
     DfcSecureMessaging* retained_secure_messaging = session->emulator->secure_messaging;
     session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_ISO;
     session->emulator->auth_key_no = 1;
-    memset(session->emulator->rnd_a, 0xA8, sizeof(session->emulator->rnd_a));
 
     uint8_t response[64];
     size_t response_len = 0;
@@ -218,7 +217,6 @@ static MunitResult test_iso_command_aborts_pending_native_authentication(
     munit_assert_uint8(session->emulator->auth_key_no, ==, 0);
     assert_zeroed_bytes(
         (const uint8_t*)retained_secure_messaging, sizeof(*retained_secure_messaging));
-    assert_zeroed_bytes(session->emulator->rnd_a, sizeof(session->emulator->rnd_a));
     munit_assert_memory_equal(
         sizeof(session->emulator->rnd_b),
         session->emulator->rnd_b,

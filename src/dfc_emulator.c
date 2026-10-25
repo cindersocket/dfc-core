@@ -279,7 +279,6 @@ static void clear_native_authentication(DfcEmulator* emulator) {
     }
     emulator->auth_cipher = 0;
     emulator->auth_key_no = 0;
-    dfc_secure_wipe(emulator->rnd_a, sizeof(emulator->rnd_a));
 }
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING

@@ -560,7 +560,6 @@ void dfc_emulator_command_authenticate_step2(
     dfc_secure_wipe(&candidate, sizeof(candidate));
     emulator->auth_cipher = cipher;
     emulator->auth_key_no = emulator->pending_auth_key_no;
-    memcpy(emulator->rnd_a, rnd_a, challenge_len);
     dfc_emulator_commit_auth_family(emulator, DfcEmulatorAuthFamilyNative);
     clear_pending_authentication(emulator);
 

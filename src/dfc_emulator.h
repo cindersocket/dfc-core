@@ -99,7 +99,6 @@ typedef struct {
     uint8_t auth_key_no;
     uint8_t pending_auth_cipher;
     uint8_t pending_auth_key_no;
-    uint8_t rnd_a[16];
     uint8_t rnd_b[16];
     uint8_t enc_rnd_b[16]; // ciphertext PICC sent in step 1, needed to chain the IV in step 2
     bool awaiting_step2;

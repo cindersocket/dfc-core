@@ -203,10 +203,6 @@ static MunitResult test_rejected_authentication_start_clears_authorization(
         munit_assert_uint8(link.picc->emulator->auth_cipher, ==, 0);
         munit_assert_uint8(link.picc->emulator->auth_key_no, ==, 0);
         munit_assert_memory_equal(
-            sizeof(link.picc->emulator->rnd_a),
-            link.picc->emulator->rnd_a,
-            ((uint8_t[sizeof(link.picc->emulator->rnd_a)]){0}));
-        munit_assert_memory_equal(
             sizeof(*link.picc->emulator->secure_messaging),
             link.picc->emulator->secure_messaging,
             ((uint8_t[sizeof(*link.picc->emulator->secure_messaging)]){0}));

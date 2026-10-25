@@ -440,10 +440,6 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
         munit_assert_false(dfc_emulator_native_authentication_active(audit.picc->emulator));
         munit_assert_uint8(audit.picc->emulator->auth_cipher, ==, 0);
         munit_assert_uint8(audit.picc->emulator->auth_key_no, ==, 0);
-        munit_assert_memory_equal(
-            sizeof(audit.picc->emulator->rnd_a),
-            audit.picc->emulator->rnd_a,
-            ((uint8_t[sizeof(audit.picc->emulator->rnd_a)]){0}));
         munit_assert_true(audit.picc->emulator->ev2_session_active);
 
         DfcReaderStatus failure = reader_auth_audit_ev2(&audit, &exchange, wrong_key, false);

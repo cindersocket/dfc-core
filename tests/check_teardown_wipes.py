@@ -17,6 +17,10 @@ def command_sources() -> str:
 
 def main() -> None:
     emulator = (ROOT / "src" / "dfc_emulator.c").read_text(encoding="utf-8")
+    emulator_header = (ROOT / "src" / "dfc_emulator.h").read_text(encoding="utf-8")
+    production = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted((ROOT / "src").glob("*.[ch]"))
+    )
     commands = command_sources()
     credential = (ROOT / "src" / "dfc_credential.c").read_text(encoding="utf-8")
     emulator_crypto = (ROOT / "src" / "dfc_emulator_crypto.c").read_text(encoding="utf-8")
@@ -24,6 +28,8 @@ def main() -> None:
     reader = (ROOT / "src" / "dfc_reader.c").read_text(encoding="utf-8")
     virtual_picc = (ROOT / "src" / "dfc_virtual_picc.c").read_text(encoding="utf-8")
     emulator_commands = commands
+    if "rnd_a[" in emulator_header or "->rnd_a" in production:
+        raise SystemExit("completed host challenges must remain operation-local")
     required = {
         "emulator teardown": "dfc_secure_wipe(emulator, sizeof(*emulator))",
         "credential teardown": "dfc_secure_wipe(credential, sizeof(*credential))",

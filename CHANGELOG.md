@@ -32,6 +32,8 @@
 - Use one reserved ISO file-ID policy throughout DER decoding (#168).
 - Route WriteData through the canonical secure-messaging unwrap path while
   keeping already-clear payloads zero-copy (#170).
+- Remove completed authentication challenge state from each emulator instance
+  (#171).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`

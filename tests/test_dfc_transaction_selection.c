@@ -1327,7 +1327,6 @@ static MunitResult
     begin_transaction(&fixture);
     emulator->awaiting_step2 = true;
     emulator->auth_key_no = 1;
-    memset(emulator->rnd_a, 0xA5, sizeof(emulator->rnd_a));
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     emulator->ev2_session_active = true;
     memset(emulator->ev2_session_mac_key, 0xA5, sizeof(emulator->ev2_session_mac_key));
@@ -1365,8 +1364,6 @@ static MunitResult
     munit_assert_false(emulator->awaiting_step2);
     munit_assert_size(emulator->pending_chain_len, ==, 0);
     munit_assert_uint8(emulator->auth_key_no, ==, 0);
-    munit_assert_memory_equal(
-        sizeof(emulator->rnd_a), emulator->rnd_a, ((uint8_t[sizeof(emulator->rnd_a)]){0}));
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     munit_assert_false(emulator->ev2_session_active);
     munit_assert_memory_equal(
