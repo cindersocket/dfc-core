@@ -64,6 +64,7 @@ set(DFC_CORE_SOURCES
     src/dfc_emulator_commands.c
     src/dfc_emulator_commands_auth.c
     src/dfc_emulator_commands_keys.c
+    src/dfc_emulator_commands_lifecycle.c
     src/dfc_emulator_commands_metadata.c
     src/dfc_emulator_commands_proximity.c
     src/dfc_emulator_crypto.c

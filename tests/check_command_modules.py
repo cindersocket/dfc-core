@@ -15,24 +15,46 @@ def main() -> None:
         raise SystemExit("command modules missing from CMake: " + ", ".join(missing))
 
     monolith = (ROOT / "src" / "dfc_emulator_commands.c").read_text(encoding="utf-8")
-    keys = (ROOT / "src" / "dfc_emulator_commands_keys.c").read_text(encoding="utf-8")
-    handlers = (
-        "dfc_emulator_command_get_key_settings",
-        "dfc_emulator_command_get_key_version",
-        "dfc_emulator_command_change_key",
-        "dfc_emulator_command_change_key_settings",
-        "dfc_emulator_command_initialize_key_set",
-        "dfc_emulator_command_finalize_key_set",
-        "dfc_emulator_command_roll_key_set",
-        "dfc_emulator_command_change_key_ev2",
-        "dfc_emulator_command_set_configuration",
-    )
-    for handler in handlers:
-        definition = f"{handler}("
-        if definition not in keys:
-            raise SystemExit(f"key command module is missing {handler}")
-        if f"void {definition}" in monolith or f"static void {definition}" in monolith:
-            raise SystemExit(f"key handler moved back into command monolith: {handler}")
+    families = {
+        "keys": (
+            "get_key_settings",
+            "get_key_version",
+            "change_key",
+            "change_key_settings",
+            "initialize_key_set",
+            "finalize_key_set",
+            "roll_key_set",
+            "change_key_ev2",
+            "set_configuration",
+        ),
+        "lifecycle": (
+            "select_application",
+            "free_mem",
+            "get_df_names",
+            "format_picc",
+            "get_file_ids",
+            "get_iso_file_ids",
+            "get_file_settings",
+            "change_file_settings",
+            "get_application_ids",
+            "create_application",
+            "delete_application",
+            "create_std_data_file",
+            "create_record_file",
+            "create_value_file",
+            "delete_file",
+            "create_transaction_mac_file",
+        ),
+    }
+    for family, names in families.items():
+        module = (ROOT / "src" / f"dfc_emulator_commands_{family}.c").read_text(encoding="utf-8")
+        for name in names:
+            handler = f"dfc_emulator_command_{name}"
+            definition = f"{handler}("
+            if definition not in module:
+                raise SystemExit(f"{family} command module is missing {handler}")
+            if f"void {definition}" in monolith or f"static void {definition}" in monolith:
+                raise SystemExit(f"{family} handler moved back into command monolith: {handler}")
 
 
 if __name__ == "__main__":

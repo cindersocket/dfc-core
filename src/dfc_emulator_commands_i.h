@@ -6,11 +6,36 @@
 
 /* Private seams shared by the native command-family translation units. */
 int32_t dfc_emulator_command_read_int32_le(const uint8_t* data);
+void dfc_emulator_command_append_int32_le(DfcByteBuf* tx_buffer, int32_t value);
+void dfc_emulator_command_append_status_payload(
+    DfcByteBuf* tx_buffer,
+    uint8_t status,
+    const uint8_t* payload,
+    size_t payload_len);
 bool dfc_emulator_command_is_authenticated_with_key(const DfcEmulator* emulator, uint8_t key_no);
 bool dfc_emulator_command_is_authenticated_as_master(const DfcEmulator* emulator);
 uint8_t dfc_emulator_command_current_key_settings_1(DfcEmulator* emulator);
 uint8_t dfc_emulator_command_current_key_settings_2(DfcEmulator* emulator);
 bool dfc_emulator_command_require_directory_access(DfcEmulator* emulator, DfcByteBuf* tx_buffer);
+uint8_t dfc_emulator_command_access_change_nibble(uint16_t access_rights);
+bool dfc_emulator_command_key_references_exist(
+    uint32_t references,
+    size_t reference_count,
+    size_t key_count);
+uint16_t dfc_emulator_command_access_rights_from_wire(uint8_t first, uint8_t second);
+void dfc_emulator_command_access_rights_to_wire(uint16_t access_rights, uint8_t out[2]);
+bool dfc_emulator_command_access_nibble_allows(uint8_t nibble, const DfcEmulator* emulator);
+void dfc_emulator_command_emit_payload_with_chaining(
+    DfcEmulator* emulator,
+    DfcByteBuf* tx_buffer,
+    uint8_t cmd,
+    const uint8_t* payload,
+    size_t payload_len,
+    size_t entry);
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+uint16_t
+    dfc_emulator_command_delegated_application_overhead_blocks(uint8_t num_keys, size_t key_length);
+#endif
 void dfc_emulator_command_apply_ev1_response_secure_messaging(
     DfcEmulator* emulator,
     uint8_t cmd,
@@ -55,6 +80,69 @@ void dfc_emulator_command_set_configuration(
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer);
+
+void dfc_emulator_command_select_application(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    DfcByteBuf* tx_buffer,
+    Dfc* dfc);
+void dfc_emulator_command_free_mem(DfcEmulator* emulator, DfcByteBuf* tx_buffer);
+void dfc_emulator_command_df_names_continuation(DfcEmulator* emulator, DfcByteBuf* tx_buffer);
+void dfc_emulator_command_get_df_names(DfcEmulator* emulator, DfcByteBuf* tx_buffer);
+void dfc_emulator_command_format_picc(
+    DfcEmulator* emulator,
+    size_t command_length,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_get_file_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer);
+void dfc_emulator_command_get_iso_file_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer);
+void dfc_emulator_command_get_file_settings(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_change_file_settings(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_get_application_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer);
+void dfc_emulator_command_create_application(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_delete_application(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_create_std_data_file(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    uint8_t file_type,
+    DfcByteBuf* tx_buffer);
+#if DFC_ENABLE_RECORD_FILES
+void dfc_emulator_command_create_record_file(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    uint8_t file_type,
+    DfcByteBuf* tx_buffer);
+#endif
+void dfc_emulator_command_create_value_file(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    DfcByteBuf* tx_buffer);
+void dfc_emulator_command_delete_file(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    DfcByteBuf* tx_buffer);
+#if DFC_ENABLE_TRANSACTION_MAC
+void dfc_emulator_command_create_transaction_mac_file(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer);
+#endif
 #if DFC_ENABLE_KEY_SETS
 void dfc_emulator_command_initialize_key_set(
     DfcEmulator* emulator,
