@@ -3678,6 +3678,54 @@ static MunitResult test_ev2_session(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static void assert_commit_reader_id_requires_mac(Link* link) {
+    uint8_t reader_id[DFC_COMMAND_READER_ID_LENGTH] = {0};
+    DfcCommand command;
+    munit_assert_int(dfc_command_commit_reader_id(&command, reader_id), ==, DfcCommandOk);
+    const uint8_t rejected_modes[] = {DFC_COMM_PLAIN, DFC_COMM_ENCIPHERED};
+    for(size_t index = 0; index < sizeof(rejected_modes); index++) {
+        DfcReaderSession before = link->session;
+        DfcReaderExchange exchange;
+        DfcReaderOptions options = {.comm_mode = rejected_modes[index]};
+        munit_assert_int(
+            dfc_reader_exchange_begin(&exchange, &link->session, link->framing, &command, &options),
+            ==,
+            DfcReaderInvalid);
+        munit_assert_memory_equal(sizeof(before), &before, &link->session);
+    }
+    DfcReaderExchange exchange;
+    DfcReaderOptions mac = {.comm_mode = DFC_COMM_MAC};
+    munit_assert_int(
+        dfc_reader_exchange_begin(&exchange, &link->session, link->framing, &command, &mac),
+        ==,
+        DfcReaderOk);
+}
+
+static MunitResult
+    test_commit_reader_id_requires_mac_mode(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_0, sizeof(AES_KEY_0)),
+        ==,
+        DfcReaderOk);
+    assert_commit_reader_id_requires_mac(&link);
+    link_close(&link);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+    assert_commit_reader_id_requires_mac(&link);
+    link_close(&link);
+#endif
+    return MUNIT_OK;
+}
+
 static MunitResult
     test_ev2_change_file_settings_effective_comm(const MunitParameter params[], void* data) {
     (void)params;
@@ -4305,6 +4353,12 @@ static MunitTest tests[] = {
      NULL},
     {"/ev2-change-key", test_ev2_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #endif
+    {"/commit-reader-id-requires-mac",
+     test_commit_reader_id_requires_mac_mode,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #if DFC_ENABLE_PROXIMITY_CHECK
     {"/proximity-check", test_proximity_check, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 #endif
