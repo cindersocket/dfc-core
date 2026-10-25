@@ -36,6 +36,8 @@
   (#171).
 - Calculate SDM MACs after the final mirrored response bytes are rendered
   (#169).
+- Reuse the command response buffer while creating delegated applications
+  (#172).
 - Keep minified Android instrumentation builds complete when AndroidX exposes
   Error Prone annotation metadata (#146).
 - Add blocking Python bindings and safe Rust bindings for hosted and `no_std`

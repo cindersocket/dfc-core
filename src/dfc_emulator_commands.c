@@ -751,7 +751,6 @@ static void handle_create_delegated_application_continuation(
     uint8_t initial_key_data[DFC_DELEGATED_ENCRYPTED_KEY_LENGTH] = {0};
     uint8_t zero_iv[DFC_AES_KEY_LENGTH] = {0};
     uint8_t secured_response[1 + DFC_WIRE_MAC_LENGTH] = {0};
-    DfcByteBuf* create_response = NULL;
     size_t created_app_index = SIZE_MAX;
     bool credential_was_dirty = emulator->credential->dirty;
     bool success = false;
@@ -830,23 +829,23 @@ static void handle_create_delegated_application_continuation(
         header[DFC_DELEGATED_KEY_SETTINGS_1_OFFSET],
         key_settings_2,
     };
-    create_response = dfc_bytebuf_alloc(DFC_WORKER_MAX_BUFFER_SIZE);
-    if(!create_response) {
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        goto cleanup;
-    }
+    // The nested create produces one status byte. Use the command response
+    // buffer directly, then clear that internal status before protecting the
+    // delegated response. This command starts with an empty response buffer.
     dfc_emulator_command_create_application(
-        emulator, create_command, sizeof(create_command), create_response);
-    const uint8_t* create_status = dfc_bytebuf_get_data(create_response);
-    if(dfc_bytebuf_get_size_bytes(create_response) != 1 || create_status[0] != DFC_STATUS_OK) {
-        dfc_bytebuf_append_byte(
-            tx_buffer,
-            dfc_bytebuf_get_size_bytes(create_response) == 1 ? create_status[0] :
-                                                               DFC_STATUS_PARAMETER_ERROR);
+        emulator, create_command, sizeof(create_command), tx_buffer);
+    const size_t create_response_length = dfc_bytebuf_get_size_bytes(tx_buffer);
+    const uint8_t create_status = create_response_length == 1 ?
+                                      dfc_bytebuf_get_byte(tx_buffer, 0) :
+                                      DFC_STATUS_PARAMETER_ERROR;
+    if(create_response_length != 1 || create_status != DFC_STATUS_OK) {
+        if(create_response_length != 1) {
+            dfc_bytebuf_reset(tx_buffer);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        }
         goto cleanup;
     }
-    dfc_bytebuf_free(create_response);
-    create_response = NULL;
+    dfc_bytebuf_reset(tx_buffer);
     if(emulator->credential->num_apps == 0) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         goto cleanup;
@@ -892,7 +891,6 @@ static void handle_create_delegated_application_continuation(
     success = true;
 
 cleanup:
-    if(create_response) dfc_bytebuf_free(create_response);
     if(!success && created_app_index != SIZE_MAX) {
         dfc_credential_delete_application_at(emulator->credential, created_app_index);
         emulator->credential->dirty = credential_was_dirty;
