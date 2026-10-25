@@ -26,8 +26,14 @@ static void assert_native_authentication_pending_cleared(const DfcEmulator* emul
     munit_assert_false(emulator->awaiting_step2);
     munit_assert_uint8(emulator->pending_auth_cipher, ==, 0);
     munit_assert_uint8(emulator->pending_auth_key_no, ==, 0);
-    munit_assert_memory_equal(sizeof(emulator->rnd_b), emulator->rnd_b, zero);
-    munit_assert_memory_equal(sizeof(emulator->enc_rnd_b), emulator->enc_rnd_b, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.native.random_b),
+        emulator->pending_authentication.native.random_b,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.native.encrypted_random_b),
+        emulator->pending_authentication.native.encrypted_random_b,
+        zero);
 }
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -43,25 +49,31 @@ static void assert_ev2_authentication_cleared(const DfcEmulator* emulator) {
         sizeof(emulator->ev2_session_encryption_key), emulator->ev2_session_encryption_key, zero);
     munit_assert_memory_equal(
         sizeof(emulator->ev2_session_mac_key), emulator->ev2_session_mac_key, zero);
-    munit_assert_memory_equal(sizeof(emulator->ev2_static_key), emulator->ev2_static_key, zero);
-    munit_assert_memory_equal(sizeof(emulator->ev2_random_b), emulator->ev2_random_b, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.ev2.static_key),
+        emulator->pending_authentication.ev2.static_key,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.ev2.random_b),
+        emulator->pending_authentication.ev2.random_b,
+        zero);
     munit_assert_memory_equal(
         sizeof(emulator->ev2_transaction_identifier), emulator->ev2_transaction_identifier, zero);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_transaction_identifier),
-        emulator->ev2_pending_transaction_identifier,
+        sizeof(emulator->pending_authentication.ev2.transaction_identifier),
+        emulator->pending_authentication.ev2.transaction_identifier,
         zero);
     munit_assert_memory_equal(
         sizeof(emulator->ev2_card_capabilities), emulator->ev2_card_capabilities, zero);
     munit_assert_memory_equal(
         sizeof(emulator->ev2_reader_capabilities), emulator->ev2_reader_capabilities, zero);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_card_capabilities),
-        emulator->ev2_pending_card_capabilities,
+        sizeof(emulator->pending_authentication.ev2.card_capabilities),
+        emulator->pending_authentication.ev2.card_capabilities,
         zero);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_reader_capabilities),
-        emulator->ev2_pending_reader_capabilities,
+        sizeof(emulator->pending_authentication.ev2.reader_capabilities),
+        emulator->pending_authentication.ev2.reader_capabilities,
         zero);
 }
 #endif
@@ -2621,21 +2633,26 @@ static void assert_ev2_emulator_session_wiped(const DfcEmulator* emulator) {
     munit_assert_uint8(emulator->ev2_authenticated_key_no, ==, 0);
     munit_assert_uint8(emulator->ev2_pending_authenticated_key_no, ==, 0);
     munit_assert_uint16(emulator->ev2_command_counter, ==, 0);
-    assert_zero_bytes(emulator->ev2_static_key, sizeof(emulator->ev2_static_key));
-    assert_zero_bytes(emulator->ev2_random_b, sizeof(emulator->ev2_random_b));
+    assert_zero_bytes(
+        emulator->pending_authentication.ev2.static_key,
+        sizeof(emulator->pending_authentication.ev2.static_key));
+    assert_zero_bytes(
+        emulator->pending_authentication.ev2.random_b,
+        sizeof(emulator->pending_authentication.ev2.random_b));
     assert_zero_bytes(
         emulator->ev2_transaction_identifier, sizeof(emulator->ev2_transaction_identifier));
     assert_zero_bytes(
-        emulator->ev2_pending_transaction_identifier,
-        sizeof(emulator->ev2_pending_transaction_identifier));
+        emulator->pending_authentication.ev2.transaction_identifier,
+        sizeof(emulator->pending_authentication.ev2.transaction_identifier));
     assert_zero_bytes(emulator->ev2_card_capabilities, sizeof(emulator->ev2_card_capabilities));
     assert_zero_bytes(
         emulator->ev2_reader_capabilities, sizeof(emulator->ev2_reader_capabilities));
     assert_zero_bytes(
-        emulator->ev2_pending_card_capabilities, sizeof(emulator->ev2_pending_card_capabilities));
+        emulator->pending_authentication.ev2.card_capabilities,
+        sizeof(emulator->pending_authentication.ev2.card_capabilities));
     assert_zero_bytes(
-        emulator->ev2_pending_reader_capabilities,
-        sizeof(emulator->ev2_pending_reader_capabilities));
+        emulator->pending_authentication.ev2.reader_capabilities,
+        sizeof(emulator->pending_authentication.ev2.reader_capabilities));
     assert_zero_bytes(
         emulator->ev2_session_encryption_key, sizeof(emulator->ev2_session_encryption_key));
     assert_zero_bytes(emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));

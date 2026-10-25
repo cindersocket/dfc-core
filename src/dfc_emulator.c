@@ -579,8 +579,7 @@ void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
     clear_native_authentication(emulator);
     emulator->pending_auth_cipher = 0;
     emulator->pending_auth_key_no = 0;
-    dfc_secure_wipe(emulator->rnd_b, sizeof(emulator->rnd_b));
-    dfc_secure_wipe(emulator->enc_rnd_b, sizeof(emulator->enc_rnd_b));
+    dfc_secure_wipe(&emulator->pending_authentication, sizeof(emulator->pending_authentication));
     emulator->get_version_frame = 0;
     emulator->pending_chain_len = 0;
     emulator->pending_chain_offset = 0;
@@ -621,20 +620,10 @@ void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
     emulator->ev2_authenticated_key_no = 0;
     emulator->ev2_pending_authenticated_key_no = 0;
     emulator->ev2_command_counter = 0;
-    dfc_secure_wipe(emulator->ev2_static_key, sizeof(emulator->ev2_static_key));
-    dfc_secure_wipe(emulator->ev2_random_b, sizeof(emulator->ev2_random_b));
     dfc_secure_wipe(
         emulator->ev2_transaction_identifier, sizeof(emulator->ev2_transaction_identifier));
-    dfc_secure_wipe(
-        emulator->ev2_pending_transaction_identifier,
-        sizeof(emulator->ev2_pending_transaction_identifier));
     dfc_secure_wipe(emulator->ev2_card_capabilities, sizeof(emulator->ev2_card_capabilities));
     dfc_secure_wipe(emulator->ev2_reader_capabilities, sizeof(emulator->ev2_reader_capabilities));
-    dfc_secure_wipe(
-        emulator->ev2_pending_card_capabilities, sizeof(emulator->ev2_pending_card_capabilities));
-    dfc_secure_wipe(
-        emulator->ev2_pending_reader_capabilities,
-        sizeof(emulator->ev2_pending_reader_capabilities));
     dfc_secure_wipe(
         emulator->ev2_session_encryption_key, sizeof(emulator->ev2_session_encryption_key));
     dfc_secure_wipe(emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));

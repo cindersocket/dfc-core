@@ -489,25 +489,37 @@ static MunitResult
     emulator->awaiting_step2 = true;
     emulator->pending_auth_cipher = 0xAA;
     emulator->pending_auth_key_no = 0x5A;
-    memset(emulator->rnd_b, 0xC3, sizeof(emulator->rnd_b));
-    memset(emulator->enc_rnd_b, 0x3C, sizeof(emulator->enc_rnd_b));
+    memset(
+        emulator->pending_authentication.native.random_b,
+        0xC3,
+        sizeof(emulator->pending_authentication.native.random_b));
+    memset(
+        emulator->pending_authentication.native.encrypted_random_b,
+        0x3C,
+        sizeof(emulator->pending_authentication.native.encrypted_random_b));
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     emulator->ev2_authentication_pending = true;
     emulator->ev2_pending_authenticated_key_no = 0x5A;
-    memset(emulator->ev2_static_key, 0xC3, sizeof(emulator->ev2_static_key));
-    memset(emulator->ev2_random_b, 0x3C, sizeof(emulator->ev2_random_b));
     memset(
-        emulator->ev2_pending_transaction_identifier,
+        emulator->pending_authentication.ev2.static_key,
+        0xC3,
+        sizeof(emulator->pending_authentication.ev2.static_key));
+    memset(
+        emulator->pending_authentication.ev2.random_b,
+        0x3C,
+        sizeof(emulator->pending_authentication.ev2.random_b));
+    memset(
+        emulator->pending_authentication.ev2.transaction_identifier,
         0xA5,
-        sizeof(emulator->ev2_pending_transaction_identifier));
+        sizeof(emulator->pending_authentication.ev2.transaction_identifier));
     memset(
-        emulator->ev2_pending_card_capabilities,
+        emulator->pending_authentication.ev2.card_capabilities,
         0x5A,
-        sizeof(emulator->ev2_pending_card_capabilities));
+        sizeof(emulator->pending_authentication.ev2.card_capabilities));
     memset(
-        emulator->ev2_pending_reader_capabilities,
+        emulator->pending_authentication.ev2.reader_capabilities,
         0x96,
-        sizeof(emulator->ev2_pending_reader_capabilities));
+        sizeof(emulator->pending_authentication.ev2.reader_capabilities));
 #endif
 
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
@@ -522,7 +534,10 @@ static MunitResult
     const size_t snapshot_length = 0;
 #endif
 
-    memset(emulator->rnd_b, 0xC3, sizeof(emulator->rnd_b));
+    memset(
+        emulator->pending_authentication.native.random_b,
+        0xC3,
+        sizeof(emulator->pending_authentication.native.random_b));
     FreeAudit audit = {
         .regions =
             {
@@ -592,11 +607,13 @@ static MunitResult
     munit_assert_uint8(emulator->pending_auth_cipher, ==, 0);
     munit_assert_uint8(emulator->pending_auth_key_no, ==, 0);
     munit_assert_memory_equal(
-        sizeof(emulator->rnd_b), emulator->rnd_b, ((uint8_t[sizeof(emulator->rnd_b)]){0}));
+        sizeof(emulator->pending_authentication.native.random_b),
+        emulator->pending_authentication.native.random_b,
+        ((uint8_t[sizeof(emulator->pending_authentication.native.random_b)]){0}));
     munit_assert_memory_equal(
-        sizeof(emulator->enc_rnd_b),
-        emulator->enc_rnd_b,
-        ((uint8_t[sizeof(emulator->enc_rnd_b)]){0}));
+        sizeof(emulator->pending_authentication.native.encrypted_random_b),
+        emulator->pending_authentication.native.encrypted_random_b,
+        ((uint8_t[sizeof(emulator->pending_authentication.native.encrypted_random_b)]){0}));
     for(size_t index = 0; index < sizeof(emulator->pending_chain); index++) {
         munit_assert_uint8(emulator->pending_chain[index], ==, index < 37 ? 0 : 0xB4);
     }
@@ -636,25 +653,25 @@ static MunitResult
     munit_assert_false(emulator->ev2_authentication_pending);
     munit_assert_uint8(emulator->ev2_pending_authenticated_key_no, ==, 0);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_static_key),
-        emulator->ev2_static_key,
-        ((uint8_t[sizeof(emulator->ev2_static_key)]){0}));
+        sizeof(emulator->pending_authentication.ev2.static_key),
+        emulator->pending_authentication.ev2.static_key,
+        ((uint8_t[sizeof(emulator->pending_authentication.ev2.static_key)]){0}));
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_random_b),
-        emulator->ev2_random_b,
-        ((uint8_t[sizeof(emulator->ev2_random_b)]){0}));
+        sizeof(emulator->pending_authentication.ev2.random_b),
+        emulator->pending_authentication.ev2.random_b,
+        ((uint8_t[sizeof(emulator->pending_authentication.ev2.random_b)]){0}));
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_transaction_identifier),
-        emulator->ev2_pending_transaction_identifier,
-        ((uint8_t[sizeof(emulator->ev2_pending_transaction_identifier)]){0}));
+        sizeof(emulator->pending_authentication.ev2.transaction_identifier),
+        emulator->pending_authentication.ev2.transaction_identifier,
+        ((uint8_t[sizeof(emulator->pending_authentication.ev2.transaction_identifier)]){0}));
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_card_capabilities),
-        emulator->ev2_pending_card_capabilities,
-        ((uint8_t[sizeof(emulator->ev2_pending_card_capabilities)]){0}));
+        sizeof(emulator->pending_authentication.ev2.card_capabilities),
+        emulator->pending_authentication.ev2.card_capabilities,
+        ((uint8_t[sizeof(emulator->pending_authentication.ev2.card_capabilities)]){0}));
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_reader_capabilities),
-        emulator->ev2_pending_reader_capabilities,
-        ((uint8_t[sizeof(emulator->ev2_pending_reader_capabilities)]){0}));
+        sizeof(emulator->pending_authentication.ev2.reader_capabilities),
+        emulator->pending_authentication.ev2.reader_capabilities,
+        ((uint8_t[sizeof(emulator->pending_authentication.ev2.reader_capabilities)]){0}));
 #endif
     dfc_emulator_free(emulator);
     return MUNIT_OK;
@@ -684,7 +701,10 @@ static MunitResult test_activation_reset_wipes_retained_and_released_storage(
     emulator->transaction_snapshot_pool_capacity = snapshot_length;
     memset(emulator->transaction_snapshot_pool, 0x5A, snapshot_length);
 #endif
-    memset(emulator->rnd_b, 0xC3, sizeof(emulator->rnd_b));
+    memset(
+        emulator->pending_authentication.native.random_b,
+        0xC3,
+        sizeof(emulator->pending_authentication.native.random_b));
     memset(emulator->tx_buffer, 0x3C, sizeof(*emulator->tx_buffer));
 
     FreeAudit audit = {
@@ -709,7 +729,9 @@ static MunitResult test_activation_reset_wipes_retained_and_released_storage(
         munit_assert_true(audit.regions[index].zeroed);
     }
     munit_assert_memory_equal(
-        sizeof(emulator->rnd_b), emulator->rnd_b, ((uint8_t[sizeof(emulator->rnd_b)]){0}));
+        sizeof(emulator->pending_authentication.native.random_b),
+        emulator->pending_authentication.native.random_b,
+        ((uint8_t[sizeof(emulator->pending_authentication.native.random_b)]){0}));
     munit_assert_memory_equal(
         sizeof(*emulator->tx_buffer),
         emulator->tx_buffer,

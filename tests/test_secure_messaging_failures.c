@@ -558,19 +558,25 @@ static void assert_ev2_pending_cleared(const DfcEmulator* emulator) {
     munit_assert_false(emulator->ev2_authentication_pending);
     munit_assert_false(emulator->ev2_authentication_non_first);
     munit_assert_uint8(emulator->ev2_pending_authenticated_key_no, ==, 0);
-    munit_assert_memory_equal(sizeof(emulator->ev2_static_key), emulator->ev2_static_key, zero);
-    munit_assert_memory_equal(sizeof(emulator->ev2_random_b), emulator->ev2_random_b, zero);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_transaction_identifier),
-        emulator->ev2_pending_transaction_identifier,
+        sizeof(emulator->pending_authentication.ev2.static_key),
+        emulator->pending_authentication.ev2.static_key,
         zero);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_card_capabilities),
-        emulator->ev2_pending_card_capabilities,
+        sizeof(emulator->pending_authentication.ev2.random_b),
+        emulator->pending_authentication.ev2.random_b,
         zero);
     munit_assert_memory_equal(
-        sizeof(emulator->ev2_pending_reader_capabilities),
-        emulator->ev2_pending_reader_capabilities,
+        sizeof(emulator->pending_authentication.ev2.transaction_identifier),
+        emulator->pending_authentication.ev2.transaction_identifier,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.ev2.card_capabilities),
+        emulator->pending_authentication.ev2.card_capabilities,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.ev2.reader_capabilities),
+        emulator->pending_authentication.ev2.reader_capabilities,
         zero);
 }
 
@@ -582,7 +588,7 @@ static void prepare_ev2_continuation(
         continuation[1 + i] = (uint8_t)(0x70 + i) ^ 0xA7;
     for(size_t i = 0; i < DFC_EV2_RANDOM_LENGTH; i++) {
         continuation[1 + DFC_EV2_RANDOM_LENGTH + i] =
-            emulator->ev2_random_b[(i + 1) % DFC_EV2_RANDOM_LENGTH] ^ 0xA7;
+            emulator->pending_authentication.ev2.random_b[(i + 1) % DFC_EV2_RANDOM_LENGTH] ^ 0xA7;
     }
 }
 

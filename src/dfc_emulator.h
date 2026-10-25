@@ -32,6 +32,40 @@ typedef enum {
 } DfcEmulatorSelectedApplication;
 
 typedef struct {
+    uint8_t random_b[16];
+    // Ciphertext sent in step one supplies the continuation IV.
+    uint8_t encrypted_random_b[16];
+} DfcPendingNativeAuthentication;
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+typedef struct {
+    uint8_t static_key[DFC_AES_KEY_LENGTH];
+    uint8_t random_b[DFC_EV2_RANDOM_LENGTH];
+    uint8_t transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
+    uint8_t card_capabilities[DFC_EV2_CAPABILITY_LENGTH];
+    uint8_t reader_capabilities[DFC_EV2_CAPABILITY_LENGTH];
+} DfcPendingEv2Authentication;
+#endif
+
+// Only one native authentication handshake can await AdditionalFrame. Keeping
+// the protocol-specific secrets in explicit arms prevents both sets from
+// consuming resident RAM while preserving their independent control state.
+typedef union {
+    DfcPendingNativeAuthentication native;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    DfcPendingEv2Authentication ev2;
+#endif
+} DfcPendingAuthentication;
+_Static_assert(
+    sizeof(DfcPendingAuthentication) ==
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+        sizeof(DfcPendingEv2Authentication),
+#else
+        sizeof(DfcPendingNativeAuthentication),
+#endif
+    "pending authentication storage must not contain both protocol arms");
+
+typedef struct {
     DfcByteBuf* tx_buffer;
     DfcSecureMessaging* secure_messaging;
     DfcCredential* credential;
@@ -103,14 +137,9 @@ typedef struct {
     bool ev2_session_active;
     uint8_t ev2_authenticated_key_no;
     uint8_t ev2_pending_authenticated_key_no;
-    uint8_t ev2_static_key[DFC_AES_KEY_LENGTH];
-    uint8_t ev2_random_b[DFC_EV2_RANDOM_LENGTH];
     uint8_t ev2_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
-    uint8_t ev2_pending_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
     uint8_t ev2_card_capabilities[DFC_EV2_CAPABILITY_LENGTH];
     uint8_t ev2_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH];
-    uint8_t ev2_pending_card_capabilities[DFC_EV2_CAPABILITY_LENGTH];
-    uint8_t ev2_pending_reader_capabilities[DFC_EV2_CAPABILITY_LENGTH];
     uint8_t ev2_session_encryption_key[DFC_AES_KEY_LENGTH];
     uint8_t ev2_session_mac_key[DFC_AES_KEY_LENGTH];
 #endif
@@ -119,8 +148,7 @@ typedef struct {
     uint8_t auth_key_no;
     uint8_t pending_auth_cipher;
     uint8_t pending_auth_key_no;
-    uint8_t rnd_b[16];
-    uint8_t enc_rnd_b[16]; // ciphertext PICC sent in step 1, needed to chain the IV in step 2
+    DfcPendingAuthentication pending_authentication;
     bool awaiting_step2;
 #if DFC_ENABLE_ISO7816_AUTH
     // 0 idle, 1 challenge issued, 2 external authentication succeeded.
