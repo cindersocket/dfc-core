@@ -44,7 +44,7 @@ static const char CREDENTIAL[] =
     "PICC Key 00 Version: 00\n"
     "PICC File Count: 0\n"
     "Application Count: 1\n"
-    "Application 00 AID: 00 00 01\n"
+    "Application 00 AID: 01 23 45\n"
     "Application 00 Key Settings 1: 0F\n"
     "Application 00 Key Settings 2: 82\n"
     "Application 00 Authentication Mode: AES\n"
@@ -72,6 +72,8 @@ static const char CREDENTIAL[] =
 
 static const uint8_t APP_KEY[16] =
     {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+static const uint8_t APPLICATION_AID[3] = {0x01, 0x23, 0x45};
+static const uint8_t APPLICATION_WIRE_AID[3] = {0x45, 0x23, 0x01};
 
 static size_t random_calls;
 
@@ -760,6 +762,70 @@ static int32_t run(DfcFfiPicc* picc, DfcFfiReaderExchange* exchange) {
         answer = rx;
     }
     return st;
+}
+
+// Exercise the complete public AID contract with one asymmetric identifier.
+// The model and snapshots use printed order. Native requests and responses use
+// least-significant-octet-first order, and the typed boundaries convert once.
+static void check_aid_order_contract(
+    DfcFfiPicc* picc,
+    DfcFfiReaderSession* session,
+    DfcFfiReaderExchange* exchange) {
+    DfcCommand get_applications;
+    CHECK(dfc_command_get_application_ids(&get_applications) == DfcCommandOk);
+    CHECK(
+        dfc_ffi_reader_exchange_begin(
+            exchange,
+            session,
+            DfcReaderFramingNative,
+            get_applications.ins,
+            get_applications.data,
+            get_applications.data_len,
+            DFC_COMM_PLAIN,
+            -1) == DfcReaderOk);
+    CHECK(run(picc, exchange) == DfcReaderOk);
+
+    uint8_t wire_aid[sizeof(APPLICATION_WIRE_AID)] = {0};
+    size_t wire_aid_len = 0;
+    CHECK(
+        dfc_ffi_reader_result_data(exchange, wire_aid, sizeof(wire_aid), &wire_aid_len) ==
+        DFC_FFI_OK);
+    CHECK(wire_aid_len == sizeof(APPLICATION_WIRE_AID));
+    CHECK(memcmp(wire_aid, APPLICATION_WIRE_AID, sizeof(APPLICATION_WIRE_AID)) == 0);
+
+    uint8_t model_aid[sizeof(APPLICATION_AID)] = {0};
+    size_t model_aid_len = 0;
+    CHECK(
+        dfc_ffi_response_decode_application_ids(
+            wire_aid, wire_aid_len, model_aid, sizeof(model_aid), &model_aid_len) ==
+        DFC_FFI_RESPONSE_OK);
+    CHECK(model_aid_len == sizeof(APPLICATION_AID));
+    CHECK(memcmp(model_aid, APPLICATION_AID, sizeof(APPLICATION_AID)) == 0);
+
+    DfcCommand select_application;
+    CHECK(
+        dfc_command_select_application(&select_application, APPLICATION_AID, NULL) ==
+        DfcCommandOk);
+    CHECK(select_application.ins == DFC_CMD_SELECT_APPLICATION);
+    CHECK(select_application.data_len == sizeof(APPLICATION_WIRE_AID));
+    CHECK(
+        memcmp(select_application.data, APPLICATION_WIRE_AID, sizeof(APPLICATION_WIRE_AID)) == 0);
+    CHECK(
+        dfc_ffi_reader_exchange_begin(
+            exchange,
+            session,
+            DfcReaderFramingNative,
+            select_application.ins,
+            select_application.data,
+            select_application.data_len,
+            DFC_COMM_PLAIN,
+            -1) == DfcReaderOk);
+    CHECK(run(picc, exchange) == DfcReaderOk);
+
+    DfcFfiSnapshot snapshot;
+    CHECK(dfc_ffi_picc_snapshot(picc, &snapshot) == DFC_FFI_OK);
+    CHECK(snapshot.selected == 2);
+    CHECK(memcmp(snapshot.selected_aid, APPLICATION_AID, sizeof(APPLICATION_AID)) == 0);
 }
 
 // The clear head of an encrypted write is an int32 here and one octet in the
@@ -1601,15 +1667,7 @@ int main(void) {
     DfcFfiReaderExchange* exchange = NULL;
     CHECK(dfc_ffi_reader_session_new(&session) == 0);
     CHECK(dfc_ffi_reader_exchange_new(&exchange) == 0);
-    // The wire carries an AID least significant octet first; the model stores
-    // it the way the text writes it.
-    const uint8_t wire_aid[3] = {0x01, 0x00, 0x00};
-    const uint8_t aid[3] = {0x00, 0x00, 0x01};
-    CHECK(dfc_ffi_reader_exchange_begin(exchange, session, 0, 0x5A, wire_aid, 3, 0, -1) == 0);
-    st = run(picc, exchange);
-    if(st != 0)
-        fprintf(stderr, "select: %d status %02X\n", st, dfc_ffi_reader_result_status(exchange));
-    CHECK(st == 0);
+    check_aid_order_contract(picc, session, exchange);
 
     uint8_t random_a[16];
     for(size_t i = 0; i < sizeof(random_a); i++)
@@ -1643,7 +1701,7 @@ int main(void) {
     CHECK(dfc_ffi_picc_snapshot(picc, &snapshot) == 0);
     CHECK(snapshot.auth_mode == 0xAA);
     CHECK(snapshot.selected == 2);
-    CHECK(memcmp(snapshot.selected_aid, aid, 3) == 0);
+    CHECK(memcmp(snapshot.selected_aid, APPLICATION_AID, sizeof(APPLICATION_AID)) == 0);
 
     DfcFfiDiagnosticSnapshot diagnostic;
     memset(&diagnostic, 0xA5, sizeof(diagnostic));
