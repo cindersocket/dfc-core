@@ -1478,15 +1478,16 @@ static DfcVirtualPiccStatus handle_native_exchange(
     DfcVirtualPiccSession* session,
     const uint8_t* command,
     size_t command_len,
+    uint8_t* command_scratch,
+    size_t command_scratch_capacity,
     bool iso_wrapped,
     const uint8_t* retry_command,
     size_t retry_command_len,
     uint8_t* response,
     size_t response_capacity,
     size_t* response_len) {
-    uint8_t short_clear_command[DFC_WORKER_MAX_BUFFER_SIZE];
-    uint8_t* clear_command = short_clear_command;
-    size_t clear_capacity = sizeof(short_clear_command);
+    uint8_t* clear_command = command_scratch;
+    size_t clear_capacity = command_scratch_capacity;
     size_t clear_command_len = 0;
     bool response_uses_session_scratch = false;
     DfcByteBuf* tx = NULL;
@@ -1630,7 +1631,7 @@ static DfcVirtualPiccStatus handle_native_exchange(
 cleanup:
     if(status != DfcVirtualPiccStatusOk && status != DfcVirtualPiccStatusBufferTooSmall)
         release_iso_response(session);
-    dfc_secure_wipe(short_clear_command, sizeof(short_clear_command));
+    dfc_secure_wipe(command_scratch, command_scratch_capacity);
     if(!session->emulator->command_chain_active && session->emulator->command_chain)
         dfc_emulator_discard_command_chain(session->emulator);
     if(response_uses_session_scratch && !direct_response_is_pending(session) &&
@@ -1655,6 +1656,11 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
         return DfcVirtualPiccStatusProtocolError;
     if(!session->activated) return DfcVirtualPiccStatusNoCard;
     *response_len = 0;
+
+    // ISO wrapper assembly and native secure-command preparation happen in
+    // sequence. One operation-local buffer serves both phases and is wiped by
+    // handle_native_exchange after the prepared command is no longer needed.
+    uint8_t command_scratch[DFC_WORKER_MAX_BUFFER_SIZE];
 
     if(!validate_pending_response(session)) return DfcVirtualPiccStatusProtocolError;
 
@@ -1735,9 +1741,8 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
             *response_len = 2;
             return DfcVirtualPiccStatusOk;
         }
-        uint8_t short_command[DFC_WORKER_MAX_BUFFER_SIZE];
-        uint8_t* native_command = short_command;
-        size_t native_capacity = sizeof(short_command);
+        uint8_t* native_command = command_scratch;
+        size_t native_capacity = sizeof(command_scratch);
         if((size_t)lc + 1 > native_capacity && command[1] == DFC_CMD_WRITE_RECORD_ISO &&
            !session->emulator->command_chain_active) {
             native_command = session->emulator->command_chain;
@@ -1769,6 +1774,8 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
             session,
             native_command,
             native_len,
+            command_scratch,
+            sizeof(command_scratch),
             true,
             allow_direct_retry ? command : NULL,
             allow_direct_retry ? command_len : 0,
@@ -1781,6 +1788,8 @@ static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(
         session,
         command,
         command_len,
+        command_scratch,
+        sizeof(command_scratch),
         false,
         allow_direct_retry ? command : NULL,
         allow_direct_retry ? command_len : 0,

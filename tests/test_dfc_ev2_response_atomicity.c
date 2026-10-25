@@ -74,9 +74,11 @@ bool dfc_ev2_decrypt_data(
     if(clear_len) *clear_len = 0;
     (void)allow_unpadded;
     if(!clear || !clear_len || encrypted_len == 0) return false;
-    memset(clear, 0xCC, encrypted_len);
-    if(fail_decrypt) return false;
-    memcpy(clear, encrypted, encrypted_len);
+    if(fail_decrypt) {
+        memset(clear, 0xCC, encrypted_len);
+        return false;
+    }
+    memmove(clear, encrypted, encrypted_len);
     *clear_len = encrypted_len;
     return true;
 }
@@ -228,6 +230,57 @@ static MunitResult
         munit_assert_uint8(output[i], ==, 0xA5);
     munit_assert_uint16(emulator.ev2_command_counter, ==, 7);
     munit_assert_true(emulator.ev2_session_active);
+    return MUNIT_OK;
+}
+
+static MunitResult test_prepare_command_aliases(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcEmulator emulator;
+    DfcCredential credential;
+    init_emulator(&emulator, &credential);
+
+    uint8_t plain[4] = {DFC_CMD_GET_VERSION, 0x11, 0x22, 0x33};
+    emulator.ev2_session_active = false;
+    size_t clear_len = 0;
+    munit_assert_int(
+        dfc_ev2_prepare_command(&emulator, plain, sizeof(plain), plain, sizeof(plain), &clear_len),
+        ==,
+        DfcEv2CommandPlain);
+    munit_assert_size(clear_len, ==, sizeof(plain));
+    munit_assert_memory_equal(
+        sizeof(plain), plain, ((uint8_t[]){DFC_CMD_GET_VERSION, 0x11, 0x22, 0x33}));
+
+    init_emulator(&emulator, &credential);
+    emulator.selected_application = DfcEmulatorSelectedApplicationApp;
+    encrypted_file.number = 1;
+    const uint8_t modes[] = {DFC_COMM_MAC, DFC_COMM_ENCIPHERED};
+    const DfcEv2CommandSecurity expected[] = {DfcEv2CommandSecured, DfcEv2CommandFull};
+    for(size_t i = 0; i < sizeof(modes); i++) {
+        uint8_t original[32];
+        size_t original_len = 0;
+        make_secured_write(original, &original_len);
+        encrypted_file.comm_settings = modes[i];
+
+        uint8_t separate[40] = {0};
+        size_t separate_len = 0;
+        munit_assert_int(
+            dfc_ev2_prepare_command(
+                &emulator, original, original_len, separate, sizeof(separate), &separate_len),
+            ==,
+            expected[i]);
+
+        uint8_t in_place[40] = {0};
+        memcpy(in_place, original, original_len);
+        size_t in_place_len = 0;
+        munit_assert_int(
+            dfc_ev2_prepare_command(
+                &emulator, in_place, original_len, in_place, sizeof(in_place), &in_place_len),
+            ==,
+            expected[i]);
+        munit_assert_size(in_place_len, ==, separate_len);
+        munit_assert_memory_equal(separate_len, in_place, separate);
+    }
     return MUNIT_OK;
 }
 
@@ -522,6 +575,12 @@ static MunitTest tests[] = {
     {"/above-old-limit", test_above_old_limit_succeeds, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/prepare-command-failures",
      test_prepare_command_failures_are_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/prepare-command-aliases",
+     test_prepare_command_aliases,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
