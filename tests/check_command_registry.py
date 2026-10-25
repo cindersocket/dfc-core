@@ -4,7 +4,6 @@
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 ALIASES_NORMALIZED_BEFORE_DISPATCH = {
     "DFC_CMD_READ_RECORDS_ISO",
