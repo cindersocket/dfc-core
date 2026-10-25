@@ -53,6 +53,8 @@ secure messaging. A transport failure clears the protocol session before the
 error is returned. Handles are `Send`, but deliberately not `Sync`.
 `Command::select_application` accepts the same human-readable AID byte order
 returned by `Credential::application` and converts it to wire order.
+The reader keeps one short-APDU output buffer, grows it only as needed up to the
+261-byte wire limit, and wipes it after each transport call.
 
 To link an installed library instead of compiling the bundled source, disable
 defaults and enable `system` plus one role and profile. Set `DFC_LIB_DIR` when

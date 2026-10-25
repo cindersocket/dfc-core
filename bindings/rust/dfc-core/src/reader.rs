@@ -3,6 +3,74 @@ use core::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 use dfc_core_sys as sys;
 
 const INITIAL_OUTPUT_CAPACITY: usize = 64;
+// Native commands carry at most 255 data bytes. ISO 7816 wrapping adds five
+// header bytes and Le; native framing needs less space than this same bound.
+const MAX_OUTPUT_CAPACITY: usize = 261;
+
+struct ApduBuffer {
+    bytes: Vec<u8>,
+}
+
+impl ApduBuffer {
+    fn new() -> Result<Self, Error> {
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(INITIAL_OUTPUT_CAPACITY)
+            .map_err(|_| Error::OutOfMemory)?;
+        bytes.resize(INITIAL_OUTPUT_CAPACITY, 0);
+        Ok(Self { bytes })
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [u8] {
+        &mut self.bytes
+    }
+
+    fn command(&self, len: usize) -> Result<&[u8], Error> {
+        self.bytes.get(..len).ok_or(Error::InvalidArgument)
+    }
+
+    fn grow(&mut self) -> Result<(), Error> {
+        if self.bytes.len() >= MAX_OUTPUT_CAPACITY {
+            return Err(Error::BufferTooSmall);
+        }
+        let capacity = self
+            .bytes
+            .len()
+            .checked_mul(2)
+            .map(|capacity| capacity.min(MAX_OUTPUT_CAPACITY))
+            .ok_or(Error::BufferTooSmall)?;
+        self.bytes
+            .try_reserve_exact(capacity - self.bytes.len())
+            .map_err(|_| Error::OutOfMemory)?;
+        self.bytes.resize(capacity, 0);
+        Ok(())
+    }
+
+    fn wipe(&mut self) {
+        wipe_slice(&mut self.bytes);
+    }
+}
+
+impl Drop for ApduBuffer {
+    fn drop(&mut self) {
+        self.wipe();
+    }
+}
+
+fn wipe_slice(bytes: &mut [u8]) {
+    unsafe { sys::dfc_ffi_secure_zero(bytes.as_mut_ptr().cast(), bytes.len()) }
+}
+
+fn grow_after_response(apdu: &mut ApduBuffer, incoming: &mut [u8]) -> Result<(), Error> {
+    match apdu.grow() {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            wipe_slice(incoming);
+            apdu.wipe();
+            Err(error)
+        }
+    }
+}
 
 pub trait Transport {
     type Error;
@@ -72,6 +140,7 @@ pub struct Reader<T> {
     framing: Framing,
     session: NonNull<sys::DfcFfiReaderSession>,
     exchange: NonNull<sys::DfcFfiReaderExchange>,
+    apdu: ApduBuffer,
     _not_sync: PhantomData<core::cell::Cell<()>>,
 }
 
@@ -94,6 +163,7 @@ unsafe impl<T: Send> Send for Reader<T> {}
 impl<T: Transport> Reader<T> {
     pub fn new(transport: T, framing: Framing) -> Result<Self, Error> {
         ensure_abi()?;
+        let apdu = ApduBuffer::new()?;
         let mut session = core::ptr::null_mut();
         status(unsafe { sys::dfc_ffi_reader_session_new(&mut session) })?;
         let Some(session) = NonNull::new(session) else {
@@ -113,6 +183,7 @@ impl<T: Transport> Reader<T> {
             framing,
             session,
             exchange,
+            apdu,
             _not_sync: PhantomData,
         })
     }
@@ -127,6 +198,7 @@ impl<T: Transport> Reader<T> {
 
     pub fn clear(&mut self) {
         unsafe { sys::dfc_ffi_reader_session_clear(self.session.as_ptr()) }
+        self.apdu.wipe();
     }
 
     pub fn transport_mut(&mut self) -> &mut T {
@@ -394,9 +466,9 @@ impl<T: Transport> Reader<T> {
     fn run(&mut self) -> Result<Response, ReaderError<T::Error>> {
         let mut incoming = Vec::new();
         loop {
-            let mut outgoing = vec![0; INITIAL_OUTPUT_CAPACITY];
             let (result, len) = loop {
                 let mut len = 0;
+                let outgoing = self.apdu.as_mut_slice();
                 let result = unsafe {
                     sys::dfc_ffi_reader_step(
                         self.exchange.as_ptr(),
@@ -410,18 +482,28 @@ impl<T: Transport> Reader<T> {
                 if result != sys::DFC_FFI_READER_BUFFER_TOO_SMALL as i32 {
                     break (result, len);
                 }
-                let capacity = outgoing
-                    .len()
-                    .checked_mul(2)
-                    .ok_or(ReaderError::Dfc(Error::BufferTooSmall))?;
-                outgoing.resize(capacity, 0);
+                if let Err(error) = grow_after_response(&mut self.apdu, &mut incoming) {
+                    incoming.clear();
+                    self.clear();
+                    return Err(ReaderError::Dfc(error));
+                }
             };
-            outgoing.truncate(len);
+            wipe_slice(&mut incoming);
+            incoming.clear();
             if result == sys::DFC_FFI_READER_CARD_ERROR as i32 {
+                self.apdu.wipe();
                 let status = unsafe { sys::dfc_ffi_reader_result_status(self.exchange.as_ptr()) };
                 return Err(ReaderError::Card(status));
             }
-            if reader_step_status(result).map_err(ReaderError::Dfc)? == ReaderStepStatus::Complete {
+            let step = match reader_step_status(result) {
+                Ok(step) => step,
+                Err(error) => {
+                    self.apdu.wipe();
+                    return Err(ReaderError::Dfc(error));
+                }
+            };
+            if step == ReaderStepStatus::Complete {
+                self.apdu.wipe();
                 let data = output(|out, cap, len| unsafe {
                     sys::dfc_ffi_reader_result_data(self.exchange.as_ptr(), out, cap, len)
                 })
@@ -429,7 +511,16 @@ impl<T: Transport> Reader<T> {
                 let status = unsafe { sys::dfc_ffi_reader_result_status(self.exchange.as_ptr()) };
                 return Ok(Response { status, data });
             }
-            incoming = match self.transport.transceive(&outgoing) {
+            let command = match self.apdu.command(len) {
+                Ok(command) => command,
+                Err(error) => {
+                    self.apdu.wipe();
+                    return Err(ReaderError::Dfc(error));
+                }
+            };
+            let transceive = self.transport.transceive(command);
+            self.apdu.wipe();
+            incoming = match transceive {
                 Ok(response) => response,
                 Err(error) => {
                     self.clear();
@@ -452,6 +543,39 @@ impl<T> Drop for Reader<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apdu_buffer_reuses_bounded_storage_and_wipes_it() {
+        let mut buffer = ApduBuffer::new().expect("initial APDU storage");
+        let initial = buffer.bytes.as_ptr();
+        buffer.bytes.fill(0xa5);
+        buffer.wipe();
+        assert!(buffer.bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(buffer.bytes.as_ptr(), initial);
+
+        while buffer.bytes.len() < MAX_OUTPUT_CAPACITY {
+            buffer.grow().expect("capacity below the APDU bound");
+        }
+        assert_eq!(buffer.bytes.len(), MAX_OUTPUT_CAPACITY);
+        assert_eq!(buffer.grow(), Err(Error::BufferTooSmall));
+    }
+
+    #[test]
+    fn retry_growth_failure_wipes_received_data() {
+        let mut buffer = ApduBuffer::new().expect("initial APDU storage");
+        while buffer.bytes.len() < MAX_OUTPUT_CAPACITY {
+            buffer.grow().expect("capacity below the APDU bound");
+        }
+        buffer.bytes.fill(0xa5);
+        let mut incoming = [0x5a; 32];
+
+        assert_eq!(
+            grow_after_response(&mut buffer, &mut incoming),
+            Err(Error::BufferTooSmall)
+        );
+        assert!(incoming.iter().all(|byte| *byte == 0));
+        assert!(buffer.bytes.iter().all(|byte| *byte == 0));
+    }
 
     #[test]
     fn step_status_maps_the_complete_abi_family() {

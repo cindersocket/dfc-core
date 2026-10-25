@@ -63,6 +63,17 @@ fn card_status_survives_a_grown_command_buffer() {
 
     assert!(matches!(result, Err(ReaderError::Card(0x1c))), "{result:?}");
     assert!(reader.transport_mut().command_len > 64);
+
+    let result = reader.exchange(
+        &Command {
+            instruction: 0x60,
+            data: Vec::new(),
+        },
+        CommunicationMode::Plain,
+        None,
+    );
+    assert!(matches!(result, Err(ReaderError::Card(0x1c))), "{result:?}");
+    assert_eq!(reader.transport_mut().command_len, 5);
 }
 
 struct CorruptD40MacTransport {
