@@ -80,11 +80,12 @@ CONFORMANCE_PROFILE_RUNNERS := $(addprefix $(CONFORMANCE_RUNNER)_,$(CONFORMANCE_
 CONFORMANCE_COMMON := $(CORE_SRC) dfc_vector_replay_random.c \
 	$(HOST)/dfc_bytebuf_host.c $(CRYPTO_SRC)
 
-TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging test_dfc_desfire_protocol \
+TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_secure_messaging test_dfc_desfire_protocol \
 	test_dfc_virtual_picc_core test_dfc_virtual_picc_secure \
 	test_dfc_transaction_selection \
 	test_dfc_transaction_snapshot \
 	test_dfc_transaction_mac_lifecycle \
+	test_dfc_transaction_mac_verify \
 	test_dfc_virtual_picc_probe_vectors test_dfc_virtual_picc_lifecycle_vectors \
 	test_dfc_virtual_picc_mutation_vectors test_dfc_virtual_picc_multi_app_vectors \
 	test_dfc_virtual_picc_value_vectors test_dfc_ev1_conformance \
@@ -95,6 +96,8 @@ TESTS := test_dfc_crypto test_cmac test_dfc_session test_dfc_secure_messaging te
 	test_dfc_blank_card test_dfc_picc_config test_dfc_format_picc \
 	test_dfc_format_configuration test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
+	test_dfc_response \
+	test_dfc_sdm_verify \
 	test_dfc_iso_file_access \
 	test_dfc_ev1_response_policy \
 	test_dfc_iso_chained_records_secure test_dfc_iso_response_lifetime \
@@ -107,6 +110,7 @@ FAULT_TEST := test_cmac_failures
 SECURE_MESSAGING_FAULT_TEST := test_secure_messaging_failures
 AUTH_BACKEND_FAULT_TEST := test_dfc_auth_backend_failures
 EV2_RESPONSE_FAULT_TEST := test_dfc_ev2_response_atomicity
+SDM_FAULT_TEST := test_dfc_sdm_failures
 KEY_SET_WIPE_TEST := test_dfc_roll_key_set_wipe
 REDUCED_PROFILE_TEST := test_dfc_ffi_reduced_profile
 REDUCED_READER_TEST := test_dfc_reader_reduced_command
@@ -154,7 +158,8 @@ $(READER_LINK_TESTS): dfc_reader_test_link.c
 test_dfc_decode_failure_atomicity: ../ffi/dfc_target_ffi.c
 test_dfc_decode_failure_atomicity: CFLAGS += -I../ffi
 
-test_cmac_failures: test_cmac_failures.c $(CORE)/aes_cmac.c $(CORE)/des_cmac.c munit/munit.c
+test_cmac_failures: test_cmac_failures.c $(CORE)/aes_cmac.c $(CORE)/des_cmac.c \
+		$(CORE)/dfc_an10922.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 FAULT_CORE_SRC := $(filter-out $(CORE)/dfc_crypto.c,$(CORE_SRC))
@@ -164,6 +169,10 @@ test_secure_messaging_failures: test_secure_messaging_failures.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_dfc_auth_backend_failures: test_dfc_auth_backend_failures.c auth_fault_test_support.c \
+		dfc_virtual_picc_test_helpers.c $(FAULT_CORE_SRC) $(HOST)/dfc_bytebuf_host.c munit/munit.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+test_dfc_sdm_failures: test_dfc_sdm_failures.c auth_fault_test_support.c \
 		dfc_virtual_picc_test_helpers.c $(FAULT_CORE_SRC) $(HOST)/dfc_bytebuf_host.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -178,7 +187,9 @@ test_dfc_roll_key_set_wipe: test_dfc_roll_key_set_wipe.c $(CORE)/dfc_credential.
 		$(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c $(CRYPTO_SRC) munit/munit.c $(LDFLAGS)
 
 test_dfc_ffi_reduced_profile: test_dfc_ffi_reduced_profile.c $(CORE_SRC) \
-		../ffi/dfc_ffi.c ../port/ffi/dfc_port_ffi.c ../port/host/dfc_bytebuf_host.c $(CRYPTO_SRC)
+		../ffi/dfc_ffi.c ../ffi/dfc_ffi_an10922.c ../ffi/dfc_ffi_response.c \
+		../ffi/dfc_ffi_sdm.c ../ffi/dfc_ffi_transaction_mac.c \
+		../port/ffi/dfc_port_ffi.c ../port/host/dfc_bytebuf_host.c $(CRYPTO_SRC)
 	$(CC) $(CFLAGS) -I../ffi -I../port/ffi \
 		-DDFC_BUILD_PROFILE=DFC_PROFILE_MINIMAL_EV1 -DDFC_ENABLE_FFI=1 \
 		-o $@ $^ $(LDFLAGS)
@@ -192,12 +203,13 @@ test_dfc_format_picc_reduced: test_dfc_format_picc.c dfc_virtual_picc_test_helpe
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(SECURE_MESSAGING_FAULT_TEST)
 	./$(AUTH_BACKEND_FAULT_TEST)
 	./$(EV2_RESPONSE_FAULT_TEST)
+	./$(SDM_FAULT_TEST)
 	./$(KEY_SET_WIPE_TEST)
 	@for test in $(REDUCED_TESTS); do ./$$test || exit 1; done
 
@@ -323,4 +335,4 @@ codecs-disabled-link:
 	echo "  target, no codecs ok"
 
 clean:
-	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) $(CONFORMANCE_RUNNER) $(CONFORMANCE_PROFILE_RUNNERS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)
+	rm -rf $(TESTS) $(FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) $(CONFORMANCE_RUNNER) $(CONFORMANCE_PROFILE_RUNNERS) test_dfc_static_signature_ev2 test_dfc_der_no_iso *.dSYM $(ROLE_DIR)

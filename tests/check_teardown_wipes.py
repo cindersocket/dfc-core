@@ -134,8 +134,41 @@ def main() -> None:
             "#else\n    DFC_UNUSED(return_transaction_mac);"
         )
     ]
-    if "dfc_secure_wipe(pending_reader_id, sizeof(pending_reader_id))" not in mac_failure:
-        raise SystemExit("CommitTransaction MAC failure does not wipe its pending reader ID")
+    if "dfc_secure_wipe(mac, sizeof(mac))" not in mac_failure:
+        raise SystemExit("CommitTransaction MAC failure does not wipe its local MAC")
+    if "transaction_pending_reader_id" in mac_failure:
+        raise SystemExit("retryable CommitTransaction failure must retain its pending reader ID")
+
+    transaction_cleanup = {
+        "abort": emulator[
+            emulator.index("bool dfc_emulator_abort_transaction(") : emulator.index(
+                "void dfc_emulator_publish_transaction("
+            )
+        ],
+        "publish": emulator[
+            emulator.index("void dfc_emulator_publish_transaction(") : emulator.index(
+                "void dfc_emulator_clear_iso_authentication("
+            )
+        ],
+        "selected-app cleanup": emulator_commands[
+            emulator_commands.index(
+                "void dfc_emulator_command_clear_selected_app_pending_values("
+            ) :
+        ],
+    }
+    pending_reader_wipe = re.compile(
+        r"dfc_secure_wipe\(\s*emulator->transaction_pending_reader_id,\s*"
+        r"sizeof\(emulator->transaction_pending_reader_id\)\)"
+    )
+    for name, cleanup in transaction_cleanup.items():
+        if not pending_reader_wipe.search(cleanup):
+            raise SystemExit(f"transaction {name} does not wipe its pending reader ID")
+        for reset in (
+            "emulator->transaction_reader_id_pending = false",
+            "emulator->transaction_reader_id_persist = false",
+        ):
+            if reset not in cleanup:
+                raise SystemExit(f"transaction {name} does not reset reader-ID ownership")
 
     iso_cleanup = emulator[
         emulator.index("void dfc_emulator_clear_iso_authentication(") : emulator.index(

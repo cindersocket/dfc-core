@@ -801,7 +801,251 @@ cleanup:
     dfc_ffi_reader_session_free(session);
 }
 
+static void check_standalone_api_failure_outputs(void) {
+    uint8_t result[DFC_FFI_SDM_RESULT_SIZE];
+    uint8_t decrypted[16];
+    size_t required = SIZE_MAX;
+    memset(result, 0xA5, sizeof(result));
+    memset(decrypted, 0xA5, sizeof(decrypted));
+    CHECK(
+        dfc_ffi_sdm_verify_ascii(
+            (const uint8_t*)"bad",
+            3,
+            DFC_FFI_SDM_ENCRYPTED_FILE_DATA,
+            0,
+            0,
+            0,
+            0,
+            0,
+            SIZE_MAX,
+            SIZE_MAX,
+            0,
+            0,
+            NULL,
+            (const uint8_t[16]){0},
+            decrypted,
+            sizeof(decrypted),
+            &required,
+            result,
+            sizeof(result)) == DFC_FFI_SDM_MALFORMED);
+    CHECK(memcmp(result, (uint8_t[sizeof(result)]){0}, sizeof(result)) == 0);
+    CHECK(memcmp(decrypted, (uint8_t[sizeof(decrypted)]){0}, sizeof(decrypted)) == 0);
+
+    uint8_t version[DFC_FFI_RESPONSE_VERSION_SIZE];
+    memset(version, 0xA5, sizeof(version));
+    CHECK(
+        dfc_ffi_response_decode_version((const uint8_t*)"bad", 3, version, sizeof(version)) ==
+        DFC_FFI_RESPONSE_MALFORMED);
+    CHECK(memcmp(version, (uint8_t[sizeof(version)]){0}, sizeof(version)) == 0);
+}
+
+static void check_standalone_api_success_and_boundaries(void) {
+    const uint8_t master[16] = {
+        0x00,
+        0x11,
+        0x22,
+        0x33,
+        0x44,
+        0x55,
+        0x66,
+        0x77,
+        0x88,
+        0x99,
+        0xAA,
+        0xBB,
+        0xCC,
+        0xDD,
+        0xEE,
+        0xFF};
+    const uint8_t diversification_input[17] = {
+        0x04,
+        0x78,
+        0x2E,
+        0x21,
+        0x80,
+        0x1D,
+        0x80,
+        0x30,
+        0x42,
+        0xF5,
+        0x4E,
+        0x58,
+        0x50,
+        0x20,
+        0x41,
+        0x62,
+        0x75};
+    const uint8_t diversified_expected[16] = {
+        0xA8,
+        0xDD,
+        0x63,
+        0xA3,
+        0xB8,
+        0x9D,
+        0x54,
+        0xB3,
+        0x7C,
+        0xA8,
+        0x02,
+        0x47,
+        0x3F,
+        0xDA,
+        0x91,
+        0x75};
+    uint8_t diversified[16] = {0};
+    size_t diversified_len = 0;
+    CHECK(
+        dfc_ffi_an10922_diversify(
+            DFC_FFI_AN10922_AES128,
+            master,
+            sizeof(master),
+            diversification_input,
+            sizeof(diversification_input),
+            diversified,
+            sizeof(diversified),
+            &diversified_len) == DFC_FFI_OK);
+    CHECK(diversified_len == sizeof(diversified_expected));
+    CHECK(memcmp(diversified, diversified_expected, sizeof(diversified)) == 0);
+    memset(diversified, 0xA5, sizeof(diversified));
+    CHECK(
+        dfc_ffi_an10922_diversify(
+            DFC_FFI_AN10922_AES128,
+            master,
+            sizeof(master) - 1,
+            diversification_input,
+            sizeof(diversification_input),
+            diversified,
+            sizeof(diversified),
+            &diversified_len) == DFC_FFI_INVALID_ARGUMENT);
+    CHECK(memcmp(diversified, (uint8_t[sizeof(diversified)]){0}, sizeof(diversified)) == 0);
+    CHECK(
+        dfc_ffi_an10922_diversify(
+            DFC_FFI_AN10922_AES128,
+            master,
+            sizeof(master),
+            diversification_input,
+            sizeof(diversification_input),
+            diversified,
+            sizeof(diversified) - 1,
+            &diversified_len) == DFC_FFI_BUFFER_TOO_SMALL);
+    CHECK(
+        dfc_ffi_an10922_diversify(
+            0, master, 16, diversification_input, 17, diversified, 16, NULL) ==
+        DFC_FFI_INVALID_ARGUMENT);
+
+    uint8_t version_input[DFC_FFI_RESPONSE_VERSION_SIZE];
+    uint8_t version_output[DFC_FFI_RESPONSE_VERSION_SIZE];
+    for(size_t i = 0; i < sizeof(version_input); i++)
+        version_input[i] = (uint8_t)i;
+    CHECK(
+        dfc_ffi_response_decode_version(
+            version_input, sizeof(version_input), version_output, sizeof(version_output)) ==
+        DFC_FFI_RESPONSE_OK);
+    CHECK(memcmp(version_input, version_output, sizeof(version_input)) == 0);
+
+    const uint8_t wire_aids[] = {3, 2, 1, 0xCC, 0xBB, 0xAA};
+    uint8_t aids[sizeof(wire_aids)] = {0};
+    size_t aids_len = 0;
+    CHECK(
+        dfc_ffi_response_decode_application_ids(wire_aids, sizeof(wire_aids), aids, 3, &aids_len) ==
+        DFC_FFI_RESPONSE_BUFFER_TOO_SMALL);
+    CHECK(aids_len == sizeof(aids));
+    CHECK(memcmp(aids, (uint8_t[sizeof(aids)]){0}, sizeof(aids)) == 0);
+    CHECK(
+        dfc_ffi_response_decode_application_ids(
+            wire_aids, sizeof(wire_aids), aids, sizeof(aids), &aids_len) == DFC_FFI_RESPONSE_OK);
+    CHECK(memcmp(aids, (uint8_t[]){1, 2, 3, 0xAA, 0xBB, 0xCC}, sizeof(aids)) == 0);
+    CHECK(dfc_ffi_response_decode_file_ids(NULL, 0, NULL, 0, &aids_len) == DFC_FFI_RESPONSE_OK);
+    CHECK(aids_len == 0);
+    CHECK(
+        dfc_ffi_response_decode_file_ids(wire_aids, 1, NULL, 1, &aids_len) ==
+        DFC_FFI_INVALID_ARGUMENT);
+
+    const uint8_t settings_response[] = {0, 3, 0x12, 0xEF, 0x80, 0, 0};
+    uint8_t settings[DFC_FFI_RESPONSE_FILE_SETTINGS_SIZE] = {0};
+    CHECK(
+        dfc_ffi_response_decode_file_settings(
+            settings_response, sizeof(settings_response), settings, sizeof(settings)) ==
+        DFC_FFI_RESPONSE_OK);
+    CHECK(settings[0] == 0 && settings[1] == 3 && settings[14] == 0x80);
+
+    const uint8_t key[16] = {0};
+    const uint8_t uid[7] = {0x04, 0x83, 0xB4, 0xF2, 0xCF, 0x18, 0x90};
+    const uint8_t captured_mac[8] = {0x35, 0x2E, 0x57, 0xAD, 0xDA, 0x91, 0x1E, 0xDC};
+    DfcFfiTransactionMacVerifier* verifier = (DfcFfiTransactionMacVerifier*)(uintptr_t)1;
+    CHECK(
+        dfc_ffi_transaction_mac_verifier_new(16, NULL, uid, sizeof(uid), 1, &verifier) ==
+        DFC_FFI_INVALID_ARGUMENT);
+    CHECK(verifier == NULL);
+    CHECK(
+        dfc_ffi_transaction_mac_verifier_new(16, key, uid, sizeof(uid), 1, &verifier) ==
+        DFC_FFI_TRANSACTION_MAC_OK);
+    const uint8_t too_large[] = {1, 2, 3};
+    CHECK(
+        dfc_ffi_transaction_mac_add_data(verifier, 0x3D, 2, 0, 3, too_large, 3) ==
+        DFC_FFI_TRANSACTION_MAC_CAPACITY);
+    CHECK(dfc_ffi_transaction_mac_add_value(verifier, 0x0C, 5, 1) == DFC_FFI_TRANSACTION_MAC_OK);
+    uint8_t verified = 0;
+    CHECK(
+        dfc_ffi_transaction_mac_verify(verifier, captured_mac, &verified) ==
+        DFC_FFI_TRANSACTION_MAC_OK);
+    CHECK(verified == 1);
+    dfc_ffi_transaction_mac_verifier_free(verifier);
+    dfc_ffi_transaction_mac_verifier_free(NULL);
+
+    CHECK(
+        dfc_ffi_transaction_mac_verifier_new(160, key, uid, sizeof(uid), 1, &verifier) ==
+        DFC_FFI_TRANSACTION_MAC_OK);
+    CHECK(
+        dfc_ffi_transaction_mac_add_data(verifier, 0x3D, 2, 0x030201, 3, too_large, 3) ==
+        DFC_FFI_TRANSACTION_MAC_OK);
+    const uint8_t update[] = {0x44, 0x55};
+    CHECK(
+        dfc_ffi_transaction_mac_add_record_update(verifier, 0xDB, 3, 4, 5, 2, update, 2) ==
+        DFC_FFI_TRANSACTION_MAC_OK);
+    CHECK(dfc_ffi_transaction_mac_add_clear_record(verifier, 4) == DFC_FFI_TRANSACTION_MAC_OK);
+    CHECK(
+        dfc_ffi_transaction_mac_add_reader_id(
+            verifier, (const uint8_t[16]){0}, (const uint8_t[16]){0}) ==
+        DFC_FFI_TRANSACTION_MAC_OK);
+    CHECK(
+        dfc_ffi_transaction_mac_verify(verifier, captured_mac, NULL) ==
+        DFC_FFI_TRANSACTION_MAC_INVALID);
+    dfc_ffi_transaction_mac_verifier_free(verifier);
+    CHECK(dfc_ffi_transaction_mac_add_value(NULL, 0x0C, 5, 1) == DFC_FFI_TRANSACTION_MAC_INVALID);
+
+    uint8_t overlap_message[] =
+        "0483B4F2CF1890000001163F0AC4319102F37F4B61FE6BFDE1469CF53E287D682A2E";
+    uint8_t overlap_before[sizeof(overlap_message)];
+    memcpy(overlap_before, overlap_message, sizeof(overlap_message));
+    size_t required = 0;
+    CHECK(
+        dfc_ffi_sdm_verify_ascii(
+            overlap_message,
+            sizeof(overlap_message) - 1,
+            DFC_FFI_SDM_PLAIN_UID | DFC_FFI_SDM_PLAIN_READ_COUNTER,
+            0,
+            7,
+            14,
+            0,
+            0,
+            0,
+            0,
+            20,
+            52,
+            NULL,
+            key,
+            NULL,
+            0,
+            &required,
+            overlap_message,
+            DFC_FFI_SDM_RESULT_SIZE) == DFC_FFI_INVALID_ARGUMENT);
+    CHECK(memcmp(overlap_message, overlap_before, sizeof(overlap_message)) == 0);
+}
+
 int main(void) {
+    check_standalone_api_failure_outputs();
+    check_standalone_api_success_and_boundaries();
     check_rejected_card_and_picc_updates();
     check_application_creation_rollback();
     check_reader_header_length_bound();

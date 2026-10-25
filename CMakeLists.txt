@@ -54,6 +54,7 @@ string(TOUPPER "${DFC_PROFILE}" DFC_PROFILE_UPPER)
 set(DFC_CORE_SOURCES
     src/aes_cmac.c
     src/des_cmac.c
+    src/dfc_an10922.c
     src/dfc_command.c
     src/dfc_common.c
     src/dfc_credential.c
@@ -76,8 +77,11 @@ set(DFC_CORE_SOURCES
     src/dfc_ev2_crypto.c
     src/dfc_profile.c
     src/dfc_reader.c
+    src/dfc_response.c
+    src/dfc_sdm.c
     src/dfc_secure_messaging.c
     src/dfc_text.c
+    src/dfc_transaction_mac.c
     src/dfc_virtual_picc.c)
 
 set(DFC_DEFINITIONS
@@ -181,9 +185,16 @@ if(DFC_BUILD_FOOTPRINT_PROBE)
     target_compile_options(dfc_footprint_probe PRIVATE ${DFC_WARNINGS})
 endif()
 
+set(DFC_FFI_IMPLEMENTATION_SOURCES
+        ffi/dfc_ffi.c
+        ffi/dfc_ffi_an10922.c
+        ffi/dfc_ffi_response.c
+        ffi/dfc_ffi_sdm.c
+        ffi/dfc_ffi_transaction_mac.c)
+
 set(DFC_FFI_SOURCES
         $<TARGET_OBJECTS:dfc_objects>
-        ffi/dfc_ffi.c
+        ${DFC_FFI_IMPLEMENTATION_SOURCES}
         port/ffi/dfc_port_ffi.c
         port/host/dfc_bytebuf_host.c)
 
@@ -250,7 +261,7 @@ if(DFC_BUILD_JNI)
     endif()
     add_library(dfc_jni SHARED
         $<TARGET_OBJECTS:dfc_objects>
-        ffi/dfc_ffi.c
+        ${DFC_FFI_IMPLEMENTATION_SOURCES}
         port/ffi/dfc_port_ffi.c
         port/host/dfc_bytebuf_host.c
         bindings/jni/dfc_jni.c)
