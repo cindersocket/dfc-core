@@ -34,7 +34,7 @@ assert   apps[0].iso_aid_len = 7
 exchange native-apdu 9045000000 => 0F019100
 
 # Selecting the well-known name selects the application, not the PICC.
-exchange native-apdu 00A4040007D276000085010000 => 9000
+exchange iso-apdu 00A4040007D276000085010000 => 9000
 assert   emulator.selected_application = 2
 
 # And commands are now served from the application.

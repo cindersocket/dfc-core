@@ -311,8 +311,8 @@
     },
     {
       "path": "v4/emulator/ev1_iso-select-df-name-beats-picc.vec",
-      "sha256": "b44fd941754a48902ec17cc96ba48ed48cbbcaf5584757562308b641fece992b",
-      "size": 1721,
+      "sha256": "0a4b727b6412e2cc21be2a960c4cab785f6f60d25cd6083a0f496e45d67775cb",
+      "size": 1718,
       "role": "emulator-vector",
       "metadata": {
         "name": "ev1: iso select by df name beats the picc-level name",
@@ -325,8 +325,8 @@
     },
     {
       "path": "v4/emulator/ev1_iso-select-picc-df.vec",
-      "sha256": "1838e01a81e699a614041422938e8a23c3149802ea0debbcccad4df2c4590402",
-      "size": 766,
+      "sha256": "fff904886f117e2bff28cb73395c42e5ef991cd56c08267e6f7ddb348f9a78e3",
+      "size": 763,
       "role": "emulator-vector",
       "metadata": {
         "name": "ev1 conformance: iso-select-picc-df",
@@ -1207,8 +1207,8 @@
     },
     {
       "path": "v4/emulator/probe_blank_card.vec",
-      "sha256": "c203a0c63ab4d1f07d8f57e46df12e33c751cdbb50a888aab90c518b7b69d825",
-      "size": 935,
+      "sha256": "6e988712420f04577fab51386f0bb8ccde4c26ede2edc1af9dc13397b4699bae",
+      "size": 932,
       "role": "emulator-vector",
       "metadata": {
         "name": "pcsc blank card probe",

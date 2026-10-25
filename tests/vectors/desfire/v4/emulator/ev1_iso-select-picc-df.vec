@@ -18,5 +18,5 @@ picc-key-len: 16
 scan
 status   90CA0000050102030F0100 => 00
 status   905A00000301020300 => 00
-exchange native-apdu 00A4040007D276000085010000 => 9000
+exchange iso-apdu 00A4040007D276000085010000 => 9000
 exchange native-apdu 906A000000 => 0102039100
