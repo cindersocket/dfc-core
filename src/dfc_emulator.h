@@ -42,6 +42,9 @@ typedef struct {
 #if DFC_ENABLE_TRANSACTIONAL_DATA_FILES
     size_t transaction_snapshot_app_index;
     size_t transaction_snapshot_pool_length;
+    // Allocation size is tracked separately because delete operations shrink
+    // the logical snapshot without reallocating it.
+    size_t transaction_snapshot_pool_capacity;
 #endif
 #if DFC_ENABLE_PROXIMITY_CHECK
     size_t proximity_offset;

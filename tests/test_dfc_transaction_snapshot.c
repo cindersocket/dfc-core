@@ -309,6 +309,8 @@ static MunitResult test_create_publish_matrix(const MunitParameter params[], voi
         begin_transaction(&failure);
         dfc_credential_clear_dirty(&failure.credential);
         size_t snapshot_length = failure.session->emulator->transaction_snapshot_pool_length;
+        munit_assert_size(
+            failure.session->emulator->transaction_snapshot_pool_capacity, >=, snapshot_length);
         if(strcmp(families[index], "value") == 0) {
             /* Value files have no pool bytes, so make snapshot insertion reject its bounds. */
             failure.session->emulator->transaction_snapshot_pool_length =
@@ -317,7 +319,11 @@ static MunitResult test_create_publish_matrix(const MunitParameter params[], voi
             dfc_host_fail_next_allocation(DfcAllocEmulator);
         }
         exchange_status(failure.session, command, command_len, DFC_STATUS_OUT_OF_EEPROM);
-        failure.session->emulator->transaction_snapshot_pool_length = snapshot_length;
+        munit_assert_false(failure.session->emulator->transaction_snapshot_active);
+        munit_assert_null(failure.session->emulator->transaction_snapshot_pool);
+        munit_assert_size(failure.session->emulator->transaction_snapshot_pool_length, ==, 0);
+        munit_assert_size(failure.session->emulator->transaction_snapshot_pool_capacity, ==, 0);
+        munit_assert_size(failure.credential.file_pool_used, ==, snapshot_length);
         munit_assert_null(dfc_credential_find_file_in_app(&failure.credential, 0, 5));
         munit_assert_false(failure.credential.dirty);
         fixture_close(&failure);
@@ -834,6 +840,27 @@ static MunitResult test_iso_update_binary_publishes_existing_transaction(
     return MUNIT_OK;
 }
 
+static MunitResult test_invalid_snapshot_abort_retires_active_transaction(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    SnapshotFixture fixture;
+    fixture_open(&fixture);
+    begin_transaction(&fixture);
+    fixture.session->emulator->transaction_snapshot_pool_length++;
+
+    const uint8_t abort[] = {0x90, DFC_CMD_ABORT_TRANSACTION, 0, 0, 0};
+    exchange_status(fixture.session, abort, sizeof(abort), DFC_STATUS_OK);
+    munit_assert_false(fixture.session->emulator->transaction_snapshot_active);
+    munit_assert_null(fixture.session->emulator->transaction_snapshot_pool);
+    munit_assert_size(fixture.session->emulator->transaction_snapshot_pool_length, ==, 0);
+    munit_assert_size(fixture.session->emulator->transaction_snapshot_pool_capacity, ==, 0);
+
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
 static char* family_values[] = {"backup", "value", "linear", "cyclic", NULL};
 static char* finish_values[] = {"commit", "abort", NULL};
 static MunitParameterEnum family_params[] = {
@@ -909,6 +936,12 @@ static MunitTest tests[] = {
      NULL},
     {"/iso-update-binary-publishes",
      test_iso_update_binary_publishes_existing_transaction,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/invalid-snapshot-abort-retires",
+     test_invalid_snapshot_abort_retires_active_transaction,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

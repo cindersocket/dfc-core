@@ -57,15 +57,26 @@ static void transaction_snapshot_replace(
     size_t replacement_length) {
     if(emulator->transaction_snapshot_pool) {
         dfc_secure_wipe(
-            emulator->transaction_snapshot_pool, emulator->transaction_snapshot_pool_length);
+            emulator->transaction_snapshot_pool, emulator->transaction_snapshot_pool_capacity);
         dfc_platform_free(emulator->transaction_snapshot_pool);
     }
     emulator->transaction_snapshot_pool = replacement;
     emulator->transaction_snapshot_pool_length = replacement_length;
+    emulator->transaction_snapshot_pool_capacity = replacement ? replacement_length : 0;
 }
 
 void dfc_emulator_discard_transaction_snapshot(DfcEmulator* emulator) {
     transaction_snapshot_replace(emulator, NULL, 0);
+}
+
+static void transaction_snapshot_clear_state(DfcEmulator* emulator) {
+    emulator->transaction_snapshot_active = false;
+    dfc_emulator_discard_transaction_snapshot(emulator);
+    memset(
+        emulator->transaction_record_operations,
+        0,
+        sizeof(emulator->transaction_record_operations));
+    memset(emulator->transaction_record_numbers, 0, sizeof(emulator->transaction_record_numbers));
 }
 
 bool dfc_emulator_transaction_snapshot_insert_file(DfcEmulator* emulator, size_t file_index) {
@@ -182,6 +193,14 @@ bool dfc_emulator_transaction_snapshot_mirror_write(
 bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
     if(!emulator->transaction_snapshot_active) return false;
 
+    // The logical image must fit its allocation and describe the live pool.
+    // Reject inconsistent internal state before either buffer is touched.
+    if(emulator->transaction_snapshot_pool_length > emulator->transaction_snapshot_pool_capacity ||
+       emulator->transaction_snapshot_pool_length != emulator->credential->file_pool_used) {
+        transaction_snapshot_clear_state(emulator);
+        return true;
+    }
+
     size_t app_index = emulator->transaction_snapshot_app_index;
     memcpy(
         emulator->credential->file_pool,
@@ -197,13 +216,7 @@ bool dfc_emulator_abort_transaction_snapshot(DfcEmulator* emulator) {
         file->transaction_pending = false;
     }
     emulator->credential->dirty = emulator->transaction_snapshot_dirty;
-    emulator->transaction_snapshot_active = false;
-    dfc_emulator_discard_transaction_snapshot(emulator);
-    memset(
-        emulator->transaction_record_operations,
-        0,
-        sizeof(emulator->transaction_record_operations));
-    memset(emulator->transaction_record_numbers, 0, sizeof(emulator->transaction_record_numbers));
+    transaction_snapshot_clear_state(emulator);
     return true;
 }
 #endif

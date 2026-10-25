@@ -3594,6 +3594,7 @@ static bool transaction_snapshot_begin(DfcEmulator* emulator) {
     emulator->transaction_snapshot_active = true;
     emulator->transaction_snapshot_app_index = emulator->selected_app_index;
     emulator->transaction_snapshot_pool_length = length;
+    emulator->transaction_snapshot_pool_capacity = length ? length : 1;
     emulator->transaction_snapshot_dirty = emulator->credential->dirty;
     memcpy(
         emulator->transaction_snapshot_pool,
