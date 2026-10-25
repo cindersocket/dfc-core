@@ -51,8 +51,17 @@ def main() -> None:
 
     if combined.count("dfc_emulator_discard_command_chain(emulator)") < 6:
         raise SystemExit("not every command-chain teardown path uses the wipe helper")
-    if combined.count("dfc_emulator_discard_transaction_snapshot(emulator)") < 4:
-        raise SystemExit("not every transaction-snapshot teardown path uses the wipe helper")
+    if combined.count("dfc_emulator_discard_transaction_snapshot(emulator)") < 3:
+        raise SystemExit("transaction-snapshot storage bypasses the wipe helper")
+    snapshot_clear = emulator[
+        emulator.index("static void transaction_snapshot_clear_state(") : emulator.index(
+            "bool dfc_emulator_transaction_snapshot_insert_file("
+        )
+    ]
+    if "dfc_emulator_discard_transaction_snapshot(emulator)" not in snapshot_clear:
+        raise SystemExit("transaction-snapshot state cleanup does not wipe owned storage")
+    if emulator.count("transaction_snapshot_clear_state(emulator)") < 3:
+        raise SystemExit("transaction-snapshot terminal paths bypass centralized cleanup")
 
     credential_free = credential[credential.index("void dfc_credential_free(") :]
     if credential_free.index("dfc_secure_wipe(credential") > credential_free.index(
