@@ -10,15 +10,21 @@
     },
     {
       "id": "iso7816-mutual-authentication-3tdea",
-      "evidence": ["hardware/hardware_physical_ev3_4k_iso_auth_app-3tdea.vec"]
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_app-3tdea.vec"
+      ]
     },
     {
       "id": "iso7816-mutual-authentication-aes",
-      "evidence": ["hardware/hardware_physical_ev3_4k_iso_auth_app-aes.vec"]
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_iso_auth_app-aes.vec"
+      ]
     },
     {
       "id": "ev2-first-and-nonfirst",
-      "evidence": ["hardware/hardware_physical_ev3_4k_ev2_first_nonfirst.vec"]
+      "evidence": [
+        "hardware/hardware_physical_ev3_4k_ev2_first_nonfirst.vec"
+      ]
     },
     {
       "id": "iso7816-parameter-and-phase-errors",
@@ -54,7 +60,9 @@
     },
     {
       "id": "iso-authentication-phase-abort",
-      "evidence": ["synthetic/rejected-internal-auth-aborts-handshake.vec"]
+      "evidence": [
+        "synthetic/rejected-internal-auth-aborts-handshake.vec"
+      ]
     },
     {
       "id": "finite-random-replay-semantics",
@@ -65,7 +73,9 @@
     },
     {
       "id": "native-chain-command-boundary",
-      "evidence": ["synthetic/iso-command-aborts-native-chain.vec"]
+      "evidence": [
+        "synthetic/iso-command-aborts-native-chain.vec"
+      ]
     },
     {
       "id": "authentication-rejection-retires-session",
@@ -109,27 +119,39 @@
     },
     {
       "id": "binding-picc-response-capacity-retry",
-      "evidence": ["synthetic/binding-picc-response-capacity-retry.vec"]
+      "evidence": [
+        "synthetic/binding-picc-response-capacity-retry.vec"
+      ]
     },
     {
       "id": "limited-credit-transaction-semantics",
-      "evidence": ["synthetic/limited-credit-transaction-semantics.vec"]
+      "evidence": [
+        "synthetic/limited-credit-transaction-semantics.vec"
+      ]
     },
     {
       "id": "get-file-settings-limited-credit-limit",
-      "evidence": ["synthetic/get-file-settings-limited-credit-limit.vec"]
+      "evidence": [
+        "synthetic/get-file-settings-limited-credit-limit.vec"
+      ]
     },
     {
       "id": "get-file-counters-access-and-full",
-      "evidence": ["synthetic/get-file-counters-access-and-full.vec"]
+      "evidence": [
+        "synthetic/get-file-counters-access-and-full.vec"
+      ]
     },
     {
       "id": "read-data-file-type-matrix",
-      "evidence": ["synthetic/read-data-file-type-matrix.vec"]
+      "evidence": [
+        "synthetic/read-data-file-type-matrix.vec"
+      ]
     },
     {
       "id": "ev1-terminal-frame-mac",
-      "evidence": ["synthetic/ev1-get-version-terminal-mac.vec"]
+      "evidence": [
+        "synthetic/ev1-get-version-terminal-mac.vec"
+      ]
     },
     {
       "id": "format-scope-and-disable-controls",
@@ -150,11 +172,26 @@
     },
     {
       "id": "sdm-counter-reconfiguration",
-      "evidence": ["synthetic/sdm-reconfiguration-resets-read-counter.vec"]
+      "evidence": [
+        "synthetic/sdm-reconfiguration-resets-read-counter.vec"
+      ]
     },
     {
       "id": "sdm-reserved-access-rights",
-      "evidence": ["synthetic/sdm-reserved-access-rights-are-atomic.vec"]
+      "evidence": [
+        "synthetic/sdm-reserved-access-rights-are-atomic.vec"
+      ]
+    },
+    {
+      "id": "desfire:v6-regression-corpus",
+      "evidence": [
+        "synthetic/iso-update-binary-publishes-transaction.vec",
+        "synthetic/transaction-mac-lifecycle-retires-transaction.vec",
+        "synthetic/transaction-rollback-preserves-standard-write.vec",
+        "synthetic/transaction-snapshot-create-rebases.vec",
+        "synthetic/transaction-snapshot-delete-commit.vec",
+        "synthetic/transaction-snapshot-delete-rebases.vec"
+      ]
     }
   ]
 }

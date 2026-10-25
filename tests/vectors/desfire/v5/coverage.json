@@ -11,6 +11,13 @@
         "emulator/ev2_get-version-overrides.vec"
       ],
       "id": "desfire:all-generation-get-version-defaults-and-overrides"
+    },
+    {
+      "id": "desfire:v5-regression-corpus",
+      "evidence": [
+        "emulator/hardware_genuine_ev1_4k.vec",
+        "emulator/hardware_genuine_ev1_4k_issued.vec"
+      ]
     }
   ],
   "schema": 1
