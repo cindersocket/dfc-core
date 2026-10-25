@@ -36,6 +36,9 @@ Use a C11 compiler and select either mbedTLS 3.x or
 [tiny-crypto-c](https://github.com/mistial-dev/tiny-crypto-c). See
 [Integration](docs/integration.md) for compiler options.
 
+The [dependency graph guide](docs/dependency-graph.md) documents dependency
+inventory and submission coverage.
+
 ## Run the tests
 
 With mbedTLS 3.x installed:
