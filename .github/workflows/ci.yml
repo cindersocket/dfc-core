@@ -35,6 +35,8 @@ jobs:
         run: python3 tests/test_check_stack_usage.py
       - name: Test CI unit workflow policy
         run: python3 tests/test_ci_unit_workflow.py
+      - name: Test host-suite Makefile contract
+        run: python3 tests/test_makefile_contract.py
       - name: Test Android minification contract
         run: python3 tests/test_android_minification.py
       - name: Verify the Rust publication archive
