@@ -41,6 +41,8 @@ jobs:
         run: python3 tests/test_makefile_contract.py
       - name: Test formatting tool isolation
         run: python3 tests/test_format_tooling.py
+      - name: Test Java command construction
+        run: python3 tests/test_java_command_structure.py
       - name: Test Android minification contract
         run: python3 tests/test_android_minification.py
       - name: Verify the Rust publication archive
@@ -353,7 +355,9 @@ jobs:
             tests/java/DfcJniSmokeTest.java tests/java/DfcJniReplayRandomTest.java \
             tests/java/DfcReaderHeaderBoundsTest.java tests/java/DfcJniNarrowingTest.java \
             tests/java/DfcLayoutCompatibilityTest.java tests/java/DfcSecretLifetimeTest.java \
+            tests/java/DfcCommandRangeTest.java \
             examples/java/DfcTransceiveExample.java
+          java -cp build-jni/java com.cindersocket.dfc.DfcCommandRangeTest
           java -cp build-jni/java com.cindersocket.dfc.DfcSecretLifetimeTest
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
             examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
