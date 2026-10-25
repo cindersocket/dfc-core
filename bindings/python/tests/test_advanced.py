@@ -72,6 +72,12 @@ def test_captured_sdm_and_transaction_receipts() -> None:
         assert not wrong_counter.verify(bytes.fromhex("352E57ADDA911EDC"))
 
     with TransactionMacVerifier(
+        bytes(16), bytes.fromhex("0483B4F2CF1890"), counter=1, capacity=64
+    ) as changed_value:
+        changed_value.add_value(0x0C, 5, 2)
+        assert not changed_value.verify(bytes.fromhex("352E57ADDA911EDC"))
+
+    with TransactionMacVerifier(
         bytes([1]) + bytes(15), bytes.fromhex("0483B4F2CF1890"), counter=1, capacity=64
     ) as wrong_key:
         wrong_key.add_value(0x0C, 5, 1)

@@ -137,6 +137,9 @@ The binding wipes its mutable ctypes copies of keys, transaction inputs, MACs,
 and decrypted SDM data after each native call. Returned immutable `bytes` remain
 owned by the application.
 Replay detection and transaction-counter persistence remain application policy.
+The [native transaction-input contract](../../src/dfc_transaction_mac.h)
+defines the supported commands, fields, padding, and ordering used unchanged by
+these methods.
 
 See [`examples/python/verify_backend.py`](https://github.com/cindersocket/dfc-core/blob/master/examples/python/verify_backend.py)
 for captured SDM verification plus an actual virtual-card transaction, decoded

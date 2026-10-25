@@ -126,7 +126,8 @@ responsible for storing read-counter history and rejecting replayed messages.
 `src/dfc_transaction_mac.h` builds authenticated transaction input from typed
 operations and verifies the returned transaction counter and MAC. Applications
 remain responsible for retaining counter history and rejecting duplicate
-receipts.
+receipts. The header is the canonical contract for supported commands, encoded
+fields, padding, and operation order.
 
 The Python, Rust, Java, Android, and .NET bindings expose these APIs with typed
 results. Their examples transceive commands through a virtual card, decode

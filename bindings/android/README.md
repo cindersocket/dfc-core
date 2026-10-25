@@ -11,6 +11,10 @@ verification, and Transaction MAC verifier. SDM verification authenticates one
 message; the backend must persist the last accepted read counter for its card
 and application context and reject duplicate or older counters. The binding
 does not store replay state.
+The Transaction MAC verifier follows the
+[native transaction-input contract](../../src/dfc_transaction_mac.h) for its
+supported commands, fields, padding, and card-order rules. Receipt history
+remains application policy.
 
 Install the published AAR from Maven Central:
 

@@ -27,6 +27,11 @@ message. The backend must persist the last accepted read counter for the
 relevant card and application context, then reject duplicate or older counters
 before acting on the result. The binding does not store replay state.
 
+`DfcTransactionMacVerifier` follows the
+[native transaction-input contract](../../src/dfc_transaction_mac.h) for its
+supported commands, fields, padding, and card-order rules. Receipt counter
+history and duplicate detection remain application policy.
+
 ## Load and transceive
 
 Handle `Result` failures before taking `.Value`. Both the card and reader own

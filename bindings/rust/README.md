@@ -94,6 +94,9 @@ and `TransactionMacVerifier`. Verified SDM fields are returned only after the
 MAC succeeds. The transaction verifier accepts structured operations in card
 order and clears its native key and transcript on drop. Applications still own
 replay detection and counter persistence.
+The [native transaction-input contract](../../src/dfc_transaction_mac.h)
+defines the supported commands, fields, padding, and ordering used unchanged by
+these methods.
 
 Run the backend example, which also transceives a virtual-card transaction and
 verifies the returned commit receipt, with:

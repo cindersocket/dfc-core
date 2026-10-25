@@ -27,6 +27,30 @@ typedef struct {
     bool initialized;
 } DfcTransactionMacVerifier;
 
+// Transaction input is appended in the same order that commands completed on
+// the card. Every integer below is serialized least-significant byte first.
+// Each operation's header and data are independently zero-padded to a 16-byte
+// boundary; a component already aligned to 16 bytes receives no extra block.
+//
+// Supported operations and headers are:
+// - add_data: command || file number || 24-bit offset || 24-bit length. It
+//   accepts ReadData and WriteData, plus native and ISO ReadRecords and
+//   WriteRecord commands. The data component is the bytes read or written.
+// - add_record_update: command || file number || 24-bit record number ||
+//   24-bit offset || 24-bit length, followed by the update bytes. It accepts
+//   native and ISO UpdateRecord commands.
+// - add_value: command || file number || 32-bit value. It accepts GetValue,
+//   Credit, Debit, and LimitedCredit.
+// - add_clear_record: ClearRecordFile || file number.
+// - add_reader_id: CommitReaderID || current 16-byte reader ID, followed by the
+//   optional encrypted previous 16-byte reader ID.
+//
+// Read helpers receive the successful response data. Write and update helpers
+// receive the command data. Callers omit operations that failed on the card.
+// Verification authenticates this ordered input under the supplied key, UID,
+// and returned transaction counter. Duplicate-receipt and counter-history
+// policy remains the caller's responsibility.
+//
 // The caller owns `input` and chooses its capacity. Init accepts uninitialized
 // verifier storage and overwrites it. Clear an initialized verifier before
 // reinitializing when its accumulated input must also be wiped.
