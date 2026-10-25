@@ -12,6 +12,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(dfc-core VERSION 2.0.0 LANGUAGES C)
 
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -199,7 +202,13 @@ set(DFC_FFI_SOURCES
         port/host/dfc_bytebuf_host.c)
 
 function(dfc_configure_ffi_target target)
-    target_include_directories(${target} PUBLIC ffi src port PRIVATE port/ffi port/host)
+    target_include_directories(${target}
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ffi>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/port>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/dfc>
+        PRIVATE port/ffi port/host)
     target_compile_definitions(
         ${target} PUBLIC ${DFC_DEFINITIONS} DFC_ENABLE_FFI=1 PRIVATE DFC_FFI_BUILD=1)
     target_compile_options(${target} PRIVATE ${DFC_WARNINGS})
@@ -223,8 +232,12 @@ if(DFC_BUILD_SHARED)
         C_VISIBILITY_PRESET default
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR})
-    install(TARGETS dfc LIBRARY DESTINATION lib RUNTIME DESTINATION bin ARCHIVE DESTINATION lib)
-    install(FILES ffi/dfc_ffi.h DESTINATION include)
+    install(TARGETS dfc EXPORT dfc-core-targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(FILES ffi/dfc_ffi.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dfc)
+    set(DFC_HAS_INSTALLABLE_FFI ON)
 
     if(DFC_BUILD_TESTS)
         enable_testing()
@@ -238,8 +251,32 @@ if(DFC_BUILD_STATIC_FFI)
     add_library(dfc_ffi_static STATIC ${DFC_FFI_SOURCES})
     dfc_configure_ffi_target(dfc_ffi_static)
     set_target_properties(dfc_ffi_static PROPERTIES OUTPUT_NAME dfc)
-    install(TARGETS dfc_ffi_static ARCHIVE DESTINATION lib)
-    install(FILES ffi/dfc_ffi.h DESTINATION include)
+    if(NOT DFC_BUILD_SHARED)
+        set_target_properties(dfc_ffi_static PROPERTIES EXPORT_NAME dfc)
+    endif()
+    install(TARGETS dfc_ffi_static EXPORT dfc-core-targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(FILES ffi/dfc_ffi.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dfc)
+    set(DFC_HAS_INSTALLABLE_FFI ON)
+endif()
+
+if(DFC_HAS_INSTALLABLE_FFI)
+    configure_package_config_file(
+        cmake/dfc-core-config.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/dfc-core-config.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/dfc-core)
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/dfc-core-config-version.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion)
+    install(EXPORT dfc-core-targets
+        FILE dfc-core-targets.cmake
+        NAMESPACE dfc::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/dfc-core)
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/dfc-core-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/dfc-core-config-version.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/dfc-core)
 endif()
 
 if(DFC_BUILD_RUST_TARGET_BRIDGE)
@@ -270,7 +307,9 @@ if(DFC_BUILD_JNI)
     target_compile_definitions(dfc_jni PUBLIC ${DFC_DEFINITIONS} DFC_ENABLE_FFI=1
         PRIVATE DFC_FFI_BUILD=1)
     target_compile_options(dfc_jni PRIVATE ${DFC_WARNINGS})
-    target_link_libraries(dfc_jni PRIVATE ${DFC_CRYPTO_LIBRARIES} ${JNI_LIBRARIES})
+    # JNI calls arrive through the VM-provided function table; linking a host
+    # JVM library would also prevent cross-compiling platform classifier jars.
+    target_link_libraries(dfc_jni PRIVATE ${DFC_CRYPTO_LIBRARIES})
     if(WIN32)
         target_link_libraries(dfc_jni PRIVATE bcrypt)
     endif()

@@ -14,6 +14,7 @@ EXPECTED = {
     ("uv", "/bindings/python"),
     ("gradle", "/bindings/android"),
     ("gradle", "/examples/android"),
+    ("maven", "/bindings/java"),
     ("nuget", "/bindings/dotnet"),
     ("nuget", "/examples/dotnet"),
     ("github-actions", "/"),
@@ -38,7 +39,9 @@ def scalar(value: str) -> object:
     if value.isdecimal():
         return int(value)
     if value.startswith("[") and value.endswith("]"):
-        return [item.strip().strip('"') for item in value[1:-1].split(",") if item.strip()]
+        return [
+            item.strip().strip('"') for item in value[1:-1].split(",") if item.strip()
+        ]
     return value
 
 
@@ -111,7 +114,11 @@ def manifest_owner(path: Path) -> tuple[str, str] | None:
         return ("cargo", "/unowned")
 
     if name in {"pyproject.toml", "uv.lock"}:
-        root = "/bindings/python" if relative.startswith("bindings/python/") else "/unowned"
+        root = (
+            "/bindings/python"
+            if relative.startswith("bindings/python/")
+            else "/unowned"
+        )
         return ("uv", root)
     if (name.startswith("requirements") and name.endswith((".txt", ".in"))) or name in {
         "Pipfile",
@@ -131,11 +138,17 @@ def manifest_owner(path: Path) -> tuple[str, str] | None:
         "settings.gradle.kts",
     }
     if name in gradle_names:
+        if relative.startswith("tests/package-consumer/"):
+            return None
         if relative.startswith("bindings/android/"):
             return ("gradle", "/bindings/android")
         if relative.startswith("examples/android/"):
             return ("gradle", "/examples/android")
         return ("gradle", "/unowned")
+
+    if name == "pom.xml":
+        root = "/bindings/java" if relative.startswith("bindings/java/") else "/unowned"
+        return ("maven", root)
 
     dotnet_names = {
         "Directory.Build.props",
@@ -145,6 +158,8 @@ def manifest_owner(path: Path) -> tuple[str, str] | None:
         "packages.lock.json",
     }
     if name in dotnet_names or path.suffix in {".csproj", ".fsproj", ".sln", ".vbproj"}:
+        if relative.startswith("tests/package-consumer/"):
+            return None
         if relative.startswith("bindings/dotnet/"):
             return ("nuget", "/bindings/dotnet")
         if relative.startswith("examples/dotnet/"):
@@ -173,7 +188,9 @@ class DependabotConfigTests(unittest.TestCase):
         for update in updates:
             self.assertIsInstance(update, dict)
             self.assertEqual(set(update), required)
-            identities.append((str(update["package-ecosystem"]), str(update["directory"])))
+            identities.append(
+                (str(update["package-ecosystem"]), str(update["directory"]))
+            )
             self.assertEqual(
                 update["schedule"],
                 {
@@ -185,7 +202,9 @@ class DependabotConfigTests(unittest.TestCase):
             )
             self.assertEqual(update["target-branch"], "master")
             self.assertEqual(update["open-pull-requests-limit"], 5)
-            self.assertEqual(update["commit-message"], {"prefix": "deps", "include": "scope"})
+            self.assertEqual(
+                update["commit-message"], {"prefix": "deps", "include": "scope"}
+            )
             self.assertEqual(
                 update["groups"],
                 {
@@ -222,9 +241,11 @@ class DependabotConfigTests(unittest.TestCase):
             "bindings/python/uv.lock",
             "bindings/android/build.gradle.kts",
             "bindings/android/gradle/wrapper/gradle-wrapper.properties",
+            "bindings/java/pom.xml",
             "bindings/dotnet/Directory.Build.props",
             "examples/dotnet/Dfc.TransceiveExample.csproj",
             ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
         }
         self.assertTrue(required <= set(discovered))
 

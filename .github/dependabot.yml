@@ -85,6 +85,23 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
+  - package-ecosystem: maven
+    directory: /bindings/java
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Los_Angeles
+    target-branch: master
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+      include: scope
+    groups:
+      compatible-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
   - package-ecosystem: nuget
     directory: /bindings/dotnet
     schedule:

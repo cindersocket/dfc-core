@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 import xml.etree.ElementTree as ET
@@ -56,12 +57,26 @@ def main() -> None:
     python = read_toml("bindings/python/pyproject.toml")
     dotnet = ET.parse(ROOT / "bindings/dotnet/src/Dfc/Dfc.csproj").getroot()
     dotnet_version = dotnet.findtext("./PropertyGroup/Version")
+    dotnet_consumer = ET.parse(
+        ROOT / "tests/package-consumer/dotnet/Dfc.PackageConsumer.csproj"
+    ).getroot()
+    dotnet_consumer_version = dotnet_consumer.findtext("./PropertyGroup/DfcVersion")
+    java = ET.parse(ROOT / "bindings/java/pom.xml").getroot()
+    namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+    java_version = java.findtext("m:properties/m:revision", namespaces=namespace)
+    android = (ROOT / "bindings/android/dfc/build.gradle.kts").read_text(encoding="utf-8")
+    android_version = re.search(r'^version = "([^"]+)"$', android, re.MULTILINE)
+    inventory = json.loads((ROOT / "release-artifacts.json").read_text(encoding="utf-8"))
 
     versions = [
         ("Cargo.toml workspace", cargo["workspace"]["package"]["version"]),
         ("dfc-core Rust dependency", rust["dependencies"]["dfc-core-sys"]["version"]),
         ("Python project", python["project"]["version"]),
         (".NET package", dotnet_version),
+        (".NET package consumer", dotnet_consumer_version),
+        ("Java package", java_version),
+        ("Android package", android_version.group(1) if android_version else None),
+        ("release artifact inventory", inventory.get("version")),
         *package_versions("Cargo.lock", "dfc-core", "dfc-core-sys"),
         *package_versions("examples/rust-virtual-picc/Cargo.lock", "dfc-core", "dfc-core-sys"),
         *package_versions("bindings/python/uv.lock", "dfc-core"),
@@ -75,6 +90,31 @@ def main() -> None:
         versions.extend(
             (f"Rust README dependency example {index}", direct or table)
             for index, (direct, table) in enumerate(documented, 1)
+        )
+
+    documented_versions = {
+        "Python README": re.findall(
+            r"dfc-core==([0-9]+\.[0-9]+\.[0-9]+)",
+            (ROOT / "bindings/python/README.md").read_text(encoding="utf-8"),
+        ),
+        "Java README": re.findall(
+            r"<version>([0-9]+\.[0-9]+\.[0-9]+)</version>",
+            (ROOT / "bindings/java/README.md").read_text(encoding="utf-8"),
+        ),
+        "Android README": re.findall(
+            r"com\.cindersocket:dfc-core-android:([0-9]+\.[0-9]+\.[0-9]+)",
+            (ROOT / "bindings/android/README.md").read_text(encoding="utf-8"),
+        ),
+        ".NET README": re.findall(
+            r'<PackageReference Include="Dfc" Version="([0-9]+\.[0-9]+\.[0-9]+)"',
+            (ROOT / "bindings/dotnet/README.md").read_text(encoding="utf-8"),
+        ),
+    }
+    for document, values in documented_versions.items():
+        if not values:
+            versions.append((document, None))
+        versions.extend(
+            (f"{document} package example {index}", value) for index, value in enumerate(values, 1)
         )
 
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

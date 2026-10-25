@@ -26,6 +26,7 @@ def repository_manifests() -> set[str]:
         "gradle-wrapper.properties",
         "gradle.properties",
         "packages.lock.json",
+        "pom.xml",
         "poetry.lock",
         "pyproject.toml",
         "uv.lock",
@@ -80,9 +81,7 @@ class DependencyGraphTests(unittest.TestCase):
 
         expected = repository_manifests()
         self.assertEqual(set(owners), expected)
-        self.assertEqual(
-            [], [f"{path}: {ids}" for path, ids in owners.items() if len(ids) != 1]
-        )
+        self.assertEqual([], [f"{path}: {ids}" for path, ids in owners.items() if len(ids) != 1])
 
     def test_ingestion_contracts_are_complete(self) -> None:
         valid = {"manifest", "dependency-submission", "not-applicable"}
@@ -95,9 +94,7 @@ class DependencyGraphTests(unittest.TestCase):
                 for manifest in surface["manifests"]:
                     self.assertTrue((ROOT / manifest).is_file(), manifest)
                 if surface["ingestion"] == "dependency-submission":
-                    self.assertEqual(
-                        surface["workflow"], ".github/workflows/dependency-graph.yml"
-                    )
+                    self.assertEqual(surface["workflow"], ".github/workflows/dependency-graph.yml")
                 if surface["ingestion"] == "not-applicable":
                     self.assertTrue(surface.get("notes"))
 
@@ -108,9 +105,7 @@ class DependencyGraphTests(unittest.TestCase):
             trigger,
             "on:\n  push:\n    branches: [master]\n  workflow_dispatch:",
         )
-        permissions = text[
-            text.index("permissions:\n") : text.index("\n\nconcurrency:")
-        ]
+        permissions = text[text.index("permissions:\n") : text.index("\n\nconcurrency:")]
         self.assertEqual(permissions, "permissions:\n  contents: write")
         self.assertEqual(text.count("\npermissions:\n"), 1)
         self.assertNotIn("pull_request:", text)
@@ -122,9 +117,7 @@ class DependencyGraphTests(unittest.TestCase):
                 self.assertRegex(action, r"^[^@]+@[0-9a-f]{40}$")
 
     def test_each_dependency_submitter_is_unique(self) -> None:
-        workflows = "\n".join(
-            path.read_text(encoding="utf-8") for path in workflow_files()
-        )
+        workflows = "\n".join(path.read_text(encoding="utf-8") for path in workflow_files())
         self.assertEqual(workflows.count("native-dependency-snapshot.py --submit"), 1)
         self.assertEqual(workflows.count("gradle/actions/dependency-submission@"), 1)
         self.assertEqual(workflows.count("dependency-graph: generate-and-submit"), 1)

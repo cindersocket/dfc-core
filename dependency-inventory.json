@@ -69,15 +69,26 @@
       "ingestion": "manifest",
       "manifests": [
         ".github/workflows/ci.yml",
-        ".github/workflows/dependency-graph.yml"
+        ".github/workflows/dependency-graph.yml",
+        ".github/workflows/release.yml"
       ]
     },
     {
       "id": "standalone-java-jni",
       "ecosystem": "maven",
+      "ingestion": "manifest",
+      "manifests": ["bindings/java/pom.xml"]
+    },
+    {
+      "id": "release-smoke-consumers",
+      "ecosystem": "generic",
       "ingestion": "not-applicable",
-      "manifests": [],
-      "notes": "The standalone Java/JNI binding has no external Java packages. Android-owned dependencies are reported by the Gradle surface."
+      "manifests": [
+        "tests/package-consumer/CMakeLists.txt",
+        "tests/package-consumer/dotnet/Dfc.PackageConsumer.csproj",
+        "tests/package-consumer/android/app/build.gradle.kts"
+      ],
+      "notes": "These fixtures consume the packages built from this repository and intentionally declare no third-party dependencies."
     }
   ]
 }

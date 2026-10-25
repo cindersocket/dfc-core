@@ -46,13 +46,17 @@ class ReleaseProcessTests(unittest.TestCase):
     def test_requires_every_ci_job(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         jobs_section = workflow.split("\njobs:\n", 1)[1]
-        workflow_jobs = set(re.findall(r"^  ([a-z][a-z0-9-]*):$", jobs_section, re.MULTILINE))
+        workflow_jobs = set(
+            re.findall(r"^  ([a-z][a-z0-9-]*):$", jobs_section, re.MULTILINE)
+        )
         documented = re.search(
             r"Required CI jobs \(exact IDs\):\n\n((?:- `[a-z][a-z0-9-]*`\n)+)",
             self.guide,
         )
         self.assertIsNotNone(documented)
-        documented_jobs = set(re.findall(r"^- `([^`]+)`$", documented.group(1), re.MULTILINE))
+        documented_jobs = set(
+            re.findall(r"^- `([^`]+)`$", documented.group(1), re.MULTILINE)
+        )
         self.assertEqual(documented_jobs, workflow_jobs)
 
     def test_uses_the_cmake_dependency_pin_for_immutable_checkout(self) -> None:
@@ -84,7 +88,7 @@ class ReleaseProcessTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertTrue(result.stdout.startswith("- Add Java and Android JNI bindings"))
+        self.assertIn("- Add Java and Android JNI bindings", result.stdout)
 
     def test_requires_signed_tag_source_artifacts_and_github_release(self) -> None:
         required = (
@@ -93,20 +97,21 @@ class ReleaseProcessTests(unittest.TestCase):
             "git archive",
             "python3 scripts/checksums.py create",
             "python3 scripts/checksums.py check",
-            "gh release create",
-            "ships source archives and checksums",
+            "gh workflow run release.yml",
+            "publish=true",
+            "complete verified artifact bundle",
         )
         for text in required:
             with self.subTest(text=text):
                 self.assertIn(text, self.guide)
 
-    def test_defines_the_exact_2_0_distribution_policy(self) -> None:
+    def test_defines_the_complete_distribution_policy(self) -> None:
         published = (
             "dfc-core-$version.tar.gz",
             "dfc-core-$version.zip",
             "SHA256SUMS",
         )
-        source_build_outputs = (
+        package_outputs = (
             "native libraries",
             "Android AAR",
             "NuGet package",
@@ -114,10 +119,11 @@ class ReleaseProcessTests(unittest.TestCase):
             "Java/JNI",
             "Rust crates",
         )
-        for artifact in published + source_build_outputs:
+        for artifact in published + package_outputs:
             with self.subTest(artifact=artifact):
                 self.assertIn(artifact, self.guide)
-        self.assertIn("source-only distribution for 2.0", self.guide)
+        self.assertIn("release-artifacts.json", self.guide)
+        self.assertIn("PyPI, NuGet, and crates.io use trusted publishing", self.guide)
 
     def test_requires_archive_inspection_and_source_entry_point_smokes(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")

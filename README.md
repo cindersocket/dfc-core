@@ -37,6 +37,9 @@ Use a C11 compiler and select either mbedTLS 3.x or
 [tiny-crypto-c](https://github.com/mistial-dev/tiny-crypto-c). See
 [Integration](docs/integration.md) for compiler options.
 
+Installable artifacts and their release contract are documented in
+[Packages and releases](docs/packages.md).
+
 The [dependency graph guide](docs/dependency-graph.md) documents dependency
 inventory and submission coverage.
 

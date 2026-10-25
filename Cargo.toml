@@ -12,6 +12,7 @@ build = "bindings/rust/dfc-core-sys/build.rs"
 include = [
     "/Cargo.toml",
     "/CMakeLists.txt",
+    "/cmake/**",
     "/LICENSE",
     "/bindings/rust/README.md",
     "/src/**",

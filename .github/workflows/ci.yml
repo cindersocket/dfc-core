@@ -57,6 +57,8 @@ jobs:
         run: python3 tests/test_release_artifacts.py
       - name: Test release procedure
         run: python3 tests/test_release_process.py
+      - name: Test release artifact inventory
+        run: python3 tests/test_release_inventory.py
       - name: Test dependency graph inventory
         run: python3 tests/test_dependency_graph.py
       - name: Test Dependabot coverage

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.cindersocket</groupId>
+  <artifactId>dfc-core</artifactId>
+  <version>${revision}</version>
+  <name>dfc-core Java binding</name>
+  <description>Java and JNI bindings for the dfc-core DESFire-compatible engine.</description>
+  <url>https://github.com/cindersocket/dfc-core</url>
+  <licenses>
+    <license>
+      <name>GNU General Public License v2.0 or later</name>
+      <url>https://www.gnu.org/licenses/old-licenses/gpl-2.0.html</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>cindersocket</id>
+      <name>CinderSocket</name>
+      <email>cindersocket@users.noreply.github.com</email>
+      <url>https://github.com/cindersocket</url>
+      <roles><role>developer</role></roles>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/cindersocket/dfc-core.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/cindersocket/dfc-core.git</developerConnection>
+    <url>https://github.com/cindersocket/dfc-core</url>
+    <tag>HEAD</tag>
+  </scm>
+  <properties>
+    <revision>2.0.0</revision>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions><execution><id>sources</id><goals><goal>jar-no-fork</goal></goals></execution></executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.11.2</version>
+        <executions><execution><id>javadoc</id><goals><goal>jar</goal></goals></execution></executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>flatten-maven-plugin</artifactId>
+        <version>1.7.3</version>
+        <configuration>
+          <flattenMode>resolveCiFriendliesOnly</flattenMode>
+          <updatePomFile>true</updatePomFile>
+        </configuration>
+        <executions>
+          <execution>
+            <id>flatten</id>
+            <phase>process-resources</phase>
+            <goals><goal>flatten</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
