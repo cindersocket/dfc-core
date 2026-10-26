@@ -40,3 +40,4 @@ jobs:
         with:
           build-root-directory: bindings/android
           dependency-graph: generate-and-submit
+          dependency-graph-include-configurations: ".*RuntimeClasspath"

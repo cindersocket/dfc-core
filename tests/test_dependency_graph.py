@@ -122,6 +122,10 @@ class DependencyGraphTests(unittest.TestCase):
         self.assertEqual(workflows.count("native-dependency-snapshot.py --submit"), 1)
         self.assertEqual(workflows.count("gradle/actions/dependency-submission@"), 1)
         self.assertEqual(workflows.count("dependency-graph: generate-and-submit"), 1)
+        self.assertEqual(
+            workflows.count('dependency-graph-include-configurations: ".*RuntimeClasspath"'),
+            1,
+        )
 
     def test_inventory_check_runs_in_pull_request_ci(self) -> None:
         text = CI_WORKFLOW.read_text(encoding="utf-8")
