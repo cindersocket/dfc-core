@@ -98,6 +98,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_se
 	test_dfc_format_configuration test_dfc_d40_capture \
 	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
 	test_dfc_response \
+	test_dfc_ev2_command_metadata \
 	test_dfc_sdm_verify \
 	test_dfc_iso_file_access \
 	test_dfc_ev1_response_policy \
@@ -185,7 +186,7 @@ test_dfc_sdm_failures: test_dfc_sdm_failures.c auth_fault_test_support.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_dfc_ev2_response_atomicity: test_dfc_ev2_response_atomicity.c \
-		$(CORE)/dfc_ev2.c $(CORE)/dfc_emulator_access.c munit/munit.c
+		$(CORE)/dfc_ev2.c $(CORE)/dfc_ev2_command.c $(CORE)/dfc_emulator_access.c munit/munit.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_dfc_roll_key_set_wipe: test_dfc_roll_key_set_wipe.c $(CORE)/dfc_credential.c \

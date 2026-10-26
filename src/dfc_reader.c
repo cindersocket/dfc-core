@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "dfc_crypto_internal.h"
+#include "dfc_ev2_command.h"
 #include "dfc_ev2_crypto.h"
 
 #if DFC_ENABLE_READER
@@ -46,13 +47,7 @@ enum {
     PlanEv2MacDecrypt,
 };
 
-#define FILE_HEADER_LENGTH          7
-#define UPDATE_RECORD_HEADER_LENGTH 10
-#define VALUE_HEADER_LENGTH         1
-#define SET_CONFIGURATION_HEADER    1
-#define CREATE_TMAC_HEADER          5
-#define CHANGE_KEY_EV2_HEADER       2
-#define CHANGE_KEY_HEADER           1
+#define CHANGE_KEY_HEADER 1
 
 #define WRAPPED_SW1             0x91
 #define DFC_READER_STREAM_CHUNK 152
@@ -917,8 +912,8 @@ ev2_confirmation_cleanup:
 // ----------------------------------------------------------- command ---
 
 static bool is_file_read(uint8_t ins) {
-    return ins == DFC_CMD_READ_DATA || ins == DFC_CMD_READ_RECORDS ||
-           ins == DFC_CMD_READ_RECORDS_ISO || ins == DFC_CMD_GET_VALUE;
+    DfcEv2CommandMetadata metadata = dfc_ev2_command_metadata(ins);
+    return dfc_ev2_command_has(&metadata, DfcEv2CommandFileRead);
 }
 
 static bool response_is_always_full(uint8_t ins) {
@@ -931,50 +926,25 @@ static bool command_requires_response_data(const DfcCommand* command) {
     // record read has data. An empty record file reports an error instead.
     if(command->ins == DFC_CMD_READ_RECORDS || command->ins == DFC_CMD_READ_RECORDS_ISO)
         return true;
-    if(command->ins == DFC_CMD_READ_DATA && command->data_len >= FILE_HEADER_LENGTH) {
+    if(command->ins == DFC_CMD_READ_DATA && command->data_len >= DfcEv2FileHeaderLength) {
         return command->data[4] != 0 || command->data[5] != 0 || command->data[6] != 0;
     }
     return false;
 }
 
 static bool is_file_command(uint8_t ins) {
-    switch(ins) {
-    case DFC_CMD_READ_DATA:
-    case DFC_CMD_WRITE_DATA:
-    case DFC_CMD_READ_RECORDS:
-    case DFC_CMD_READ_RECORDS_ISO:
-    case DFC_CMD_WRITE_RECORD:
-    case DFC_CMD_WRITE_RECORD_ISO:
-    case DFC_CMD_UPDATE_RECORD:
-    case DFC_CMD_UPDATE_RECORD_ISO:
-    case DFC_CMD_GET_VALUE:
-    case DFC_CMD_CREDIT:
-    case DFC_CMD_DEBIT:
-    case DFC_CMD_LIMITED_CREDIT:
-        return true;
-    default:
-        return false;
-    }
+    DfcEv2CommandMetadata metadata = dfc_ev2_command_metadata(ins);
+    return dfc_ev2_command_has(&metadata, DfcEv2CommandFile);
 }
 
 // Clear head of a command whose data field a Full file encrypts, counted after
 // the instruction. SIZE_MAX when the instruction has no encrypted field.
 static size_t file_header_length(uint8_t ins) {
-    switch(ins) {
-    case DFC_CMD_WRITE_DATA:
-    case DFC_CMD_WRITE_RECORD:
-    case DFC_CMD_WRITE_RECORD_ISO:
-        return FILE_HEADER_LENGTH;
-    case DFC_CMD_UPDATE_RECORD:
-    case DFC_CMD_UPDATE_RECORD_ISO:
-        return UPDATE_RECORD_HEADER_LENGTH;
-    case DFC_CMD_CREDIT:
-    case DFC_CMD_DEBIT:
-    case DFC_CMD_LIMITED_CREDIT:
-        return VALUE_HEADER_LENGTH;
-    default:
-        return SIZE_MAX;
-    }
+    DfcEv2CommandMetadata metadata = dfc_ev2_command_metadata(ins);
+    return dfc_ev2_command_has(&metadata, DfcEv2CommandFile) &&
+                   !dfc_ev2_command_has(&metadata, DfcEv2CommandFileRead) ?
+               metadata.encrypted_header_length :
+               SIZE_MAX;
 }
 
 // Return the exact caller capacity needed to emit the first frame of the next
@@ -983,8 +953,8 @@ static size_t next_stream_emit_capacity(const DfcReaderExchange* exchange) {
     const DfcReaderStream* stream = &exchange->stream;
     size_t remaining = stream->length - stream->offset;
     size_t body_len = remaining > DFC_READER_STREAM_CHUNK ? DFC_READER_STREAM_CHUNK : remaining;
-    size_t header_len = stream->kind == StreamUpdateRecord ? UPDATE_RECORD_HEADER_LENGTH :
-                                                             FILE_HEADER_LENGTH;
+    size_t header_len = stream->kind == StreamUpdateRecord ? DfcEv2UpdateRecordHeaderLength :
+                                                             DfcEv2FileHeaderLength;
     size_t wire_len = body_len;
     const DfcReaderSession* session = exchange->session;
 
@@ -1074,13 +1044,13 @@ static DfcReaderStatus fail_prepared_command(DfcReaderExchange* exchange, DfcRea
 // copy, and it bounds the length itself instead of trusting that every entry
 // point validated it.
 _Static_assert(
-    FILE_HEADER_LENGTH <= DFC_READER_MAX_CLEAR_HEADER_LENGTH,
+    DfcEv2FileHeaderLength <= DFC_READER_MAX_CLEAR_HEADER_LENGTH,
     "the clear-head bound must cover a data or record write");
 _Static_assert(
-    UPDATE_RECORD_HEADER_LENGTH == DFC_READER_MAX_CLEAR_HEADER_LENGTH,
+    DfcEv2UpdateRecordHeaderLength == DFC_READER_MAX_CLEAR_HEADER_LENGTH,
     "the clear-head bound is the UpdateRecord head");
 _Static_assert(
-    VALUE_HEADER_LENGTH <= DFC_READER_MAX_CLEAR_HEADER_LENGTH,
+    DfcEv2ValueHeaderLength <= DFC_READER_MAX_CLEAR_HEADER_LENGTH,
     "the clear-head bound must cover a value command");
 
 static DfcReaderStatus prepare_wrapped_file_write(
@@ -1132,7 +1102,7 @@ static DfcReaderStatus
     if(ins == DFC_CMD_SET_CONFIGURATION) {
         if(ex->comm_mode != DFC_COMM_ENCIPHERED) return DfcReaderInvalid;
         return prepare_wrapped_file_write(
-            ex, command, DFC_COMM_ENCIPHERED, SET_CONFIGURATION_HEADER);
+            ex, command, DFC_COMM_ENCIPHERED, DfcEv2SetConfigurationHeaderLength);
     }
     if(ins == DFC_CMD_COMMIT_READER_ID) {
         if(ex->comm_mode != DFC_COMM_MAC) return DfcReaderInvalid;
@@ -1166,7 +1136,7 @@ static DfcReaderStatus
     if(ins == DFC_CMD_SET_CONFIGURATION) {
         if(ex->comm_mode != DFC_COMM_ENCIPHERED) return DfcReaderInvalid;
         return prepare_wrapped_file_write(
-            ex, command, DFC_COMM_ENCIPHERED, SET_CONFIGURATION_HEADER);
+            ex, command, DFC_COMM_ENCIPHERED, DfcEv2SetConfigurationHeaderLength);
     }
 
     if(ins == DFC_CMD_CHANGE_KEY) {
@@ -1214,37 +1184,22 @@ static DfcReaderStatus
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
 // EV2: instructions whose data field is encrypted whatever the file says.
 static size_t ev2_always_encrypted_header(uint8_t ins) {
-    switch(ins) {
-    case DFC_CMD_SET_CONFIGURATION:
-        return SET_CONFIGURATION_HEADER;
-    case DFC_CMD_CREATE_TRANSACTION_MAC_FILE:
-        return CREATE_TMAC_HEADER;
-    case DFC_CMD_CHANGE_KEY_EV2:
-        return CHANGE_KEY_EV2_HEADER;
-    case DFC_CMD_CHANGE_KEY_SETTINGS:
-        return 0;
-    case DFC_CMD_CHANGE_FILE_SETTINGS:
-        return 1;
-    default:
+    DfcEv2CommandMetadata metadata = dfc_ev2_command_metadata(ins);
+    if(dfc_ev2_command_has(&metadata, DfcEv2CommandFile) ||
+       metadata.encrypted_header_length == DfcEv2NoEncryptedHeader) {
         return SIZE_MAX;
     }
+    return metadata.encrypted_header_length;
 }
 
 static bool ev2_bypasses(uint8_t ins) {
-    switch(ins) {
-    case DFC_CMD_ADDITIONAL_FRAME:
-    case DFC_CMD_AUTHENTICATE_EV2_FIRST:
-    case DFC_CMD_AUTHENTICATE_EV2_NON_FIRST:
-    case DFC_CMD_CREATE_DELEGATED_APPLICATION:
-        return true;
-    default:
-        break;
-    }
-    return false;
+    DfcEv2CommandMetadata metadata = dfc_ev2_command_metadata(ins);
+    return dfc_ev2_command_has(&metadata, DfcEv2CommandReaderBypass);
 }
 
 static bool ev2_supports_effective_plain(uint8_t ins) {
-    return is_file_command(ins) || ins == DFC_CMD_CHANGE_FILE_SETTINGS;
+    DfcEv2CommandMetadata metadata = dfc_ev2_command_metadata(ins);
+    return dfc_ev2_command_has(&metadata, DfcEv2CommandSupportsEffectivePlain);
 }
 
 static DfcReaderStatus

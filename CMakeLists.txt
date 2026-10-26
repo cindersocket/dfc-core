@@ -76,6 +76,7 @@ set(DFC_CORE_SOURCES
     src/dfc_emulator_crypto.c
     src/dfc_emulator_iso7816.c
     src/dfc_ev2.c
+    src/dfc_ev2_command.c
     src/dfc_ev2_crypto.c
     src/dfc_profile.c
     src/dfc_reader.c
