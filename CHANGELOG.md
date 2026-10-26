@@ -55,6 +55,9 @@
   snapshots distinct allocation tags for static-storage ports (#175).
 - Compact DER field indexes to reduce peak credential-decoder stack use
   (#173).
+- Compact DER field indexing further and emit each constructed body once,
+  reducing decoder stack and encoder work without changing canonical output
+  (#217, #218).
 - Consolidate reader authentication cleanup paths to reduce target code size
   while keeping secret wipes structurally enforced (#177).
 - Pool key-set metadata only for applications that use it, reducing the full
@@ -145,6 +148,21 @@
   separate from active authorization state.
 - Reduce each secure-messaging and reader-session object by 2,256 bytes by
   eliminating message-sized scratch storage.
+- Share mutually exclusive reader keys, pending authentication state, and
+  command/response buffers, reducing persistent and per-exchange RAM while
+  preserving configured capacities (#216, #219, #220).
+- Reuse wiped exchange scratch across the Python, Rust, Java/JNI, and .NET
+  bindings, and enforce one authentication boundary contract across them
+  (#224, #225).
+- Generate JNI packed-result layouts, split the flat FFI and JNI layers by API
+  family, and enforce exact export ownership in the build (#223, #227, #228).
+- Export the complete public FFI from every build role, with hygienic
+  unsupported stubs and linked-symbol validation (#230).
+- Consolidate AES wire-MAC, access-right, authentication, and little-endian
+  helpers to reduce duplicate code and keep reduced profiles linkable
+  (#226, #229).
+- Enable function and data sections for target objects so firmware links can
+  discard unreachable code (#221).
 - Harden Python and .NET native-handle ownership across construction,
   closed-object access, callback reentry, disposal, finalization, and concurrent
   calls.
