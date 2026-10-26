@@ -110,7 +110,11 @@ class Command:
 
     @classmethod
     def format_picc(cls) -> Command:
-        """Build FormatPICC."""
+        """Build FormatPICC.
+
+        Returns:
+            The unframed native command.
+        """
 
         return cls(0xFC)
 
@@ -136,7 +140,11 @@ class Command:
 
     @classmethod
     def get_df_names(cls) -> Command:
-        """Build GetDFNames."""
+        """Build GetDFNames.
+
+        Returns:
+            The unframed native command.
+        """
 
         return cls(0x6D)
 
@@ -152,7 +160,11 @@ class Command:
 
     @classmethod
     def get_iso_file_ids(cls) -> Command:
-        """Build GetISOFileIDs."""
+        """Build GetISOFileIDs.
+
+        Returns:
+            The unframed native command.
+        """
 
         return cls(0x61)
 
@@ -168,13 +180,33 @@ class Command:
 
     @classmethod
     def read_signature(cls, signature_id: int = 0) -> Command:
-        """Build ReadSignature with a one-byte signature identifier."""
+        """Build ReadSignature.
+
+        Args:
+            signature_id: One-byte signature identifier.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If ``signature_id`` does not fit in one byte.
+        """
 
         return cls(0x3C, bytes((signature_id,)))
 
     @classmethod
     def get_key_version(cls, key_number: int) -> Command:
-        """Build GetKeyVersion with a one-byte key number."""
+        """Build GetKeyVersion.
+
+        Args:
+            key_number: One-byte key number.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If ``key_number`` does not fit in one byte.
+        """
 
         return cls(0x64, bytes((key_number,)))
 
@@ -224,31 +256,81 @@ class Command:
 
     @classmethod
     def get_file_settings(cls, file_number: int) -> Command:
-        """Build GetFileSettings for a file numbered from 0 through 31."""
+        """Build GetFileSettings.
+
+        Args:
+            file_number: File number from 0 through 31.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If ``file_number`` is outside 0 through 31.
+        """
 
         return cls.file_operation(0xF5, file_number)
 
     @classmethod
     def get_file_counters(cls, file_number: int) -> Command:
-        """Build GetFileCounters for a file numbered from 0 through 31."""
+        """Build GetFileCounters.
+
+        Args:
+            file_number: File number from 0 through 31.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If ``file_number`` is outside 0 through 31.
+        """
 
         return cls.file_operation(0xF6, file_number)
 
     @classmethod
     def delete_file(cls, file_number: int) -> Command:
-        """Build DeleteFile for a file numbered from 0 through 31."""
+        """Build DeleteFile.
+
+        Args:
+            file_number: File number from 0 through 31.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If ``file_number`` is outside 0 through 31.
+        """
 
         return cls.file_operation(0xDF, file_number)
 
     @classmethod
     def clear_record_file(cls, file_number: int) -> Command:
-        """Build ClearRecordFile for a file numbered from 0 through 31."""
+        """Build ClearRecordFile.
+
+        Args:
+            file_number: File number from 0 through 31.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If ``file_number`` is outside 0 through 31.
+        """
 
         return cls.file_operation(0xEB, file_number)
 
     @classmethod
     def get_value(cls, file_number: int) -> Command:
-        """Build GetValue for a file numbered from 0 through 31."""
+        """Build GetValue.
+
+        Args:
+            file_number: File number from 0 through 31.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If ``file_number`` is outside 0 through 31.
+        """
 
         return cls.file_operation(0x6C, file_number)
 
@@ -295,20 +377,56 @@ class Command:
 
     @classmethod
     def write_data(cls, file_number: int, offset: int, data: bytes) -> Command:
-        """Build WriteData with a copied byte payload."""
+        """Build WriteData.
+
+        Args:
+            file_number: File number from 0 through 31.
+            offset: Unsigned 24-bit byte offset.
+            data: Payload copied into the command.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If a field is out of range or the payload exceeds one frame.
+        """
 
         return cls._range_with_data(0x3D, file_number, offset, bytes(data))
 
     @classmethod
     def read_records(cls, file_number: int, record_number: int, count: int) -> Command:
-        """Build ReadRecords with unsigned 24-bit record fields."""
+        """Build ReadRecords.
+
+        Args:
+            file_number: File number from 0 through 31.
+            record_number: Unsigned 24-bit first record number.
+            count: Unsigned 24-bit record count; zero means all remaining records.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If the file number or a 24-bit field is out of range.
+        """
 
         command = cls.read_data(file_number, record_number, count)
         return cls(0xBB, command.data)
 
     @classmethod
     def write_record(cls, file_number: int, offset: int, data: bytes) -> Command:
-        """Build WriteRecord with a copied byte payload."""
+        """Build WriteRecord.
+
+        Args:
+            file_number: File number from 0 through 31.
+            offset: Unsigned 24-bit byte offset within the record.
+            data: Payload copied into the command.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If a field is out of range or the payload exceeds one frame.
+        """
 
         return cls._range_with_data(0x3B, file_number, offset, bytes(data))
 
@@ -316,7 +434,20 @@ class Command:
     def update_record(
         cls, file_number: int, record_number: int, offset: int, data: bytes
     ) -> Command:
-        """Build UpdateRecord with unsigned 24-bit record fields."""
+        """Build UpdateRecord.
+
+        Args:
+            file_number: File number from 0 through 31.
+            record_number: Unsigned 24-bit record number.
+            offset: Unsigned 24-bit byte offset within the record.
+            data: Payload copied into the command.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If a field is out of range or the payload exceeds one frame.
+        """
 
         if not 0 <= record_number < 1 << 24:
             raise ValueError("record number is out of range")
@@ -332,19 +463,55 @@ class Command:
 
     @classmethod
     def credit(cls, file_number: int, amount: int) -> Command:
-        """Build Credit with a signed 32-bit amount."""
+        """Build Credit.
+
+        Args:
+            file_number: File number from 0 through 31.
+            amount: Signed 32-bit value to add.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If the file number is out of range.
+            OverflowError: If ``amount`` does not fit a signed 32-bit integer.
+        """
 
         return cls._value_operation(0x0C, file_number, amount)
 
     @classmethod
     def debit(cls, file_number: int, amount: int) -> Command:
-        """Build Debit with a signed 32-bit amount."""
+        """Build Debit.
+
+        Args:
+            file_number: File number from 0 through 31.
+            amount: Signed 32-bit value to subtract.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If the file number is out of range.
+            OverflowError: If ``amount`` does not fit a signed 32-bit integer.
+        """
 
         return cls._value_operation(0xDC, file_number, amount)
 
     @classmethod
     def limited_credit(cls, file_number: int, amount: int) -> Command:
-        """Build LimitedCredit with a signed 32-bit amount."""
+        """Build LimitedCredit.
+
+        Args:
+            file_number: File number from 0 through 31.
+            amount: Signed 32-bit value to add under the file's limited-credit rule.
+
+        Returns:
+            The unframed native command.
+
+        Raises:
+            ValueError: If the file number is out of range.
+            OverflowError: If ``amount`` does not fit a signed 32-bit integer.
+        """
 
         return cls._value_operation(0x1C, file_number, amount)
 

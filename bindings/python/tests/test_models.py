@@ -4,6 +4,7 @@ import ctypes as C
 from pathlib import Path
 
 import pytest
+
 from dfc_core import Card, Command, _native, fixed_time_equal
 
 
