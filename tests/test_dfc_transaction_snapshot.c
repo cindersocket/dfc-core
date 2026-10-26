@@ -954,7 +954,9 @@ static MunitResult test_authenticated_mac_immediate_write_survives_abort(
     fixture.session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     munit_assert_not_null(fixture.session->emulator->secure_messaging);
+    fixture.session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     fixture.session->emulator->auth_key_no = 0;
+    munit_assert_true(dfc_emulator_native_authentication_active(fixture.session->emulator));
 
     uint8_t body[] = {1, 0, 0, 0, 4, 0, 0, 0xC1, 0xC2, 0xC3, 0xC4};
     DfcSecureMessaging* twin = dfc_secure_messaging_alloc(
