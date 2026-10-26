@@ -318,7 +318,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: native-${{ matrix.rid }}
           path: runtimes
@@ -326,7 +326,7 @@ jobs:
         shell: bash
         run: mkdir -p build && cp runtimes/${{ matrix.rid }}/native/* build/
       - run: dotnet test bindings/dotnet/Dfc.sln -c Release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: matrix.rid == 'linux-x64'
         with:
           name: native-layout-mismatch
@@ -453,7 +453,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: native-layout-mismatch
           path: mismatch
@@ -489,7 +489,7 @@ jobs:
         with:
           targets: thumbv7em-none-eabihf
           components: clippy
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: native-layout-mismatch
           path: mismatch
@@ -548,7 +548,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: native-*
           merge-multiple: true
