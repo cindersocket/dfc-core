@@ -7,12 +7,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "dfc_common.h"
 #include "dfc_ffi.h"
 #include "dfc_ffi_layout.h"
 #include "dfc_jni_queue.h"
 
 #define JNI_PICC_RESPONSE_INITIAL 256u
 #define JNI_READER_FRAME_MAX      600u
+#define JNI_AN10922_INPUT_MAX     31u
+#define JNI_FIXED_RESPONSE_MAX    DFC_FFI_RESPONSE_VERSION_SIZE
 
 typedef struct {
     DfcFfiPicc* picc;
@@ -76,6 +79,45 @@ static uint8_t* copy_array(JNIEnv* env, jbyteArray array, size_t* length, bool n
         return NULL;
     }
     return bytes;
+}
+
+static bool copy_bounded_array_or_null(
+    JNIEnv* env,
+    jbyteArray array,
+    uint8_t* scratch,
+    size_t capacity,
+    size_t* length,
+    bool nullable,
+    const char* too_large_message) {
+    *length = 0;
+    if(array == NULL) {
+        if(nullable) return true;
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "null byte array");
+        return false;
+    }
+    jsize java_length = (*env)->GetArrayLength(env, array);
+    if((*env)->ExceptionCheck(env)) return false;
+    if((size_t)java_length > capacity) {
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, too_large_message);
+        return false;
+    }
+    if(java_length != 0) {
+        (*env)->GetByteArrayRegion(env, array, 0, java_length, (jbyte*)scratch);
+        if((*env)->ExceptionCheck(env)) return false;
+    }
+    *length = (size_t)java_length;
+    return true;
+}
+
+static bool copy_bounded_array(
+    JNIEnv* env,
+    jbyteArray array,
+    uint8_t* scratch,
+    size_t capacity,
+    size_t* length,
+    const char* too_large_message) {
+    return copy_bounded_array_or_null(
+        env, array, scratch, capacity, length, false, too_large_message);
 }
 
 static jbyteArray make_array(JNIEnv* env, const uint8_t* bytes, size_t length) {
@@ -252,14 +294,19 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_an10922Diversif
     (void)type;
     uint32_t algorithm_id = 0;
     if(!jint_to_u32(env, algorithm, "algorithm out of range", &algorithm_id)) return NULL;
+    uint8_t master_bytes[DFC_MAX_KEY_LEN];
+    uint8_t input_bytes[JNI_AN10922_INPUT_MAX];
     size_t master_len = 0, input_len = 0;
-    uint8_t* master_bytes = copy_array(env, master, &master_len, false);
-    uint8_t* input_bytes = copy_array(env, input, &input_len, false);
-    if((*env)->ExceptionCheck(env)) {
-        secure_free(master_bytes, master_len);
-        secure_free(input_bytes, input_len);
-        return NULL;
-    }
+    if(!copy_bounded_array(
+           env, master, master_bytes, sizeof(master_bytes), &master_len, "master key is too large") ||
+       !copy_bounded_array(
+           env,
+           input,
+           input_bytes,
+           sizeof(input_bytes),
+           &input_len,
+           "diversification input is too large"))
+        goto cleanup;
     uint8_t output[24] = {0};
     size_t output_len = 0;
     int32_t status = dfc_ffi_an10922_diversify(
@@ -271,26 +318,39 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_an10922Diversif
         output,
         sizeof(output),
         &output_len);
-    secure_free(master_bytes, master_len);
-    secure_free(input_bytes, input_len);
+    dfc_ffi_secure_zero(master_bytes, sizeof(master_bytes));
+    dfc_ffi_secure_zero(input_bytes, sizeof(input_bytes));
     if(status != DFC_FFI_OK) {
         dfc_ffi_secure_zero(output, sizeof(output));
         throw_dfc(env, status, 0, 0, "key diversification failed");
         return NULL;
     }
     return make_array_and_wipe(env, output, output_len, sizeof(output));
+cleanup:
+    dfc_ffi_secure_zero(master_bytes, sizeof(master_bytes));
+    dfc_ffi_secure_zero(input_bytes, sizeof(input_bytes));
+    return NULL;
 }
 
 typedef int32_t (*JniFixedDecoder)(const uint8_t*, size_t, uint8_t*, size_t);
 
 static jbyteArray
     decode_fixed(JNIEnv* env, jbyteArray response, size_t output_len, JniFixedDecoder decoder) {
+    uint8_t response_bytes[JNI_FIXED_RESPONSE_MAX];
     size_t response_len = 0;
-    uint8_t* response_bytes = copy_array(env, response, &response_len, false);
-    if((*env)->ExceptionCheck(env)) return NULL;
+    if(!copy_bounded_array(
+           env,
+           response,
+           response_bytes,
+           sizeof(response_bytes),
+           &response_len,
+           "response is too large")) {
+        dfc_ffi_secure_zero(response_bytes, sizeof(response_bytes));
+        return NULL;
+    }
     uint8_t output[DFC_FFI_RESPONSE_FILE_SETTINGS_SIZE] = {0};
     int32_t status = decoder(response_bytes, response_len, output, output_len);
-    secure_free(response_bytes, response_len);
+    dfc_ffi_secure_zero(response_bytes, sizeof(response_bytes));
     if(status != DFC_FFI_RESPONSE_OK) {
         dfc_ffi_secure_zero(output, sizeof(output));
         throw_dfc(env, status, 0, 0, "response decode failed");
@@ -373,12 +433,21 @@ JNIEXPORT jint JNICALL Java_com_cindersocket_dfc_DfcNative_responseDecodeKeyVers
     jclass type,
     jbyteArray response) {
     (void)type;
+    uint8_t response_bytes[1];
     size_t response_len = 0;
-    uint8_t* response_bytes = copy_array(env, response, &response_len, false);
-    if((*env)->ExceptionCheck(env)) return 0;
+    if(!copy_bounded_array(
+           env,
+           response,
+           response_bytes,
+           sizeof(response_bytes),
+           &response_len,
+           "key-version response is too large")) {
+        dfc_ffi_secure_zero(response_bytes, sizeof(response_bytes));
+        return 0;
+    }
     uint8_t version = 0;
     int32_t status = dfc_ffi_response_decode_key_version(response_bytes, response_len, &version);
-    secure_free(response_bytes, response_len);
+    dfc_ffi_secure_zero(response_bytes, sizeof(response_bytes));
     if(status != DFC_FFI_RESPONSE_OK) {
         throw_dfc(env, status, 0, 0, "response decode failed");
         return 0;
@@ -421,20 +490,33 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_sdmVerify(
             return NULL;
     size_t message_len = 0, meta_len = 0, file_len = 0;
     uint8_t* message_bytes = copy_array(env, message, &message_len, false);
-    uint8_t* meta_bytes = copy_array(env, meta_key, &meta_len, true);
-    uint8_t* file_bytes = copy_array(env, file_key, &file_len, false);
-    if((*env)->ExceptionCheck(env) || file_len != 16 || (meta_key != NULL && meta_len != 16)) {
+    uint8_t meta_bytes[DFC_AES_KEY_LENGTH];
+    uint8_t file_bytes[DFC_AES_KEY_LENGTH];
+    bool copied_meta = copy_bounded_array_or_null(
+        env,
+        meta_key,
+        meta_bytes,
+        sizeof(meta_bytes),
+        &meta_len,
+        true,
+        "SDM metadata key is too large");
+    bool copied_file =
+        copied_meta &&
+        copy_bounded_array(
+            env, file_key, file_bytes, sizeof(file_bytes), &file_len, "SDM file key is too large");
+    if((*env)->ExceptionCheck(env) || !copied_file || file_len != DFC_AES_KEY_LENGTH ||
+       (meta_key != NULL && meta_len != DFC_AES_KEY_LENGTH)) {
         secure_free(message_bytes, message_len);
-        secure_free(meta_bytes, meta_len);
-        secure_free(file_bytes, file_len);
+        dfc_ffi_secure_zero(meta_bytes, sizeof(meta_bytes));
+        dfc_ffi_secure_zero(file_bytes, sizeof(file_bytes));
         if(!(*env)->ExceptionCheck(env))
             throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "SDM keys must be 16 bytes");
         return NULL;
     }
     if(values[6] > message_len || values[6] > (size_t)INT32_MAX - DFC_FFI_SDM_RESULT_SIZE) {
         secure_free(message_bytes, message_len);
-        secure_free(meta_bytes, meta_len);
-        secure_free(file_bytes, file_len);
+        dfc_ffi_secure_zero(meta_bytes, sizeof(meta_bytes));
+        dfc_ffi_secure_zero(file_bytes, sizeof(file_bytes));
         throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "encrypted file range is too large");
         return NULL;
     }
@@ -443,8 +525,8 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_sdmVerify(
     uint8_t* packed = calloc(1, packed_len);
     if(!packed) {
         secure_free(message_bytes, message_len);
-        secure_free(meta_bytes, meta_len);
-        secure_free(file_bytes, file_len);
+        dfc_ffi_secure_zero(meta_bytes, sizeof(meta_bytes));
+        dfc_ffi_secure_zero(file_bytes, sizeof(file_bytes));
         throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
         return NULL;
     }
@@ -462,7 +544,7 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_sdmVerify(
         values[6],
         values[7],
         values[8],
-        meta_bytes,
+        meta_key != NULL ? meta_bytes : NULL,
         file_bytes,
         decrypted_len ? packed + DFC_FFI_SDM_RESULT_SIZE : NULL,
         decrypted_len,
@@ -470,8 +552,8 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_sdmVerify(
         packed,
         DFC_FFI_SDM_RESULT_SIZE);
     secure_free(message_bytes, message_len);
-    secure_free(meta_bytes, meta_len);
-    secure_free(file_bytes, file_len);
+    dfc_ffi_secure_zero(meta_bytes, sizeof(meta_bytes));
+    dfc_ffi_secure_zero(file_bytes, sizeof(file_bytes));
     if(status != DFC_FFI_SDM_OK || required != decrypted_len) {
         secure_free(packed, packed_len);
         throw_dfc(env, status, 0, 0, "SDM verification failed");
@@ -496,24 +578,37 @@ JNIEXPORT jlong JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacCreate
             throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "capacity must be positive");
         return 0;
     }
+    uint8_t key_bytes[DFC_AES_KEY_LENGTH];
+    uint8_t uid_bytes[DFC_DESFIRE_UID_LEN];
     size_t key_len = 0, uid_len = 0;
-    uint8_t* key_bytes = copy_array(env, key, &key_len, false);
-    uint8_t* uid_bytes = copy_array(env, uid, &uid_len, false);
-    if((*env)->ExceptionCheck(env)) {
-        secure_free(key_bytes, key_len);
-        secure_free(uid_bytes, uid_len);
-        return 0;
+    if(!copy_bounded_array(
+           env, key, key_bytes, sizeof(key_bytes), &key_len, "transaction MAC key is too large") ||
+       !copy_bounded_array(
+           env, uid, uid_bytes, sizeof(uid_bytes), &uid_len, "transaction MAC UID is too large"))
+        goto cleanup;
+    if(key_len != DFC_AES_KEY_LENGTH || (uid_len != 4 && uid_len != DFC_DESFIRE_UID_LEN)) {
+        throw_dfc(
+            env,
+            DFC_FFI_INVALID_ARGUMENT,
+            0,
+            0,
+            "transaction MAC key must be 16 bytes and UID must be 4 or 7 bytes");
+        goto cleanup;
     }
     DfcFfiTransactionMacVerifier* verifier = NULL;
     int32_t status = dfc_ffi_transaction_mac_verifier_new(
         (size_t)capacity, key_bytes, uid_bytes, uid_len, counter_value, &verifier);
-    secure_free(key_bytes, key_len);
-    secure_free(uid_bytes, uid_len);
+    dfc_ffi_secure_zero(key_bytes, sizeof(key_bytes));
+    dfc_ffi_secure_zero(uid_bytes, sizeof(uid_bytes));
     if(status != DFC_FFI_TRANSACTION_MAC_OK) {
         throw_dfc(env, status, 0, 0, "transaction MAC initialization failed");
         return 0;
     }
     return (jlong)(uintptr_t)verifier;
+cleanup:
+    dfc_ffi_secure_zero(key_bytes, sizeof(key_bytes));
+    dfc_ffi_secure_zero(uid_bytes, sizeof(uid_bytes));
+    return 0;
 }
 
 JNIEXPORT void JNICALL
@@ -625,20 +720,34 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacAddRead
     (void)type;
     DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
     if(!verifier) return;
+    uint8_t current_bytes[DFC_TRANSACTION_READER_ID_LENGTH];
+    uint8_t previous_bytes[DFC_TRANSACTION_READER_ID_LENGTH];
     size_t current_len = 0, previous_len = 0;
-    uint8_t* current_bytes = copy_array(env, current, &current_len, false);
-    uint8_t* previous_bytes = copy_array(env, previous, &previous_len, false);
-    if((*env)->ExceptionCheck(env) || current_len != 16 || previous_len != 16) {
-        secure_free(current_bytes, current_len);
-        secure_free(previous_bytes, previous_len);
+    if(!copy_bounded_array(
+           env,
+           current,
+           current_bytes,
+           sizeof(current_bytes),
+           &current_len,
+           "current reader ID is too large") ||
+       !copy_bounded_array(
+           env,
+           previous,
+           previous_bytes,
+           sizeof(previous_bytes),
+           &previous_len,
+           "previous reader ID is too large") ||
+       current_len != sizeof(current_bytes) || previous_len != sizeof(previous_bytes)) {
+        dfc_ffi_secure_zero(current_bytes, sizeof(current_bytes));
+        dfc_ffi_secure_zero(previous_bytes, sizeof(previous_bytes));
         if(!(*env)->ExceptionCheck(env))
             throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "reader IDs must be 16 bytes");
         return;
     }
     int32_t status =
         dfc_ffi_transaction_mac_add_reader_id(verifier, current_bytes, previous_bytes);
-    secure_free(current_bytes, current_len);
-    secure_free(previous_bytes, previous_len);
+    dfc_ffi_secure_zero(current_bytes, sizeof(current_bytes));
+    dfc_ffi_secure_zero(previous_bytes, sizeof(previous_bytes));
     transaction_mac_status(env, status);
 }
 
@@ -650,17 +759,19 @@ JNIEXPORT jboolean JNICALL Java_com_cindersocket_dfc_DfcNative_transactionMacVer
     (void)type;
     DfcFfiTransactionMacVerifier* verifier = transaction_mac_handle(env, handle);
     if(!verifier) return JNI_FALSE;
+    uint8_t mac_bytes[DFC_WIRE_MAC_LENGTH];
     size_t mac_len = 0;
-    uint8_t* mac_bytes = copy_array(env, mac, &mac_len, false);
-    if((*env)->ExceptionCheck(env) || mac_len != 8) {
-        secure_free(mac_bytes, mac_len);
+    if(!copy_bounded_array(
+           env, mac, mac_bytes, sizeof(mac_bytes), &mac_len, "transaction MAC is too large") ||
+       mac_len != sizeof(mac_bytes)) {
+        dfc_ffi_secure_zero(mac_bytes, sizeof(mac_bytes));
         if(!(*env)->ExceptionCheck(env))
             throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "transaction MAC must be 8 bytes");
         return JNI_FALSE;
     }
     uint8_t verified = 0;
     int32_t status = dfc_ffi_transaction_mac_verify(verifier, mac_bytes, &verified);
-    secure_free(mac_bytes, mac_len);
+    dfc_ffi_secure_zero(mac_bytes, sizeof(mac_bytes));
     if(!transaction_mac_status(env, status)) return JNI_FALSE;
     return verified ? JNI_TRUE : JNI_FALSE;
 }
@@ -1181,14 +1292,19 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticate(
     if(!jint_to_u32(env, framing, "framing out of range", &framing_id)) return;
     if(!jint_to_u8(env, cipher, "cipher out of range", &cipher_id)) return;
     if(!jint_to_u8(env, key_number, "key number out of range", &key_no)) return;
+    uint8_t key_bytes[DFC_MAX_KEY_LEN];
+    uint8_t random_bytes[DFC_ISO7816_AUTH_CHALLENGE_LONG];
     size_t key_len = 0, random_len = 0;
-    uint8_t* key_bytes = copy_array(env, key, &key_len, false);
-    uint8_t* random_bytes =
-        (*env)->ExceptionCheck(env) ? NULL : copy_array(env, random_a, &random_len, false);
-    if((*env)->ExceptionCheck(env)) {
-        secure_free(key_bytes, key_len);
-        return;
-    }
+    if(!copy_bounded_array(
+           env, key, key_bytes, sizeof(key_bytes), &key_len, "authentication key is too large") ||
+       !copy_bounded_array(
+           env,
+           random_a,
+           random_bytes,
+           sizeof(random_bytes),
+           &random_len,
+           "authentication challenge is too large"))
+        goto cleanup;
     int32_t status = dfc_ffi_reader_authenticate_begin(
         wrapper->exchange,
         wrapper->session,
@@ -1199,9 +1315,10 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticate(
         key_len,
         random_bytes,
         random_len);
-    secure_free(key_bytes, key_len);
-    secure_free(random_bytes, random_len);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "could not begin authentication");
+cleanup:
+    dfc_ffi_secure_zero(key_bytes, sizeof(key_bytes));
+    dfc_ffi_secure_zero(random_bytes, sizeof(random_bytes));
 }
 
 JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateIso7816(
@@ -1219,13 +1336,27 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateIso
     uint8_t key_ref = 0, algorithm_id = 0;
     if(!jint_to_u8(env, key_reference, "key reference out of range", &key_ref)) return;
     if(!jint_to_u8(env, algorithm, "algorithm out of range", &algorithm_id)) return;
+    uint8_t key_bytes[DFC_MAX_KEY_LEN];
+    uint8_t first_bytes[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+    uint8_t second_bytes[DFC_ISO7816_AUTH_CHALLENGE_LONG];
     size_t key_len = 0, first_len = 0, second_len = 0;
-    uint8_t* key_bytes = copy_array(env, key, &key_len, false);
-    uint8_t* first_bytes =
-        (*env)->ExceptionCheck(env) ? NULL : copy_array(env, random_first, &first_len, false);
-    uint8_t* second_bytes =
-        (*env)->ExceptionCheck(env) ? NULL : copy_array(env, random_second, &second_len, false);
-    if((*env)->ExceptionCheck(env)) goto cleanup;
+    if(!copy_bounded_array(
+           env, key, key_bytes, sizeof(key_bytes), &key_len, "authentication key is too large") ||
+       !copy_bounded_array(
+           env,
+           random_first,
+           first_bytes,
+           sizeof(first_bytes),
+           &first_len,
+           "authentication challenge is too large") ||
+       !copy_bounded_array(
+           env,
+           random_second,
+           second_bytes,
+           sizeof(second_bytes),
+           &second_len,
+           "authentication challenge is too large"))
+        goto cleanup;
     if(first_len != second_len) {
         throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "ISO 7816 challenge lengths differ");
         goto cleanup;
@@ -1243,9 +1374,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateIso
     if(status != DFC_FFI_OK)
         throw_dfc(env, status, 0, 0, "could not begin ISO 7816 authentication");
 cleanup:
-    secure_free(key_bytes, key_len);
-    secure_free(first_bytes, first_len);
-    secure_free(second_bytes, second_len);
+    dfc_ffi_secure_zero(key_bytes, sizeof(key_bytes));
+    dfc_ffi_secure_zero(first_bytes, sizeof(first_bytes));
+    dfc_ffi_secure_zero(second_bytes, sizeof(second_bytes));
 }
 
 JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2(
@@ -1265,14 +1396,27 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2
     uint32_t framing_id = 0;
     if(!jint_to_u32(env, framing, "framing out of range", &framing_id)) return;
     if(!jint_to_u8(env, key_number, "key number out of range", &key_no)) return;
+    uint8_t key_bytes[DFC_AES_KEY_LENGTH];
+    uint8_t random_bytes[DFC_EV2_RANDOM_LENGTH];
+    uint8_t capability_bytes[DFC_EV2_CAPABILITY_LENGTH];
     size_t key_len = 0, random_len = 0, capabilities_len = 0;
-    uint8_t* key_bytes = copy_array(env, key, &key_len, false);
-    uint8_t* random_bytes =
-        (*env)->ExceptionCheck(env) ? NULL : copy_array(env, random_a, &random_len, false);
-    uint8_t* capability_bytes = (*env)->ExceptionCheck(env) ?
-                                    NULL :
-                                    copy_array(env, capabilities, &capabilities_len, false);
-    if((*env)->ExceptionCheck(env)) goto cleanup;
+    if(!copy_bounded_array(
+           env, key, key_bytes, sizeof(key_bytes), &key_len, "EV2 key is too large") ||
+       !copy_bounded_array(
+           env,
+           random_a,
+           random_bytes,
+           sizeof(random_bytes),
+           &random_len,
+           "EV2 challenge is too large") ||
+       !copy_bounded_array(
+           env,
+           capabilities,
+           capability_bytes,
+           sizeof(capability_bytes),
+           &capabilities_len,
+           "EV2 capabilities are too large"))
+        goto cleanup;
     if(key_len != 16 || random_len != 16) {
         throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "EV2 keys and challenges must be 16 bytes");
         goto cleanup;
@@ -1289,9 +1433,9 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2
         capabilities_len);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "could not begin EV2 authentication");
 cleanup:
-    secure_free(key_bytes, key_len);
-    secure_free(random_bytes, random_len);
-    secure_free(capability_bytes, capabilities_len);
+    dfc_ffi_secure_zero(key_bytes, sizeof(key_bytes));
+    dfc_ffi_secure_zero(random_bytes, sizeof(random_bytes));
+    dfc_ffi_secure_zero(capability_bytes, sizeof(capability_bytes));
 }
 
 JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_readerStep(
