@@ -49,7 +49,6 @@ android {
             version = "4.1.2"
         }
     }
-    sourceSets["main"].java.srcDir("../../java/src/main/java")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -66,9 +65,13 @@ android {
     publishing { singleVariant("release") { withSourcesJar() } }
 }
 
-val androidJavadocs by tasks.registering(Javadoc::class) {
-    source = android.sourceSets["main"].java.getSourceFiles()
-    classpath += files(android.bootClasspath)
+androidComponents.onVariants {
+    it.sources.java?.addStaticSourceDirectory("../../java/src/main/java")
+}
+
+val androidJavadocs = tasks.register<Javadoc>("androidJavadocs") {
+    source = fileTree("../../java/src/main/java") { include("**/*.java") }
+    classpath = files(androidComponents.sdkComponents.bootClasspath)
     isFailOnError = true
     (options as StandardJavadocDocletOptions).apply {
         addBooleanOption("Werror", true)
@@ -76,14 +79,14 @@ val androidJavadocs by tasks.registering(Javadoc::class) {
     }
 }
 
-val androidJavadocsJar by tasks.registering(Jar::class) {
+val androidJavadocsJar = tasks.register<Jar>("androidJavadocsJar") {
     archiveClassifier.set("javadoc")
     from(androidJavadocs)
 }
 
 // Compile the same binding-level suite that the host JNI job executes. This
 // catches Android source/API drift even though host JVM tests cannot load an Android .so.
-val compileSharedAdvancedApiTest by tasks.registering(JavaCompile::class) {
+val compileSharedAdvancedApiTest = tasks.register<JavaCompile>("compileSharedAdvancedApiTest") {
     dependsOn("compileDebugJavaWithJavac")
     source("../../../tests/java/DfcAdvancedApiTest.java")
     classpath = files(
@@ -93,7 +96,7 @@ val compileSharedAdvancedApiTest by tasks.registering(JavaCompile::class) {
     options.release.set(17)
 }
 
-tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
+tasks.matching { it.name == "testMismatchUnitTest" }.configureEach {
     dependsOn(compileSharedAdvancedApiTest)
 }
 

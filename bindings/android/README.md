@@ -57,7 +57,7 @@ The checked-in Gradle wrapper builds the AAR, example APK, and Android lint:
 ```sh
 cd bindings/android
 ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease \
-  :dfc:lintRelease :dfc:testDebugUnitTest
+  :dfc:lintRelease :dfc:testMismatchUnitTest
 ./gradlew --no-daemon :dfc:androidJavadocs
 ```
 

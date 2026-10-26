@@ -186,7 +186,7 @@ def main() -> None:
         ".github/workflows/ci.yml": (
             "tests/java/DfcSecretLifetimeTest.java",
             "com.cindersocket.dfc.DfcSecretLifetimeTest",
-            ":dfc:testDebugUnitTest",
+            ":dfc:testMismatchUnitTest",
         ),
         "scripts/check-release-artifacts.py": (
             '"tests/java/DfcSecretLifetimeTest.java"',

@@ -50,7 +50,7 @@ public sealed class ReaderLifetimeTests
         var expected = new TransportProbeException();
         transport.Exception = expected;
 
-        var actual = Assert.ThrowsAsync<TransportProbeException>(async () => await InvokeAsync(operation, reader));
+        var actual = await Assert.ThrowsAsync<TransportProbeException>(async () => await InvokeAsync(operation, reader));
 
         Assert.Multiple(() =>
         {
@@ -73,7 +73,7 @@ public sealed class ReaderLifetimeTests
         transport.SuccessfulCallsBeforeThrow = 1;
         transport.Exception = expected;
 
-        var actual = Assert.ThrowsAsync<TransportProbeException>(
+        var actual = await Assert.ThrowsAsync<TransportProbeException>(
             async () => _ = await reader.ExchangeAsync(DfcCommand.GetVersion())
         );
 
@@ -85,7 +85,7 @@ public sealed class ReaderLifetimeTests
     }
 
     [Test]
-    public void DisposedOperation_ReportsThePublicTypeName()
+    public async Task DisposedOperation_ReportsThePublicTypeName()
     {
         using var picc = Fixtures.Picc(Fixtures.Credential());
         var reader = new DfcReader(picc);
@@ -94,7 +94,7 @@ public sealed class ReaderLifetimeTests
 
         Assert.That(FrameBuffer(reader), Has.All.EqualTo((byte)0));
 
-        var exception = Assert.ThrowsAsync<ObjectDisposedException>(
+        var exception = await Assert.ThrowsAsync<ObjectDisposedException>(
             async () => _ = await reader.ExchangeAsync(DfcCommand.GetVersion())
         );
 
