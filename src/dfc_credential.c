@@ -279,7 +279,7 @@ DfcFile* dfc_credential_create_file(DfcCredential* credential, size_t app_index,
 
     DfcFile* file = &credential->files[credential->num_files++];
     memset(file, 0, sizeof(DfcFile));
-    file->app_index = app_index;
+    file->app_index = (uint8_t)app_index;
     file->number = number;
     file->data_offset = DFC_FILE_POOL_NONE;
     file->data_len = 0;
@@ -298,12 +298,12 @@ static void dfc_file_pool_compact_after_release(
             credential->file_pool + freed_offset + freed_len,
             tail);
     }
-    credential->file_pool_used -= freed_len;
+    credential->file_pool_used = (DfcFilePoolSize)(credential->file_pool_used - freed_len);
     dfc_secure_wipe(credential->file_pool + credential->file_pool_used, freed_len);
     for(size_t i = 0; i < credential->num_files; i++) {
         DfcFile* other = &credential->files[i];
         if(other->data_offset != DFC_FILE_POOL_NONE && other->data_offset > freed_offset) {
-            other->data_offset -= freed_len;
+            other->data_offset = (DfcFilePoolSize)(other->data_offset - freed_len);
         }
     }
 }
@@ -366,7 +366,8 @@ static void dfc_key_set_metadata_compact_after_release(
             credential->key_set_metadata_pool + freed_offset + freed_len,
             tail);
     }
-    credential->key_set_metadata_pool_used -= freed_len;
+    credential->key_set_metadata_pool_used =
+        (uint16_t)(credential->key_set_metadata_pool_used - freed_len);
     dfc_secure_wipe(
         credential->key_set_metadata_pool + credential->key_set_metadata_pool_used, freed_len);
     for(size_t i = 0; i < DFC_MAX_APPS; i++) {
@@ -423,7 +424,8 @@ static bool
     app->key_set_metadata_offset = (uint16_t)credential->key_set_metadata_pool_used;
     app->key_set_metadata_len = (uint16_t)want;
     memset(credential->key_set_metadata_pool + credential->key_set_metadata_pool_used, 0, want);
-    credential->key_set_metadata_pool_used += want;
+    credential->key_set_metadata_pool_used =
+        (uint16_t)(credential->key_set_metadata_pool_used + want);
     return true;
 }
 
@@ -558,10 +560,10 @@ bool dfc_file_resize(DfcCredential* credential, DfcFile* file, size_t data_len) 
         return true;
     }
 
-    file->data_offset = credential->file_pool_used;
-    file->data_len = data_len;
+    file->data_offset = (DfcFilePoolSize)credential->file_pool_used;
+    file->data_len = (DfcFilePoolSize)data_len;
     memset(credential->file_pool + file->data_offset, 0, data_len);
-    credential->file_pool_used += data_len;
+    credential->file_pool_used = (DfcFilePoolSize)(credential->file_pool_used + data_len);
     return true;
 }
 
@@ -588,22 +590,52 @@ size_t dfc_credential_stored_key_length(size_t key_len) {
     return key_len == 24 ? 24 : 16;
 }
 
-// Slice bookkeeping lives on the application, or on the credential itself for
-// the PICC record; these three pick whichever the caller selected.
-static size_t* key_offset_of(DfcCredential* credential, DfcApplication* app) {
-    return app ? &app->key_offset : &credential->picc_key_offset;
+// Application and PICC records use compact fields whose concrete widths can
+// differ. Access them through values rather than type-punning pointers, then
+// narrow only after the common capacity checks have succeeded.
+static size_t key_offset_of(const DfcCredential* credential, const DfcApplication* app) {
+    return app ? app->key_offset : credential->picc_key_offset;
 }
 
-static size_t* num_keys_of(DfcCredential* credential, DfcApplication* app) {
-    return app ? &app->num_keys : &credential->picc_num_keys;
+static void set_key_offset(DfcCredential* credential, DfcApplication* app, DfcKeyPoolSize offset) {
+    if(app)
+        app->key_offset = offset;
+    else
+        credential->picc_key_offset = offset;
 }
 
-static size_t* key_len_of(DfcCredential* credential, DfcApplication* app) {
-    return app ? &app->key_len : &credential->picc_key_len;
+static size_t num_keys_of(const DfcCredential* credential, const DfcApplication* app) {
+    return app ? app->num_keys : credential->picc_num_keys;
 }
 
-static size_t* key_pool_len_of(DfcCredential* credential, DfcApplication* app) {
-    return app ? &app->key_pool_len : &credential->picc_key_pool_len;
+static void set_num_keys(DfcCredential* credential, DfcApplication* app, uint8_t count) {
+    if(app)
+        app->num_keys = count;
+    else
+        credential->picc_num_keys = count;
+}
+
+static size_t key_len_of(const DfcCredential* credential, const DfcApplication* app) {
+    return app ? app->key_len : credential->picc_key_len;
+}
+
+static void set_key_len(DfcCredential* credential, DfcApplication* app, uint8_t length) {
+    if(app)
+        app->key_len = length;
+    else
+        credential->picc_key_len = length;
+}
+
+static size_t key_pool_len_of(const DfcCredential* credential, const DfcApplication* app) {
+    return app ? app->key_pool_len : credential->picc_key_pool_len;
+}
+
+static void
+    set_key_pool_len(DfcCredential* credential, DfcApplication* app, DfcKeyPoolSize length) {
+    if(app)
+        app->key_pool_len = length;
+    else
+        credential->picc_key_pool_len = length;
 }
 
 static void dfc_key_pool_compact_after_release(
@@ -618,18 +650,19 @@ static void dfc_key_pool_compact_after_release(
             credential->key_pool + freed_offset + freed_len,
             tail);
     }
-    credential->key_pool_used -= freed_len;
+    credential->key_pool_used = (DfcKeyPoolSize)(credential->key_pool_used - freed_len);
     dfc_secure_wipe(credential->key_pool + credential->key_pool_used, freed_len);
     // Every record that indexes past the hole, not only the created ones: an
     // application is given its slice before it is counted.
     for(size_t i = 0; i < DFC_MAX_APPS; i++) {
-        size_t* off = &credential->apps[i].key_offset;
-        if(*off != DFC_KEY_POOL_NONE && *off > freed_offset) *off -= freed_len;
+        DfcApplication* app = &credential->apps[i];
+        if(app->key_offset != DFC_KEY_POOL_NONE && app->key_offset > freed_offset)
+            app->key_offset = (DfcKeyPoolSize)(app->key_offset - freed_len);
     }
 
     if(credential->picc_key_offset != DFC_KEY_POOL_NONE &&
        credential->picc_key_offset > freed_offset) {
-        credential->picc_key_offset -= freed_len;
+        credential->picc_key_offset = (DfcKeyPoolSize)(credential->picc_key_offset - freed_len);
     }
 }
 
@@ -650,15 +683,15 @@ static const uint8_t* dfc_credential_key_at(
 
 uint8_t* dfc_credential_key(DfcCredential* credential, DfcApplication* app, size_t slot) {
     if(!credential) return NULL;
-    size_t storage_key_len = *key_len_of(credential, app);
+    size_t storage_key_len = key_len_of(credential, app);
 #if DFC_ENABLE_KEY_SETS
     if(app) storage_key_len = app->key_storage_len;
 #endif
     const uint8_t* p = dfc_credential_key_at(
         credential,
-        *key_offset_of(credential, app),
-        *key_pool_len_of(credential, app),
-        *num_keys_of(credential, app),
+        key_offset_of(credential, app),
+        key_pool_len_of(credential, app),
+        num_keys_of(credential, app),
         storage_key_len,
         slot);
     // Cast back: the const form exists for const credentials, not to make the
@@ -693,12 +726,11 @@ static bool dfc_credential_keys_resize_total(
     size_t storage_key_len) {
     if(!credential) return false;
     if(num_keys > DFC_MAX_KEYS) return false;
+    if(key_len > DFC_MAX_KEY_LEN || storage_key_len > DFC_MAX_KEY_LEN) return false;
     if(allocated_keys < num_keys) return false;
 
-    size_t* offset = key_offset_of(credential, app);
-    size_t* pool_len = key_pool_len_of(credential, app);
-    size_t* stored_num = num_keys_of(credential, app);
-    size_t* stored_len = key_len_of(credential, app);
+    size_t offset = key_offset_of(credential, app);
+    size_t pool_len = key_pool_len_of(credential, app);
 
     size_t stride = dfc_credential_stored_key_length(storage_key_len);
     if(allocated_keys > DFC_KEY_POOL_SIZE / stride) return false;
@@ -707,24 +739,24 @@ static bool dfc_credential_keys_resize_total(
     if(credential->key_pool_used > DFC_KEY_POOL_SIZE) return false;
     size_t old_offset;
     if(!dfc_pool_slice_resolve(
-           *offset, *pool_len, credential->key_pool_used, DFC_KEY_POOL_NONE, &old_offset)) {
+           offset, pool_len, credential->key_pool_used, DFC_KEY_POOL_NONE, &old_offset)) {
         return false;
     }
 
-    if(old_offset != DFC_KEY_POOL_NONE && *pool_len == want && want > 0) {
+    if(old_offset != DFC_KEY_POOL_NONE && pool_len == want && want > 0) {
         // Same footprint: keep the material, only the counts can change.
-        *stored_num = num_keys;
-        *stored_len = key_len;
+        set_num_keys(credential, app, (uint8_t)num_keys);
+        set_key_len(credential, app, (uint8_t)key_len);
 #if DFC_ENABLE_KEY_SETS
-        if(app) app->key_storage_len = storage_key_len;
+        if(app) app->key_storage_len = (uint8_t)storage_key_len;
 #endif
         return true;
     }
 
     size_t used_without_old = credential->key_pool_used;
     if(old_offset != DFC_KEY_POOL_NONE) {
-        if(*pool_len > used_without_old) return false;
-        used_without_old -= *pool_len;
+        if(pool_len > used_without_old) return false;
+        used_without_old -= pool_len;
     }
     if(want > DFC_KEY_POOL_SIZE - used_without_old) return false;
 
@@ -733,19 +765,19 @@ static bool dfc_credential_keys_resize_total(
     dfc_credential_keys_release(credential, app);
 
     if(want == 0) {
-        *stored_num = num_keys;
-        *stored_len = key_len;
+        set_num_keys(credential, app, (uint8_t)num_keys);
+        set_key_len(credential, app, (uint8_t)key_len);
         return true;
     }
 
-    *offset = credential->key_pool_used;
-    *pool_len = want;
-    memset(credential->key_pool + *offset, 0, want);
-    credential->key_pool_used += want;
-    *stored_num = num_keys;
-    *stored_len = key_len;
+    set_key_offset(credential, app, (DfcKeyPoolSize)credential->key_pool_used);
+    set_key_pool_len(credential, app, (DfcKeyPoolSize)want);
+    memset(credential->key_pool + credential->key_pool_used, 0, want);
+    credential->key_pool_used = (DfcKeyPoolSize)(credential->key_pool_used + want);
+    set_num_keys(credential, app, (uint8_t)num_keys);
+    set_key_len(credential, app, (uint8_t)key_len);
 #if DFC_ENABLE_KEY_SETS
-    if(app) app->key_storage_len = storage_key_len;
+    if(app) app->key_storage_len = (uint8_t)storage_key_len;
 #endif
     return true;
 }
@@ -946,15 +978,12 @@ bool dfc_credential_roll_key_set(
 
 void dfc_credential_keys_release(DfcCredential* credential, DfcApplication* app) {
     if(!credential) return;
-    size_t* offset = key_offset_of(credential, app);
-    size_t* pool_len = key_pool_len_of(credential, app);
-
-    size_t old_offset = *offset;
-    size_t old_len = *pool_len;
-    *offset = DFC_KEY_POOL_NONE;
-    *pool_len = 0;
-    *num_keys_of(credential, app) = 0;
-    *key_len_of(credential, app) = 0;
+    size_t old_offset = key_offset_of(credential, app);
+    size_t old_len = key_pool_len_of(credential, app);
+    set_key_offset(credential, app, DFC_KEY_POOL_NONE);
+    set_key_pool_len(credential, app, 0);
+    set_num_keys(credential, app, 0);
+    set_key_len(credential, app, 0);
 #if DFC_ENABLE_KEY_SETS
     if(app) {
         app->key_storage_len = 0;
@@ -1051,8 +1080,8 @@ bool dfc_credential_materialize_contents(
            want - known_len <= dfc_credential_file_pool_free(credential)) {
             size_t grow = want - known_len;
             memset(credential->file_pool + credential->file_pool_used, 0, grow);
-            credential->file_pool_used += grow;
-            file->data_len = want;
+            credential->file_pool_used = (DfcFilePoolSize)(credential->file_pool_used + grow);
+            file->data_len = (DfcFilePoolSize)want;
             file->contents_complete = true;
             continue;
         }

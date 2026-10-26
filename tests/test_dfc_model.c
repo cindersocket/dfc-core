@@ -10,6 +10,52 @@
 
 #include <string.h>
 
+_Static_assert(sizeof(((DfcApplication*)0)->iso_aid_len) == 1, "DF name length is one octet");
+_Static_assert(sizeof(((DfcApplication*)0)->key_offset) <= 2, "key offset uses bounded storage");
+_Static_assert(sizeof(((DfcApplication*)0)->key_pool_len) <= 2, "key slice uses bounded storage");
+_Static_assert(sizeof(((DfcApplication*)0)->num_keys) == 1, "key count is one octet");
+_Static_assert(sizeof(((DfcApplication*)0)->key_len) == 1, "key length is one octet");
+#if DFC_ENABLE_KEY_SETS
+_Static_assert(sizeof(((DfcApplication*)0)->key_storage_len) == 1, "stored key width is one octet");
+#endif
+_Static_assert(sizeof(((DfcFile*)0)->app_index) == 1, "file owner uses one octet");
+#if DFC_FILE_POOL_SIZE <= UINT16_MAX
+_Static_assert(sizeof(((DfcFile*)0)->data_offset) == 2, "file offset follows target pool width");
+_Static_assert(sizeof(((DfcFile*)0)->data_len) == 2, "file length follows target pool width");
+#endif
+_Static_assert(sizeof(((DfcCredential*)0)->uid_len) == 1, "UID length is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_key_offset) <= 2, "PICC key offset is bounded");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_key_pool_len) <= 2, "PICC key slice is bounded");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_num_keys) == 1, "PICC key count is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_key_len) == 1, "PICC key length is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_ats_len) == 1, "ATS length is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->num_apps) == 1, "application count is one octet");
+#if DFC_MAX_FILES <= UINT8_MAX
+_Static_assert(sizeof(((DfcCredential*)0)->num_files) == 1, "target file count is one octet");
+#endif
+#if DFC_FILE_POOL_SIZE <= UINT16_MAX
+_Static_assert(sizeof(((DfcCredential*)0)->file_pool_used) == 2, "file pool usage is bounded");
+#endif
+#if DFC_KEY_POOL_SIZE <= UINT16_MAX
+_Static_assert(sizeof(((DfcCredential*)0)->key_pool_used) == 2, "key pool usage is bounded");
+#endif
+#if DFC_ENABLE_KEY_SETS
+_Static_assert(
+    sizeof(((DfcCredential*)0)->key_set_metadata_pool_used) == 2,
+    "key-set metadata usage is bounded");
+#endif
+#if DFC_ENABLE_VIRTUAL_CARD
+_Static_assert(
+    sizeof(((DfcCredential*)0)->virtual_card_installation_id_len) == 1,
+    "installation identifier length is one octet");
+_Static_assert(
+    sizeof(((DfcCredential*)0)->virtual_card_uid_len) == 1,
+    "virtual UID length is one octet");
+#endif
+_Static_assert(
+    sizeof(((DfcSecureMessaging*)0)->session_key_len) == 1,
+    "session key length is one octet");
+
 static void observe_zeroed_sm(const void* ptr, void* context) {
     bool* zeroed = context;
     const uint8_t* bytes = ptr;

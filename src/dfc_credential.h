@@ -5,17 +5,52 @@
 #include "dfc.h"
 #include "dfc_common.h"
 
-// Sentinel: file has no bytes reserved in the shared pool.
-#define DFC_FILE_POOL_NONE ((size_t)0xFFFFFFFFu)
+// Pool slices use the smallest integer that still represents every configured
+// byte. Keeping the sentinel outside the usable offset range preserves custom
+// host profiles without making target records pay for host-sized indices.
+#if DFC_FILE_POOL_SIZE <= UINT16_MAX
+typedef uint16_t DfcFilePoolSize;
+#define DFC_FILE_POOL_NONE UINT16_MAX
+#else
+typedef uint32_t DfcFilePoolSize;
+#define DFC_FILE_POOL_NONE UINT32_MAX
+#endif
 
-// Sentinel: application or PICC record has no key material reserved in the
-// shared key pool.
-#define DFC_KEY_POOL_NONE ((size_t)0xFFFFFFFFu)
+#if DFC_KEY_POOL_SIZE <= UINT16_MAX
+typedef uint16_t DfcKeyPoolSize;
+#define DFC_KEY_POOL_NONE UINT16_MAX
+#else
+typedef uint32_t DfcKeyPoolSize;
+#define DFC_KEY_POOL_NONE UINT32_MAX
+#endif
+
+#if DFC_MAX_FILES <= UINT8_MAX
+typedef uint8_t DfcFileCount;
+#elif DFC_MAX_FILES <= UINT16_MAX
+typedef uint16_t DfcFileCount;
+#else
+typedef uint32_t DfcFileCount;
+#endif
+
+_Static_assert(DFC_FILE_POOL_SIZE <= UINT32_MAX, "file pool offsets must fit uint32_t");
+_Static_assert(DFC_KEY_POOL_SIZE <= UINT32_MAX, "key pool offsets must fit uint32_t");
+_Static_assert(DFC_MAX_APPS < UINT8_MAX, "file owner index must leave room for the PICC");
+_Static_assert(DFC_MAX_FILES <= UINT32_MAX, "file count must fit uint32_t");
+_Static_assert(DFC_MAX_KEYS <= UINT8_MAX, "application key counts must fit uint8_t");
+_Static_assert(DFC_MAX_KEY_LEN <= UINT8_MAX, "application key lengths must fit uint8_t");
+_Static_assert(DFC_DESFIRE_UID_MAX_LENGTH <= UINT8_MAX, "UID length must fit uint8_t");
+_Static_assert(DFC_PICC_ATS_MAX <= UINT8_MAX, "ATS length must fit uint8_t");
+#if DFC_ENABLE_VIRTUAL_CARD
+_Static_assert(
+    DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH <= UINT8_MAX,
+    "installation identifier length must fit uint8_t");
+_Static_assert(DFC_VIRTUAL_CARD_UID_MAX_LENGTH <= UINT8_MAX, "virtual UID length must fit uint8_t");
+#endif
 
 // Owning container of a file. Applications are 0..num_apps-1; the PICC record
 // uses this sentinel, so a PICC-level file is not mistaken for one in the first
 // application.
-#define DFC_FILE_OWNER_PICC ((size_t)0xFFFFFFFEu)
+#define DFC_FILE_OWNER_PICC UINT8_MAX
 
 #define DFC_LIMITED_CREDIT_TRANSACTION_CONSUMED (-1)
 
@@ -109,10 +144,10 @@ typedef union {
 } DfcFileState;
 
 typedef struct {
-    size_t app_index;
+    uint8_t app_index;
     // Slice into DfcCredential.file_pool holding the known contents.
-    size_t data_offset;
-    size_t data_len;
+    DfcFilePoolSize data_offset;
+    DfcFilePoolSize data_len;
     uint16_t access_rights;
     uint16_t iso_file_id;
     uint8_t number;
@@ -150,7 +185,7 @@ _Static_assert(sizeof(DfcDataFileState) <= sizeof(DfcFileState), "data state mus
 _Static_assert(sizeof(DfcFileState) == 48, "transaction MAC state must bound file state");
 #endif
 #if DFC_BUILD_ROLE == DFC_ROLE_TARGET && SIZE_MAX == UINT32_MAX && DFC_ENABLE_TRANSACTION_MAC
-_Static_assert(sizeof(DfcFile) == 72, "target file layout must stay compact");
+_Static_assert(sizeof(DfcFile) == 64, "target file layout must stay compact");
 #endif
 
 #if DFC_ENABLE_SDM
@@ -178,18 +213,18 @@ static inline void dfc_file_sdm_flag_set(DfcFile* file, DfcSdmFlag flag, bool va
 #endif
 
 typedef struct {
-    size_t iso_aid_len;
+    DfcKeyPoolSize key_offset;
+    DfcKeyPoolSize key_pool_len;
+    uint8_t iso_aid_len;
     // Slice into DfcCredential.key_pool holding num_keys keys, each one stored
     // key length wide. DFC_KEY_POOL_NONE when nothing is reserved. The slice
     // length is held rather than recomputed, so a caller that edits key_len in
     // place cannot make the bookkeeping disagree with the pool. Versions stay
     // inline: one octet per slot is not worth pooling.
-    size_t key_offset;
-    size_t key_pool_len;
-    size_t num_keys;
-    size_t key_len;
+    uint8_t num_keys;
+    uint8_t key_len;
 #if DFC_ENABLE_KEY_SETS
-    size_t key_storage_len;
+    uint8_t key_storage_len;
     uint16_t key_set_metadata_offset;
     uint16_t key_set_metadata_len;
 #endif
@@ -256,23 +291,23 @@ typedef struct {
 } DfcCard;
 
 typedef struct {
-    size_t uid_len;
+    uint8_t uid_len;
     // PICC keys, slot 0 first. Slot 0 is the master key; later generations
     // define further slots, so this is a list rather than one key. The material
     // lives in key_pool, addressed the same way an application's does.
-    size_t picc_key_offset;
-    size_t picc_key_pool_len;
-    size_t picc_num_keys;
-    size_t picc_key_len;
-    size_t picc_ats_len;
+    DfcKeyPoolSize picc_key_offset;
+    DfcKeyPoolSize picc_key_pool_len;
+    uint8_t picc_num_keys;
+    uint8_t picc_key_len;
+    uint8_t picc_ats_len;
 #if DFC_ENABLE_VIRTUAL_CARD
-    size_t virtual_card_installation_id_len;
-    size_t virtual_card_uid_len;
+    uint8_t virtual_card_installation_id_len;
+    uint8_t virtual_card_uid_len;
 #endif
-    size_t num_apps;
-    size_t num_files;
-    size_t file_pool_used;
-    size_t key_pool_used;
+    uint8_t num_apps;
+    DfcFileCount num_files;
+    DfcFilePoolSize file_pool_used;
+    DfcKeyPoolSize key_pool_used;
 
     DfcApplication apps[DFC_MAX_APPS];
     DfcFile files[DFC_MAX_FILES];
@@ -348,12 +383,10 @@ typedef struct {
     // Sparse metadata for applications that actually use multiple key sets.
     // Each application owns one compact slice addressed by the fields above.
     uint8_t key_set_metadata_pool[DFC_KEY_SET_METADATA_POOL_SIZE];
-    size_t key_set_metadata_pool_used;
+    uint16_t key_set_metadata_pool_used;
 #endif
 
     bool dirty;
-
-    char name[DFC_FILE_NAME_MAX_LENGTH + 1];
 } DfcCredential;
 
 // This model owns only inline storage and offsets into its own pools. Do not

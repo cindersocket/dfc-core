@@ -796,7 +796,7 @@ static bool parse_files(P* p, const char* parent, size_t owner) {
         }
         DfcFile* f = &p->c->files[p->c->num_files];
         memset(f, 0, sizeof(*f));
-        f->app_index = owner;
+        f->app_index = (uint8_t)owner;
         f->data_offset = DFC_FILE_POOL_NONE;
 
         snprintf(key, sizeof(key), "%s Number", prefix);
@@ -990,9 +990,11 @@ static bool parse_applications(P* p) {
 
         snprintf(key, sizeof(key), "%s DF Name", prefix);
         bool has_df = false;
-        if(!opt_hex(p, key, app->iso_aid, sizeof(app->iso_aid), 16, &app->iso_aid_len, &has_df)) {
+        size_t iso_aid_len = 0;
+        if(!opt_hex(p, key, app->iso_aid, sizeof(app->iso_aid), 16, &iso_aid_len, &has_df)) {
             return false;
         }
+        app->iso_aid_len = (uint8_t)iso_aid_len;
 
         snprintf(key, sizeof(key), "%s Key Settings 1", prefix);
         if(!req_hex(p, key, &app->key_settings_1, 1)) return false;
@@ -1030,7 +1032,7 @@ static bool parse_applications(P* p) {
 
         // Files reference their owner by index, so the application has to be
         // part of the model before they are parsed.
-        p->c->num_apps = i + 1;
+        p->c->num_apps = (uint8_t)(i + 1);
         if(!parse_files(p, prefix, i)) return false;
         if(!parse_capability_data(p, prefix, app)) return false;
         if(!parse_delegated(p, prefix, app)) return false;
@@ -1126,19 +1128,21 @@ static bool parse_virtual_card(P* p) {
     if(!lookup(p, "PICC Virtual Card Installation ID", &probe, false)) return !p->failed;
 #if DFC_ENABLE_VIRTUAL_CARD
     bool present = false;
+    size_t installation_id_len = 0;
     if(!opt_hex(
            p,
            "PICC Virtual Card Installation ID",
            c->virtual_card_installation_id,
            sizeof(c->virtual_card_installation_id),
            DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH,
-           &c->virtual_card_installation_id_len,
+           &installation_id_len,
            &present)) {
         return false;
     }
-    if(c->virtual_card_installation_id_len == 0) {
+    if(installation_id_len == 0) {
         return fail(p, 0, "PICC Virtual Card Installation ID: at least one octet");
     }
+    c->virtual_card_installation_id_len = (uint8_t)installation_id_len;
     if(!req_hex(p, "PICC Virtual Card Information", &c->virtual_card_information, 1)) return false;
     if(!req_hex(
            p,
@@ -1147,20 +1151,21 @@ static bool parse_virtual_card(P* p) {
            sizeof(c->virtual_card_capabilities))) {
         return false;
     }
+    size_t virtual_uid_len = 0;
     if(!opt_hex(
            p,
            "PICC Virtual Card UID",
            c->virtual_card_uid,
            sizeof(c->virtual_card_uid),
            DFC_VIRTUAL_CARD_UID_MAX_LENGTH,
-           &c->virtual_card_uid_len,
+           &virtual_uid_len,
            &present)) {
         return false;
     }
-    size_t uid_len = c->virtual_card_uid_len;
-    if(!dfc_uid_length_is_valid(uid_len)) {
+    if(!dfc_uid_length_is_valid(virtual_uid_len)) {
         return fail(p, 0, "PICC Virtual Card UID: length shall be 4, 7, or 10");
     }
+    c->virtual_card_uid_len = (uint8_t)virtual_uid_len;
     if(!req_hex(
            p,
            "PICC Virtual Card Select MAC Key",
@@ -1252,10 +1257,11 @@ static bool parse_picc(P* p) {
     if(!opt_bool(p, "PICC Format Disabled", &c->picc_format_disabled)) return false;
 
     bool present = false;
-    if(!opt_hex(
-           p, "PICC ATS", c->picc_ats, sizeof(c->picc_ats), U24_MAX, &c->picc_ats_len, &present)) {
+    size_t ats_len = 0;
+    if(!opt_hex(p, "PICC ATS", c->picc_ats, sizeof(c->picc_ats), U24_MAX, &ats_len, &present)) {
         return false;
     }
+    c->picc_ats_len = (uint8_t)ats_len;
     size_t len = 0;
     if(!opt_hex(p, "PICC SAK", &c->picc_sak, 1, 1, &len, &c->picc_has_sak)) return false;
     if(!opt_hex(p, "PICC ATQA", c->picc_atqa, 2, 2, &len, &c->picc_has_atqa)) return false;
@@ -1324,22 +1330,24 @@ static DfcTextStatus parse_credential(
         if(!req_uint(&p, "Card Storage", 0, U32_MAX, &storage)) break;
         credential->card.storage = (uint32_t)storage;
         bool uid_present = false;
+        size_t uid_len = 0;
         if(!opt_hex(
                &p,
                "UID",
                credential->uid,
                sizeof(credential->uid),
                DFC_DESFIRE_UID_LONG_LEN,
-               &credential->uid_len,
+               &uid_len,
                &uid_present)) {
             break;
         }
-        if(!dfc_uid_length_is_valid(credential->uid_len)) {
+        if(!dfc_uid_length_is_valid(uid_len)) {
             Line next;
             size_t line = peek_line(&p, &next) ? next.number : 0;
             fail(&p, line, "UID: length shall be 4, 7, or 10");
             break;
         }
+        credential->uid_len = (uint8_t)uid_len;
         if(!req_token(&p, "UID Provenance", PROVENANCE_NAMES, 3, &index)) break;
         credential->card.uid_provenance = (DfcUidProvenance)index;
         if(!parse_static_signature(&p)) break;

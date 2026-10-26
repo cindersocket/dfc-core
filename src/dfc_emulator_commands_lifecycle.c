@@ -802,7 +802,7 @@ void dfc_emulator_command_create_application(
     }
     if(df_name_len > 0) {
         memcpy(app->iso_aid, df_name, df_name_len);
-        app->iso_aid_len = df_name_len;
+        app->iso_aid_len = (uint8_t)df_name_len;
     }
     dfc_credential_mark_dirty(credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);

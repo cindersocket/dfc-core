@@ -40,7 +40,7 @@ bool dfc_secure_messaging_init(
 
     memset(sm, 0, sizeof(*sm));
     sm->cipher = cipher;
-    sm->session_key_len = session_key_len;
+    sm->session_key_len = (uint8_t)session_key_len;
     memcpy(sm->session_key, session_key, session_key_len);
     if(initial_iv) memcpy(sm->iv, initial_iv, sizeof(sm->iv));
     return true;

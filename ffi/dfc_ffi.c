@@ -652,7 +652,7 @@ int32_t dfc_ffi_credential_set_card(DfcFfiCredential* credential, const DfcFfiCa
     c->card.storage = card->storage;
     c->card.uid_provenance = (DfcUidProvenance)card->uid_provenance;
     memcpy(c->uid, card->uid, card->uid_len);
-    c->uid_len = card->uid_len;
+    c->uid_len = (uint8_t)card->uid_len;
     c->card.has_hardware_version = card->has_hardware_version != 0;
     memcpy(c->card.hardware_version, card->hardware_version, sizeof(c->card.hardware_version));
     c->card.has_software_version = card->has_software_version != 0;
@@ -707,7 +707,7 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
     c->picc_random_id = p->random_id != 0;
     c->picc_random_id_legacy = p->random_id_legacy != 0;
     c->picc_format_disabled = p->format_disabled != 0;
-    c->picc_ats_len = p->ats_len;
+    c->picc_ats_len = (uint8_t)p->ats_len;
     memcpy(c->picc_ats, p->ats, p->ats_len);
     c->picc_has_sak = p->has_sak != 0;
     c->picc_sak = p->sak;
@@ -742,7 +742,7 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
 #if DFC_ENABLE_VIRTUAL_CARD
     c->virtual_card_configured = p->virtual_card_configured != 0;
     if(p->virtual_card_configured) {
-        c->virtual_card_installation_id_len = p->virtual_card_installation_id_len;
+        c->virtual_card_installation_id_len = (uint8_t)p->virtual_card_installation_id_len;
         memcpy(
             c->virtual_card_installation_id,
             p->virtual_card_installation_id,
@@ -752,7 +752,7 @@ int32_t dfc_ffi_credential_set_picc(DfcFfiCredential* credential, const DfcFfiPi
             c->virtual_card_capabilities,
             p->virtual_card_capabilities,
             sizeof(c->virtual_card_capabilities));
-        c->virtual_card_uid_len = p->virtual_card_uid_len;
+        c->virtual_card_uid_len = (uint8_t)p->virtual_card_uid_len;
         memcpy(c->virtual_card_uid, p->virtual_card_uid, sizeof(c->virtual_card_uid));
         memcpy(
             c->virtual_card_select_mac_key,

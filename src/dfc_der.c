@@ -1584,7 +1584,7 @@ static DfcDerStatus decode_virtual_card(DfcCredential* c, Slice body) {
     if(install_body.len == 0) return DfcDerMalformed;
     if(install_body.len > DFC_VIRTUAL_CARD_MAX_INSTALLATION_ID_LENGTH) return DfcDerMalformed;
     memcpy(c->virtual_card_installation_id, install_body.p, install_body.len);
-    c->virtual_card_installation_id_len = install_body.len;
+    c->virtual_card_installation_id_len = (uint8_t)install_body.len;
     if(!r_octets(f_get(&f, VC_INFO), 1, &c->virtual_card_information)) return DfcDerMalformed;
     if(!r_octets(
            f_get(&f, VC_CAPS),
@@ -1597,7 +1597,7 @@ static DfcDerStatus decode_virtual_card(DfcCredential* c, Slice body) {
     Slice uid_body = field_body(uid);
     if(uid_body.len != 4 && uid_body.len != 7 && uid_body.len != 10) return DfcDerMalformed;
     memcpy(c->virtual_card_uid, uid_body.p, uid_body.len);
-    c->virtual_card_uid_len = uid_body.len;
+    c->virtual_card_uid_len = (uint8_t)uid_body.len;
     if(!r_octets(
            f_get(&f, VC_MAC_KEY),
            sizeof(c->virtual_card_select_mac_key),
@@ -1729,7 +1729,7 @@ static DfcDerStatus decode_file(DfcCredential* c, size_t owner, Slice body) {
 
     DfcFile* file = &c->files[c->num_files];
     memset(file, 0, sizeof(*file));
-    file->app_index = owner;
+    file->app_index = (uint8_t)owner;
     file->number = (uint8_t)number;
     file->type = (uint8_t)type;
     file->data_offset = DFC_FILE_POOL_NONE;
@@ -1974,7 +1974,7 @@ static DfcDerStatus decode_credential(DfcCredential* credential, const uint8_t* 
         return DfcDerMalformed;
     }
     memcpy(credential->uid, uid_body.p, uid_body.len);
-    credential->uid_len = uid_body.len;
+    credential->uid_len = (uint8_t)uid_body.len;
     credential->card.generation = (DfcGeneration)generation;
     credential->card.storage = (uint32_t)storage;
     credential->card.uid_provenance = (DfcUidProvenance)provenance;
@@ -2078,7 +2078,7 @@ static DfcDerStatus decode_credential(DfcCredential* credential, const uint8_t* 
         if(ats_body.len == 0) return DfcDerMalformed;
         if(ats_body.len > DFC_PICC_ATS_MAX) return DfcDerCapacity;
         memcpy(credential->picc_ats, ats_body.p, ats_body.len);
-        credential->picc_ats_len = ats_body.len;
+        credential->picc_ats_len = (uint8_t)ats_body.len;
     }
     const uint8_t* sak = f_get(&pf, PICC_SAK);
     if(sak) {
@@ -2177,7 +2177,7 @@ static DfcDerStatus decode_credential(DfcCredential* credential, const uint8_t* 
             Slice df_body = field_body(df);
             if(df_body.len == 0 || df_body.len > sizeof(app->iso_aid)) return DfcDerMalformed;
             memcpy(app->iso_aid, df_body.p, df_body.len);
-            app->iso_aid_len = df_body.len;
+            app->iso_aid_len = (uint8_t)df_body.len;
         }
         if(!r_octets(f_get(&af, APP_KS1), 1, &app->key_settings_1)) return DfcDerMalformed;
         if(!r_octets(f_get(&af, APP_KS2), 1, &app->key_settings_2)) return DfcDerMalformed;
