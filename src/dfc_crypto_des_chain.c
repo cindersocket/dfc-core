@@ -3,6 +3,8 @@
 
 #include <string.h>
 
+#if DFC_ENABLE_DES_CRYPTO
+
 bool dfc_crypto_des_chain(
     bool primitive_encrypt,
     DfcCryptoDesChainDirection direction,
@@ -47,3 +49,5 @@ cleanup:
     dfc_secure_wipe(block, sizeof(block));
     return ok;
 }
+
+#endif

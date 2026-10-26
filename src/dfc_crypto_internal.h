@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dfc_build_config.h"
 #include "dfc_crypto.h"
 
 #if defined(DFC_CRYPTO_BACKEND_TINY)

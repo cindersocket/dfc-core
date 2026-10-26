@@ -30,6 +30,7 @@ static bool diversify_aes128(
     const uint8_t* input,
     size_t input_len,
     uint8_t output[16]) {
+#if DFC_ENABLE_AES_CRYPTO
     uint8_t message[32] = {0};
     uint8_t iv[16] = {0};
     DfcAesCmacContext context;
@@ -54,6 +55,13 @@ static bool diversify_aes128(
     an10922_wipe(message, sizeof(message));
     an10922_wipe(iv, sizeof(iv));
     return success;
+#else
+    (void)master_key;
+    (void)input;
+    (void)input_len;
+    (void)output;
+    return false;
+#endif
 }
 
 static bool diversify_tdea(
@@ -62,6 +70,7 @@ static bool diversify_tdea(
     const uint8_t* input,
     size_t input_len,
     uint8_t* output) {
+#if DFC_ENABLE_DES_CRYPTO
     uint8_t message[16] = {0};
     uint8_t iv[8] = {0};
     DfcDesCmacContext context;
@@ -91,6 +100,14 @@ static bool diversify_tdea(
     an10922_wipe(message, sizeof(message));
     an10922_wipe(iv, sizeof(iv));
     return success;
+#else
+    (void)master_key;
+    (void)key_len;
+    (void)input;
+    (void)input_len;
+    (void)output;
+    return false;
+#endif
 }
 
 bool dfc_an10922_diversify(

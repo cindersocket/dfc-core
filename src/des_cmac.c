@@ -1,4 +1,8 @@
 #include "des_cmac.h"
+
+#include "dfc_build_config.h"
+
+#if DFC_ENABLE_DES_CRYPTO
 #include "cmac_internal.h"
 #include "cmac_common.h"
 
@@ -178,3 +182,5 @@ bool des_cmac(uint8_t* key, size_t key_len, uint8_t* message, size_t message_len
     uint8_t iv[BLOCK_SIZE] = {0};
     return des_cmac_with_iv(key, key_len, message, message_len, iv, cmac);
 }
+
+#endif

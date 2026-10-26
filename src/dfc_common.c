@@ -260,6 +260,7 @@ void dfc_rotate_left(uint8_t* buffer, size_t len) {
     buffer[len - 1] = first;
 }
 
+#if DFC_ENABLE_DES_CRYPTO
 bool dfc_worker_des_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
@@ -281,7 +282,9 @@ bool dfc_worker_des_cbc_encrypt(
     bool ok = dfc_crypto_des_cbc(true, key, key_len, iv, clear, encrypted, length);
     return ok;
 }
+#endif
 
+#if DFC_ENABLE_AES_CRYPTO
 bool dfc_worker_aes_cbc_decrypt(
     const uint8_t* key,
     size_t key_len,
@@ -303,6 +306,7 @@ bool dfc_worker_aes_cbc_encrypt(
     bool ok = dfc_crypto_aes_cbc(true, key, key_len, iv, clear, encrypted, length);
     return ok;
 }
+#endif
 
 // True when a 16-octet key is the same 8-octet key twice, which makes it single
 // DES rather than 2K3DES.
