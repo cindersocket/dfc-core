@@ -143,12 +143,12 @@ impl std::error::Error for Error {}
 #[cfg(not(feature = "role-target"))]
 fn status(value: i32) -> Result<(), Error> {
     match value {
-        0 => Ok(()),
-        -1 => Err(Error::InvalidArgument),
-        -2 => Err(Error::BufferTooSmall),
-        -3 => Err(Error::OutOfMemory),
-        -4 => Err(Error::Unsupported),
-        -5 => Err(Error::RandomSourceFailed),
+        value if value == sys::DFC_FFI_OK as i32 => Ok(()),
+        sys::DFC_FFI_INVALID_ARGUMENT => Err(Error::InvalidArgument),
+        sys::DFC_FFI_BUFFER_TOO_SMALL => Err(Error::BufferTooSmall),
+        sys::DFC_FFI_OUT_OF_MEMORY => Err(Error::OutOfMemory),
+        sys::DFC_FFI_UNSUPPORTED => Err(Error::Unsupported),
+        sys::DFC_FFI_RANDOM_FAILED => Err(Error::RandomSourceFailed),
         other => Err(Error::Native(other)),
     }
 }

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use dfc_core_sys as sys;
 
-use crate::{Error, ensure_abi, reader::CommunicationMode};
+use crate::{Error, ensure_abi, layout, reader::CommunicationMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Failure returned when a clear command response cannot be decoded.
@@ -25,10 +25,14 @@ fn ensure() -> Result<(), DecodeError> {
 
 fn decode_status(value: i32) -> Result<(), DecodeError> {
     match value {
-        0 => Ok(()),
-        1 => Err(DecodeError::Malformed),
-        2 => Err(DecodeError::Unsupported),
-        3 => Err(DecodeError::BufferTooSmall),
+        value if value == layout::DFC_FFI_RESPONSE_OK as i32 => Ok(()),
+        value if value == layout::DFC_FFI_RESPONSE_MALFORMED as i32 => Err(DecodeError::Malformed),
+        value if value == layout::DFC_FFI_RESPONSE_UNSUPPORTED as i32 => {
+            Err(DecodeError::Unsupported)
+        }
+        value if value == layout::DFC_FFI_RESPONSE_BUFFER_TOO_SMALL as i32 => {
+            Err(DecodeError::BufferTooSmall)
+        }
         other => Err(DecodeError::Native(other)),
     }
 }

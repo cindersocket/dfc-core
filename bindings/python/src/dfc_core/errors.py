@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ._layout import VALUES as FFI_VALUES
+
 
 class DfcError(Exception):
     """Base error carrying the stable native status code."""
@@ -73,9 +75,9 @@ class CardError(ProtocolError):
 
 def exception_for_status(status: int) -> DfcError:
     return {
-        -1: InvalidArgumentError,
-        -2: BufferTooSmallError,
-        -3: DfcMemoryError,
-        -4: UnsupportedError,
-        -5: RandomSourceError,
+        FFI_VALUES["DFC_FFI_INVALID_ARGUMENT"]: InvalidArgumentError,
+        FFI_VALUES["DFC_FFI_BUFFER_TOO_SMALL"]: BufferTooSmallError,
+        FFI_VALUES["DFC_FFI_OUT_OF_MEMORY"]: DfcMemoryError,
+        FFI_VALUES["DFC_FFI_UNSUPPORTED"]: UnsupportedError,
+        FFI_VALUES["DFC_FFI_RANDOM_FAILED"]: RandomSourceError,
     }.get(status, ProtocolError)(status)

@@ -47,6 +47,8 @@ jobs:
         run: python3 tests/test_makefile_contract.py
       - name: Test formatting tool isolation
         run: python3 tests/test_format_tooling.py
+      - name: Test generated FFI contract
+        run: python3 tests/test_ffi_generator.py
       - name: Test Java command construction
         run: python3 tests/test_java_command_structure.py
       - name: Test Android minification contract
