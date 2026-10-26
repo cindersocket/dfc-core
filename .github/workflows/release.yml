@@ -445,7 +445,7 @@ jobs:
         with:
           name: release-verified
           path: release
-      - uses: rust-lang/crates-io-auth-action@63a7064947ceca9989005e118db3a5fecdc9259f # v1.0.0
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
         if: inputs.bootstrap_crates == false
         id: crates
       - name: Publish verified Rust crates in dependency order
