@@ -195,9 +195,9 @@ test_dfc_ev2_response_atomicity: test_dfc_ev2_response_atomicity.c \
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_dfc_roll_key_set_wipe: test_dfc_roll_key_set_wipe.c $(CORE)/dfc_credential.c \
-		$(CORE)/dfc_common.c $(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c \
+		$(CORE)/dfc_common.c $(CORE)/aes_cmac.c $(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c \
 		$(CRYPTO_SRC) munit/munit.c
-	$(CC) $(CFLAGS) -o $@ test_dfc_roll_key_set_wipe.c $(CORE)/dfc_common.c \
+	$(CC) $(CFLAGS) -o $@ test_dfc_roll_key_set_wipe.c $(CORE)/dfc_common.c $(CORE)/aes_cmac.c \
 		$(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c $(CRYPTO_SRC) munit/munit.c $(LDFLAGS)
 
 test_dfc_ffi_reduced_profile: test_dfc_ffi_reduced_profile.c $(CORE_SRC) \
