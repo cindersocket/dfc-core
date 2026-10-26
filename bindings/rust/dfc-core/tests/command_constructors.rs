@@ -94,7 +94,7 @@ fn construct(name: &str, arguments: &str) -> Command {
 
 #[test]
 fn constructors_match_shared_vectors() {
-    let vectors = include_str!("../../../../tests/command-constructor-vectors.txt");
+    let vectors = include_str!("fixtures/command-constructor-vectors.txt");
     for line in vectors
         .lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -134,7 +134,7 @@ fn file_constructors_reject_out_of_range_numbers() {
 
 #[test]
 fn payload_boundaries_match_shared_vectors() {
-    let vectors = include_str!("../../../../tests/command-constructor-boundaries.txt");
+    let vectors = include_str!("fixtures/command-constructor-boundaries.txt");
     for line in vectors
         .lines()
         .filter(|line| !line.is_empty() && !line.starts_with('#'))

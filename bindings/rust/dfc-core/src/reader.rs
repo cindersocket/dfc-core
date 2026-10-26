@@ -887,7 +887,7 @@ mod authentication_boundary_tests {
 
     #[test]
     fn native_authentication_boundaries_match_shared_contract() {
-        for line in include_str!("../../../../tests/authentication-boundaries.txt").lines() {
+        for line in include_str!("../tests/fixtures/authentication-boundaries.txt").lines() {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }

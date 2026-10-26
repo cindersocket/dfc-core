@@ -188,6 +188,40 @@ class ReleaseProcessTests(unittest.TestCase):
             self.assertEqual(attempts.read_text(encoding="utf-8"), "2")
             self.assertFalse(partial.exists())
 
+    def test_release_consumers_use_portable_install_locations(self) -> None:
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        native = (ROOT / "bindings/python/src/dfc_core/_native.py").read_text(encoding="utf-8")
+
+        self.assertIn('root="$PWD/stage/dfc-core-native-', workflow)
+        self.assertIn('package_path / "lib64" / name', native)
+        self.assertIn('package_path.parent / "lib64" / name', native)
+
+    def test_rust_package_owns_its_test_fixtures(self) -> None:
+        fixture_dir = ROOT / "bindings/rust/dfc-core/tests/fixtures"
+        fixtures = {
+            "authentication-boundaries.txt": ROOT / "tests/authentication-boundaries.txt",
+            "v6-minimal.dfcb": ROOT / "examples/credentials/v6-minimal.dfcb",
+            "v6-minimal.dfc": ROOT / "examples/credentials/v6-minimal.dfc",
+            "v6-maximal.dfcb": ROOT / "examples/credentials/v6-maximal.dfcb",
+            "v6-maximal.dfc": ROOT / "examples/credentials/v6-maximal.dfc",
+            "v6-auth-commands.dfcb": ROOT / "examples/credentials/v6-auth-commands.dfcb",
+            "command-constructor-vectors.txt": ROOT / "tests/command-constructor-vectors.txt",
+            "command-constructor-boundaries.txt": ROOT / "tests/command-constructor-boundaries.txt",
+        }
+        for name, canonical in fixtures.items():
+            with self.subTest(fixture=name):
+                self.assertEqual((fixture_dir / name).read_bytes(), canonical.read_bytes())
+
+        sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "bindings/rust/dfc-core/src").glob("*.rs")
+        )
+        self.assertNotIn("../../../../examples/", sources)
+        self.assertNotIn("../../../../tests/", sources)
+
+        manifest = (ROOT / "bindings/rust/dfc-core/Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn('exclude = ["tests/generated_bindings.rs"]', manifest)
+
 
 if __name__ == "__main__":
     unittest.main()

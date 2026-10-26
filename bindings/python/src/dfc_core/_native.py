@@ -377,7 +377,9 @@ def _library_candidates() -> list[Path | str]:
     package_path = Path(str(package))
     return [
         package_path / "lib" / name,
+        package_path / "lib64" / name,
         package_path.parent / "lib" / name,
+        package_path.parent / "lib64" / name,
         package_path / name,
         name,
     ]

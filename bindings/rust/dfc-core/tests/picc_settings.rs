@@ -2,10 +2,8 @@ use dfc_core::Credential;
 
 #[test]
 fn legacy_random_id_prefix_round_trips() {
-    let mut credential = Credential::load(include_bytes!(
-        "../../../../examples/credentials/v6-minimal.dfc"
-    ))
-    .expect("load fixture");
+    let mut credential =
+        Credential::load(include_bytes!("fixtures/v6-minimal.dfc")).expect("load fixture");
     let mut picc = credential.picc_settings().expect("read PICC settings");
     picc.random_id = 1;
     picc.random_id_legacy = 1;
