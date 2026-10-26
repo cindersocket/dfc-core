@@ -107,7 +107,7 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
     private static readonly TimeSpan MaximumNativeElapsed = TimeSpan.FromMilliseconds(uint.MaxValue);
 
     internal delegate int PiccCreator(
-        nint credential,
+        nint* credential,
         delegate* unmanaged<nint, byte*, nuint, int> random,
         nint context,
         nint* output
@@ -195,18 +195,19 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
             int st;
             var added = false;
             source.DangerousAddRef(ref added);
+            var sourcePointer = source.DangerousGetHandle();
             try
             {
                 var create = hooks?.Create;
                 st = create is null
-                    ? Native.dfc_ffi_picc_create(
-                        source.DangerousGetHandle(),
+                    ? Native.dfc_ffi_picc_create_take(
+                        &sourcePointer,
                         random is null ? null : &RandomTrampoline,
                         random is null ? 0 : GCHandle.ToIntPtr(root),
                         &picc
                     )
                     : create(
-                        source.DangerousGetHandle(),
+                        &sourcePointer,
                         random is null ? null : &RandomTrampoline,
                         random is null ? 0 : GCHandle.ToIntPtr(root),
                         &picc
@@ -214,6 +215,11 @@ public sealed unsafe class DfcVirtualPicc : IDfcApduExchange, IDisposable
             }
             finally
             {
+                if (sourcePointer == 0)
+                {
+                    source.RelinquishOwnership();
+                }
+
                 if (added)
                 {
                     source.DangerousRelease();

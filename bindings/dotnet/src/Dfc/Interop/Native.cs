@@ -254,6 +254,13 @@ internal static unsafe partial class Native
         nint* output);
 
     [LibraryImport(Library)]
+    internal static partial int dfc_ffi_picc_create_take(
+        nint* credential,
+        delegate* unmanaged<nint, byte*, nuint, int> random,
+        nint context,
+        nint* output);
+
+    [LibraryImport(Library)]
     internal static partial void dfc_ffi_picc_free(nint picc);
 
     [LibraryImport(Library)]
