@@ -41,7 +41,7 @@ cmake --fresh -S "$repo_root" -B "$build_dir" \
     -DCMAKE_C_COMPILER="$cc" \
     -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-    -DCMAKE_C_FLAGS="-mcpu=cortex-m4 -mthumb -mfloat-abi=soft -ffunction-sections -fdata-sections -fstack-usage" \
+    -DCMAKE_C_FLAGS="-mcpu=cortex-m4 -mthumb -mfloat-abi=soft -fstack-usage" \
     -DDFC_ROLE=target \
     -DDFC_PROFILE=full_ev3 \
     -DDFC_CRYPTO=tiny \
@@ -58,6 +58,22 @@ if grep -q -- '-fPIC' "$build_dir/compile_commands.json"; then
     echo "target objects unexpectedly use position-independent code" >&2
     exit 2
 fi
+python3 - "$build_dir/compile_commands.json" <<'PY'
+import json
+import pathlib
+import sys
+
+entries = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+objects = [entry for entry in entries if "CMakeFiles/dfc_objects.dir" in entry.get("command", "")]
+required = ("-ffunction-sections", "-fdata-sections")
+if not objects:
+    raise SystemExit("compile_commands.json contains no dfc_objects entries")
+for entry in objects:
+    command = entry.get("command", "")
+    missing = [flag for flag in required if flag not in command.split()]
+    if missing:
+        raise SystemExit(f"{entry.get('file', '<unknown>')} is missing {' '.join(missing)}")
+PY
 
 object_root="$build_dir/CMakeFiles/dfc_objects.dir"
 core_objects=()

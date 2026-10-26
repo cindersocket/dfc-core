@@ -167,6 +167,10 @@ cmake -S . -B build-target -DDFC_ROLE=target -DDFC_PROFILE=minimal_ev1 \
 cmake --build build-target
 ```
 
+Target objects place each function and data item in its own section. Add
+`--gc-sections` to the final firmware linker options to discard unreachable
+features; the static archive deliberately does not control the consumer's link.
+
 For a reader-only mobile native library:
 
 ```sh

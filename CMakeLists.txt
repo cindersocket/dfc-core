@@ -244,6 +244,13 @@ add_library(dfc_objects OBJECT ${DFC_CORE_SOURCES} ${DFC_CRYPTO_SOURCES})
 target_include_directories(dfc_objects PUBLIC src port PRIVATE ${DFC_CRYPTO_INCLUDES})
 target_compile_definitions(dfc_objects PUBLIC ${DFC_DEFINITIONS})
 target_compile_options(dfc_objects PRIVATE ${DFC_WARNINGS})
+if(DFC_ROLE STREQUAL "target" AND
+   CMAKE_C_COMPILER_ID MATCHES "^(AppleClang|Clang|GNU)$")
+    # Firmware linkers can discard unused entry points only when each function
+    # and object has its own section. The integrating firmware still decides
+    # whether to enable linker garbage collection.
+    target_compile_options(dfc_objects PRIVATE -ffunction-sections -fdata-sections)
+endif()
 set_target_properties(dfc_objects PROPERTIES C_VISIBILITY_PRESET default)
 if(DFC_BUILD_SHARED OR DFC_BUILD_JNI)
     set_property(TARGET dfc_objects PROPERTY POSITION_INDEPENDENT_CODE ON)
