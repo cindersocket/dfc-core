@@ -379,8 +379,10 @@ def _library_candidates() -> list[Path | str]:
     for name in names:
         candidates.extend(
             [
+                package_path / "bin" / name,
                 package_path / "lib" / name,
                 package_path / "lib64" / name,
+                package_path.parent / "bin" / name,
                 package_path.parent / "lib" / name,
                 package_path.parent / "lib64" / name,
                 package_path / name,
