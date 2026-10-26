@@ -25,6 +25,21 @@ def target(text: str, name: str) -> tuple[str, str]:
     return match.group("dependencies"), match.group("recipe")
 
 
+def assignment(text: str, name: str) -> str:
+    """Return one Make assignment after joining tab-indented continuations."""
+    lines = text.splitlines()
+    prefix = f"{name} :="
+    for index, line in enumerate(lines):
+        if not line.startswith(prefix):
+            continue
+        value = line.removeprefix(prefix).strip()
+        while value.endswith("\\"):
+            index += 1
+            value = value[:-1].rstrip() + " " + lines[index].strip()
+        return value
+    raise AssertionError(f"{name} assignment not found")
+
+
 class MakefileContractTests(unittest.TestCase):
     def test_default_suite_replays_vectors_under_reduced_profiles(self) -> None:
         dependencies, _recipe = target(makefile_text(), "test")
@@ -34,13 +49,12 @@ class MakefileContractTests(unittest.TestCase):
     def test_reduced_tests_share_one_complete_aggregate(self) -> None:
         text = makefile_text()
         reduced_tests = re.findall(r"(?m)^(REDUCED_[A-Z_]+_TEST)\s*:=", text)
-        aggregate = re.search(r"(?m)^REDUCED_TESTS\s*:=(?P<value>[^\n]*)$", text)
+        aggregate = assignment(text, "REDUCED_TESTS")
 
         self.assertTrue(reduced_tests)
-        self.assertIsNotNone(aggregate)
         for variable in reduced_tests:
             with self.subTest(variable=variable):
-                self.assertIn(f"$({variable})", aggregate.group("value"))
+                self.assertIn(f"$({variable})", aggregate)
 
         dependencies, recipe = target(text, "test")
         self.assertIn("$(REDUCED_TESTS)", dependencies)
