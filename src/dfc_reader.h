@@ -159,7 +159,6 @@ typedef struct {
             // When set, every continuation carries at most this many octets.
             size_t command_frame_len;
             DfcReaderStream stream;
-            uint8_t frame[DFC_READER_MAX_COMMAND];
         };
         struct {
             // Authentication in progress.
@@ -181,8 +180,22 @@ typedef struct {
         };
     };
 
-    uint8_t data[DFC_READER_MAX_RESPONSE];
+    union {
+        // Command storage ends when the last frame is emitted. The response
+        // then reuses these bytes. Authentication scratch stays outside this
+        // union because it remains live while authentication replies arrive.
+        uint8_t frame[DFC_READER_MAX_COMMAND];
+        uint8_t data[DFC_READER_MAX_RESPONSE];
+    };
 } DfcReaderExchange;
+
+_Static_assert(
+    offsetof(DfcReaderExchange, frame) == offsetof(DfcReaderExchange, data),
+    "reader command and response buffers must share storage");
+_Static_assert(
+    offsetof(DfcReaderExchange, data) >=
+        offsetof(DfcReaderExchange, auth_first) + sizeof(((DfcReaderExchange*)0)->auth_first),
+    "authentication scratch must remain live beside response storage");
 
 const char* dfc_reader_status_name(DfcReaderStatus status);
 

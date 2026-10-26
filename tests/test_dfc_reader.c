@@ -1109,6 +1109,54 @@ static MunitResult test_native_command_chaining(const MunitParameter params[], v
     return MUNIT_OK;
 }
 
+static MunitResult test_multiframe_terminal_response_retires_unsent_command(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    DfcReaderSession session;
+    dfc_reader_session_init(&session);
+
+    uint8_t payload[DFC_EV1_MAX_FRAME_PAYLOAD + 16];
+    memset(payload, 0xA5, sizeof(payload));
+    DfcCommand command;
+    munit_assert_int(
+        dfc_command_write_data(&command, FileLong, 0, payload, sizeof(payload)), ==, DfcCommandOk);
+
+    DfcReaderExchange exchange;
+    munit_assert_int(
+        dfc_reader_exchange_begin(&exchange, &session, DfcReaderFramingNative, &command, NULL),
+        ==,
+        DfcReaderOk);
+    uint8_t frame[DFC_EV1_MAX_FRAME_PAYLOAD + 1];
+    size_t frame_len = 0;
+    munit_assert_int(
+        dfc_reader_step(&exchange, NULL, 0, frame, sizeof(frame), &frame_len),
+        ==,
+        DfcReaderPending);
+    munit_assert_size(exchange.frame_offset, <, exchange.frame_len);
+
+    const uint8_t malformed_terminal[] = {DFC_STATUS_PERMISSION_DENIED, 0x5A};
+    munit_assert_int(
+        dfc_reader_step(
+            &exchange,
+            malformed_terminal,
+            sizeof(malformed_terminal),
+            frame,
+            sizeof(frame),
+            &frame_len),
+        ==,
+        DfcReaderProtocolError);
+
+    size_t response_len = 0;
+    const uint8_t* response = dfc_reader_result_data(&exchange, &response_len);
+    munit_assert_size(response_len, ==, 1);
+    munit_assert_uint8(response[0], ==, 0x5A);
+    for(size_t i = response_len; i < sizeof(exchange.frame); i++)
+        munit_assert_uint8(exchange.frame[i], ==, 0);
+    return MUNIT_OK;
+}
+
 static MunitResult
     test_command_output_capacity_retries(const MunitParameter params[], void* data) {
     (void)params;
@@ -4284,6 +4332,12 @@ static MunitTest tests[] = {
     {"/native-framing", test_native_framing, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/native-command-chaining",
      test_native_command_chaining,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/multiframe-terminal-response-retires-unsent-command",
+     test_multiframe_terminal_response_retires_unsent_command,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

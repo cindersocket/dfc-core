@@ -1026,7 +1026,9 @@ static bool set_frame(
 }
 
 static void clear_command_transients(DfcReaderExchange* exchange) {
-    dfc_secure_wipe(exchange->frame, sizeof(exchange->frame));
+    // Once response assembly starts, frame aliases the published response.
+    if(exchange->phase != PhaseResponse && exchange->phase != PhaseDone)
+        dfc_secure_wipe(exchange->frame, sizeof(exchange->frame));
     exchange->frame_len = 0;
     exchange->frame_offset = 0;
     exchange->first_frame_len = 0;
@@ -1686,7 +1688,16 @@ static DfcReaderStatus
     DfcReaderStatus st = emit(ex, ins, ex->frame + ex->frame_offset, chunk, out, cap, out_len);
     if(st != DfcReaderPending) return st;
     ex->frame_offset += chunk;
-    ex->phase = ex->frame_offset < ex->frame_len ? PhaseCommandFrames : PhaseResponse;
+    if(ex->frame_offset < ex->frame_len) {
+        ex->phase = PhaseCommandFrames;
+    } else {
+        // No retry can need the assembled command after it has been copied to
+        // the caller. Retire it before response bytes reuse the storage.
+        dfc_secure_wipe(ex->frame, sizeof(ex->frame));
+        ex->frame_len = 0;
+        ex->frame_offset = 0;
+        ex->phase = PhaseResponse;
+    }
     return DfcReaderPending;
 }
 
@@ -1714,6 +1725,12 @@ static DfcReaderStatus step_command(
 
     if(ex->phase == PhaseCommandFrames) {
         if(status != DFC_CMD_ADDITIONAL_FRAME || data_len != 0) {
+            // A terminal or malformed reply ends command emission. Retire the
+            // unsent tail before its storage becomes the response buffer.
+            dfc_secure_wipe(ex->frame, sizeof(ex->frame));
+            ex->frame_len = 0;
+            ex->frame_offset = 0;
+            ex->phase = PhaseResponse;
             ex->status = status;
             if(!append_data(ex, data, data_len)) {
                 dfc_reader_session_clear(ex->session);

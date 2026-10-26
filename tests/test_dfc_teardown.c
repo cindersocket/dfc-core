@@ -432,10 +432,9 @@ static MunitResult test_reader_authentication_transients_and_family_commit(
             reader_auth_audit_ev2(&audit, &exchange, AuditAesKey, true), ==, DfcReaderOk);
         assert_reader_auth_transients_wiped(&exchange);
         munit_assert_uint8(audit.reader.auth_mode, ==, DFC_READER_AUTH_EV2);
-        munit_assert_memory_equal(
-            sizeof(audit.reader.sm.session_key),
-            audit.reader.sm.session_key,
-            ((uint8_t[sizeof(audit.reader.sm.session_key)]){0}));
+        // EV2 keys now occupy the alternative arm of the legacy/EV1 secret
+        // storage. The active arm is checked through the completed exchange;
+        // session retirement below verifies that the shared bytes are wiped.
         munit_assert_not_null(audit.picc->emulator->secure_messaging);
         munit_assert_false(dfc_emulator_native_authentication_active(audit.picc->emulator));
         munit_assert_uint8(audit.picc->emulator->auth_cipher, ==, 0);
@@ -898,7 +897,57 @@ static MunitResult test_reader_command_transients_wiped_on_terminal_paths(
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_mutually_exclusive_protocol_storage_is_shared(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcReaderSession reader = {0};
+    DfcReaderExchange exchange = {0};
+
+    munit_assert_ptr_equal(&reader.sm, reader.ev2_encryption_key);
+    munit_assert_ptr_equal(exchange.frame, exchange.data);
+    munit_assert_size(
+        offsetof(DfcReaderExchange, data),
+        >=,
+        offsetof(DfcReaderExchange, auth_first) + sizeof(exchange.auth_first));
+#if DFC_ENABLE_ISO7816_AUTH
+    DfcEmulator emulator = {0};
+    munit_assert_ptr_equal(
+        &emulator.pending_authentication, emulator.pending_authentication.iso_auth_card_first);
+#endif
+    return MUNIT_OK;
+}
+
+static MunitResult test_retirement_wipes_shared_pending_authentication_storage(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    DfcEmulator emulator = {0};
+
+    memset(&emulator.pending_authentication, 0xA5, sizeof(emulator.pending_authentication));
+    dfc_emulator_retire_authentication(&emulator);
+
+    munit_assert_memory_equal(
+        sizeof(emulator.pending_authentication),
+        &emulator.pending_authentication,
+        &(DfcPendingAuthenticationStorage){0});
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+    {"/mutually-exclusive-protocol-storage-is-shared",
+     test_mutually_exclusive_protocol_storage_is_shared,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/retirement-wipes-shared-pending-authentication-storage",
+     test_retirement_wipes_shared_pending_authentication_storage,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/reader-auth-transients-and-family-commit",
      test_reader_authentication_transients_and_family_commit,
      NULL,
