@@ -46,9 +46,12 @@ static bool sdm_range_fits(const DfcFile* file, uint32_t offset, size_t length) 
     return offset <= file->data_len && length <= file->data_len - offset;
 }
 
+static bool sdm_read_cache_matches(const DfcEmulator* emulator, const DfcFile* file) {
+    return emulator->sdm_read_cache_valid && emulator->sdm_read_cache_file_number == file->number;
+}
+
 static DfcSdmRenderStatus render_sdm_read_in_place(DfcEmulator* emulator, DfcFile* file) {
-    if(emulator->sdm_read_cache_valid && emulator->sdm_read_cache_file_number == file->number)
-        return DfcSdmRenderOk;
+    if(sdm_read_cache_matches(emulator, file)) return DfcSdmRenderOk;
     DfcSdmRenderStatus status = DfcSdmRenderFailed;
     size_t pending_scratch_len = 0;
     uint8_t picc_clear[DFC_SDM_PICC_DATA_BLOCK_LENGTH * 2] = {0};
@@ -301,6 +304,8 @@ DfcSdmRenderStatus dfc_emulator_render_sdm_read_status(DfcEmulator* emulator, Df
        emulator->pending_chain_len > emulator->pending_chain_offset) {
         return DfcSdmRenderFailed;
     }
+    /* A matching cache is already the committed result. Leave rollback scratch untouched. */
+    if(sdm_read_cache_matches(emulator, file)) return DfcSdmRenderOk;
     uint8_t* saved_cache = emulator->pending_chain + DFC_SDM_READ_CACHE_SIZE;
     memcpy(saved_cache, emulator->sdm_read_cache, sizeof(emulator->sdm_read_cache));
     uint32_t saved_counter = file->state.data.sdm_read_counter;

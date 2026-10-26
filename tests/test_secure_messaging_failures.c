@@ -2163,6 +2163,48 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_sdm_cache_hit_skips_rollback_scratch(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    static FaultLink link;
+    const uint8_t key[DFC_AES_KEY_LENGTH] = {0x11};
+    fault_link_open(&link, DFC_CMD_AUTHENTICATE_AES, DFC_KEY_TYPE_AES, key, sizeof(key));
+    DfcFile* file = configure_sdm_fault_file(&link);
+    DfcEmulator* emulator = link.picc->emulator;
+    uint8_t cache_before[DFC_SDM_READ_CACHE_SIZE];
+    uint8_t scratch_before[DFC_SDM_READ_CACHE_SIZE];
+
+    emulator->sdm_read_cache_valid = true;
+    emulator->sdm_read_cache_file_number = file->number;
+    emulator->sdm_read_cache_len = 73;
+    memset(emulator->sdm_read_cache, 0x5A, sizeof(emulator->sdm_read_cache));
+    memset(scratch_before, 0xC7, sizeof(scratch_before));
+    memcpy(
+        emulator->pending_chain + DFC_SDM_READ_CACHE_SIZE, scratch_before, sizeof(scratch_before));
+    memcpy(cache_before, emulator->sdm_read_cache, sizeof(cache_before));
+    const uint32_t counter_before = file->state.data.sdm_read_counter;
+
+    munit_assert_true(dfc_emulator_render_sdm_read(emulator, file));
+    munit_assert_uint32(file->state.data.sdm_read_counter, ==, counter_before);
+    munit_assert_true(emulator->sdm_read_cache_valid);
+    munit_assert_uint8(emulator->sdm_read_cache_file_number, ==, file->number);
+    munit_assert_size(emulator->sdm_read_cache_len, ==, 73);
+    munit_assert_memory_equal(sizeof(cache_before), emulator->sdm_read_cache, cache_before);
+    munit_assert_memory_equal(
+        sizeof(scratch_before), emulator->pending_chain + DFC_SDM_READ_CACHE_SIZE, scratch_before);
+
+    /* A cached result must not bypass the in-flight command-chain guard. */
+    emulator->command_chain_active = true;
+    munit_assert_false(dfc_emulator_render_sdm_read(emulator, file));
+    munit_assert_memory_equal(sizeof(cache_before), emulator->sdm_read_cache, cache_before);
+    munit_assert_memory_equal(
+        sizeof(scratch_before), emulator->pending_chain + DFC_SDM_READ_CACHE_SIZE, scratch_before);
+
+    fault_link_close(&link);
+    return MUNIT_OK;
+}
+
 static void assert_sdm_random_failure_is_atomic(bool iso_read) {
     static FaultLink link;
     const uint8_t key[DFC_AES_KEY_LENGTH] = {0x11};
@@ -2760,6 +2802,12 @@ static MunitTest tests[] = {
      NULL},
     {"/sdm/counter-chain-guards",
      test_sdm_counter_and_chain_guards,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/sdm/cache-hit-skips-rollback-scratch",
+     test_sdm_cache_hit_skips_rollback_scratch,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
