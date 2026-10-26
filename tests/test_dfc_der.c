@@ -769,6 +769,68 @@ static MunitResult test_long_form_field_indexing(const MunitParameter params[], 
     return MUNIT_OK;
 }
 
+static bool
+    scan_canonical_lengths(const uint8_t* encoded, size_t encoded_len, bool boundaries[4]) {
+    size_t offset = 0;
+    while(offset < encoded_len) {
+        if(encoded_len - offset < 2) return false;
+        uint8_t tag = encoded[offset++];
+        uint8_t first = encoded[offset++];
+        size_t body_len = 0;
+        if((first & 0x80) == 0) {
+            body_len = first;
+        } else {
+            size_t count = first & 0x7F;
+            if(count == 0 || count > 2 || encoded_len - offset < count) return false;
+            if(encoded[offset] == 0) return false;
+            for(size_t i = 0; i < count; i++)
+                body_len = (body_len << 8) | encoded[offset++];
+            if(body_len < (count == 1 ? 128u : 256u)) return false;
+        }
+        if(body_len > encoded_len - offset) return false;
+        if(body_len == 127) boundaries[0] = true;
+        if(body_len == 128) boundaries[1] = true;
+        if(body_len == 255) boundaries[2] = true;
+        if(body_len == 256) boundaries[3] = true;
+        if((tag & 0x20) != 0 && !scan_canonical_lengths(encoded + offset, body_len, boundaries))
+            return false;
+        offset += body_len;
+    }
+    return offset == encoded_len;
+}
+
+static MunitResult test_constructed_length_boundaries(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    bool boundaries[4] = {false};
+    uint8_t contents[300] = {0};
+    uint8_t encoded[DFC_DER_MAX_SIZE];
+
+    for(size_t contents_len = 1; contents_len <= sizeof(contents); contents_len++) {
+        DfcCredential credential = {0};
+        build_basic(&credential);
+        add_data_file(
+            &credential, 1, (uint32_t)contents_len, (const char*)contents, contents_len, true);
+        size_t encoded_len = 0;
+        size_t needed = 0;
+        munit_assert_int(dfc_der_encoded_size(&credential, &needed), ==, DfcDerOk);
+        munit_assert_int(dfc_der_encode(&credential, encoded, needed, &encoded_len), ==, DfcDerOk);
+        munit_assert_size(encoded_len, ==, needed);
+        munit_assert_true(scan_canonical_lengths(encoded, encoded_len, boundaries));
+
+        DfcCredential decoded = {0};
+        munit_assert_int(dfc_der_decode(&decoded, encoded, encoded_len), ==, DfcDerOk);
+        uint8_t again[DFC_DER_MAX_SIZE];
+        size_t again_len = 0;
+        munit_assert_int(dfc_der_encode(&decoded, again, sizeof(again), &again_len), ==, DfcDerOk);
+        munit_assert_size(again_len, ==, encoded_len);
+        munit_assert_memory_equal(encoded_len, encoded, again);
+    }
+    for(size_t i = 0; i < sizeof(boundaries); i++)
+        munit_assert_true(boundaries[i]);
+    return MUNIT_OK;
+}
+
 #if DFC_ENABLE_KEY_SETS
 static MunitResult test_mixed_key_set_round_trip(const MunitParameter params[], void* data) {
     (void)params;
@@ -861,6 +923,12 @@ static MunitTest tests[] = {
     {"/capacity", test_capacity, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/long-form-field-indexing",
      test_long_form_field_indexing,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/constructed-length-boundaries",
+     test_constructed_length_boundaries,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

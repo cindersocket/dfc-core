@@ -209,12 +209,12 @@ typedef struct {
 
 static void w_raw(Writer* w, const uint8_t* bytes, size_t n) {
     if(w->buf) {
-        if(w->len + n > w->cap) {
+        if(w->len > w->cap || n > w->cap - w->len) {
             w->overflow = true;
             return;
         }
         memcpy(w->buf + w->len, bytes, n);
-    } else if(w->len + n < w->len) {
+    } else if(n > SIZE_MAX - w->len) {
         w->overflow = true;
         return;
     }
@@ -269,28 +269,48 @@ static void w_bool(Writer* w, uint8_t tag, bool v) {
     w_tlv(w, tag, &b, 1);
 }
 
-// A constructed component whose body is produced by a callback. Two passes: one
-// to size the body, one to emit it, so lengths are exact without scratch space.
+// A constructed component whose body is produced by a callback. Reserve the
+// shortest header, emit the body once, then make room for a long-form length if
+// needed. This keeps output canonical without recursively probing every body.
 typedef void (*BodyFn)(Writer*, const void*);
 
 static void w_constructed(Writer* w, uint8_t tag, BodyFn fn, const void* ctx) {
-    Writer probe = {NULL, 0, 0, false};
-    fn(&probe, ctx);
-    if(probe.overflow) {
+    if(w->overflow) return;
+    size_t start = w->len;
+    w_byte(w, tag);
+    w_byte(w, 0); // short-form placeholder
+    if(w->overflow) return;
+
+    size_t body_start = w->len;
+    fn(w, ctx);
+    if(w->overflow) return;
+    size_t body_len = w->len - body_start;
+
+    size_t extra = 0;
+    if(body_len >= 256)
+        extra = 2;
+    else if(body_len >= 128)
+        extra = 1;
+    if(body_len > UINT16_MAX || extra > SIZE_MAX - w->len ||
+       (w->buf && (w->len > w->cap || extra > w->cap - w->len))) {
         w->overflow = true;
         return;
     }
-    w_byte(w, tag);
-    w_len(w, probe.len);
-    if(!w->buf) {
-        if(probe.len > SIZE_MAX - w->len) {
-            w->overflow = true;
-            return;
+
+    if(w->buf) {
+        if(extra) memmove(w->buf + body_start + extra, w->buf + body_start, body_len);
+        if(extra == 0) {
+            w->buf[start + 1] = (uint8_t)body_len;
+        } else if(extra == 1) {
+            w->buf[start + 1] = 0x81;
+            w->buf[start + 2] = (uint8_t)body_len;
+        } else {
+            w->buf[start + 1] = 0x82;
+            w->buf[start + 2] = (uint8_t)(body_len >> 8);
+            w->buf[start + 3] = (uint8_t)body_len;
         }
-        w->len += probe.len;
-        return;
     }
-    fn(w, ctx);
+    w->len += extra;
 }
 
 typedef struct {
