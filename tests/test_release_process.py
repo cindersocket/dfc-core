@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tempfile
 import unittest
+from os import environ
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +22,7 @@ class ReleaseProcessTests(unittest.TestCase):
         required = (
             "./scripts/check-format.sh",
             "python3 tests/test_check_docs.py",
+            "python3 tests/test_binding_documentation_ci.py",
             "python3 tests/test_check_stack_usage.py",
             "python3 tests/test_ci_unit_workflow.py",
             "python3 tests/test_check_version.py",
@@ -84,7 +87,7 @@ class ReleaseProcessTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertTrue(result.stdout.startswith("- Add Java and Android JNI bindings"))
+        self.assertIn("- Add Java and Android JNI bindings", result.stdout)
 
     def test_requires_signed_tag_source_artifacts_and_github_release(self) -> None:
         required = (
@@ -93,20 +96,21 @@ class ReleaseProcessTests(unittest.TestCase):
             "git archive",
             "python3 scripts/checksums.py create",
             "python3 scripts/checksums.py check",
-            "gh release create",
-            "ships source archives and checksums",
+            "gh workflow run release.yml",
+            "publish=true",
+            "complete verified artifact bundle",
         )
         for text in required:
             with self.subTest(text=text):
                 self.assertIn(text, self.guide)
 
-    def test_defines_the_exact_2_0_distribution_policy(self) -> None:
+    def test_defines_the_complete_distribution_policy(self) -> None:
         published = (
             "dfc-core-$version.tar.gz",
             "dfc-core-$version.zip",
             "SHA256SUMS",
         )
-        source_build_outputs = (
+        package_outputs = (
             "native libraries",
             "Android AAR",
             "NuGet package",
@@ -114,10 +118,11 @@ class ReleaseProcessTests(unittest.TestCase):
             "Java/JNI",
             "Rust crates",
         )
-        for artifact in published + source_build_outputs:
+        for artifact in published + package_outputs:
             with self.subTest(artifact=artifact):
                 self.assertIn(artifact, self.guide)
-        self.assertIn("source-only distribution for 2.0", self.guide)
+        self.assertIn("release-artifacts.json", self.guide)
+        self.assertIn("PyPI, NuGet, and crates.io use trusted publishing", self.guide)
 
     def test_requires_archive_inspection_and_source_entry_point_smokes(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -129,6 +134,59 @@ class ReleaseProcessTests(unittest.TestCase):
         for text in required:
             with self.subTest(text=text):
                 self.assertIn(text, self.guide + workflow)
+
+    def test_android_archive_smoke_retries_the_shared_ndk_version(self) -> None:
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        gradle_properties = (ROOT / "bindings/android/gradle.properties").read_text(
+            encoding="utf-8"
+        )
+        android_build = (ROOT / "bindings/android/dfc/build.gradle.kts").read_text(encoding="utf-8")
+
+        installer = (ROOT / "scripts/install-android-ndk.sh").read_text(encoding="utf-8")
+
+        self.assertRegex(gradle_properties, r"(?m)^dfc\.ndkVersion=\d+(?:\.\d+)+$")
+        self.assertIn('providers.gradleProperty("dfc.ndkVersion").get()', android_build)
+        self.assertEqual(workflow.count("./scripts/install-android-ndk.sh"), 2)
+        self.assertIn("if: matrix.entry_point == 'android'", workflow)
+        self.assertIn("max_attempts=3", installer)
+        self.assertIn('rm -rf "$ANDROID_SDK_ROOT/ndk/$ndk_version"', installer)
+
+    def test_android_ndk_installer_retries_after_scoped_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk = root / "sdk"
+            partial = sdk / "ndk" / "28.2.13676358"
+            partial.mkdir(parents=True)
+            (partial / "partial-download").touch()
+            attempts = root / "attempts"
+            fake_sdkmanager = sdk / "cmdline-tools" / "latest" / "bin" / "sdkmanager"
+            fake_sdkmanager.parent.mkdir(parents=True)
+            fake_sdkmanager.write_text(
+                "#!/usr/bin/env bash\n"
+                "count=0\n"
+                '[[ -f "$SDKMANAGER_ATTEMPTS" ]] && count="$(cat "$SDKMANAGER_ATTEMPTS")"\n'
+                "count=$((count + 1))\n"
+                'printf "%s" "$count" > "$SDKMANAGER_ATTEMPTS"\n'
+                '[[ "$count" -ge 2 ]]\n',
+                encoding="utf-8",
+            )
+            fake_sdkmanager.chmod(0o755)
+            environment = environ.copy()
+            environment.update(
+                {
+                    "ANDROID_SDK_ROOT": str(sdk),
+                    "SDKMANAGER_ATTEMPTS": str(attempts),
+                }
+            )
+
+            subprocess.run(
+                [str(ROOT / "scripts/install-android-ndk.sh")],
+                check=True,
+                env=environment,
+            )
+
+            self.assertEqual(attempts.read_text(encoding="utf-8"), "2")
+            self.assertFalse(partial.exists())
 
 
 if __name__ == "__main__":

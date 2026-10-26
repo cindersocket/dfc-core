@@ -26,9 +26,13 @@ def registered_reader_statuses(source: str) -> set[str]:
     return set(READER_STATUS_ASSERTION.findall(source))
 
 
+def ffi_sources() -> str:
+    return "\n".join(path.read_text() for path in sorted((REPOSITORY / "ffi").glob("dfc_ffi*.c")))
+
+
 def test_python_reader_statuses_match_the_complete_c_family() -> None:
     header = (REPOSITORY / "ffi" / "dfc_ffi.h").read_text()
-    source = (REPOSITORY / "ffi" / "dfc_ffi.c").read_text()
+    source = ffi_sources()
     statuses = reader_statuses(header)
 
     assert set(statuses) == registered_reader_statuses(source)
@@ -64,7 +68,7 @@ def test_python_reader_statuses_match_the_complete_c_family() -> None:
 
 def test_new_c_reader_status_requires_registration() -> None:
     header = (REPOSITORY / "ffi" / "dfc_ffi.h").read_text()
-    source = (REPOSITORY / "ffi" / "dfc_ffi.c").read_text()
+    source = ffi_sources()
 
     statuses = reader_statuses(
         header.replace(

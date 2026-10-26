@@ -33,7 +33,7 @@ assert_eq!(&response[response.len() - 2..], &[0x91, 0xAF]);
 # Ok::<(), dfc_core::Error>(())
 ```
 
-The complete [virtual PICC example](../../examples/rust-virtual-picc/README.md)
+The complete [virtual PICC example](https://github.com/cindersocket/dfc-core/tree/master/examples/rust-virtual-picc)
 loads the checked-in synthetic credential, activates it, performs the
 three-frame `GetVersion` exchange, parses the returned card information, and
 turns the RF field off. Run it from the repository root:
@@ -53,6 +53,8 @@ secure messaging. A transport failure clears the protocol session before the
 error is returned. Handles are `Send`, but deliberately not `Sync`.
 `Command::select_application` accepts the same human-readable AID byte order
 returned by `Credential::application` and converts it to wire order.
+The reader keeps one short-APDU output buffer, grows it only as needed up to the
+261-byte wire limit, and wipes it after each transport call.
 
 To link an installed library instead of compiling the bundled source, disable
 defaults and enable `system` plus one role and profile. Set `DFC_LIB_DIR` when
@@ -87,6 +89,24 @@ cargo check --package dfc-core --target thumbv7em-none-eabihf \
   --features bundled,role-target,profile-minimal-ev3
 ```
 
+## Backend verification
+
+The hosted crate exposes `diversify_key`, typed response decoders, `verify_sdm`,
+and `TransactionMacVerifier`. Verified SDM fields are returned only after the
+MAC succeeds. The transaction verifier accepts structured operations in card
+order and clears its native key and transcript on drop. Applications still own
+replay detection and counter persistence.
+The [native transaction-input contract](../../src/dfc_transaction_mac.h)
+defines the supported commands, fields, padding, and ordering used unchanged by
+these methods.
+
+Run the backend example, which also transceives a virtual-card transaction and
+verifies the returned commit receipt, with:
+
+```sh
+cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml --bin verify_backend
+```
+
 ## Development checks
 
 From the repository root:
@@ -95,12 +115,26 @@ From the repository root:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo rustdoc -p dfc-core --lib -- -D warnings
+cargo rustdoc -p dfc-core --lib --no-default-features \
+  --features system,role-target,profile-full-ev3 -- -D warnings
 ```
+
+The safe crate denies missing rustdoc and broken intra-doc links at the crate
+root, so these commands are durable API-documentation gates. The
+`dfc-core-sys` declarations are generated from `ffi/dfc_ffi.h`; edit the native
+header and rerun `bindings/rust/regenerate-bindings.sh` rather than hand-editing
+the hosted raw bindings.
 
 The safe crate checks the native ABI version, structure sizes, and complete
 generated layout fingerprint before creating hosted handles. Random callbacks are contained at
 the FFI boundary: they must return exactly the requested byte count, and panic
 or length mismatch is reported after native control returns.
+
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).
 
 ## Reader clear-header length
 

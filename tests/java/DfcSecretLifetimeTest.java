@@ -17,11 +17,17 @@ public final class DfcSecretLifetimeTest {
         "credential was not wiped");
     check(credential.hashCode() == hash, "credential hash changed after close");
 
-    byte[] diagnosticBytes = new byte[36];
+    byte[] diagnosticBytes = new byte[DfcJniLayout.DFC_JNI_DIAGNOSTIC_SIZE];
     Arrays.fill(diagnosticBytes, (byte) 0x5a);
     new DfcDiagnosticSnapshot(diagnosticBytes).close();
     check(Arrays.equals(diagnosticBytes, new byte[diagnosticBytes.length]),
         "diagnostic was not wiped");
+    try {
+      new DfcDiagnosticSnapshot(new byte[DfcJniLayout.DFC_JNI_DIAGNOSTIC_SIZE - 1]);
+      throw new AssertionError("short diagnostic layout was accepted");
+    } catch (IllegalArgumentException expected) {
+      // The Java decoder must not silently follow a stale native packing layout.
+    }
 
     byte[] fallbackBytes = {1, 2, 3, 4};
     DfcCleaner.Cleanable fallback =

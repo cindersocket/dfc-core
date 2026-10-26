@@ -10,6 +10,52 @@
 
 #include <string.h>
 
+_Static_assert(sizeof(((DfcApplication*)0)->iso_aid_len) == 1, "DF name length is one octet");
+_Static_assert(sizeof(((DfcApplication*)0)->key_offset) <= 2, "key offset uses bounded storage");
+_Static_assert(sizeof(((DfcApplication*)0)->key_pool_len) <= 2, "key slice uses bounded storage");
+_Static_assert(sizeof(((DfcApplication*)0)->num_keys) == 1, "key count is one octet");
+_Static_assert(sizeof(((DfcApplication*)0)->key_len) == 1, "key length is one octet");
+#if DFC_ENABLE_KEY_SETS
+_Static_assert(sizeof(((DfcApplication*)0)->key_storage_len) == 1, "stored key width is one octet");
+#endif
+_Static_assert(sizeof(((DfcFile*)0)->app_index) == 1, "file owner uses one octet");
+#if DFC_FILE_POOL_SIZE <= UINT16_MAX
+_Static_assert(sizeof(((DfcFile*)0)->data_offset) == 2, "file offset follows target pool width");
+_Static_assert(sizeof(((DfcFile*)0)->data_len) == 2, "file length follows target pool width");
+#endif
+_Static_assert(sizeof(((DfcCredential*)0)->uid_len) == 1, "UID length is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_key_offset) <= 2, "PICC key offset is bounded");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_key_pool_len) <= 2, "PICC key slice is bounded");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_num_keys) == 1, "PICC key count is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_key_len) == 1, "PICC key length is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->picc_ats_len) == 1, "ATS length is one octet");
+_Static_assert(sizeof(((DfcCredential*)0)->num_apps) == 1, "application count is one octet");
+#if DFC_MAX_FILES <= UINT8_MAX
+_Static_assert(sizeof(((DfcCredential*)0)->num_files) == 1, "target file count is one octet");
+#endif
+#if DFC_FILE_POOL_SIZE <= UINT16_MAX
+_Static_assert(sizeof(((DfcCredential*)0)->file_pool_used) == 2, "file pool usage is bounded");
+#endif
+#if DFC_KEY_POOL_SIZE <= UINT16_MAX
+_Static_assert(sizeof(((DfcCredential*)0)->key_pool_used) == 2, "key pool usage is bounded");
+#endif
+#if DFC_ENABLE_KEY_SETS
+_Static_assert(
+    sizeof(((DfcCredential*)0)->key_set_metadata_pool_used) == 2,
+    "key-set metadata usage is bounded");
+#endif
+#if DFC_ENABLE_VIRTUAL_CARD
+_Static_assert(
+    sizeof(((DfcCredential*)0)->virtual_card_installation_id_len) == 1,
+    "installation identifier length is one octet");
+_Static_assert(
+    sizeof(((DfcCredential*)0)->virtual_card_uid_len) == 1,
+    "virtual UID length is one octet");
+#endif
+_Static_assert(
+    sizeof(((DfcSecureMessaging*)0)->session_key_len) == 1,
+    "session key length is one octet");
+
 static void observe_zeroed_sm(const void* ptr, void* context) {
     bool* zeroed = context;
     const uint8_t* bytes = ptr;
@@ -73,7 +119,7 @@ static void build_model(
     file->access_rights = 0xEEEE;
     file->has_iso_file_id = true;
     file->iso_file_id = 0x1002;
-    file->declared_size = 4;
+    munit_assert_true(dfc_file_set_declared_size(file, 4));
     file->contents_complete = true;
     munit_assert_true(dfc_file_resize(credential, file, 4));
     memcpy(dfc_file_data(credential, file), "\x01\x02\x03\x04", 4);
@@ -137,6 +183,45 @@ static void assert_round_trips(const DfcCredential* source) {
     munit_assert_memory_equal(text_length, text_again, text);
 }
 
+static MunitResult test_copy_preserves_complete_value(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static DfcCredential source;
+    static DfcCredential copy;
+    memset(&source, 0xA5, sizeof(source));
+    dfc_credential_clear(&source);
+
+    // Poison inactive tails to represent future inline fields. Copying only the
+    // active model would silently drop them.
+    memset(
+        source.apps + source.num_apps,
+        0x3C,
+        sizeof(source.apps) - (source.num_apps * sizeof(source.apps[0])));
+    memset(
+        source.files + source.num_files,
+        0xC3,
+        sizeof(source.files) - (source.num_files * sizeof(source.files[0])));
+    memset(
+        source.file_pool + source.file_pool_used,
+        0x5A,
+        sizeof(source.file_pool) - source.file_pool_used);
+    memset(
+        source.key_pool + source.key_pool_used,
+        0xA5,
+        sizeof(source.key_pool) - source.key_pool_used);
+#if DFC_ENABLE_KEY_SETS
+    memset(
+        source.key_set_metadata_pool + source.key_set_metadata_pool_used,
+        0x69,
+        sizeof(source.key_set_metadata_pool) - source.key_set_metadata_pool_used);
+#endif
+
+    memset(&copy, 0, sizeof(copy));
+    dfc_credential_copy_model(&copy, &source);
+    munit_assert_memory_equal(sizeof(source), &copy, &source);
+    return MUNIT_OK;
+}
+
 static void assert_model_rejected(const DfcCredential* credential) {
     static uint8_t binary[DFC_DER_MAX_SIZE];
     static char text[DFC_TEXT_MAX_SIZE];
@@ -196,11 +281,11 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     munit_assert_true(dfc_file_resize(&value_file, value, 0));
     value->type = DFC_FILE_TYPE_VALUE;
     value->contents_complete = false;
-    value->value_lower_limit = -1;
-    value->value_upper_limit = 1;
-    value->value = 0;
+    value->state.value.lower_limit = -1;
+    value->state.value.upper_limit = 1;
+    value->state.value.current = 0;
     for(unsigned setting = 0; setting <= UINT8_MAX; setting++) {
-        value->limited_credit = (uint8_t)setting;
+        value->state.value.limited_credit = (uint8_t)setting;
         munit_assert_int(
             dfc_credential_validate_model(&value_file),
             ==,
@@ -214,20 +299,19 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     munit_assert_true(dfc_file_resize(&transaction_mac, transaction_file, 0));
     transaction_file->type = DFC_FILE_TYPE_TRANSACTION_MAC;
     transaction_file->contents_complete = false;
-    transaction_file->declared_size = 0;
-    transaction_file->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+    transaction_file->state.transaction_mac.key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
     transaction_file->access_rights = 0xEFFE;
     munit_assert_int(dfc_credential_validate_model(&transaction_mac), ==, DfcModelOk);
 
     for(unsigned value = 0; value <= UINT8_MAX; value++) {
-        transaction_file->transaction_mac_key_type = (uint8_t)value;
+        transaction_file->state.transaction_mac.key_type = (uint8_t)value;
         munit_assert_int(
             dfc_credential_validate_model(&transaction_mac),
             ==,
             value == DFC_TRANSACTION_MAC_KEY_TYPE_AES ? DfcModelOk : DfcModelMalformed);
     }
 
-    transaction_file->transaction_mac_key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
+    transaction_file->state.transaction_mac.key_type = DFC_TRANSACTION_MAC_KEY_TYPE_AES;
     for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
         transaction_file->access_rights = (uint16_t)rights;
         bool valid = ordinary_access_rights_are_valid((uint16_t)rights, 2) &&
@@ -243,22 +327,22 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
     DfcCredential sdm;
     dfc_credential_copy_model(&sdm, &source);
     DfcFile* sdm_file = &sdm.files[0];
-    sdm_file->sdm_enabled = true;
+    dfc_file_sdm_flag_set(sdm_file, DfcSdmFlagEnabled, true);
     sdm_file->comm_settings = DFC_SDM_ENABLED_MASK | DFC_COMM_PLAIN;
-    sdm_file->sdm_access_rights = 0xEFFE;
+    sdm_file->state.data.sdm.access_rights = 0xEFFE;
     const uint8_t sdm_option_mask = DFC_SDM_UID_MIRROR_MASK | DFC_SDM_COUNTER_MIRROR_MASK |
                                     DFC_SDM_COUNTER_LIMIT_MASK | DFC_SDM_ENCRYPTED_FILE_MASK |
                                     DFC_SDM_ASCII_ENCODING_MASK;
     for(unsigned options = 0; options <= UINT8_MAX; options++) {
-        sdm_file->sdm_options = (uint8_t)options;
+        sdm_file->state.data.sdm.options = (uint8_t)options;
         munit_assert_int(
             dfc_credential_validate_model(&sdm),
             ==,
             (options & ~sdm_option_mask) == 0 ? DfcModelOk : DfcModelMalformed);
     }
-    sdm_file->sdm_options = 0;
+    sdm_file->state.data.sdm.options = 0;
     for(uint32_t rights = 0; rights <= UINT16_MAX; rights++) {
-        sdm_file->sdm_access_rights = (uint16_t)rights;
+        sdm_file->state.data.sdm.access_rights = (uint16_t)rights;
         uint8_t meta = (uint8_t)(rights >> 12);
         uint8_t file_read = (uint8_t)(rights >> 8) & 0x0F;
         uint8_t reserved = (uint8_t)(rights >> 4) & 0x0F;
@@ -312,9 +396,9 @@ static MunitResult test_mixed_key_set_matrix(const MunitParameter params[], void
             dfc_credential_key_length(app->key_settings_2),
             DFC_KEY_SET_MAXIMUM_24_BYTE));
         for(size_t set = 0; set < 3; set++) {
-            app->key_set_types[set] = set_types[variant][set];
-            app->key_set_initialized[set] = true;
-            size_t width = dfc_key_set_type_length(app->key_set_types[set]);
+            *dfc_credential_key_set_type(&credential, app, set) = set_types[variant][set];
+            munit_assert_true(dfc_credential_key_set_set_initialized(&credential, app, set, true));
+            size_t width = dfc_key_set_type_length(set_types[variant][set]);
             for(size_t slot = 0; slot < app->num_keys; slot++) {
                 uint8_t* key = dfc_credential_key_in_set(&credential, app, set, slot);
                 munit_assert_not_null(key);
@@ -335,12 +419,14 @@ static MunitResult
     DfcApplication* app = &credential.apps[0];
     munit_assert_true(dfc_credential_key_sets_resize(
         &credential, app, 2, 2, DFC_AES_KEY_LENGTH, DFC_KEY_SET_MAXIMUM_24_BYTE));
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
-    app->key_set_types[1] = DFC_KEY_SET_TYPE_3K3DES;
-    app->key_set_initialized[0] = true;
-    app->key_set_initialized[1] = true;
-    app->key_set_versions[0] = 1;
-    app->key_set_versions[1] = 2;
+    *dfc_credential_key_set_type(&credential, app, 0) = DFC_KEY_SET_TYPE_AES;
+    *dfc_credential_key_set_type(&credential, app, 1) = DFC_KEY_SET_TYPE_3K3DES;
+    *dfc_credential_key_set_version(&credential, app, 0) = 0x11;
+    *dfc_credential_key_set_version(&credential, app, 1) = 0x22;
+    munit_assert_true(dfc_credential_key_set_set_initialized(&credential, app, 0, false));
+    munit_assert_true(dfc_credential_key_set_set_initialized(&credential, app, 1, true));
+    *dfc_credential_key_version_in_set(&credential, app, 0, 0) = 0x31;
+    *dfc_credential_key_version_in_set(&credential, app, 1, 0) = 0x42;
     uint8_t* target = dfc_credential_key_in_set(&credential, app, 1, 0);
     munit_assert_not_null(target);
     memset(target, 0xA5, DFC_KEY_SET_MAXIMUM_24_BYTE);
@@ -350,7 +436,12 @@ static MunitResult
     munit_assert_true(dfc_credential_roll_key_set(&credential, app, 1));
     munit_assert_size(app->key_len, ==, DFC_KEY_SET_MAXIMUM_24_BYTE);
     munit_assert_uint8(app->key_settings_2 & DFC_KEY_TYPE_MASK, ==, DFC_KEY_TYPE_3K3DES);
-    munit_assert_uint8(app->key_set_types[0], ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_uint8(
+        *dfc_credential_key_set_type(&credential, app, 0), ==, DFC_KEY_SET_TYPE_3K3DES);
+    munit_assert_uint8(*dfc_credential_key_set_version(&credential, app, 0), ==, 0x22);
+    munit_assert_true(dfc_credential_key_set_is_initialized(&credential, app, 0));
+    munit_assert_false(dfc_credential_key_set_is_initialized(&credential, app, 1));
+    munit_assert_uint8(*dfc_credential_key_version_in_set(&credential, app, 0, 0), ==, 0x42);
     munit_assert_memory_equal(
         DFC_KEY_SET_MAXIMUM_24_BYTE,
         dfc_credential_key_in_set(&credential, app, 0, 0),
@@ -458,8 +549,8 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
     dfc_credential_copy_model(&bad, &source);
     DfcApplication* app = &bad.apps[0];
     munit_assert_true(dfc_credential_key_sets_resize(&bad, app, 2, 2, 16, 24));
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_AES;
-    app->key_set_types[1] = 0xFF;
+    *dfc_credential_key_set_type(&bad, app, 0) = DFC_KEY_SET_TYPE_AES;
+    *dfc_credential_key_set_type(&bad, app, 1) = 0xFF;
     assert_model_rejected(&bad);
 
     dfc_credential_copy_model(&bad, &source);
@@ -468,24 +559,75 @@ static MunitResult test_invalid_mutations(const MunitParameter params[], void* d
     app->key_settings_2 =
         (uint8_t)((app->key_settings_2 & ~DFC_KEY_TYPE_MASK) | DFC_KEY_TYPE_3K3DES);
     app->key_len = 24;
-    app->key_set_types[0] = DFC_KEY_SET_TYPE_3K3DES;
-    app->key_set_types[1] = DFC_KEY_SET_TYPE_AES;
-    app->key_set_initialized[0] = true;
-    app->key_set_initialized[1] = true;
+    *dfc_credential_key_set_type(&bad, app, 0) = DFC_KEY_SET_TYPE_3K3DES;
+    *dfc_credential_key_set_type(&bad, app, 1) = DFC_KEY_SET_TYPE_AES;
+    munit_assert_true(dfc_credential_key_set_set_initialized(&bad, app, 0, true));
+    munit_assert_true(dfc_credential_key_set_set_initialized(&bad, app, 1, true));
     assert_model_rejected(&bad);
 #endif
 
 #if DFC_ENABLE_SDM
     dfc_credential_copy_model(&bad, &source);
     DfcFile* file = &bad.files[0];
-    file->sdm_enabled = true;
-    file->sdm_has_encrypted_file_offset = true;
-    file->sdm_encrypted_file_offset = 2;
-    file->sdm_encrypted_file_length = UINT32_MAX;
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, true);
+    dfc_file_sdm_flag_set(file, DfcSdmFlagEncryptedFile, true);
+    file->state.data.sdm.encrypted_file_offset = 2;
+    file->state.data.sdm.encrypted_file_length = UINT32_MAX;
     assert_model_rejected(&bad);
 #endif
     return MUNIT_OK;
 }
+
+static MunitResult test_declared_size_is_data_only(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcFile file = {0};
+    uint32_t size = UINT32_MAX;
+
+    file.type = DFC_FILE_TYPE_STANDARD_DATA;
+    munit_assert_true(dfc_file_set_declared_size(&file, 0xFFFFFFu));
+    munit_assert_true(dfc_file_get_declared_size(&file, &size));
+    munit_assert_uint32(size, ==, 0xFFFFFFu);
+
+    file.type = DFC_FILE_TYPE_VALUE;
+    file.state.value.current = 42;
+    munit_assert_false(dfc_file_set_declared_size(&file, 12));
+    munit_assert_int32(file.state.value.current, ==, 42);
+    size = UINT32_MAX;
+    munit_assert_false(dfc_file_get_declared_size(&file, &size));
+    munit_assert_uint32(size, ==, UINT32_MAX);
+    return MUNIT_OK;
+}
+
+#if DFC_ENABLE_SDM
+static MunitResult test_sdm_flags_are_independent(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const DfcSdmFlag flags[] = {
+        DfcSdmFlagEnabled,
+        DfcSdmFlagUidOffset,
+        DfcSdmFlagCounterOffset,
+        DfcSdmFlagPiccDataOffset,
+        DfcSdmFlagMacInputOffset,
+        DfcSdmFlagEncryptedFile,
+        DfcSdmFlagMacOffset,
+        DfcSdmFlagCounterLimit,
+    };
+    DfcFile file = {.type = DFC_FILE_TYPE_STANDARD_DATA};
+    for(size_t index = 0; index < sizeof(flags) / sizeof(flags[0]); index++) {
+        dfc_file_sdm_flag_set(&file, flags[index], true);
+        munit_assert_uint8(file.state.data.sdm.flags, ==, (uint8_t)flags[index]);
+        munit_assert_true(dfc_file_sdm_flag_is_set(&file, flags[index]));
+        dfc_file_sdm_flag_set(&file, flags[index], false);
+        munit_assert_uint8(file.state.data.sdm.flags, ==, 0);
+    }
+    file.type = DFC_FILE_TYPE_BACKUP_DATA;
+    dfc_file_sdm_flag_set(&file, DfcSdmFlagEnabled, true);
+    munit_assert_uint8(file.state.data.sdm.flags, ==, 0);
+    munit_assert_false(dfc_file_sdm_flag_is_set(&file, DfcSdmFlagEnabled));
+    return MUNIT_OK;
+}
+#endif
 
 static MunitTest tests[] = {
     {"/secure-messaging-wiped-before-free",
@@ -516,7 +658,27 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
+    {"/copy-preserves-complete-value",
+     test_copy_preserves_complete_value,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/invalid-mutations", test_invalid_mutations, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/declared-size-is-data-only",
+     test_declared_size_is_data_only,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#if DFC_ENABLE_SDM
+    {"/sdm-flags-are-independent",
+     test_sdm_flags_are_independent,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
 };
 

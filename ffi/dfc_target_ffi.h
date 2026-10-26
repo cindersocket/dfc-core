@@ -51,7 +51,10 @@ typedef struct {
 
 DfcTargetLayout dfc_target_credential_layout(void);
 void dfc_target_credential_init(void* storage);
+// Destroy storage after initialization or any decode attempt.
 void dfc_target_credential_destroy(void* storage);
+// Decode accepts either zeroed storage or storage initialized above. It leaves
+// an initialized, destroyable credential on both success and failure.
 int32_t dfc_target_credential_decode(void* storage, const uint8_t* content, size_t len);
 int32_t dfc_target_credential_validate(const void* storage);
 int32_t

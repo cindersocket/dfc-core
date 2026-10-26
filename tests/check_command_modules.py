@@ -76,6 +76,22 @@ def main() -> None:
             if definition.search(monolith):
                 raise SystemExit(f"{family} handler moved back into command monolith: {handler}")
 
+    data_module = (ROOT / "src" / "dfc_emulator_commands_data.c").read_text(encoding="utf-8")
+    write_data = data_module.split("void dfc_emulator_command_write_data(", 1)[1]
+    if "dfc_emulator_command_unwrap_write_payload(" not in write_data:
+        raise SystemExit("WriteData bypasses the shared write-payload verifier")
+    direct_verifiers = (
+        "dfc_secure_messaging_verify_command(",
+        "dfc_secure_messaging_verify_d40_command_mac(",
+        "dfc_secure_messaging_verify_ev1_transmitted_command_mac",
+        "dfc_secure_messaging_update_ev1_command",
+    )
+    bypass = next((name for name in direct_verifiers if name in write_data), None)
+    if bypass:
+        raise SystemExit(f"WriteData directly calls {bypass}")
+    if "const uint8_t* clear" not in write_data or "&clear" not in write_data:
+        raise SystemExit("WriteData does not borrow unmodified clear payloads")
+
 
 if __name__ == "__main__":
     main()

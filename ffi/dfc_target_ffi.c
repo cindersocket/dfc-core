@@ -5,6 +5,7 @@
 
 #include "dfc_credential.h"
 #include "dfc_der.h"
+#include "dfc_emulator_i.h"
 #include "dfc_virtual_picc.h"
 
 #if !DFC_ENABLE_EMULATOR
@@ -151,17 +152,19 @@ int32_t dfc_target_picc_snapshot(const DfcTargetPicc* picc, DfcTargetSnapshot* o
         memcpy(out->selected_aid, picc->credential->apps[emulator->selected_app_index].aid, 3);
     }
     out->dirty = picc->credential->dirty;
-    if(emulator->secure_messaging) {
-        out->auth_mode = emulator->secure_messaging->cipher;
-        out->auth_key_no = emulator->auth_key_no;
-    }
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     out->ev2_active = emulator->ev2_session_active;
     if(emulator->ev2_session_active) {
+        out->auth_mode = DFC_CMD_AUTHENTICATE_AES;
+        out->auth_key_no = emulator->ev2_authenticated_key_no;
         out->ev2_key_no = emulator->ev2_authenticated_key_no;
         out->ev2_command_counter = emulator->ev2_command_counter;
     }
 #endif
+    if(dfc_emulator_native_authentication_active(emulator)) {
+        out->auth_mode = emulator->auth_cipher;
+        out->auth_key_no = emulator->auth_key_no;
+    }
 #if DFC_ENABLE_VIRTUAL_CARD
     out->virtual_card_selected = emulator->virtual_card_selected;
 #endif

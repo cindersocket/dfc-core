@@ -6,9 +6,8 @@ cd "$root"
 
 ./scripts/check-c-format.sh
 python3 scripts/generate-ffi-layout.py --check
-git ls-files -z 'bindings/java/**/*.java' 'bindings/android/**/*.java' \
-    'examples/java/*.java' 'examples/java/**/*.java' 'examples/android/**/*.java' \
-    'tests/java/*.java' \
+java_roots="bindings/java bindings/android examples/java examples/android tests/java"
+find $java_roots -type f -name '*.java' -print0 \
     | xargs -0 uvx --from clang-format==21.1.7 clang-format --dry-run --Werror
 dotnet format whitespace bindings/dotnet/Dfc.sln --verify-no-changes
 dotnet format whitespace examples/dotnet/Dfc.TransceiveExample.csproj --verify-no-changes

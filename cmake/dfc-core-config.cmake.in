@@ -1,0 +1,5 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/dfc-core-targets.cmake")
+
+check_required_components(dfc-core)

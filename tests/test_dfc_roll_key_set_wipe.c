@@ -16,7 +16,8 @@ static uint8_t observed_secrets[2][DFC_MAX_KEY_LEN];
 
 void dfc_test_observed_secure_wipe(void* buffer, size_t length) {
     uint8_t* bytes = buffer;
-    if(observed_wipe_count < 2 && length >= expected_secret_length) {
+    bool is_key_scratch = length == DFC_MAX_KEY_LEN;
+    if(is_key_scratch && observed_wipe_count < 2 && length >= expected_secret_length) {
         memcpy(observed_secrets[observed_wipe_count], bytes, expected_secret_length);
     }
 
@@ -30,9 +31,11 @@ void dfc_test_observed_secure_wipe(void* buffer, size_t length) {
         all_zero = all_zero && bytes[i] == 0;
     }
 
-    observed_wipe_count++;
-    observed_wipe_length = length;
-    observed_zeroed_buffer = all_zero;
+    if(is_key_scratch) {
+        observed_wipe_count++;
+        observed_wipe_length = length;
+        observed_zeroed_buffer = all_zero;
+    }
 }
 
 static MunitResult test_roll_wipes_complete_scratch(const MunitParameter params[], void* data) {

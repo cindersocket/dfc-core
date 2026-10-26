@@ -11,6 +11,10 @@ requires-python = ">=3.11"
 license = { text = "GPL-2.0-or-later" }
 authors = [{ name = "CinderSocket" }]
 
+[project.urls]
+Repository = "https://github.com/cindersocket/dfc-core"
+Security = "https://github.com/cindersocket/dfc-core/security/policy"
+
 [project.optional-dependencies]
 test = ["pytest>=8", "mypy>=1.13", "ruff>=0.8"]
 

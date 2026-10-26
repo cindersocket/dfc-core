@@ -124,19 +124,22 @@ public sealed record DfcCommand
     public static DfcCommand GetKeyVersion(byte keyNo) => new(0x64, new[] { keyNo });
 
     /// <summary>GetFileSettings.</summary>
-    public static DfcCommand GetFileSettings(byte fileNo) => new(0xF5, new[] { fileNo });
+    public static DfcCommand GetFileSettings(byte fileNo) => OneFile(0xF5, fileNo);
 
     /// <summary>GetFileCounters.</summary>
-    public static DfcCommand GetFileCounters(byte fileNo) => new(0xF6, new[] { fileNo });
+    public static DfcCommand GetFileCounters(byte fileNo) => OneFile(0xF6, fileNo);
 
     /// <summary>DeleteFile.</summary>
-    public static DfcCommand DeleteFile(byte fileNo) => new(0xDF, new[] { fileNo });
+    public static DfcCommand DeleteFile(byte fileNo) => OneFile(0xDF, fileNo);
 
     /// <summary>ClearRecordFile.</summary>
-    public static DfcCommand ClearRecordFile(byte fileNo) => new(0xEB, new[] { fileNo });
+    public static DfcCommand ClearRecordFile(byte fileNo) => OneFile(0xEB, fileNo);
 
     /// <summary>CommitTransaction.</summary>
     public static DfcCommand CommitTransaction() => new(0xC7, ReadOnlyMemory<byte>.Empty);
+
+    /// <summary>CommitTransaction carrying its option octet.</summary>
+    public static DfcCommand CommitTransaction(byte option) => new(0xC7, new[] { option });
 
     /// <summary>AbortTransaction.</summary>
     public static DfcCommand AbortTransaction() => new(0xA7, ReadOnlyMemory<byte>.Empty);
@@ -200,7 +203,7 @@ public sealed record DfcCommand
     }
 
     /// <summary>GetValue.</summary>
-    public static DfcCommand GetValue(byte fileNo) => new(0x6C, new[] { fileNo });
+    public static DfcCommand GetValue(byte fileNo) => OneFile(0x6C, fileNo);
 
     /// <summary>Credit.</summary>
     public static unsafe Result<DfcCommand, DfcProtocolError> Credit(byte fileNo, int amount) =>
@@ -248,4 +251,10 @@ public sealed record DfcCommand
     }
 
     private static DfcProtocolError Invalid(string message) => new(DfcProtocolErrorKind.Invalid, message);
+
+    private static DfcCommand OneFile(byte instruction, byte fileNo)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(fileNo, (byte)31);
+        return new DfcCommand(instruction, new[] { fileNo });
+    }
 }

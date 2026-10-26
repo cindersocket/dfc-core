@@ -21,3 +21,12 @@ file number 2 for free read access, as `v6-maximal.dfcb` does.
 Replace `VirtualPicc` with an object that implements
 `transceive(command: bytes) -> bytes` to drive a physical reader while keeping
 the same `Reader` calls.
+
+`verify_backend.py` demonstrates the server side of that exchange. It decodes
+file settings, verifies a captured SDM message, and reconstructs a Credit
+operation before verifying its returned Transaction MAC receipt:
+
+```sh
+DFC_LIBRARY_PATH="$PWD/build/libdfc.dylib" \
+  uv run --project bindings/python python examples/python/verify_backend.py
+```

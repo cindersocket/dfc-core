@@ -46,9 +46,9 @@ static void fixture_open(
     fixture->file->type = DFC_FILE_TYPE_LINEAR_RECORD;
     fixture->file->comm_settings = DFC_COMM_PLAIN;
     fixture->file->access_rights = 0xEEEE;
-    fixture->file->record_size = (uint32_t)record_size;
-    fixture->file->max_records = max_records;
-    fixture->file->record_count = record_count;
+    fixture->file->state.record.size = (uint32_t)record_size;
+    fixture->file->state.record.max_records = max_records;
+    fixture->file->state.record.count = record_count;
     munit_assert_true(
         dfc_file_resize(&fixture->credential, fixture->file, record_size * max_records));
     fixture->picc = dfc_virtual_picc_session_alloc(&fixture->credential);
@@ -202,7 +202,7 @@ static MunitResult test_raw_dispatch_and_errors(const MunitParameter params[], v
     apdu_len = build_record_apdu(WriteRecordIso, RecordFile, 4, 1, outside, sizeof(outside), apdu);
     exchange_apdu(&fixture, apdu, apdu_len, response, &response_len);
     assert_status(response, response_len, DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_uint32(fixture.file->record_count, ==, 3);
+    munit_assert_uint32(fixture.file->state.record.count, ==, 3);
     munit_assert_memory_equal(sizeof(committed), stored, committed);
 
     fixture_close(&fixture);
@@ -467,7 +467,7 @@ static MunitResult test_raw_emulator_response(const MunitParameter params[], voi
         fixture.picc->emulator, command, sizeof(command), &output, NULL));
     munit_assert_size(dfc_bytebuf_get_size_bytes(&output), ==, 17);
     munit_assert_uint8(dfc_bytebuf_get_byte(&output, 0), ==, DFC_STATUS_OK);
-    fixture.file->record_size = DFC_MAX_FILE_DATA;
+    fixture.file->state.record.size = DFC_MAX_FILE_DATA;
     munit_assert_true(dfc_file_resize(&fixture.credential, fixture.file, DFC_MAX_FILE_DATA));
     dfc_bytebuf_reset(&output);
     munit_assert_true(dfc_emulator_handle_command(

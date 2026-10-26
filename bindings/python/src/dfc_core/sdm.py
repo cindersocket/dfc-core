@@ -1,0 +1,192 @@
+from __future__ import annotations
+
+import ctypes as C
+from dataclasses import dataclass
+
+from . import _native
+from .errors import DfcError
+
+
+class SdmVerificationError(DfcError):
+    """SDM authentication, field decoding, or decryption failed."""
+
+
+@dataclass(frozen=True)
+class SdmField:
+    """A field location whose length unit is defined by its ``SdmConfig`` slot.
+
+    ``offset`` always counts ASCII message bytes. ``length`` counts decoded UID
+    octets for ``plain_uid`` and ASCII message bytes for encrypted fields.
+
+    Attributes:
+        offset: Zero-based byte offset in the ASCII message.
+        length: Slot-specific decoded or encoded length described by ``SdmConfig``.
+    """
+
+    offset: int
+    length: int
+
+
+@dataclass(frozen=True)
+class SdmConfig:
+    """Locations of authenticated fields in an ASCII SDM message.
+
+    ``plain_uid.length`` is 7 or 10 decoded UID octets and occupies twice that
+    many ASCII bytes. ``encrypted_picc_data.length`` is 32 or 64 ASCII bytes.
+    ``encrypted_file_data.length`` is a nonzero multiple of 32 ASCII bytes.
+    A configured plain read counter occupies six ASCII bytes.
+
+    Attributes:
+        mac_input_offset: First ASCII-message byte authenticated by the SDM MAC.
+        mac_offset: First ASCII-message byte containing the 16-character MAC.
+        plain_uid: Optional UID location using decoded UID length units.
+        plain_read_counter_offset: Optional six-character read-counter location.
+        encrypted_picc_data: Optional encrypted PICC field in ASCII byte units.
+        encrypted_file_data: Optional encrypted file field in ASCII byte units.
+    """
+
+    mac_input_offset: int
+    mac_offset: int
+    plain_uid: SdmField | None = None
+    plain_read_counter_offset: int | None = None
+    encrypted_picc_data: SdmField | None = None
+    encrypted_file_data: SdmField | None = None
+
+
+@dataclass(frozen=True)
+class SdmResult:
+    """Authenticated fields published by ``verify_sdm``.
+
+    Attributes:
+        uid: Verified UID, or ``None`` when not configured.
+        read_counter: Verified read counter, or ``None`` when not configured.
+        decrypted_file_data: Verified clear file bytes, empty when not configured.
+    """
+
+    uid: bytes | None
+    read_counter: int | None
+    decrypted_file_data: bytes
+
+
+def _validate_field(name: str, field: SdmField | None, message_length: int, scale: int = 1) -> None:
+    if field is None:
+        return
+    offset = _native.unsigned(field.offset, C.sizeof(C.c_size_t) * 8, f"{name} offset")
+    length = _native.unsigned(field.length, C.sizeof(C.c_size_t) * 8, f"{name} length")
+    if offset > message_length or length > (message_length - offset) // scale:
+        raise ValueError(f"{name} lies outside the message")
+
+
+def _validate_config(message_length: int, config: SdmConfig) -> None:
+    bits = C.sizeof(C.c_size_t) * 8
+    mac_input = _native.unsigned(config.mac_input_offset, bits, "MAC input offset")
+    mac = _native.unsigned(config.mac_offset, bits, "MAC offset")
+    if mac_input > mac or mac > message_length or message_length - mac < 16:
+        raise ValueError("MAC offsets lie outside the message")
+    _validate_field("plain UID", config.plain_uid, message_length, 2)
+    if config.plain_read_counter_offset is not None:
+        counter = _native.unsigned(config.plain_read_counter_offset, bits, "counter offset")
+        if counter > message_length or message_length - counter < 6:
+            raise ValueError("counter lies outside the message")
+    _validate_field("encrypted PICC data", config.encrypted_picc_data, message_length)
+    _validate_field("encrypted file data", config.encrypted_file_data, message_length)
+    if config.plain_uid is not None and config.plain_uid.length not in (7, 10):
+        raise ValueError("plain UID length must be 7 or 10 decoded bytes")
+    if config.encrypted_picc_data is not None and config.encrypted_picc_data.length not in (32, 64):
+        raise ValueError("encrypted PICC data length must be 32 or 64 ASCII bytes")
+    if config.encrypted_file_data is not None and (
+        config.encrypted_file_data.length == 0 or config.encrypted_file_data.length % 32
+    ):
+        raise ValueError("encrypted file data length must be a nonzero multiple of 32 ASCII bytes")
+    for name, field in (
+        ("encrypted PICC data", config.encrypted_picc_data),
+        ("encrypted file data", config.encrypted_file_data),
+    ):
+        if field is not None and field.length % 2:
+            raise ValueError(f"{name} must contain complete hexadecimal bytes")
+
+
+def verify_sdm(
+    message: bytes,
+    config: SdmConfig,
+    file_read_key: bytes,
+    meta_read_key: bytes | None = None,
+) -> SdmResult:
+    """Authenticate one ASCII SDM message and publish verified fields.
+
+    Offsets and encrypted lengths in ``config`` count bytes in ``message``.
+    Plain UID length counts decoded UID bytes. Native copies of the message,
+    keys, and decrypted data are wiped before return; Python-owned immutable
+    inputs and returned values remain in Python memory.
+
+    Args:
+        message: Complete ASCII message containing configured hexadecimal fields.
+        config: Locations and lengths of authenticated message fields.
+        file_read_key: Sixteen-byte key used for the MAC and file-data decryption.
+        meta_read_key: Optional 16-byte key for encrypted PICC data.
+
+    Returns:
+        Authenticated UID, read counter, and decrypted file data. Unconfigured
+        fields are ``None`` or empty bytes.
+
+    Raises:
+        ValueError: If a key, offset, or field length is invalid.
+        SdmVerificationError: If decoding, authentication, or decryption fails.
+    """
+    if len(file_read_key) != 16 or (meta_read_key is not None and len(meta_read_key) != 16):
+        raise ValueError("SDM keys must be 16 bytes")
+    _validate_config(len(message), config)
+    fields = 0
+    if config.plain_uid is not None:
+        fields |= 1
+    if config.plain_read_counter_offset is not None:
+        fields |= 2
+    if config.encrypted_picc_data is not None:
+        fields |= 4
+    if config.encrypted_file_data is not None:
+        fields |= 8
+    uid = config.plain_uid or SdmField(0, 0)
+    encrypted_picc = config.encrypted_picc_data or SdmField(0, 0)
+    encrypted_file = config.encrypted_file_data or SdmField(0, 0)
+    decrypted_length = encrypted_file.length // 2
+
+    message_raw, message_pointer = _native.byte_pointer(message)
+    file_raw, file_pointer = _native.byte_pointer(file_read_key)
+    meta_raw, meta_pointer = _native.byte_pointer(meta_read_key or b"")
+    decrypted = (C.c_uint8 * max(1, decrypted_length))()
+    required = C.c_size_t()
+    packed = (C.c_uint8 * 20)()
+    try:
+        status = _native.library().dfc_ffi_sdm_verify_ascii(
+            message_pointer,
+            len(message),
+            fields,
+            uid.offset,
+            uid.length,
+            config.plain_read_counter_offset or 0,
+            encrypted_picc.offset,
+            encrypted_picc.length,
+            encrypted_file.offset,
+            encrypted_file.length,
+            config.mac_input_offset,
+            config.mac_offset,
+            meta_pointer if meta_read_key is not None else None,
+            file_pointer,
+            decrypted if decrypted_length else None,
+            decrypted_length,
+            C.byref(required),
+            packed,
+            len(packed),
+        )
+        if status:
+            raise SdmVerificationError(status, f"SDM verification failed with status {status}")
+        result = bytes(packed)
+        clear = bytes(decrypted[: required.value])
+        return SdmResult(
+            result[2 : 2 + result[1]] if result[0] else None,
+            int.from_bytes(result[16:20], "little") if result[12] else None,
+            clear,
+        )
+    finally:
+        for temporary in (message_raw, file_raw, meta_raw, decrypted, packed):
+            _native.secure_zero(temporary)

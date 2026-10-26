@@ -91,8 +91,8 @@ static void begin_transaction_snapshot(FormatFixture* fixture, size_t app_index)
     DfcEmulator* emulator = fixture->session->emulator;
     emulator->transaction_snapshot_pool_length = fixture->credential.file_pool_used;
     emulator->transaction_snapshot_pool_capacity = emulator->transaction_snapshot_pool_length;
-    emulator->transaction_snapshot_pool =
-        dfc_platform_alloc(emulator->transaction_snapshot_pool_length, DfcAllocEmulator);
+    emulator->transaction_snapshot_pool = dfc_platform_alloc(
+        emulator->transaction_snapshot_pool_length, DfcAllocTransactionSnapshot);
     munit_assert_not_null(emulator->transaction_snapshot_pool);
     memcpy(
         emulator->transaction_snapshot_pool,
@@ -284,9 +284,9 @@ static void prepare_delegated_fixture(FormatFixture* fixture) {
 #if DFC_ENABLE_TRANSACTION_MAC
     fixture->credential.files[0].type = DFC_FILE_TYPE_TRANSACTION_MAC;
     memset(
-        fixture->credential.files[0].transaction_mac_key,
+        fixture->credential.files[0].state.transaction_mac.key,
         0xA5,
-        sizeof(fixture->credential.files[0].transaction_mac_key));
+        sizeof(fixture->credential.files[0].state.transaction_mac.key));
 #endif
     add_other_app_and_file(fixture);
     select_format_app(fixture, 0);

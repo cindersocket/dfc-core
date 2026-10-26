@@ -9,9 +9,16 @@ __pycache__/
 *.pyc
 tests/role-build/
 /build*/
+/dist/
 /target/
 bindings/python/.venv/
 bindings/python/dist/
+bindings/android/build-repository/
+bindings/java/.flattened-pom.xml
+bindings/java/target/
+tests/package-consumer/android/.gradle/
+tests/package-consumer/android/build/
+tests/package-consumer/android/app/build/
 bindings/dotnet/**/bin/
 bindings/dotnet/**/obj/
 bindings/dotnet/src/Dfc/runtimes/
@@ -19,3 +26,4 @@ examples/android/build/
 examples/dotnet/bin/
 examples/dotnet/obj/
 examples/rust-virtual-picc/target/
+central-bundle.zip

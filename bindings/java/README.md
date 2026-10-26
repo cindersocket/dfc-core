@@ -4,6 +4,47 @@ The Java 17 binding exposes credential codecs, an in-process virtual card, and
 a blocking reader over any `DfcTransport`. Parsing, validation, card behavior,
 and secure messaging run in the native DFC core through JNI.
 
+Add the Java artifact and the native classifier for the deployment target:
+
+```xml
+<dependency>
+  <groupId>com.cindersocket</groupId>
+  <artifactId>dfc-core</artifactId>
+  <version>2.0.0</version>
+</dependency>
+<dependency>
+  <groupId>com.cindersocket</groupId>
+  <artifactId>dfc-core</artifactId>
+  <version>2.0.0</version>
+  <classifier>linux-x86_64</classifier>
+</dependency>
+```
+
+Available classifiers are listed in the repository's
+[package contract](../../release-artifacts.json). The binding loads the native
+library from that classifier jar when it is not installed system-wide.
+
+## API map
+
+| Type | Purpose |
+|---|---|
+| `DfcCredentialCodec`, `DfcCredential` | Read, validate, and write credential files |
+| `DfcVirtualPicc`, `DfcReader`, `DfcCommand` | Emulate or drive a card while retaining raw responses |
+| `DfcResponses` | Decode version, directory, file-settings, and key responses into typed records |
+| `DfcKeyDiversification` | Derive AES and two- or three-key TDEA application keys |
+| `DfcSdm` | Authenticate ASCII SDM input and return verified mirrored fields |
+| `DfcTransactionMacVerifier` | Reconstruct transaction input and verify its returned receipt |
+
+`DfcSdm.verify` authenticates one message. The backend must persist the last
+accepted read counter for the relevant card and application context, then reject
+duplicate or older counters before acting on the result. The binding does not
+store replay state.
+
+`DfcTransactionMacVerifier` follows the
+[native transaction-input contract](../../src/dfc_transaction_mac.h) for its
+supported commands, fields, padding, and card-order rules. Receipt counter
+history and duplicate detection remain application policy.
+
 ## Load and transceive
 
 `DfcCredentialCodec.load` accepts either `.dfc` text or `.dfcb` octets. A
@@ -51,7 +92,7 @@ needs those bytes; `replayRandomRemaining` exposes the current queue length for
 test assertions. `clearReplayRandom` wipes and discards unread bytes so the next
 event starts with newly appended replay data.
 
-The runnable [Java example](../../examples/java/README.md) loads a credential,
+The runnable [Java example](https://github.com/cindersocket/dfc-core/tree/master/examples/java) loads a credential,
 activates it, and executes the multi-frame `GetVersion` exchange. Android
 consumers should use the separate [Android binding](../android/README.md).
 
@@ -69,15 +110,23 @@ javac --release 17 -d build-jni/java \
   bindings/java/src/main/java/com/cindersocket/dfc/*.java \
   tests/java/DfcJniSmokeTest.java tests/java/DfcJniReplayRandomTest.java \
   tests/java/DfcSecretLifetimeTest.java \
+  tests/java/DfcAdvancedApiTest.java \
   examples/java/DfcTransceiveExample.java
 java -cp build-jni/java com.cindersocket.dfc.DfcSecretLifetimeTest
 java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
   examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
 java -Djava.library.path=build-jni -cp build-jni/java DfcJniReplayRandomTest \
   examples/credentials/v6-minimal.dfc
+java -Djava.library.path=build-jni -cp build-jni/java DfcAdvancedApiTest
 java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
   examples/credentials/v6-minimal.dfc
+javadoc -quiet -public -Xdoclint:all -Werror \
+  -d build-jni/javadoc \
+  bindings/java/src/main/java/com/cindersocket/dfc/*.java
 ```
+
+The Javadoc command is a required build gate. It rejects malformed comments,
+missing references, and warnings rather than publishing partial API docs.
 
 The native library must be discoverable through `java.library.path` or the
 platform loader. JNI compares the linked core's layout fingerprint with the
@@ -92,3 +141,8 @@ and temporary output buffers on every exit. Java arrays cannot prevent copies
 made by the VM or application, so callers should close `DfcCredential` promptly
 and clear arrays they own. A cleaner clears owned credential and diagnostic
 buffers if explicit close is missed; its timing is intentionally unspecified.
+
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).

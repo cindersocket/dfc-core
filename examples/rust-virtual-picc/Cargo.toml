@@ -3,6 +3,7 @@ name = "dfc-rust-virtual-picc-example"
 version = "0.0.0"
 edition = "2024"
 publish = false
+default-run = "dfc-rust-virtual-picc-example"
 
 [dependencies]
 dfc-core = { path = "../../bindings/rust/dfc-core" }

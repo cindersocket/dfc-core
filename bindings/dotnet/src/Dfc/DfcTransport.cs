@@ -11,22 +11,22 @@ using Dfc.Interop;
 public enum DfcProtocolErrorKind
 {
     /// <summary>An argument was out of range, or the operation does not fit the session.</summary>
-    Invalid = 2,
+    Invalid = (int)Native.DFC_FFI_READER_INVALID,
 
     /// <summary>A buffer or a bound of the native library was too small.</summary>
-    BufferTooSmall = 3,
+    BufferTooSmall = (int)Native.DFC_FFI_READER_BUFFER_TOO_SMALL,
 
     /// <summary>The card's answer was malformed or unexpected.</summary>
-    Protocol = 4,
+    Protocol = (int)Native.DFC_FFI_READER_PROTOCOL_ERROR,
 
     /// <summary>A MAC, a CRC or a returned challenge did not verify.</summary>
-    Integrity = 5,
+    Integrity = (int)Native.DFC_FFI_READER_INTEGRITY_ERROR,
 
     /// <summary>The card answered with an error status; see <see cref="DfcProtocolError.CardStatus" />.</summary>
-    CardStatus = 6,
+    CardStatus = (int)Native.DFC_FFI_READER_CARD_ERROR,
 
     /// <summary>The native build does not carry what the operation needs.</summary>
-    Unsupported = 7,
+    Unsupported = (int)Native.DFC_FFI_READER_UNSUPPORTED,
 
     /// <summary>The virtual card's random source could not fill a request.</summary>
     RandomSource = 8,
@@ -50,11 +50,11 @@ public sealed record DfcProtocolError(DfcProtocolErrorKind Kind, string Message,
     internal static DfcProtocolError FromReaderStatus(int status, byte cardStatus) =>
         status switch
         {
-            6 => new(DfcProtocolErrorKind.CardStatus, $"The card answered with status {cardStatus:X2}.", cardStatus),
-            5 => new(DfcProtocolErrorKind.Integrity, "A MAC, CRC or challenge from the card did not verify."),
-            4 => new(DfcProtocolErrorKind.Protocol, "The card's answer was malformed or unexpected."),
-            3 or Interop.Native.BufferTooSmall => new(DfcProtocolErrorKind.BufferTooSmall, "The exchange exceeds a bound of the native library."),
-            7 or Interop.Native.Unsupported => new(DfcProtocolErrorKind.Unsupported, "The native library was built without this feature."),
+            (int)Native.DFC_FFI_READER_CARD_ERROR => new(DfcProtocolErrorKind.CardStatus, $"The card answered with status {cardStatus:X2}.", cardStatus),
+            (int)Native.DFC_FFI_READER_INTEGRITY_ERROR => new(DfcProtocolErrorKind.Integrity, "A MAC, CRC or challenge from the card did not verify."),
+            (int)Native.DFC_FFI_READER_PROTOCOL_ERROR => new(DfcProtocolErrorKind.Protocol, "The card's answer was malformed or unexpected."),
+            (int)Native.DFC_FFI_READER_BUFFER_TOO_SMALL or Interop.Native.BufferTooSmall => new(DfcProtocolErrorKind.BufferTooSmall, "The exchange exceeds a bound of the native library."),
+            (int)Native.DFC_FFI_READER_UNSUPPORTED or Interop.Native.Unsupported => new(DfcProtocolErrorKind.Unsupported, "The native library was built without this feature."),
             _ => new(DfcProtocolErrorKind.Invalid, "The operation does not fit its arguments or the session."),
         };
 }

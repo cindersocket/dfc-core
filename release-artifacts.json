@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "version": "2.0.0",
+  "artifacts": [
+    {
+      "id": "source",
+      "ecosystem": "github",
+      "package": "dfc-core",
+      "files": ["dfc-core-{version}.tar.gz", "dfc-core-{version}.zip"]
+    },
+    {
+      "id": "native",
+      "ecosystem": "github",
+      "package": "dfc-core-native",
+      "files": ["dfc-core-native-{rid}-{version}.zip"],
+      "targets": ["linux-x64", "linux-arm64", "osx-x64", "osx-arm64", "win-x64", "win-arm64"]
+    },
+    {
+      "id": "python",
+      "ecosystem": "pypi",
+      "package": "dfc-core",
+      "files": [
+        "dfc_core-{version}.tar.gz",
+        "dfc_core-{version}-*manylinux*x86_64.whl",
+        "dfc_core-{version}-*manylinux*aarch64.whl",
+        "dfc_core-{version}-*macosx*x86_64.whl",
+        "dfc_core-{version}-*macosx*arm64.whl",
+        "dfc_core-{version}-*win_amd64.whl"
+      ]
+    },
+    {
+      "id": "rust-sys",
+      "ecosystem": "crates.io",
+      "package": "dfc-core-sys",
+      "files": ["dfc-core-sys-{version}.crate"]
+    },
+    {
+      "id": "rust",
+      "ecosystem": "crates.io",
+      "package": "dfc-core",
+      "files": ["dfc-core-{version}.crate"]
+    },
+    {
+      "id": "java",
+      "ecosystem": "maven-central",
+      "package": "com.cindersocket:dfc-core",
+      "files": [
+        "dfc-core-{version}.jar",
+        "dfc-core-{version}-sources.jar",
+        "dfc-core-{version}-javadoc.jar",
+        "dfc-core-{version}.pom"
+      ]
+    },
+    {
+      "id": "jni",
+      "ecosystem": "maven-central",
+      "package": "com.cindersocket:dfc-core",
+      "files": ["dfc-core-{version}-{classifier}.jar"],
+      "targets": ["linux-x86_64", "linux-aarch64", "osx-x86_64", "osx-aarch64", "windows-x86_64", "windows-aarch64"]
+    },
+    {
+      "id": "android",
+      "ecosystem": "maven-central",
+      "package": "com.cindersocket:dfc-core-android",
+      "files": [
+        "dfc-core-android-{version}.aar",
+        "dfc-core-android-{version}-sources.jar",
+        "dfc-core-android-{version}-javadoc.jar",
+        "dfc-core-android-{version}.pom"
+      ]
+    },
+    {
+      "id": "dotnet",
+      "ecosystem": "nuget",
+      "package": "Dfc",
+      "files": ["Dfc.{version}.nupkg", "Dfc.{version}.snupkg"]
+    },
+    {
+      "id": "checksums",
+      "ecosystem": "github",
+      "package": "dfc-core",
+      "files": ["SHA256SUMS"]
+    }
+  ]
+}

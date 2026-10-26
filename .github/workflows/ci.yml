@@ -31,6 +31,8 @@ jobs:
         run: python3 tests/test_check_decoder_registry.py
       - name: Test documentation link checker
         run: python3 tests/test_check_docs.py
+      - name: Test binding documentation gates
+        run: python3 tests/test_binding_documentation_ci.py
       - name: Check DESFire vector integrity
         run: python3 tests/check_desfire_vectors.py
       - name: Test DESFire vector grammar
@@ -39,10 +41,14 @@ jobs:
         run: python3 tests/test_check_stack_usage.py
       - name: Test CI unit workflow policy
         run: python3 tests/test_ci_unit_workflow.py
+      - name: Test Rust target initialization policy
+        run: python3 tests/test_rust_target_init.py
       - name: Test host-suite Makefile contract
         run: python3 tests/test_makefile_contract.py
       - name: Test formatting tool isolation
         run: python3 tests/test_format_tooling.py
+      - name: Test generated FFI contract
+        run: python3 tests/test_ffi_generator.py
       - name: Test Java command construction
         run: python3 tests/test_java_command_structure.py
       - name: Test Android minification contract
@@ -57,6 +63,14 @@ jobs:
         run: python3 tests/test_release_artifacts.py
       - name: Test release procedure
         run: python3 tests/test_release_process.py
+      - name: Test release artifact inventory
+        run: python3 tests/test_release_inventory.py
+      - name: Test dependency graph inventory
+        run: python3 tests/test_dependency_graph.py
+      - name: Test Dependabot coverage
+        run: python3 tests/test_dependabot_config.py
+      - name: Test security policy
+        run: python3 tests/test_security_policy.py
       - name: Check documentation links
         run: python3 scripts/check-docs.py
       - name: Check version metadata
@@ -81,6 +95,9 @@ jobs:
           java-version: "17"
       - uses: astral-sh/setup-uv@v6
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install the Android NDK
+        if: matrix.entry_point == 'android'
+        run: ./scripts/install-android-ndk.sh
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libmbedtls-dev
       - name: Fetch tiny-crypto-c
@@ -121,7 +138,8 @@ jobs:
       - name: Install the toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang libmbedtls-dev
+          sudo apt-get install -y --no-install-recommends \
+            clang libclang-rt-18-dev libmbedtls-dev
       - name: Fuzz accepted credential round trips
         run: make -C tests fuzz CC=clang FUZZ_TIME=300
       - name: Upload crashing inputs
@@ -358,8 +376,13 @@ jobs:
             tests/java/DfcReaderHeaderBoundsTest.java tests/java/DfcJniNarrowingTest.java \
             tests/java/DfcLayoutCompatibilityTest.java tests/java/DfcSecretLifetimeTest.java \
             tests/java/DfcCommandRangeTest.java \
+            tests/java/DfcAuthenticationBoundaryTest.java \
+            tests/java/DfcNativeLoaderTest.java \
+            tests/java/DfcAdvancedApiTest.java \
             examples/java/DfcTransceiveExample.java
           java -cp build-jni/java com.cindersocket.dfc.DfcCommandRangeTest
+          java -cp build-jni/java com.cindersocket.dfc.DfcAuthenticationBoundaryTest
+          java -cp build-jni/java com.cindersocket.dfc.DfcNativeLoaderTest
           java -cp build-jni/java com.cindersocket.dfc.DfcSecretLifetimeTest
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
             examples/credentials/v6-minimal.dfc examples/credentials/v6-maximal.dfc
@@ -369,11 +392,17 @@ jobs:
             com.cindersocket.dfc.DfcReaderHeaderBoundsTest examples/credentials/v6-minimal.dfc
           java -Djava.library.path=build-jni -cp build-jni/java \
             com.cindersocket.dfc.DfcJniNarrowingTest examples/credentials/v6-minimal.dfc
+          java -Djava.library.path=build-jni -cp build-jni/java DfcAdvancedApiTest
           java -cp build-jni/java com.cindersocket.dfc.DfcLayoutCompatibilityTest
           java -Djava.library.path=build-jni-mismatch -cp build-jni/java \
             com.cindersocket.dfc.DfcLayoutCompatibilityTest native
           java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
             examples/credentials/v6-minimal.dfc
+      - name: Build strict public Javadocs
+        run: >-
+          javadoc -quiet -public -Xdoclint:all -Werror
+          -d build-jni/javadoc
+          bindings/java/src/main/java/com/cindersocket/dfc/*.java
 
   android:
     name: Android AAR and sample
@@ -384,6 +413,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: Install the Android NDK
+        run: ./scripts/install-android-ndk.sh
       - name: Build four-ABI AAR, minified sample, and lint
         working-directory: bindings/android
         run: >-
@@ -392,6 +423,15 @@ jobs:
           :sample:assembleRelease
           :dfc:lintRelease
           :dfc:testDebugUnitTest
+      - name: Build strict Android Javadocs
+        working-directory: bindings/android
+        run: ./gradlew --no-daemon :dfc:androidJavadocs
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Run minified native-exception smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -427,10 +467,15 @@ jobs:
             pytest bindings/python/tests
           DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
             python examples/python/virtual_card.py
+          DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
+            python examples/python/verify_backend.py
+      - name: Check Python public documentation
+        run: python3 scripts/check-docs.py
       - name: Check Python types and formatting
         working-directory: bindings/python
         run: |
-          uv run --frozen --extra test mypy src ../../examples/python/virtual_card.py
+          uv run --frozen --extra test mypy src ../../examples/python/virtual_card.py \
+            ../../examples/python/verify_backend.py
           uv run --frozen --extra test ruff format --check src tests ../../examples/python
           uv run --frozen --extra test ruff check src tests ../../examples/python
 
@@ -448,15 +493,20 @@ jobs:
         with:
           name: native-layout-mismatch
           path: mismatch
-      - name: Install the ARM C toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
+        with:
+          release: "13.3.Rel1"
       - name: Test hosted bindings and transceive example
         run: |
           cargo test --workspace
           cargo clippy --workspace --all-targets -- -D warnings
+          cargo rustdoc -p dfc-core --lib -- -D warnings
+          cargo rustdoc -p dfc-core --lib --no-default-features \
+            --features system,role-target,profile-full-ev3 -- -D warnings
           cargo test --manifest-path examples/rust-virtual-picc/Cargo.toml
           cargo clippy --manifest-path examples/rust-virtual-picc/Cargo.toml --all-targets -- -D warnings
           cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- examples/credentials/v6-minimal.dfcb
+          cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml --bin verify_backend
           DFC_LIB_DIR="$PWD/mismatch" LD_LIBRARY_PATH="$PWD/mismatch" \
             DFC_EXPECT_LAYOUT_MISMATCH=1 cargo test -p dfc-core \
             --no-default-features \
@@ -476,11 +526,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           targets: thumbv7em-none-eabihf
-      - name: Install the ARM C toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
+        with:
+          release: "13.3.Rel1"
       - name: Check the workspace at the declared MSRV
         run: |
           cargo check --workspace --all-targets
+          cargo rustdoc -p dfc-core --lib -- -D warnings
+          cargo rustdoc -p dfc-core --lib --no-default-features \
+            --features system,role-target,profile-full-ev3 -- -D warnings
           cargo check --manifest-path bindings/rust/dfc-core/Cargo.toml \
             --target thumbv7em-none-eabihf --no-default-features \
             --features bundled,role-target,profile-full-ev3

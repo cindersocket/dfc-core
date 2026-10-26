@@ -57,6 +57,12 @@ For tiny-crypto-c 2.0, compile `src/common.c`, `src/block_modes.c`, `src/aes.c`,
 Select exactly one backend. The tiny-crypto-c feature macros must match across
 DFC and the library sources because they affect context layouts.
 
+`src/dfc_an10922.h` exposes allocation-free key diversification for AES-128,
+two-key TDEA, and three-key TDEA. The implementation reuses one prepared cipher
+context for the complete derivation and clears its key schedule and intermediate
+tags before returning. Because it lives in its own translation unit, a static
+embedded link does not retain it unless the application calls it.
+
 ## 4. Select a feature profile
 
 Set `DFC_BUILD_PROFILE` to one value from `src/dfc_build_config.h`. The default
@@ -160,6 +166,10 @@ cmake -S . -B build-target -DDFC_ROLE=target -DDFC_PROFILE=minimal_ev1 \
   -DDFC_MAX_FILE_DATA=512
 cmake --build build-target
 ```
+
+Target objects place each function and data item in its own section. Add
+`--gc-sections` to the final firmware linker options to discard unreachable
+features; the static archive deliberately does not control the consumer's link.
 
 For a reader-only mobile native library:
 

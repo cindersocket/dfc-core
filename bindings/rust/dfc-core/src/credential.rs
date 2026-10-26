@@ -80,13 +80,19 @@ fn native_index(index: usize) -> Result<u32, Error> {
     u32::try_from(index).map_err(|_| Error::InvalidArgument)
 }
 
+/// Owned mutable credential model.
+///
+/// Native storage, including key material, is securely cleared when dropped.
 pub struct Credential {
     raw: NonNull<sys::DfcFfiCredential>,
 }
 
+// SAFETY: native credential ownership is unique to this wrapper and the C API
+// does not retain thread-local pointers into it.
 unsafe impl Send for Credential {}
 
 impl Credential {
+    /// Creates an empty credential with default card and PICC settings.
     pub fn new() -> Result<Self, Error> {
         ensure_abi()?;
         let mut raw = core::ptr::null_mut();
@@ -94,6 +100,7 @@ impl Credential {
         Self::from_raw(raw)
     }
 
+    /// Parses the canonical human-readable credential format.
     pub fn parse_text(text: &str) -> Result<Self, Error> {
         ensure_abi()?;
         let mut raw = core::ptr::null_mut();
@@ -108,6 +115,7 @@ impl Credential {
         Self::from_raw(raw)
     }
 
+    /// Decodes the current binary credential format.
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         ensure_abi()?;
         let mut raw = core::ptr::null_mut();
@@ -122,6 +130,7 @@ impl Credential {
         Self::from_raw(raw)
     }
 
+    /// Loads either the canonical text or binary credential format.
     pub fn load(bytes: &[u8]) -> Result<Self, Error> {
         ensure_abi()?;
         let mut raw = core::ptr::null_mut();
@@ -136,16 +145,21 @@ impl Credential {
         Self::from_raw(raw)
     }
 
+    /// Validates the complete credential model without changing it.
     pub fn validate(&self) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_credential_validate(self.raw.as_ptr()) })
     }
 
+    /// Returns a copy of the card identity and version metadata.
     pub fn card(&self) -> Result<sys::DfcFfiCard, Error> {
         let mut value = MaybeUninit::uninit();
         status(unsafe { sys::dfc_ffi_credential_get_card(self.raw.as_ptr(), value.as_mut_ptr()) })?;
         Ok(unsafe { value.assume_init() })
     }
 
+    /// Returns a secret-bearing copy of PICC-level settings.
+    ///
+    /// The returned wrapper wipes its native storage on drop.
     pub fn picc_settings(&self) -> Result<CredentialPiccSettings, Error> {
         let mut value = sys::DfcFfiPiccSettings::default();
         if let Err(error) =
@@ -157,10 +171,12 @@ impl Credential {
         Ok(CredentialPiccSettings(value))
     }
 
+    /// Returns the number of applications in model order.
     pub fn application_count(&self) -> usize {
         unsafe { sys::dfc_ffi_credential_application_count(self.raw.as_ptr()) as usize }
     }
 
+    /// Returns an application by zero-based model index.
     pub fn application(&self, index: usize) -> Result<sys::DfcFfiApplication, Error> {
         let index = native_index(index)?;
         let mut value = MaybeUninit::uninit();
@@ -170,10 +186,12 @@ impl Credential {
         Ok(unsafe { value.assume_init() })
     }
 
+    /// Returns the number of files across the PICC and all applications.
     pub fn file_count(&self) -> usize {
         unsafe { sys::dfc_ffi_credential_file_count(self.raw.as_ptr()) as usize }
     }
 
+    /// Returns secret-bearing file metadata by zero-based model index.
     pub fn file(&self, index: usize) -> Result<CredentialFile, Error> {
         let index = native_index(index)?;
         let mut value = sys::DfcFfiFile::default();
@@ -186,6 +204,7 @@ impl Credential {
         Ok(CredentialFile(value))
     }
 
+    /// Copies the stored contents of a file by zero-based model index.
     pub fn file_data(&self, index: usize) -> Result<Vec<u8>, Error> {
         let index = native_index(index)?;
         output(|out, cap, len| unsafe {
@@ -193,6 +212,11 @@ impl Credential {
         })
     }
 
+    /// Returns a key from the PICC or an application.
+    ///
+    /// Use [`dfc_core_sys::DFC_FFI_OWNER_PICC`] for the PICC owner; application
+    /// owners are zero-based model indices. The returned wrapper wipes its key
+    /// bytes on drop.
     pub fn key(&self, owner: i32, key_set: u32, slot: u32) -> Result<CredentialKey, Error> {
         let mut value = sys::DfcFfiKey::default();
         let result = status(unsafe {
@@ -205,14 +229,17 @@ impl Credential {
         Ok(CredentialKey(value))
     }
 
+    /// Replaces card identity and version metadata.
     pub fn set_card(&mut self, card: &sys::DfcFfiCard) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_credential_set_card(self.raw.as_ptr(), card) })
     }
 
+    /// Replaces PICC-level settings and secrets.
     pub fn set_picc_settings(&mut self, picc: &sys::DfcFfiPiccSettings) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_credential_set_picc(self.raw.as_ptr(), picc) })
     }
 
+    /// Appends an application and returns its zero-based model index.
     pub fn add_application(&mut self, application: &sys::DfcFfiApplication) -> Result<u32, Error> {
         let mut index = 0;
         status(unsafe {
@@ -221,12 +248,14 @@ impl Credential {
         Ok(index)
     }
 
+    /// Appends file metadata and returns its zero-based model index.
     pub fn add_file(&mut self, file: &sys::DfcFfiFile) -> Result<u32, Error> {
         let mut index = 0;
         status(unsafe { sys::dfc_ffi_credential_add_file(self.raw.as_ptr(), file, &mut index) })?;
         Ok(index)
     }
 
+    /// Replaces the stored contents of the indexed file.
     pub fn set_file_data(&mut self, index: u32, data: &[u8]) -> Result<(), Error> {
         status(unsafe {
             sys::dfc_ffi_credential_set_file_data(
@@ -238,6 +267,7 @@ impl Credential {
         })
     }
 
+    /// Replaces one PICC or application key.
     pub fn set_key(
         &mut self,
         owner: i32,
@@ -250,16 +280,19 @@ impl Credential {
         })
     }
 
+    /// Finalizes construction and validates all cross-field invariants.
     pub fn finish(&mut self) -> Result<(), Error> {
         status(unsafe { sys::dfc_ffi_credential_finish(self.raw.as_ptr(), core::ptr::null_mut()) })
     }
 
+    /// Encodes the credential into the canonical binary representation.
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         output(|out, cap, len| unsafe {
             sys::dfc_ffi_credential_encode(self.raw.as_ptr(), out, cap, len)
         })
     }
 
+    /// Renders the canonical human-readable credential representation.
     pub fn write_text(&self) -> Result<String, Error> {
         let bytes = output(|out, cap, len| unsafe {
             sys::dfc_ffi_credential_write_text(self.raw.as_ptr(), out.cast(), cap, len)

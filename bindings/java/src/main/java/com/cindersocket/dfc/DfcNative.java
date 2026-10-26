@@ -2,7 +2,7 @@ package com.cindersocket.dfc;
 
 final class DfcNative {
   static {
-    System.loadLibrary("dfc_jni");
+    DfcNativeLoader.load();
     DfcCompatibility.requireCompatible(
         abiVersion(), layoutFingerprint(), expectedLayoutFingerprint());
   }
@@ -11,6 +11,32 @@ final class DfcNative {
   static native long layoutFingerprint();
   static native long expectedLayoutFingerprint();
   static native long capabilities();
+  static native byte[] an10922Diversify(int algorithm, byte[] masterKey, byte[] input)
+      throws DfcException;
+  static native byte[] responseDecodeVersion(byte[] response) throws DfcException;
+  static native byte[] responseDecodeApplicationIds(byte[] response) throws DfcException;
+  static native byte[] responseDecodeFileIds(byte[] response) throws DfcException;
+  static native byte[] responseDecodeFileSettings(byte[] response) throws DfcException;
+  static native byte[] responseDecodeKeySettings(byte[] response) throws DfcException;
+  static native int responseDecodeKeyVersion(byte[] response) throws DfcException;
+  static native byte[] sdmVerify(byte[] message, int fields, long plainUidOffset,
+      long plainUidLength, long plainCounterOffset, long encryptedPiccOffset,
+      long encryptedPiccLength, long encryptedFileOffset, long encryptedFileLength,
+      long macInputOffset, long macOffset, byte[] metaReadKey, byte[] fileReadKey)
+      throws DfcException;
+  static native long transactionMacCreate(int capacity, byte[] key, byte[] uid, long counter)
+      throws DfcException;
+  static native void transactionMacFree(long handle);
+  static native void transactionMacAddData(long handle, int command, int fileNumber, long offset,
+      long length, byte[] data) throws DfcException;
+  static native void transactionMacAddRecord(long handle, int command, int fileNumber,
+      long recordNumber, long offset, long length, byte[] data) throws DfcException;
+  static native void transactionMacAddValue(long handle, int command, int fileNumber, long value)
+      throws DfcException;
+  static native void transactionMacAddClearRecord(long handle, int fileNumber) throws DfcException;
+  static native void transactionMacAddReaderId(long handle, byte[] current, byte[] previous)
+      throws DfcException;
+  static native boolean transactionMacVerify(long handle, byte[] mac) throws DfcException;
   static native byte[] credentialParse(byte[] text) throws DfcException;
   static native byte[] credentialLoad(byte[] content) throws DfcException;
   static native String credentialText(byte[] binary) throws DfcException;

@@ -122,7 +122,7 @@
 
 #if defined(__GNUC__) || defined(__INTEL_COMPILER) || defined(__SUNPRO_CC) || defined(__IBMCPP__)
 #define MUNIT_THREAD_LOCAL __thread
-#elif(defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201102L)) || defined(_Thread_local)
+#elif (defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201102L)) || defined(_Thread_local)
 #define MUNIT_THREAD_LOCAL _Thread_local
 #elif defined(_WIN32)
 #define MUNIT_THREAD_LOCAL __declspec(thread)
@@ -382,7 +382,7 @@ struct PsnipClockTimespec {
 #if defined(_POSIX_TIMERS) && (_POSIX_TIMERS > 0)
 /* These are known to work without librt.  If you know of others
  * please let us know so we can add them. */
-#if(defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 17))) || \
+#if (defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 17))) || \
     (defined(__FreeBSD__))
 #define PSNIP_CLOCK_HAVE_CLOCK_GETTIME
 #elif !defined(PSNIP_CLOCK_NO_LIBRT)
@@ -460,7 +460,8 @@ struct PsnipClockTimespec {
 
 /* Implementations */
 
-#if(defined(PSNIP_CLOCK_CPU_METHOD) &&                                                            \
+#if (                                                                                             \
+    defined(PSNIP_CLOCK_CPU_METHOD) &&                                                            \
     (PSNIP_CLOCK_CPU_METHOD == PSNIP_CLOCK_METHOD_CLOCK_GETTIME)) ||                              \
     (defined(PSNIP_CLOCK_WALL_METHOD) &&                                                          \
      (PSNIP_CLOCK_WALL_METHOD == PSNIP_CLOCK_METHOD_CLOCK_GETTIME)) ||                            \
@@ -478,7 +479,8 @@ struct PsnipClockTimespec {
 #include <time.h>
 #endif
 
-#if(defined(PSNIP_CLOCK_CPU_METHOD) &&                                \
+#if (                                                                 \
+    defined(PSNIP_CLOCK_CPU_METHOD) &&                                \
     (PSNIP_CLOCK_CPU_METHOD == PSNIP_CLOCK_METHOD_GETTIMEOFDAY)) ||   \
     (defined(PSNIP_CLOCK_WALL_METHOD) &&                              \
      (PSNIP_CLOCK_WALL_METHOD == PSNIP_CLOCK_METHOD_GETTIMEOFDAY)) || \
@@ -487,7 +489,8 @@ struct PsnipClockTimespec {
 #include <sys/time.h>
 #endif
 
-#if(defined(PSNIP_CLOCK_CPU_METHOD) &&                                        \
+#if (                                                                         \
+    defined(PSNIP_CLOCK_CPU_METHOD) &&                                        \
     (PSNIP_CLOCK_CPU_METHOD == PSNIP_CLOCK_METHOD_GETPROCESSTIMES)) ||        \
     (defined(PSNIP_CLOCK_WALL_METHOD) &&                                      \
      (PSNIP_CLOCK_WALL_METHOD == PSNIP_CLOCK_METHOD_GETPROCESSTIMES)) ||      \
@@ -502,17 +505,17 @@ struct PsnipClockTimespec {
 #include <windows.h>
 #endif
 
-#if(defined(PSNIP_CLOCK_CPU_METHOD) &&                             \
-    (PSNIP_CLOCK_CPU_METHOD == PSNIP_CLOCK_METHOD_GETRUSAGE)) ||   \
-    (defined(PSNIP_CLOCK_WALL_METHOD) &&                           \
-     (PSNIP_CLOCK_WALL_METHOD == PSNIP_CLOCK_METHOD_GETRUSAGE)) || \
-    (defined(PSNIP_CLOCK_MONOTONIC_METHOD) &&                      \
+#if (defined(PSNIP_CLOCK_CPU_METHOD) && (PSNIP_CLOCK_CPU_METHOD == PSNIP_CLOCK_METHOD_GETRUSAGE)) || \
+    (defined(PSNIP_CLOCK_WALL_METHOD) &&                                                             \
+     (PSNIP_CLOCK_WALL_METHOD == PSNIP_CLOCK_METHOD_GETRUSAGE)) ||                                   \
+    (defined(PSNIP_CLOCK_MONOTONIC_METHOD) &&                                                        \
      (PSNIP_CLOCK_MONOTONIC_METHOD == PSNIP_CLOCK_METHOD_GETRUSAGE))
 #include <sys/time.h>
 #include <sys/resource.h>
 #endif
 
-#if(defined(PSNIP_CLOCK_CPU_METHOD) &&                                      \
+#if (                                                                       \
+    defined(PSNIP_CLOCK_CPU_METHOD) &&                                      \
     (PSNIP_CLOCK_CPU_METHOD == PSNIP_CLOCK_METHOD_MACH_ABSOLUTE_TIME)) ||   \
     (defined(PSNIP_CLOCK_WALL_METHOD) &&                                    \
      (PSNIP_CLOCK_WALL_METHOD == PSNIP_CLOCK_METHOD_MACH_ABSOLUTE_TIME)) || \
@@ -527,7 +530,8 @@ struct PsnipClockTimespec {
 
 #define PSNIP_CLOCK_NSEC_PER_SEC ((psnip_uint32_t)(1000000000ULL))
 
-#if(defined(PSNIP_CLOCK_CPU_METHOD) &&                                 \
+#if (                                                                  \
+    defined(PSNIP_CLOCK_CPU_METHOD) &&                                 \
     (PSNIP_CLOCK_CPU_METHOD == PSNIP_CLOCK_METHOD_CLOCK_GETTIME)) ||   \
     (defined(PSNIP_CLOCK_WALL_METHOD) &&                               \
      (PSNIP_CLOCK_WALL_METHOD == PSNIP_CLOCK_METHOD_CLOCK_GETTIME)) || \
@@ -1097,11 +1101,8 @@ static void munit_print_time(FILE* fp, munit_uint64_t nanoseconds) {
 #endif
 
 /* Add a paramter to an array of parameters. */
-static MunitResult munit_parameters_add(
-    size_t* params_size,
-    MunitParameter* params[MUNIT_ARRAY_PARAM(*params_size)],
-    char* name,
-    char* value) {
+static MunitResult
+    munit_parameters_add(size_t* params_size, MunitParameter** params, char* name, char* value) {
     *params = realloc(*params, sizeof(MunitParameter) * (*params_size + 2));
     if(*params == NULL) return MUNIT_ERROR;
 
@@ -1772,38 +1773,39 @@ static void munit_print_help(
     (void)argc;
 
     printf("USAGE: %s [OPTIONS...] [TEST...]\n\n", argv[0]);
-    puts(" --seed SEED\n"
-         "           Value used to seed the PRNG.  Must be a 32-bit integer in decimal\n"
-         "           notation with no separators (commas, decimals, spaces, etc.), or\n"
-         "           hexidecimal prefixed by \"0x\".\n"
-         " --iterations N\n"
-         "           Run each test N times.  0 means the default number.\n"
-         " --param name value\n"
-         "           A parameter key/value pair which will be passed to any test with\n"
-         "           takes a parameter of that name.  If not provided, the test will be\n"
-         "           run once for each possible parameter value.\n"
-         " --list    Write a list of all available tests.\n"
-         " --list-params\n"
-         "           Write a list of all available tests and their possible parameters.\n"
-         " --single  Run each parameterized test in a single configuration instead of\n"
-         "           every possible combination\n"
-         " --log-visible debug|info|warning|error\n"
-         " --log-fatal debug|info|warning|error\n"
-         "           Set the level at which messages of different severities are visible,\n"
-         "           or cause the test to terminate.\n"
+    puts(
+        " --seed SEED\n"
+        "           Value used to seed the PRNG.  Must be a 32-bit integer in decimal\n"
+        "           notation with no separators (commas, decimals, spaces, etc.), or\n"
+        "           hexidecimal prefixed by \"0x\".\n"
+        " --iterations N\n"
+        "           Run each test N times.  0 means the default number.\n"
+        " --param name value\n"
+        "           A parameter key/value pair which will be passed to any test with\n"
+        "           takes a parameter of that name.  If not provided, the test will be\n"
+        "           run once for each possible parameter value.\n"
+        " --list    Write a list of all available tests.\n"
+        " --list-params\n"
+        "           Write a list of all available tests and their possible parameters.\n"
+        " --single  Run each parameterized test in a single configuration instead of\n"
+        "           every possible combination\n"
+        " --log-visible debug|info|warning|error\n"
+        " --log-fatal debug|info|warning|error\n"
+        "           Set the level at which messages of different severities are visible,\n"
+        "           or cause the test to terminate.\n"
 #if !defined(MUNIT_NO_FORK)
-         " --no-fork Do not execute tests in a child process.  If this option is supplied\n"
-         "           and a test crashes (including by failing an assertion), no further\n"
-         "           tests will be performed.\n"
+        " --no-fork Do not execute tests in a child process.  If this option is supplied\n"
+        "           and a test crashes (including by failing an assertion), no further\n"
+        "           tests will be performed.\n"
 #endif
-         " --fatal-failures\n"
-         "           Stop executing tests as soon as a failure is found.\n"
-         " --show-stderr\n"
-         "           Show data written to stderr by the tests, even if the test succeeds.\n"
-         " --color auto|always|never\n"
-         "           Colorize (or don't) the output.\n"
-         /* 12345678901234567890123456789012345678901234567890123456789012345678901234567890 */
-         " --help    Print this help message and exit.\n");
+        " --fatal-failures\n"
+        "           Stop executing tests as soon as a failure is found.\n"
+        " --show-stderr\n"
+        "           Show data written to stderr by the tests, even if the test succeeds.\n"
+        " --color auto|always|never\n"
+        "           Colorize (or don't) the output.\n"
+        /* 12345678901234567890123456789012345678901234567890123456789012345678901234567890 */
+        " --help    Print this help message and exit.\n");
 #if defined(MUNIT_NL_LANGINFO)
     setlocale(LC_ALL, "");
     fputs((strcasecmp("UTF-8", nl_langinfo(CODESET)) == 0) ? "µnit" : "munit", stdout);

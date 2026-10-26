@@ -1,0 +1,498 @@
+name: Release packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified artifacts from a matching version tag
+        required: true
+        default: false
+        type: boolean
+      bootstrap_crates:
+        description: Use the one-time crates.io token before trusted publishing can be configured
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          value=$(python3 -c 'import json; print(json.load(open("release-artifacts.json"))["version"])')
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF_TYPE:-branch}" == tag && "$GITHUB_REF_NAME" != "v$value" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match version $value" >&2
+            exit 1
+          fi
+          if [[ "${{ inputs.publish }}" == true && "$GITHUB_REF" != "refs/tags/v$value" ]]; then
+            echo "publication requires refs/tags/v$value" >&2
+            exit 1
+          fi
+          if [[ "${{ inputs.publish }}" == true ]]; then
+            tag=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$value" --jq .object.sha)
+            verified=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag" --jq .verification.verified)
+            target=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag" --jq .object.sha)
+            if [[ "$verified" != true || "$target" != "$GITHUB_SHA" ]]; then
+              echo "publication requires a verified signed tag for $GITHUB_SHA" >&2
+              exit 1
+            fi
+          fi
+      - run: python3 scripts/check-release-inventory.py
+      - run: python3 scripts/check-version.py
+
+  source:
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: inventory:source
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mkdir dist
+          git archive --format=tar.gz --prefix="dfc-core-$VERSION/" -o "dist/dfc-core-$VERSION.tar.gz" HEAD
+          git archive --format=zip --prefix="dfc-core-$VERSION/" -o "dist/dfc-core-$VERSION.zip" HEAD
+          python3 scripts/check-release-artifacts.py inspect --version "$VERSION" \
+            --tar "dist/dfc-core-$VERSION.tar.gz" --zip "dist/dfc-core-$VERSION.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-source
+          path: dist/*
+          if-no-files-found: error
+
+  native:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64, classifier: linux-x86_64, os: ubuntu-24.04, lib: libdfc.so, jni: libdfc_jni.so }
+          - { rid: linux-arm64, classifier: linux-aarch64, os: ubuntu-24.04-arm, lib: libdfc.so, jni: libdfc_jni.so }
+          - { rid: osx-x64, classifier: osx-x86_64, os: macos-15-intel, lib: libdfc.dylib, jni: libdfc_jni.dylib }
+          - { rid: osx-arm64, classifier: osx-aarch64, os: macos-14, lib: libdfc.dylib, jni: libdfc_jni.dylib }
+          - { rid: win-x64, classifier: windows-x86_64, os: windows-2022, lib: Release/libdfc.dll, jni: Release/dfc_jni.dll, arch: -A x64 }
+          - { rid: win-arm64, classifier: windows-aarch64, os: windows-2022, lib: Release/libdfc.dll, jni: Release/dfc_jni.dll, arch: -A ARM64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Fetch pinned tiny-crypto-c
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mistial-dev/tiny-crypto-c
+          ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
+          path: dependencies/tiny-crypto-c
+      - name: Build native and JNI libraries
+        shell: bash
+        run: |
+          cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
+            -DDFC_BUILD_TESTS=OFF -DDFC_BUILD_JNI=ON -DDFC_ROLE=simulator \
+            -DDFC_PROFILE=full_ev3 -DDFC_CRYPTO=tiny \
+            -DDFC_TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" ${{ matrix.arch }}
+          cmake --build build-release --config Release --parallel
+      - name: inventory:native
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          root="stage/dfc-core-native-${{ matrix.rid }}-$VERSION"
+          cmake --install build-release --prefix "$root" --config Release
+          cmake -S tests/package-consumer -B package-consumer \
+            -DCMAKE_PREFIX_PATH="$root" ${{ matrix.arch }}
+          cmake --build package-consumer --config Release --parallel
+          if [[ "${{ matrix.rid }}" != win-arm64 ]]; then
+            ctest --test-dir package-consumer -C Release --output-on-failure
+          fi
+          mkdir -p "runtimes/${{ matrix.rid }}/native"
+          cp "build-release/${{ matrix.lib }}" "runtimes/${{ matrix.rid }}/native/"
+          (cd stage && cmake -E tar cf \
+            "../dfc-core-native-${{ matrix.rid }}-$VERSION.zip" --format=zip \
+            "dfc-core-native-${{ matrix.rid }}-$VERSION")
+      - name: Smoke-test static installed package
+        if: matrix.rid == 'linux-x64'
+        shell: bash
+        run: |
+          cmake -S . -B build-static -DCMAKE_BUILD_TYPE=Release \
+            -DDFC_BUILD_SHARED=OFF -DDFC_BUILD_STATIC_FFI=ON -DDFC_BUILD_TESTS=OFF \
+            -DDFC_ROLE=simulator -DDFC_PROFILE=full_ev3 -DDFC_CRYPTO=tiny \
+            -DDFC_TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c"
+          cmake --build build-static --parallel
+          cmake --install build-static --prefix install-static
+          cmake -S tests/package-consumer -B package-consumer-static \
+            -DCMAKE_PREFIX_PATH="$PWD/install-static"
+          cmake --build package-consumer-static --parallel
+          ctest --test-dir package-consumer-static --output-on-failure
+      - name: inventory:jni
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mkdir -p "jni/META-INF/native/${{ matrix.classifier }}"
+          cp "build-release/${{ matrix.jni }}" "jni/META-INF/native/${{ matrix.classifier }}/"
+          jar --create --file "dfc-core-$VERSION-${{ matrix.classifier }}.jar" -C jni .
+          jar tf "dfc-core-$VERSION-${{ matrix.classifier }}.jar"
+          if [[ "${{ matrix.rid }}" != win-arm64 ]]; then
+            mkdir -p java-native-smoke/classes
+            javac --release 17 -d java-native-smoke/classes \
+              bindings/java/src/main/java/com/cindersocket/dfc/*.java \
+              examples/java/DfcTransceiveExample.java
+            separator=:
+            [[ "$RUNNER_OS" == Windows ]] && separator=';'
+            java -cp "java-native-smoke/classes${separator}dfc-core-$VERSION-${{ matrix.classifier }}.jar" \
+              DfcTransceiveExample examples/credentials/v6-minimal.dfc
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-native-${{ matrix.rid }}
+          path: |
+            dfc-core-native-*.zip
+            dfc-core-*.jar
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dotnet-runtime-${{ matrix.rid }}
+          path: runtimes
+          if-no-files-found: error
+
+  packages:
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@cfcaf53ba4c621917ec7f78a66bff7a8848ddad4 # 1.85.0
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: inventory:rust-sys
+        run: |
+          cargo publish --dry-run --locked --package dfc-core-sys
+          cargo package --locked --package dfc-core-sys --allow-dirty
+          mkdir -p dist/rust
+          cp target/package/dfc-core-sys-*.crate dist/rust/
+          tar -tzf target/package/dfc-core-sys-*.crate | grep '/cmake/dfc-core-config.cmake.in$'
+          python3 scripts/publish-crate.py --check target/package/dfc-core-sys-*.crate \
+            > /tmp/dfc-core-sys-upload.json
+          python3 -c 'import json; p=json.load(open("/tmp/dfc-core-sys-upload.json")); assert p["v"] == 2; assert p["features2"]["bundled"] == ["dep:cmake"]; assert "bundled" not in p["features"]'
+      - name: inventory:rust
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          cargo package --locked --package dfc-core --allow-dirty --no-verify \
+            --config "patch.crates-io.dfc-core-sys.path='$PWD'"
+          cargo test --workspace
+          cp target/package/dfc-core-*.crate dist/rust/
+          mkdir -p /tmp/dfc-crates/sys /tmp/dfc-crates/safe
+          tar -xf target/package/dfc-core-sys-*.crate -C /tmp/dfc-crates/sys
+          tar -xf "target/package/dfc-core-$VERSION.crate" -C /tmp/dfc-crates/safe
+          cargo test --manifest-path "/tmp/dfc-crates/safe/dfc-core-$VERSION/Cargo.toml" \
+            --config "patch.crates-io.dfc-core-sys.path='/tmp/dfc-crates/sys/dfc-core-sys-$VERSION'"
+          python3 scripts/publish-crate.py --check "target/package/dfc-core-$VERSION.crate"
+      - name: inventory:java
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mvn -B -f bindings/java/pom.xml -Drevision="$VERSION" package
+          mkdir -p dist/maven
+          cp bindings/java/target/dfc-core-*.jar dist/maven/
+          cp bindings/java/.flattened-pom.xml "dist/maven/dfc-core-$VERSION.pom"
+          jar tf "dist/maven/dfc-core-$VERSION.jar"
+      - name: inventory:android
+        working-directory: bindings/android
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          ./gradlew --no-daemon :dfc:publishReleasePublicationToBuildRepository
+          source="$PWD/build-repository/com/cindersocket/dfc-core-android/$VERSION"
+          mkdir -p ../../dist/android
+          consumer="$PWD/../../build/android-consumer-repository/com/cindersocket/dfc-core-android/$VERSION"
+          mkdir -p "$consumer"
+          for suffix in .aar -sources.jar -javadoc.jar .pom; do
+            cp "$source/dfc-core-android-$VERSION$suffix" ../../dist/android/
+            cp "$source/dfc-core-android-$VERSION$suffix" "$consumer/"
+          done
+          ./gradlew --no-daemon \
+            :package-consumer:assembleDebug -PdfcPackageConsumer=true \
+            -PdfcRepository="$PWD/../../build/android-consumer-repository" \
+            -PdfcVersion="$VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-packages
+          path: |
+            dist/rust/*
+            dist/maven/*
+            dist/android/*
+          if-no-files-found: error
+
+  python:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: linux-x64, os: ubuntu-24.04 }
+          - { id: linux-arm64, os: ubuntu-24.04-arm }
+          - { id: osx-x64, os: macos-15-intel }
+          - { id: osx-arm64, os: macos-14 }
+          - { id: win-x64, os: windows-2022 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.13.5"
+      - name: Stage self-contained Python package
+        run: python3 scripts/stage-python-package.py build/python-package
+      - uses: pypa/cibuildwheel@9c00cb4f6b517705a3794b22395aedc36257242c # v3.2.1
+        env:
+          CIBW_BUILD: cp311-* cp312-* cp313-* cp314-*
+          CIBW_SKIP: "*-musllinux_*"
+        with:
+          package-dir: build/python-package
+          output-dir: dist/python
+      - name: inventory:python
+        shell: bash
+        run: |
+          uvx --from twine==6.2.0 twine check dist/python/*
+          wheel=$(find dist/python -name '*cp312*.whl' -print -quit)
+          DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
+            python examples/python/virtual_card.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-python-${{ matrix.id }}
+          path: dist/python/*
+          if-no-files-found: error
+
+  python-sdist:
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.13.5"
+      - run: python3 scripts/stage-python-package.py build/python-package
+      - name: Build and rebuild the self-contained sdist once
+        run: |
+          uv build --python 3.12 --sdist --out-dir dist/python build/python-package
+          uvx --from twine==6.2.0 twine check dist/python/*
+          mkdir sdist
+          tar -xzf dist/python/dfc_core-*.tar.gz -C sdist
+          uv build --python 3.12 --wheel --out-dir rebuilt-wheel sdist/dfc_core-*
+          uv run --python 3.12 --isolated --with "$(find rebuilt-wheel -name '*.whl' -print -quit)" \
+            python examples/python/virtual_card.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-python-sdist
+          path: dist/python/*
+          if-no-files-found: error
+
+  dotnet-package:
+    needs: [validate, native]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: dotnet-runtime-*
+          merge-multiple: true
+          path: bindings/dotnet/src/Dfc/runtimes
+      - name: inventory:dotnet
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          dotnet pack bindings/dotnet/src/Dfc/Dfc.csproj -c Release -o dist/nuget \
+            -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg
+          unzip -t dist/nuget/*.nupkg
+          python3 scripts/verify-nuget-layout.py dist/nuget/Dfc."$VERSION".nupkg
+          dotnet run --project tests/package-consumer/dotnet/Dfc.PackageConsumer.csproj \
+            -p:DfcUsePackage=true -p:DfcVersion="$VERSION" \
+            -p:RestoreSources="$PWD/dist/nuget" -- \
+            examples/credentials/v6-minimal.dfcb
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-dotnet
+          path: dist/nuget/*
+          if-no-files-found: error
+
+  checksum:
+    needs: [validate, source, native, packages, python, python-sdist, dotnet-package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Smoke-test the packaged Java/JNI pair
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          base=$(find dist -type f -name "dfc-core-$VERSION.jar" -print -quit)
+          native=$(find dist -type f -name "dfc-core-$VERSION-linux-x86_64.jar" -print -quit)
+          mkdir java-example
+          javac --release 17 -cp "$base" -d java-example examples/java/DfcTransceiveExample.java
+          java -cp "$base:$native:java-example" DfcTransceiveExample \
+            examples/credentials/v6-minimal.dfc
+      - name: inventory:checksums
+        run: |
+          mkdir verified
+          while IFS= read -r -d '' file; do
+            name=$(basename "$file")
+            if [[ -e "verified/$name" ]]; then
+              echo "duplicate release filename: $name" >&2
+              exit 1
+            fi
+            cp "$file" "verified/$name"
+          done < <(find dist -type f -print0)
+          python3 scripts/checksums.py create --output verified/SHA256SUMS verified/*
+          python3 scripts/checksums.py check verified/SHA256SUMS
+          python3 scripts/check-release-inventory.py --directory verified
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: verified/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-verified
+          path: verified/*
+          if-no-files-found: error
+
+  publish-github:
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.publish == true
+    needs: [validate, checksum, publish-pypi, publish-rust, publish-nuget, publish-maven]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    environment: release
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-verified
+          path: release
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -d '' files < <(find release -type f -print0)
+          state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || echo missing)
+          if [[ "$state" == false ]]; then
+            echo "$GITHUB_REF_NAME is already published"
+            exit 0
+          fi
+          if [[ "$state" == missing ]]; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  publish-pypi:
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.publish == true
+    needs: [validate, checksum]
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-verified
+          path: release
+      - name: Stage only Python distributions
+        run: |
+          mkdir pypi
+          find release -maxdepth 1 -type f \( -name 'dfc_core-*.whl' -o -name 'dfc_core-*.tar.gz' \) \
+            -exec cp {} pypi/ \;
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
+        with:
+          packages-dir: pypi
+          skip-existing: true
+
+  publish-rust:
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.publish == true
+    needs: [validate, checksum]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-verified
+          path: release
+      - uses: rust-lang/crates-io-auth-action@63a7064947ceca9989005e118db3a5fecdc9259f # v1.0.0
+        if: inputs.bootstrap_crates == false
+        id: crates
+      - name: Publish verified Rust crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ inputs.bootstrap_crates && secrets.CARGO_BOOTSTRAP_TOKEN || steps.crates.outputs.token }}
+        run: ./scripts/publish-crates.sh release
+
+  publish-nuget:
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.publish == true
+    needs: [validate, checksum]
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+    environment: nuget
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-verified
+          path: release
+      - name: Exchange the GitHub identity for a short-lived NuGet key
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        id: nuget
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish NuGet package
+        env:
+          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
+        run: |
+          find release -type f -name '*.nupkg' ! -name '*.symbols.nupkg' -print0 |
+            xargs -0 -n1 dotnet nuget push --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  publish-maven:
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.publish == true
+    needs: [validate, checksum]
+    runs-on: ubuntu-24.04
+    environment: maven-central
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-verified
+          path: release
+      - name: Publish Maven and Android artifacts
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: ./scripts/publish-maven-artifacts.sh release

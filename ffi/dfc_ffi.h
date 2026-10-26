@@ -74,10 +74,40 @@ extern "C" {
 
 #define DFC_FFI_MESSAGE_MAX 96
 
+// Stable packed outputs used by the response and SDM helpers below.
+enum {
+    DFC_FFI_RESPONSE_VERSION_SIZE = 28,
+    DFC_FFI_RESPONSE_KEY_SETTINGS_SIZE = 9,
+    DFC_FFI_RESPONSE_FILE_SETTINGS_SIZE = 32,
+    DFC_FFI_SDM_RESULT_SIZE = 20,
+    DFC_FFI_AN10922_AES128 = 0,
+    DFC_FFI_AN10922_TDEA2 = 1,
+    DFC_FFI_AN10922_TDEA3 = 2,
+    DFC_FFI_RESPONSE_OK = 0,
+    DFC_FFI_RESPONSE_MALFORMED = 1,
+    DFC_FFI_RESPONSE_UNSUPPORTED = 2,
+    DFC_FFI_RESPONSE_BUFFER_TOO_SMALL = 3,
+    DFC_FFI_SDM_OK = 0,
+    DFC_FFI_SDM_MALFORMED = 1,
+    DFC_FFI_SDM_UNSUPPORTED = 2,
+    DFC_FFI_SDM_AUTHENTICATION_FAILED = 3,
+    DFC_FFI_SDM_BUFFER_TOO_SMALL = 4,
+    DFC_FFI_SDM_CRYPTO_FAILED = 5,
+    DFC_FFI_TRANSACTION_MAC_OK = 0,
+    DFC_FFI_TRANSACTION_MAC_INVALID = 1,
+    DFC_FFI_TRANSACTION_MAC_CAPACITY = 2,
+    DFC_FFI_TRANSACTION_MAC_CRYPTO_FAILED = 3,
+    DFC_FFI_SDM_PLAIN_UID = 0x01,
+    DFC_FFI_SDM_PLAIN_READ_COUNTER = 0x02,
+    DFC_FFI_SDM_ENCRYPTED_PICC_DATA = 0x04,
+    DFC_FFI_SDM_ENCRYPTED_FILE_DATA = 0x08,
+};
+
 typedef struct DfcFfiCredential DfcFfiCredential;
 typedef struct DfcFfiPicc DfcFfiPicc;
 typedef struct DfcFfiReaderSession DfcFfiReaderSession;
 typedef struct DfcFfiReaderExchange DfcFfiReaderExchange;
+typedef struct DfcFfiTransactionMacVerifier DfcFfiTransactionMacVerifier;
 
 // ------------------------------------------------------------ library ---
 
@@ -130,6 +160,131 @@ DFC_FFI_EXPORT bool
     dfc_ffi_fixed_time_equal(const uint8_t* left, const uint8_t* right, size_t len);
 DFC_FFI_EXPORT void dfc_ffi_secure_zero(void* buffer, size_t len);
 DFC_FFI_EXPORT void dfc_ffi_capabilities(DfcFfiCapabilities* out);
+
+// ------------------------------------------------------- standalone APIs ---
+
+DFC_FFI_EXPORT int32_t dfc_ffi_an10922_diversify(
+    uint32_t algorithm,
+    const uint8_t* master_key,
+    size_t master_key_len,
+    const uint8_t* diversification_input,
+    size_t diversification_input_len,
+    uint8_t* diversified_key,
+    size_t diversified_key_capacity,
+    size_t* diversified_key_len);
+
+// Response decoders consume clear response bytes without trailing status. Fixed
+// results are byte arrays, not ABI-dependent structs. Version stores two 7-byte
+// version parts, UID[7], batch[5], week, and year. File settings stores type,
+// communication, SDM flag, padding, little-endian access rights, four access
+// pairs, then the type-specific little-endian fields. Key settings stores its
+// four base bytes, a key-set-present flag, then the four key-set bytes. List
+// results report their required byte count through out_len.
+DFC_FFI_EXPORT int32_t dfc_ffi_response_decode_version(
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t* out,
+    size_t out_capacity);
+DFC_FFI_EXPORT int32_t dfc_ffi_response_decode_application_ids(
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t* out,
+    size_t out_capacity,
+    size_t* out_len);
+DFC_FFI_EXPORT int32_t dfc_ffi_response_decode_file_ids(
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t* out,
+    size_t out_capacity,
+    size_t* out_len);
+DFC_FFI_EXPORT int32_t dfc_ffi_response_decode_file_settings(
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t* out,
+    size_t out_capacity);
+DFC_FFI_EXPORT int32_t dfc_ffi_response_decode_key_settings(
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t* out,
+    size_t out_capacity);
+DFC_FFI_EXPORT int32_t dfc_ffi_response_decode_key_version(
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t* key_version);
+
+// fields is a DFC_FFI_SDM_* bitmask. Offsets for absent fields are ignored,
+// but the lengths of absent plain-UID, encrypted-PICC-data, and
+// encrypted-file-data fields must be zero. plain_uid_len counts decoded UID
+// octets (7 or 10); encrypted data lengths count ASCII message bytes. A plain
+// read counter occupies six ASCII bytes, and the MAC occupies 16 ASCII bytes.
+// If result and decrypted_file_data describe valid writable buffers,
+// both are zeroed before processing and remain zeroed on every failure.
+// Output buffers must not overlap each other or the message; overlap is rejected
+// before either buffer is changed.
+DFC_FFI_EXPORT int32_t dfc_ffi_sdm_verify_ascii(
+    const uint8_t* message,
+    size_t message_len,
+    uint32_t fields,
+    size_t plain_uid_offset,
+    size_t plain_uid_len,
+    size_t plain_read_counter_offset,
+    size_t encrypted_picc_data_offset,
+    size_t encrypted_picc_data_len,
+    size_t encrypted_file_data_offset,
+    size_t encrypted_file_data_len,
+    size_t mac_input_offset,
+    size_t mac_offset,
+    const uint8_t* meta_read_key,
+    const uint8_t* file_read_key,
+    uint8_t* decrypted_file_data,
+    size_t decrypted_file_data_capacity,
+    size_t* required_decrypted_file_data_len,
+    uint8_t* result,
+    size_t result_capacity);
+
+DFC_FFI_EXPORT int32_t dfc_ffi_transaction_mac_verifier_new(
+    size_t input_capacity,
+    const uint8_t* key,
+    const uint8_t* uid,
+    size_t uid_len,
+    uint32_t counter,
+    DfcFfiTransactionMacVerifier** out);
+// The verifier owns a private copy of the key and transcript. Free wipes the
+// complete allocation, including unused transcript capacity.
+DFC_FFI_EXPORT void dfc_ffi_transaction_mac_verifier_free(DfcFfiTransactionMacVerifier* verifier);
+DFC_FFI_EXPORT int32_t dfc_ffi_transaction_mac_add_data(
+    DfcFfiTransactionMacVerifier* verifier,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t offset,
+    uint32_t length,
+    const uint8_t* data,
+    size_t data_len);
+DFC_FFI_EXPORT int32_t dfc_ffi_transaction_mac_add_record_update(
+    DfcFfiTransactionMacVerifier* verifier,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    uint32_t length,
+    const uint8_t* data,
+    size_t data_len);
+DFC_FFI_EXPORT int32_t dfc_ffi_transaction_mac_add_value(
+    DfcFfiTransactionMacVerifier* verifier,
+    uint8_t command,
+    uint8_t file_number,
+    uint32_t value);
+DFC_FFI_EXPORT int32_t dfc_ffi_transaction_mac_add_clear_record(
+    DfcFfiTransactionMacVerifier* verifier,
+    uint8_t file_number);
+DFC_FFI_EXPORT int32_t dfc_ffi_transaction_mac_add_reader_id(
+    DfcFfiTransactionMacVerifier* verifier,
+    const uint8_t* current_reader_id,
+    const uint8_t* encrypted_previous_reader_id);
+DFC_FFI_EXPORT int32_t dfc_ffi_transaction_mac_verify(
+    const DfcFfiTransactionMacVerifier* verifier,
+    const uint8_t* mac,
+    uint8_t* verified);
 
 // Sizes of the structs below as this library lays them out, for a binding to
 // check against its own declarations before it trusts them.

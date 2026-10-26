@@ -6,12 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "bindings/rust/README.md"
 links = "dfc"
 build = "bindings/rust/dfc-core-sys/build.rs"
 include = [
     "/Cargo.toml",
     "/CMakeLists.txt",
+    "/cmake/**",
     "/LICENSE",
+    "/bindings/rust/README.md",
     "/src/**",
     "/port/**",
     "/ffi/**",

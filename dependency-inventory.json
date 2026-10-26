@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "surfaces": [
+    {
+      "id": "native-cmake",
+      "ecosystem": "generic",
+      "ingestion": "dependency-submission",
+      "manifests": ["CMakeLists.txt"],
+      "workflow": ".github/workflows/dependency-graph.yml",
+      "notes": "Submits the pinned tiny-crypto-c source dependency. The selectable system mbedTLS version is resolved by each consuming build and has no repository-wide lock."
+    },
+    {
+      "id": "rust-workspace",
+      "ecosystem": "cargo",
+      "ingestion": "manifest",
+      "manifests": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "bindings/rust/dfc-core/Cargo.toml"
+      ]
+    },
+    {
+      "id": "rust-example",
+      "ecosystem": "cargo",
+      "ingestion": "manifest",
+      "manifests": [
+        "examples/rust-virtual-picc/Cargo.toml",
+        "examples/rust-virtual-picc/Cargo.lock"
+      ]
+    },
+    {
+      "id": "python-binding",
+      "ecosystem": "uv",
+      "ingestion": "not-applicable",
+      "manifests": [
+        "bindings/python/pyproject.toml",
+        "bindings/python/uv.lock"
+      ],
+      "notes": "The wheel has no Python runtime dependencies. Build and test tools are development inputs declared in pyproject.toml, not consumer dependencies."
+    },
+    {
+      "id": "android-gradle",
+      "ecosystem": "gradle",
+      "ingestion": "dependency-submission",
+      "manifests": [
+        "bindings/android/settings.gradle.kts",
+        "bindings/android/build.gradle.kts",
+        "bindings/android/dfc/build.gradle.kts",
+        "bindings/android/gradle.properties",
+        "bindings/android/gradle/wrapper/gradle-wrapper.properties",
+        "examples/android/build.gradle.kts"
+      ],
+      "workflow": ".github/workflows/dependency-graph.yml"
+    },
+    {
+      "id": "dotnet-nuget",
+      "ecosystem": "nuget",
+      "ingestion": "manifest",
+      "manifests": [
+        "bindings/dotnet/Directory.Build.props",
+        "bindings/dotnet/src/Dfc/Dfc.csproj",
+        "bindings/dotnet/tests/Dfc.Tests/Dfc.Tests.csproj",
+        "examples/dotnet/Dfc.TransceiveExample.csproj"
+      ]
+    },
+    {
+      "id": "github-actions",
+      "ecosystem": "github-actions",
+      "ingestion": "manifest",
+      "manifests": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/dependency-graph.yml",
+        ".github/workflows/release.yml"
+      ]
+    },
+    {
+      "id": "standalone-java-jni",
+      "ecosystem": "maven",
+      "ingestion": "manifest",
+      "manifests": ["bindings/java/pom.xml"]
+    },
+    {
+      "id": "release-smoke-consumers",
+      "ecosystem": "generic",
+      "ingestion": "not-applicable",
+      "manifests": [
+        "tests/package-consumer/CMakeLists.txt",
+        "tests/package-consumer/dotnet/Dfc.PackageConsumer.csproj",
+        "tests/package-consumer/android/app/build.gradle.kts"
+      ],
+      "notes": "These fixtures consume the packages built from this repository and intentionally declare no third-party dependencies."
+    }
+  ]
+}

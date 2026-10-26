@@ -18,6 +18,7 @@ public sealed class PiccBehaviorTests
     private static int freeCalls;
     private static nint freedPicc;
     private static int clockCreatorCalls;
+    private static nint transferredCredential;
 
     [Test]
     public void DiagnosticSnapshot_DisposeClearsManagedBuffers()
@@ -60,7 +61,7 @@ public sealed class PiccBehaviorTests
     }
 
     private static unsafe int CountingPiccCreate(
-        nint credential,
+        nint* credential,
         delegate* unmanaged<nint, byte*, nuint, int> random,
         nint context,
         nint* output
@@ -107,7 +108,7 @@ public sealed class PiccBehaviorTests
     }
 
     private static unsafe int ThrowingPiccCreate(
-        nint credential,
+        nint* credential,
         delegate* unmanaged<nint, byte*, nuint, int> random,
         nint context,
         nint* output
@@ -121,6 +122,7 @@ public sealed class PiccBehaviorTests
     {
         freeCalls = 0;
         freedPicc = 0;
+        transferredCredential = 0;
         var random = CreateWithThrowingManagedWrapper();
 
         CollectUntilDead(random);
@@ -130,6 +132,7 @@ public sealed class PiccBehaviorTests
             Assert.That(random.IsAlive, Is.False);
             Assert.That(freeCalls, Is.EqualTo(1));
             Assert.That(freedPicc, Is.EqualTo((nint)0x58));
+            Assert.That(transferredCredential, Is.EqualTo(nint.Zero));
         });
     }
 
@@ -161,12 +164,14 @@ public sealed class PiccBehaviorTests
     }
 
     private static unsafe int SuccessfulPiccCreate(
-        nint credential,
+        nint* credential,
         delegate* unmanaged<nint, byte*, nuint, int> random,
         nint context,
         nint* output
     )
     {
+        transferredCredential = *credential;
+        *credential = 0;
         *output = 0x58;
         return 0;
     }
@@ -175,6 +180,8 @@ public sealed class PiccBehaviorTests
     {
         Interlocked.Increment(ref freeCalls);
         freedPicc = picc;
+        Native.dfc_ffi_credential_free(transferredCredential);
+        transferredCredential = 0;
     }
 
     private static void CollectUntilDead(WeakReference reference)

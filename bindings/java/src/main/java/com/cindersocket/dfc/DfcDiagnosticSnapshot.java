@@ -24,20 +24,34 @@ public final class DfcDiagnosticSnapshot implements AutoCloseable {
   private final State state;
   private final DfcCleaner.Cleanable cleanable;
   DfcDiagnosticSnapshot(byte[] bytes) {
+    if (bytes.length != DfcJniLayout.DFC_JNI_DIAGNOSTIC_SIZE)
+      throw new IllegalArgumentException("invalid diagnostic snapshot length");
     state = new State(bytes);
     cleanable = DfcCleaner.register(this, state);
   }
-  /** Compares the transaction identifier without returning another secret copy. */
+  /**
+   * Compares the transaction identifier without returning another secret copy.
+   * @param expected expected four-byte identifier
+   * @return whether it matches in constant time
+   */
   public boolean transactionIdentifierEquals(byte[] expected) {
-    return equalsRange(expected, 0, 4);
+    return equalsRange(expected, DfcJniLayout.DFC_JNI_DIAGNOSTIC_TRANSACTION_ID_OFFSET, 4);
   }
-  /** Compares the encryption key without returning another secret copy. */
+  /**
+   * Compares the encryption key without returning another secret copy.
+   * @param expected expected 16-byte key
+   * @return whether it matches in constant time
+   */
   public boolean encryptionKeyEquals(byte[] expected) {
-    return equalsRange(expected, 4, 16);
+    return equalsRange(expected, DfcJniLayout.DFC_JNI_DIAGNOSTIC_ENCRYPTION_KEY_OFFSET, 16);
   }
-  /** Compares the authentication key without returning another secret copy. */
+  /**
+   * Compares the authentication key without returning another secret copy.
+   * @param expected expected 16-byte key
+   * @return whether it matches in constant time
+   */
   public boolean macKeyEquals(byte[] expected) {
-    return equalsRange(expected, 20, 16);
+    return equalsRange(expected, DfcJniLayout.DFC_JNI_DIAGNOSTIC_MAC_KEY_OFFSET, 16);
   }
   private boolean equalsRange(byte[] expected, int offset, int length) {
     return state.equalsRange(expected, offset, length);

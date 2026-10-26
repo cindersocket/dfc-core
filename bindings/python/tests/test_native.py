@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes as C
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -16,13 +17,113 @@ from dfc_core import (
     Command,
     Credential,
     InvalidArgumentError,
+    PiccAuthenticationMode,
     RandomSourceError,
     Reader,
+    ReaderAuthenticationMode,
     VirtualPicc,
     _native,
     capabilities,
 )
+from dfc_core import reader as reader_module
+from dfc_core._native_signatures import signatures
 from dfc_core.picc import _retry_capacity
+
+
+def _ffi_header_signatures() -> dict[str, tuple[str, tuple[tuple[str, str], ...]]]:
+    """Read exported result and parameter declarations from the public header."""
+
+    header = Path(__file__).parents[3] / "ffi" / "dfc_ffi.h"
+    source = re.sub(r"/\*.*?\*/|//[^\n]*", "", header.read_text(encoding="utf-8"), flags=re.DOTALL)
+    declarations = re.findall(
+        r"^[ \t]*DFC_FFI_EXPORT[ \t]+([^\n]+?)\s+(dfc_ffi_[A-Za-z0-9_]+)\s*\((.*?)\)\s*;",
+        source,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    result: dict[str, tuple[str, tuple[tuple[str, str], ...]]] = {}
+    for raw_result, function, raw_parameters in declarations:
+        assert function not in result, f"duplicate public FFI declaration: {function}"
+        parameters: list[tuple[str, str]] = []
+        for raw_parameter in raw_parameters.split(","):
+            parameter = " ".join(raw_parameter.split())
+            if not parameter or parameter == "void":
+                continue
+            name = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^]]*\])?$", parameter)
+            assert name is not None, (function, parameter)
+            c_type = parameter[: name.start()].strip()
+            parameters.append((name.group(1), c_type))
+        result[function] = (" ".join(raw_result.split()), tuple(parameters))
+    return result
+
+
+def _header_ctype(c_type: str) -> object:
+    """Map the small FFI type vocabulary to the equivalent ctypes object."""
+
+    scalar = {
+        "void": None,
+        "bool": C.c_bool,
+        "int32_t": C.c_int32,
+        "uint8_t": C.c_uint8,
+        "uint32_t": C.c_uint32,
+        "uint64_t": C.c_uint64,
+        "size_t": C.c_size_t,
+        "DfcFfiRandomCallback": C.c_void_p,
+    }
+    is_const = c_type.startswith("const ")
+    normalized = c_type.removeprefix("const ").replace(" *", "*")
+    if normalized in scalar:
+        return scalar[normalized]
+    if normalized == "char*":
+        return C.c_char_p if is_const else C.POINTER(C.c_char)
+    if normalized == "void*":
+        return C.c_void_p
+    if normalized == "uint8_t*":
+        return _native.P8
+    if normalized.endswith("*") and normalized[:-1] in scalar:
+        return C.POINTER(scalar[normalized[:-1]])
+
+    opaque = {
+        "DfcFfiCredential",
+        "DfcFfiPicc",
+        "DfcFfiReaderExchange",
+        "DfcFfiReaderSession",
+        "DfcFfiTransactionMacVerifier",
+    }
+    if normalized.endswith("**") and normalized[:-2] in opaque:
+        return C.POINTER(_native.Handle)
+    if normalized.endswith("*") and normalized[:-1] in opaque:
+        return _native.Handle
+    if normalized.endswith("*"):
+        name = normalized.removesuffix("*").removeprefix("DfcFfi")
+        return C.POINTER(getattr(_native, name))
+    raise AssertionError(f"unmapped public FFI type: {c_type}")
+
+
+def test_named_native_signatures_match_public_header() -> None:
+    registry = signatures(vars(_native))
+    assert len({signature.name for signature in registry}) == len(registry)
+    assert all(
+        len({parameter.name for parameter in signature.parameters}) == len(signature.parameters)
+        for signature in registry
+    )
+    declared = {
+        signature.name: (
+            signature.result,
+            tuple((parameter.name, parameter.ctype) for parameter in signature.parameters),
+        )
+        for signature in registry
+    }
+    parsed_header = _ffi_header_signatures()
+    header = {
+        function: (
+            _header_ctype(result),
+            tuple((name, _header_ctype(c_type)) for name, c_type in parameters),
+        )
+        for function, (result, parameters) in parsed_header.items()
+    }
+    assert len(registry) == len(declared)
+    assert len(parsed_header) == len(header)
+    assert declared == header
 
 
 @pytest.mark.parametrize("reported", [0, 255, 256, sys.maxsize + 1])
@@ -34,7 +135,24 @@ def test_picc_retry_capacity_accepts_raised_native_capacity() -> None:
     assert _retry_capacity(8193) == 8193
 
 
-from dfc_core import reader as reader_module
+def test_reader_reuses_step_scratch_between_exchanges(monkeypatch: pytest.MonkeyPatch) -> None:
+    class UnusedTransport:
+        def transceive(self, _frame: bytes) -> bytes:
+            pytest.fail("completed reader step unexpectedly used the transport")
+
+    reader = Reader(UnusedTransport())
+    library = _native.library()
+
+    def complete_step(*_args: object) -> int:
+        return 0
+
+    monkeypatch.setattr(library, "dfc_ffi_reader_step", complete_step)
+    scratch = reader._step_output
+    reader._run()
+    reader._run()
+    assert reader._step_output is scratch
+    reader.close()
+
 
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
 MAXIMAL_TEXT_FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-maximal.dfc"
@@ -280,7 +398,8 @@ def test_reader_authenticate_reaches_the_native_begin_function() -> None:
             response = reader.authenticate(0x1A, 0, bytes(16), random_a=bytes(8))
 
             assert response.status == 0
-            assert reader.state.auth_mode == 0x1A
+            assert reader.state.authentication is ReaderAuthenticationMode.ISO
+            assert picc.snapshot().authentication is PiccAuthenticationMode.ISO
 
 
 def test_reader_preserves_card_status_after_growing_command_buffer() -> None:

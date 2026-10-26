@@ -648,12 +648,17 @@ static bool
             app->key_storage_len = (size_t)value;
         else if(strcmp(field, "max_key_size") == 0)
             app->max_key_size = (uint8_t)value;
-        else if(split_index_leaf(field, "key_set_types", &k) && k < app->num_key_sets)
-            app->key_set_types[k] = (uint8_t)value;
-        else if(split_index_leaf(field, "key_set_versions", &k) && k < app->num_key_sets)
-            app->key_set_versions[k] = (uint8_t)value;
-        else if(split_index_leaf(field, "key_set_initialized", &k) && k < app->num_key_sets)
-            app->key_set_initialized[k] = value != 0;
+        else if(split_index_leaf(field, "key_set_types", &k) && k < app->num_key_sets) {
+            uint8_t* type = dfc_credential_key_set_type(c, app, k);
+            if(!type) return false;
+            *type = (uint8_t)value;
+        } else if(split_index_leaf(field, "key_set_versions", &k) && k < app->num_key_sets) {
+            uint8_t* version = dfc_credential_key_set_version(c, app, k);
+            if(!version) return false;
+            *version = (uint8_t)value;
+        } else if(split_index_leaf(field, "key_set_initialized", &k) && k < app->num_key_sets) {
+            if(!dfc_credential_key_set_set_initialized(c, app, k, value != 0)) return false;
+        }
 #endif
         else {
             fail(st, "unsupported set-model path '%s'", path);
@@ -665,13 +670,13 @@ static bool
 #if DFC_ENABLE_SDM
         DfcFile* file = &c->files[i];
         if(strcmp(field, "sdm_enabled") == 0)
-            file->sdm_enabled = value != 0;
+            dfc_file_sdm_flag_set(file, DfcSdmFlagEnabled, value != 0);
         else if(strcmp(field, "sdm_has_encrypted_file_offset") == 0)
-            file->sdm_has_encrypted_file_offset = value != 0;
+            dfc_file_sdm_flag_set(file, DfcSdmFlagEncryptedFile, value != 0);
         else if(strcmp(field, "sdm_encrypted_file_offset") == 0)
-            file->sdm_encrypted_file_offset = (uint32_t)value;
+            file->state.data.sdm.encrypted_file_offset = (uint32_t)value;
         else if(strcmp(field, "sdm_encrypted_file_length") == 0)
-            file->sdm_encrypted_file_length = (uint32_t)value;
+            file->state.data.sdm.encrypted_file_length = (uint32_t)value;
         else {
 #else
         {
@@ -842,8 +847,11 @@ static bool assert_path(
             return cmp_num(st, path, a->key_versions[k], want);
         }
 #if DFC_ENABLE_KEY_SETS
-        if(split_index_leaf(field, "key_set_types", &k) && k < a->num_key_sets)
-            return cmp_num(st, path, a->key_set_types[k], want);
+        if(split_index_leaf(field, "key_set_types", &k) && k < a->num_key_sets) {
+            const uint8_t* type = dfc_credential_key_set_type_const(c, a, k);
+            if(!type) return false;
+            return cmp_num(st, path, *type, want);
+        }
 #endif
     }
 

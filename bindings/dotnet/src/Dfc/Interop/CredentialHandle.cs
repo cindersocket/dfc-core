@@ -20,6 +20,11 @@ internal sealed class CredentialHandle : SafeHandle
 
     public override bool IsInvalid => handle == IntPtr.Zero;
 
+    internal void RelinquishOwnership()
+    {
+        SetHandleAsInvalid();
+    }
+
     protected override bool ReleaseHandle()
     {
         Native.dfc_ffi_credential_free(handle);

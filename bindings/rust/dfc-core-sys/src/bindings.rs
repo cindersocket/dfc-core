@@ -19,6 +19,17 @@ pub const DFC_FFI_READER_FRAMING_ISO7816: u32 = 0;
 pub const DFC_FFI_READER_FRAMING_NATIVE: u32 = 1;
 pub const DFC_FFI_PICC_BUFFER_TOO_SMALL: u32 = 3;
 pub const DFC_FFI_MESSAGE_MAX: u32 = 96;
+pub const DFC_FFI_RESPONSE_VERSION_SIZE: u32 = 28;
+pub const DFC_FFI_RESPONSE_KEY_SETTINGS_SIZE: u32 = 9;
+pub const DFC_FFI_RESPONSE_FILE_SETTINGS_SIZE: u32 = 32;
+pub const DFC_FFI_SDM_RESULT_SIZE: u32 = 20;
+pub const DFC_FFI_AN10922_AES128: u32 = 0;
+pub const DFC_FFI_AN10922_TDEA2: u32 = 1;
+pub const DFC_FFI_AN10922_TDEA3: u32 = 2;
+pub const DFC_FFI_SDM_PLAIN_UID: u32 = 1;
+pub const DFC_FFI_SDM_PLAIN_READ_COUNTER: u32 = 2;
+pub const DFC_FFI_SDM_ENCRYPTED_PICC_DATA: u32 = 4;
+pub const DFC_FFI_SDM_ENCRYPTED_FILE_DATA: u32 = 8;
 pub const DFC_FFI_OWNER_PICC: i32 = -1;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -38,6 +49,11 @@ pub struct DfcFfiReaderSession {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct DfcFfiReaderExchange {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DfcFfiTransactionMacVerifier {
     _unused: [u8; 0],
 }
 #[repr(C)]
@@ -733,5 +749,123 @@ unsafe extern "C" {
         out: *mut u8,
         out_cap: usize,
         out_len: *mut usize,
+    ) -> i32;
+}
+unsafe extern "C" {
+    pub fn dfc_ffi_an10922_diversify(
+        algorithm: u32,
+        master_key: *const u8,
+        master_key_len: usize,
+        diversification_input: *const u8,
+        diversification_input_len: usize,
+        diversified_key: *mut u8,
+        diversified_key_capacity: usize,
+        diversified_key_len: *mut usize,
+    ) -> i32;
+    pub fn dfc_ffi_response_decode_version(
+        response: *const u8,
+        response_len: usize,
+        out: *mut u8,
+        out_capacity: usize,
+    ) -> i32;
+    pub fn dfc_ffi_response_decode_application_ids(
+        response: *const u8,
+        response_len: usize,
+        out: *mut u8,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32;
+    pub fn dfc_ffi_response_decode_file_ids(
+        response: *const u8,
+        response_len: usize,
+        out: *mut u8,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32;
+    pub fn dfc_ffi_response_decode_file_settings(
+        response: *const u8,
+        response_len: usize,
+        out: *mut u8,
+        out_capacity: usize,
+    ) -> i32;
+    pub fn dfc_ffi_response_decode_key_settings(
+        response: *const u8,
+        response_len: usize,
+        out: *mut u8,
+        out_capacity: usize,
+    ) -> i32;
+    pub fn dfc_ffi_response_decode_key_version(
+        response: *const u8,
+        response_len: usize,
+        key_version: *mut u8,
+    ) -> i32;
+    pub fn dfc_ffi_sdm_verify_ascii(
+        message: *const u8,
+        message_len: usize,
+        fields: u32,
+        plain_uid_offset: usize,
+        plain_uid_len: usize,
+        plain_read_counter_offset: usize,
+        encrypted_picc_data_offset: usize,
+        encrypted_picc_data_len: usize,
+        encrypted_file_data_offset: usize,
+        encrypted_file_data_len: usize,
+        mac_input_offset: usize,
+        mac_offset: usize,
+        meta_read_key: *const u8,
+        file_read_key: *const u8,
+        decrypted_file_data: *mut u8,
+        decrypted_file_data_capacity: usize,
+        required_decrypted_file_data_len: *mut usize,
+        result: *mut u8,
+        result_capacity: usize,
+    ) -> i32;
+    pub fn dfc_ffi_transaction_mac_verifier_new(
+        input_capacity: usize,
+        key: *const u8,
+        uid: *const u8,
+        uid_len: usize,
+        counter: u32,
+        out: *mut *mut DfcFfiTransactionMacVerifier,
+    ) -> i32;
+    pub fn dfc_ffi_transaction_mac_verifier_free(verifier: *mut DfcFfiTransactionMacVerifier);
+    pub fn dfc_ffi_transaction_mac_add_data(
+        verifier: *mut DfcFfiTransactionMacVerifier,
+        command: u8,
+        file_number: u8,
+        offset: u32,
+        length: u32,
+        data: *const u8,
+        data_len: usize,
+    ) -> i32;
+    pub fn dfc_ffi_transaction_mac_add_record_update(
+        verifier: *mut DfcFfiTransactionMacVerifier,
+        command: u8,
+        file_number: u8,
+        record_number: u32,
+        offset: u32,
+        length: u32,
+        data: *const u8,
+        data_len: usize,
+    ) -> i32;
+    pub fn dfc_ffi_transaction_mac_add_value(
+        verifier: *mut DfcFfiTransactionMacVerifier,
+        command: u8,
+        file_number: u8,
+        value: u32,
+    ) -> i32;
+    pub fn dfc_ffi_transaction_mac_add_clear_record(
+        verifier: *mut DfcFfiTransactionMacVerifier,
+        file_number: u8,
+    ) -> i32;
+    pub fn dfc_ffi_transaction_mac_add_reader_id(
+        verifier: *mut DfcFfiTransactionMacVerifier,
+        current_reader_id: *const u8,
+        encrypted_previous_reader_id: *const u8,
+    ) -> i32;
+    pub fn dfc_ffi_transaction_mac_verify(
+        verifier: *const DfcFfiTransactionMacVerifier,
+        mac: *const u8,
+        verified: *mut u8,
     ) -> i32;
 }

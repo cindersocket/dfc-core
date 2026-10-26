@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class FormatToolingTests(unittest.TestCase):
+    def test_full_format_gate_does_not_require_git_metadata(self) -> None:
+        for relative in ("scripts/check-format.sh", "scripts/check-c-format.sh"):
+            with self.subTest(script=relative):
+                script = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertNotIn("git ls-files", script)
+
     def test_ruff_does_not_build_the_python_binding(self) -> None:
         for relative in ("scripts/check-format.sh", "scripts/format-staged.sh"):
             with self.subTest(script=relative):
@@ -36,7 +42,7 @@ class FormatToolingTests(unittest.TestCase):
     def test_java_format_paths_include_native_binding_tests(self) -> None:
         script = (ROOT / "scripts/check-format.sh").read_text(encoding="utf-8")
 
-        self.assertIn("'tests/java/*.java'", script)
+        self.assertIn("tests/java", script)
 
     def test_format_job_installs_rustfmt(self) -> None:
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")

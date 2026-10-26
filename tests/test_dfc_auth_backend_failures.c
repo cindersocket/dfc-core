@@ -55,22 +55,34 @@ static void assert_pending_cleared(const DfcEmulator* emulator) {
     munit_assert_false(emulator->awaiting_step2);
     munit_assert_uint8(emulator->pending_auth_cipher, ==, 0);
     munit_assert_uint8(emulator->pending_auth_key_no, ==, 0);
-    munit_assert_memory_equal(sizeof(emulator->rnd_b), emulator->rnd_b, zero);
-    munit_assert_memory_equal(sizeof(emulator->enc_rnd_b), emulator->enc_rnd_b, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.native.random_b),
+        emulator->pending_authentication.native.random_b,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.native.encrypted_random_b),
+        emulator->pending_authentication.native.encrypted_random_b,
+        zero);
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     munit_assert_false(emulator->ev2_authentication_pending);
     munit_assert_false(emulator->ev2_authentication_non_first);
     munit_assert_uint8(emulator->ev2_pending_authenticated_key_no, ==, 0);
-    munit_assert_memory_equal(sizeof(emulator->ev2_static_key), emulator->ev2_static_key, zero);
-    munit_assert_memory_equal(sizeof(emulator->ev2_random_b), emulator->ev2_random_b, zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.ev2.static_key),
+        emulator->pending_authentication.ev2.static_key,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.ev2.random_b),
+        emulator->pending_authentication.ev2.random_b,
+        zero);
 #endif
 }
 
 static void assert_transaction_outcome(const AuthCase* auth_case, const AuthFixture* fixture) {
     bool preserve = auth_case->command == DFC_CMD_AUTHENTICATE_LEGACY;
-    munit_assert_int(fixture->value_file->value_pending, ==, preserve);
-    munit_assert_int32(fixture->value_file->value_pending_delta, ==, preserve ? 2 : 0);
-    munit_assert_int32(fixture->value_file->value, ==, 40);
+    munit_assert_int(fixture->value_file->state.value.pending, ==, preserve);
+    munit_assert_int32(fixture->value_file->state.value.pending_delta, ==, preserve ? 2 : 0);
+    munit_assert_int32(fixture->value_file->state.value.current, ==, 40);
 }
 
 static void assert_fixture_prior_session(const AuthCase* auth_case, const DfcEmulator* emulator) {
@@ -210,7 +222,8 @@ static void build_continuation_apdu(
     uint8_t clear[DFC_EV2_AUTHENTICATION_RESPONSE_LENGTH] = {0};
     for(size_t i = 0; i < random_len; i++)
         clear[i] = (uint8_t)(0x70 + i);
-    const uint8_t* random_b = auth_case->ev2 ? emulator->ev2_random_b : emulator->rnd_b;
+    const uint8_t* random_b = auth_case->ev2 ? emulator->pending_authentication.ev2.random_b :
+                                               emulator->pending_authentication.native.random_b;
     for(size_t i = 0; i < random_len; i++)
         clear[random_len + i] = random_b[(i + 1) % random_len];
     if(!valid) clear[clear_len - 1] ^= 0x80;
@@ -416,6 +429,83 @@ static MunitResult test_malformed_continuations_remain_authentication_errors(
     return MUNIT_OK;
 }
 
+static void assert_pending_family(const DfcEmulator* emulator, bool ev2) {
+    munit_assert_true(emulator->awaiting_step2 == !ev2);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    munit_assert_true(emulator->ev2_authentication_pending == ev2);
+#endif
+}
+
+static void start_pending_authentication(
+    AuthFixture* fixture,
+    const AuthCase* auth_case,
+    uint8_t response[64],
+    size_t* response_len) {
+    uint8_t start[] = {auth_case->command, 0, 0};
+    size_t start_len = auth_case->ev2 && !auth_case->non_first ? 3 : 2;
+    exchange_native(fixture, start, start_len, response, response_len);
+    munit_assert_size(*response_len, ==, challenge_length(auth_case) + 1);
+    munit_assert_uint8(response[0], ==, DFC_CMD_ADDITIONAL_FRAME);
+    assert_pending_family(fixture->session->emulator, auth_case->ev2);
+}
+
+static void assert_replacement_aborts_pending(
+    AuthFixture* fixture,
+    const AuthCase* replacement,
+    uint8_t response[64],
+    size_t* response_len) {
+    uint8_t start[] = {replacement->command, 0, 0};
+    size_t start_len = replacement->ev2 && !replacement->non_first ? 3 : 2;
+    exchange_native(fixture, start, start_len, response, response_len);
+    munit_assert_size(*response_len, ==, 1);
+    munit_assert_uint8(response[0], ==, DFC_STATUS_COMMAND_ABORTED);
+    assert_pending_cleared(fixture->session->emulator);
+}
+
+static MunitResult
+    test_pending_authentication_transition_matrix(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+
+    auth_faults_clear();
+    AuthFixture fixture;
+    const AuthCase* native = &auth_cases[2];
+    const AuthCase* ev2 = &auth_cases[3];
+    auth_fixture_open(&fixture, ev2);
+    DfcEmulator* emulator = fixture.session->emulator;
+    fixture.credential.apps[0].auth_commands = DFC_AUTH_COMMAND_AES | DFC_AUTH_COMMAND_EV2_FIRST;
+    uint8_t response[64];
+    size_t response_len = 0;
+
+    // A different authentication command first retires the handshake that owned
+    // AdditionalFrame. A clean retry then starts the requested family.
+    start_pending_authentication(&fixture, native, response, &response_len);
+    assert_replacement_aborts_pending(&fixture, ev2, response, &response_len);
+    start_pending_authentication(&fixture, ev2, response, &response_len);
+    assert_replacement_aborts_pending(&fixture, native, response, &response_len);
+    start_pending_authentication(&fixture, native, response, &response_len);
+
+    // Any unrelated native command retires the pending handshake before dispatch.
+    const uint8_t get_version[] = {DFC_CMD_GET_VERSION};
+    exchange_native(&fixture, get_version, sizeof(get_version), response, &response_len);
+    munit_assert_size(response_len, >, 0);
+    assert_pending_cleared(emulator);
+
+    start_pending_authentication(&fixture, ev2, response, &response_len);
+    munit_assert_int(dfc_virtual_picc_reset_protocol(fixture.session), ==, DfcVirtualPiccStatusOk);
+    assert_pending_cleared(emulator);
+
+    emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    emulator->selected_app_index = 0;
+    start_pending_authentication(&fixture, native, response, &response_len);
+    munit_assert_int(dfc_virtual_picc_field_off(fixture.session), ==, DfcVirtualPiccStatusOk);
+    assert_pending_cleared(emulator);
+
+    auth_fixture_close(&fixture);
+    auth_faults_clear();
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
     {"/start-failures-report-memory-error",
      test_start_failures_report_memory_error,
@@ -449,6 +539,12 @@ static MunitTest tests[] = {
      NULL},
     {"/malformed-continuations-remain-authentication-errors",
      test_malformed_continuations_remain_authentication_errors,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/pending-authentication-transition-matrix",
+     test_pending_authentication_transition_matrix,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

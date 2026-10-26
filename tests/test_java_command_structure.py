@@ -16,7 +16,9 @@ class JavaCommandStructureTests(unittest.TestCase):
         method = re.search(r"public static DfcCommand writeData\([^}]+\}", source, re.DOTALL)
 
         self.assertIsNotNone(method)
-        self.assertIn("return writeRange(0x3d, fileNumber, offset, value);", method.group())
+        self.assertRegex(source, r"private static final int WRITE_DATA\s*=\s*0x3d;")
+        self.assertIn("return writeRange(WRITE_DATA, fileNumber, offset, value);", method.group())
+        self.assertNotRegex(method.group(), r"writeRange\(0x[0-9a-fA-F]+,")
         self.assertNotIn("System.arraycopy", method.group())
 
 

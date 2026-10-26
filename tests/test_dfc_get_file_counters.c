@@ -21,9 +21,9 @@ static void fixture_open(CounterFixture* fixture, uint8_t file_type, bool sdm_en
     load_standard_credential(&fixture->credential);
     fixture->counter_file = &fixture->credential.files[0];
     fixture->counter_file->type = file_type;
-    fixture->counter_file->sdm_enabled = sdm_enabled;
-    fixture->counter_file->sdm_access_rights = 0xEFFE;
-    fixture->counter_file->sdm_read_counter = 0x563412;
+    dfc_file_sdm_flag_set(fixture->counter_file, DfcSdmFlagEnabled, sdm_enabled);
+    fixture->counter_file->state.data.sdm.access_rights = 0xEFFE;
+    fixture->counter_file->state.data.sdm_read_counter = 0x563412;
 
     fixture->session = dfc_virtual_picc_session_alloc(&fixture->credential);
     munit_assert_not_null(fixture->session);
@@ -83,16 +83,16 @@ static DfcFile* add_pending_value_transaction(CounterFixture* fixture) {
     DfcFile* value = dfc_credential_create_file(&fixture->credential, 0, PendingValueFile);
     munit_assert_not_null(value);
     value->type = DFC_FILE_TYPE_VALUE;
-    value->value = 20;
-    value->value_pending = true;
-    value->value_pending_delta = 7;
+    value->state.value.current = 20;
+    value->state.value.pending = true;
+    value->state.value.pending_delta = 7;
     return value;
 }
 
 static void assert_transaction_aborted(const DfcFile* value) {
-    munit_assert_false(value->value_pending);
-    munit_assert_int32(value->value_pending_delta, ==, 0);
-    munit_assert_int32(value->value, ==, 20);
+    munit_assert_false(value->state.value.pending);
+    munit_assert_int32(value->state.value.pending_delta, ==, 0);
+    munit_assert_int32(value->state.value.current, ==, 20);
 }
 
 static size_t build_ev1_get_counters(
@@ -172,8 +172,8 @@ static MunitResult
     for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         CounterFixture fixture;
         fixture_open(&fixture, DFC_FILE_TYPE_STANDARD_DATA, true);
-        fixture.counter_file->sdm_read_counter = cases[i].counter;
-        fixture.counter_file->sdm_access_rights = 0xEFFE;
+        fixture.counter_file->state.data.sdm_read_counter = cases[i].counter;
+        fixture.counter_file->state.data.sdm.access_rights = 0xEFFE;
 
         uint8_t response[16];
         size_t response_len = 0;
@@ -187,7 +187,8 @@ static MunitResult
         munit_assert_size(response_len, ==, 7);
         munit_assert_memory_equal(3, response, cases[i].encoded);
         munit_assert_memory_equal(4, response + 3, ((const uint8_t[]){0, 0, 0x91, 0x00}));
-        munit_assert_uint32(fixture.counter_file->sdm_read_counter, ==, cases[i].counter);
+        munit_assert_uint32(
+            fixture.counter_file->state.data.sdm_read_counter, ==, cases[i].counter);
         fixture_close(&fixture);
     }
     return MUNIT_OK;
@@ -213,10 +214,11 @@ static MunitResult
     for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         CounterFixture fixture;
         fixture_open(&fixture, cases[i].file_type, cases[i].sdm_enabled);
-        fixture.counter_file->sdm_access_rights = (uint16_t)(0xEFF0u | cases[i].counter_access);
-        uint32_t counter_before = fixture.counter_file->sdm_read_counter;
+        fixture.counter_file->state.data.sdm.access_rights =
+            (uint16_t)(0xEFF0u | cases[i].counter_access);
+        uint32_t counter_before = fixture.counter_file->state.data.sdm_read_counter;
         assert_status(&fixture, get_counters, sizeof(get_counters), cases[i].status);
-        munit_assert_uint32(fixture.counter_file->sdm_read_counter, ==, counter_before);
+        munit_assert_uint32(fixture.counter_file->state.data.sdm_read_counter, ==, counter_before);
         fixture_close(&fixture);
     }
 
@@ -278,7 +280,7 @@ static MunitResult
     for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         CounterFixture fixture;
         fixture_open(&fixture, DFC_FILE_TYPE_STANDARD_DATA, true);
-        fixture.counter_file->sdm_access_rights = cases[i].access_rights;
+        fixture.counter_file->state.data.sdm.access_rights = cases[i].access_rights;
         install_ev1_session(
             &fixture, cases[i].cipher, cases[i].key_no, session_key, cases[i].key_len);
         DfcSecureMessaging reader = *fixture.session->emulator->secure_messaging;
@@ -337,18 +339,18 @@ static MunitResult
     for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         CounterFixture missing;
         fixture_open(&missing, DFC_FILE_TYPE_STANDARD_DATA, true);
-        missing.counter_file->sdm_access_rights = 0xEFF1;
+        missing.counter_file->state.data.sdm.access_rights = 0xEFF1;
         DfcFile* missing_value = add_pending_value_transaction(&missing);
         install_ev1_session(&missing, cases[i].cipher, 1, session_key, cases[i].key_len);
         assert_status(&missing, get_counters, sizeof(get_counters), DFC_STATUS_INTEGRITY_ERROR);
         munit_assert_false(dfc_emulator_native_authentication_active(missing.session->emulator));
-        munit_assert_uint32(missing.counter_file->sdm_read_counter, ==, 0x563412);
+        munit_assert_uint32(missing.counter_file->state.data.sdm_read_counter, ==, 0x563412);
         assert_transaction_aborted(missing_value);
         fixture_close(&missing);
 
         CounterFixture bad;
         fixture_open(&bad, DFC_FILE_TYPE_STANDARD_DATA, true);
-        bad.counter_file->sdm_access_rights = 0xEFF1;
+        bad.counter_file->state.data.sdm.access_rights = 0xEFF1;
         DfcFile* bad_value = add_pending_value_transaction(&bad);
         install_ev1_session(&bad, cases[i].cipher, 1, session_key, cases[i].key_len);
         DfcSecureMessaging reader = *bad.session->emulator->secure_messaging;
@@ -358,7 +360,7 @@ static MunitResult
         command[6] ^= 0x80;
         assert_status(&bad, command, command_len, DFC_STATUS_INTEGRITY_ERROR);
         munit_assert_false(dfc_emulator_native_authentication_active(bad.session->emulator));
-        munit_assert_uint32(bad.counter_file->sdm_read_counter, ==, 0x563412);
+        munit_assert_uint32(bad.counter_file->state.data.sdm_read_counter, ==, 0x563412);
         assert_transaction_aborted(bad_value);
         fixture_close(&bad);
     }
@@ -372,8 +374,8 @@ static MunitResult test_wrong_key_retires_session_and_aborts_transaction(
     (void)user_data;
     CounterFixture fixture;
     fixture_open(&fixture, DFC_FILE_TYPE_STANDARD_DATA, true);
-    fixture.counter_file->sdm_access_rights = 0xEFF1;
-    fixture.counter_file->sdm_read_counter = 9;
+    fixture.counter_file->state.data.sdm.access_rights = 0xEFF1;
+    fixture.counter_file->state.data.sdm_read_counter = 9;
 
     DfcFile* value = add_pending_value_transaction(&fixture);
     const uint8_t session_key[DFC_AES_KEY_LENGTH] = {0};
@@ -385,7 +387,7 @@ static MunitResult test_wrong_key_retires_session_and_aborts_transaction(
     size_t command_len = build_ev1_get_counters(&reader, command);
 
     assert_status(&fixture, command, command_len, DFC_STATUS_AUTHENTICATION_ERR);
-    munit_assert_uint32(fixture.counter_file->sdm_read_counter, ==, 9);
+    munit_assert_uint32(fixture.counter_file->state.data.sdm_read_counter, ==, 9);
     munit_assert_false(dfc_emulator_native_authentication_active(fixture.session->emulator));
     assert_transaction_aborted(value);
     fixture_close(&fixture);
@@ -398,7 +400,7 @@ static MunitResult
     (void)user_data;
     CounterFixture fixture;
     fixture_open(&fixture, DFC_FILE_TYPE_STANDARD_DATA, true);
-    fixture.counter_file->sdm_access_rights = 0xEFF1;
+    fixture.counter_file->state.data.sdm.access_rights = 0xEFF1;
     DfcFile* value = add_pending_value_transaction(&fixture);
     const uint8_t session_key[8] = {0};
     install_ev1_session(
@@ -417,7 +419,7 @@ static MunitResult
     (void)user_data;
     CounterFixture fixture;
     fixture_open(&fixture, DFC_FILE_TYPE_STANDARD_DATA, true);
-    fixture.counter_file->sdm_access_rights = 0xEFF1;
+    fixture.counter_file->state.data.sdm.access_rights = 0xEFF1;
     install_ev2_session(&fixture, 1);
     DfcEmulator before = *fixture.session->emulator;
 
@@ -469,8 +471,8 @@ static MunitResult
     (void)user_data;
     CounterFixture fixture;
     fixture_open(&fixture, DFC_FILE_TYPE_STANDARD_DATA, true);
-    fixture.counter_file->sdm_access_rights = 0xEFF1;
-    fixture.counter_file->sdm_read_counter = 0x563412;
+    fixture.counter_file->state.data.sdm.access_rights = 0xEFF1;
+    fixture.counter_file->state.data.sdm_read_counter = 0x563412;
     DfcFile* value = add_pending_value_transaction(&fixture);
 
     install_ev2_session(&fixture, 1);
@@ -480,7 +482,7 @@ static MunitResult
     command[6] ^= 0x80;
 
     assert_status(&fixture, command, sizeof(command), DFC_STATUS_INTEGRITY_ERROR);
-    munit_assert_uint32(fixture.counter_file->sdm_read_counter, ==, 0x563412);
+    munit_assert_uint32(fixture.counter_file->state.data.sdm_read_counter, ==, 0x563412);
     munit_assert_false(emulator->ev2_session_active);
     munit_assert_uint16(emulator->ev2_command_counter, ==, 0);
     assert_transaction_aborted(value);
@@ -494,7 +496,7 @@ static MunitResult
     (void)user_data;
     CounterFixture fixture;
     fixture_open(&fixture, DFC_FILE_TYPE_STANDARD_DATA, true);
-    fixture.counter_file->sdm_access_rights = 0xEFF1;
+    fixture.counter_file->state.data.sdm.access_rights = 0xEFF1;
     DfcFile* value = add_pending_value_transaction(&fixture);
     install_ev2_session(&fixture, 0);
 

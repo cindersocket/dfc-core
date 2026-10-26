@@ -1,20 +1,24 @@
 # Release procedure
 
-dfc-core releases are cut manually from a clean `master` checkout. Version 2.0
-uses source-only distribution for 2.0, backed by reproducible archives,
-checksums, and source-consumption gates.
+dfc-core releases are cut from a clean `master` checkout. Source archives and
+every supported binding package are built from the same validated commit. The
+complete contract is in `release-artifacts.json`.
 
 ## Version 2.0 artifact contract
 
-The published GitHub release contains exactly these three assets:
+The GitHub release contains the complete verified artifact bundle, including:
 
 - `dfc-core-$version.tar.gz`
 - `dfc-core-$version.zip`
 - `SHA256SUMS`
+- native archives for every supported desktop target;
+- Python wheels and a source distribution;
+- Rust crate archives;
+- Java, JNI classifier, and Android artifacts; and
+- the NuGet package and symbols.
 
 The repository version governs every build. CI produces the following
-validation outputs from both source archives and exercises their consumer entry
-points. They remain source-build outputs for version 2.0:
+artifacts from both source archives and exercises their consumer entry points:
 
 - native libraries through CMake on the platforms in the `native` CI matrix;
 - the four-ABI Android AAR and sample APK through the checked-in Gradle wrapper;
@@ -35,6 +39,7 @@ points. They remain source-build outputs for version 2.0:
    ```sh
    ./scripts/check-format.sh
    python3 tests/test_check_docs.py
+python3 tests/test_binding_documentation_ci.py
    python3 tests/test_check_stack_usage.py
    python3 tests/test_ci_unit_workflow.py
    python3 tests/test_check_version.py
@@ -69,6 +74,7 @@ points. They remain source-build outputs for version 2.0:
 
    ```sh
    cargo test --workspace
+   ./scripts/check-binding-examples.sh
    cargo clippy --workspace --all-targets -- -D warnings
    dotnet test bindings/dotnet/Dfc.sln -c Release
    (cd bindings/python && uv run --frozen --extra test pytest)
@@ -144,24 +150,41 @@ done
 
 The gate requires matching archive contents under the versioned root, verifies
 every supported source entry point, extracts each format independently, and
-builds and uses each entry point from both extracted trees. Version 2.0 ships
-the two source archives and `SHA256SUMS` as its complete release asset set.
+builds and uses each entry point from both extracted trees. The release
+workflow combines those archives with the installable binding packages.
 
-## 4. Publish the GitHub release
+## 4. Build and publish packages
 
-Use the matching changelog section as the release notes, state that version 2.0
-ships source archives and checksums, and attach exactly the verified artifacts:
+Run the release workflow against the signed tag with `publish` disabled first.
+It builds and installs every package, checks the complete artifact inventory,
+creates checksums and provenance, and uploads one immutable validation bundle.
+
+After that run passes, approve the protected release environments and rerun the
+same tag with `publish` enabled. Registry jobs publish the already verified
+artifacts. PyPI, NuGet, and crates.io use trusted publishing. Maven Central
+credentials are scoped to its own environment. The workflow publishes the
+verified Rust crate archives in dependency order and uploads one signed Maven
+Central bundle.
+
+Start both passes explicitly against the signed tag:
 
 ```sh
-gh release create "v$version" \
-  "dist/v$version/dfc-core-$version.tar.gz" \
-  "dist/v$version/dfc-core-$version.zip" \
-  "dist/v$version/SHA256SUMS" \
-  --verify-tag --title "dfc-core $version" --notes-file release-notes.md
+gh workflow run release.yml --ref "v$version" -f publish=false
+gh run watch --exit-status
+gh workflow run release.yml --ref "v$version" -f publish=true
+gh run watch --exit-status
 gh release view "v$version"
 ```
 
-Download and verify the three published assets before announcing the release:
+For the first release of the two new crates.io packages only, place a
+crate-scoped token in the protected `crates-io` environment as
+`CARGO_BOOTSTRAP_TOKEN` and add `-f bootstrap_crates=true` to the publishing
+run. crates.io requires this initial publication before its trusted publisher
+can be registered. Remove the token and register `release.yml` for both crates
+immediately afterward. All later releases leave `bootstrap_crates=false` and
+use the short-lived identity token.
+
+Download and verify the published bundle before announcing the release:
 
 ```sh
 mkdir -p "dist/verify-v$version"

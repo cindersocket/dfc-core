@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+RUST_EXAMPLE_MANIFEST = ROOT / "examples" / "rust-virtual-picc" / "Cargo.toml"
 MATRIX_KEYS = ("label", "backend", "sanitize", "cc", "release", "packages")
 
 
@@ -16,12 +18,18 @@ def workflow_text() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
 
 
-def unit_job() -> str:
+def workflow_job(name: str) -> str:
     workflow = workflow_text()
-    match = re.search(r"(?ms)^  unit:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow)
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow
+    )
     if match is None:
-        raise AssertionError("unit job not found")
+        raise AssertionError(f"{name} job not found")
     return match.group("body")
+
+
+def unit_job() -> str:
+    return workflow_job("unit")
 
 
 def matrix_rows(job: str) -> list[tuple[str, ...]]:
@@ -36,6 +44,13 @@ def matrix_rows(job: str) -> list[tuple[str, ...]]:
 
 
 class UnitWorkflowTests(unittest.TestCase):
+    def test_fuzz_job_installs_the_matching_clang_runtime(self) -> None:
+        workflow = workflow_text()
+        fuzz = re.search(r"(?ms)^  fuzz:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow)
+
+        self.assertIsNotNone(fuzz)
+        self.assertIn("clang libclang-rt-18-dev libmbedtls-dev", fuzz.group("body"))
+
     def test_pull_requests_run_once_and_superseded_runs_are_cancelled(self) -> None:
         workflow = workflow_text()
 
@@ -118,6 +133,26 @@ class UnitWorkflowTests(unittest.TestCase):
 
         self.assertIn("- name: Run unit suite\n        timeout-minutes: 20", job)
         self.assertIn(f"run: {command}", job)
+
+    def test_rust_example_command_has_an_unambiguous_default_binary(self) -> None:
+        manifest = tomllib.loads(RUST_EXAMPLE_MANIFEST.read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["package"].get("default-run"), manifest["package"]["name"])
+        self.assertIn(
+            "cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- "
+            "examples/credentials/v6-minimal.dfcb",
+            workflow_text(),
+        )
+
+    def test_rust_jobs_use_the_pinned_arm_toolchain(self) -> None:
+        workflow = workflow_text()
+        pinned_toolchain = (
+            "carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1"
+        )
+
+        self.assertEqual(workflow_job("rust").count(pinned_toolchain), 1)
+        self.assertEqual(workflow_job("rust-msrv").count(pinned_toolchain), 1)
+        self.assertNotIn("apt-get install -y gcc-arm-none-eabi", workflow)
 
 
 if __name__ == "__main__":

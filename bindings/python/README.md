@@ -5,6 +5,12 @@ virtual-card emulation, and reader-side command exchange. Protocol processing,
 cryptography, credential validation, and secure messaging stay in the native
 dfc-core library.
 
+Install the wheel, which carries the matching native library:
+
+```sh
+python -m pip install dfc-core==2.0.0
+```
+
 ## Install and load the native library
 
 Build from the repository root while developing:
@@ -29,7 +35,7 @@ all shared fields and binding-visible numeric constants.
 
 ## Run a complete exchange
 
-The repository's [virtual-card example](../../examples/python/README.md) loads a
+The repository's [virtual-card example](https://github.com/cindersocket/dfc-core/tree/master/examples/python) loads a
 credential, activates it, selects an application, and reads a data file through
 the public reader API:
 
@@ -88,6 +94,11 @@ operation already in progress finishes before its native handle is released.
 Calls on one handle are serialized. A physical transport remains responsible for
 its own thread safety.
 
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).
+
 ## Reader commands and errors
 
 Use the named `Command` constructors for common operations, such as
@@ -116,6 +127,24 @@ wiped after use. Python cannot wipe immutable `bytes` supplied by an application
 so applications with strict secret-lifetime requirements should avoid retaining
 extra immutable copies.
 
+## Backend verification
+
+The binding exposes the core's key diversification, typed response decoders,
+SDM verification, and Transaction MAC verifier. `verify_sdm` publishes mirrored
+fields only after authentication. `TransactionMacVerifier` accepts structured
+operations in card order and owns its native key and transcript until closed.
+The binding wipes its mutable ctypes copies of keys, transaction inputs, MACs,
+and decrypted SDM data after each native call. Returned immutable `bytes` remain
+owned by the application.
+Replay detection and transaction-counter persistence remain application policy.
+The [native transaction-input contract](../../src/dfc_transaction_mac.h)
+defines the supported commands, fields, padding, and ordering used unchanged by
+these methods.
+
+See [`examples/python/verify_backend.py`](https://github.com/cindersocket/dfc-core/blob/master/examples/python/verify_backend.py)
+for captured SDM verification plus an actual virtual-card transaction, decoded
+file settings, commit response parsing, and receipt verification.
+
 ## Verify the binding
 
 With `DFC_LIBRARY_PATH` set to the shared library:
@@ -129,6 +158,7 @@ MYPYPATH=bindings/python/src \
   uv run --project bindings/python mypy \
   --config-file bindings/python/pyproject.toml examples/python/virtual_card.py
 uv run --project bindings/python pytest bindings/python/tests
+python3 scripts/check-docs.py
 ```
 
 ## Secret lifetime

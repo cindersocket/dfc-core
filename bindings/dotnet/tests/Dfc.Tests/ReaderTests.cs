@@ -1,6 +1,8 @@
 namespace Dfc.Tests;
 
 using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpFunctionalExtensions;
@@ -12,6 +14,24 @@ using NUnit.Framework;
 [TestFixture]
 public sealed class ReaderTests
 {
+    [Test]
+    public void InactiveSession_UsesNullForFieldsWithoutMeaning()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        using var reader = new DfcReader(picc);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reader.Session.Kind, Is.EqualTo(DfcSessionKind.None));
+            Assert.That(reader.Session.KeyNo, Is.Null);
+            Assert.That(reader.Session.Ev2CommandCounter, Is.Null);
+            Assert.That(reader.Session.Ev2TransactionIdentifier, Is.Null);
+            Assert.That(reader.Session.Ev2CardCapabilities, Is.Null);
+            Assert.That(reader.Session.Ev2ReaderCapabilities, Is.Null);
+            Assert.That(picc.Snapshot().AuthenticatedKeyNo, Is.Null);
+        });
+    }
+
     private static async Task ExerciseFilesAsync(DfcReader reader)
     {
         foreach (var (file, mode) in new[]
@@ -186,6 +206,19 @@ public sealed class ReaderTests
     }
 
     [Test]
+    public async Task ChainedExchange_ReusesOneOutgoingFrameBuffer()
+    {
+        using var picc = Fixtures.Picc(Fixtures.Credential());
+        var recorder = new Recorder(picc);
+        using var reader = new DfcReader(recorder);
+
+        Fixtures.Ok(await reader.ExchangeAsync(DfcCommand.GetVersion()));
+
+        Assert.That(recorder.FrameBuffers, Has.Count.GreaterThan(1));
+        Assert.That(recorder.FrameBuffers, Is.All.SameAs(recorder.FrameBuffers[0]));
+    }
+
+    [Test]
     public async Task ScriptedRandomness_ReplaysTheSameWire()
     {
         async Task<byte[]> Session()
@@ -282,6 +315,8 @@ public sealed class ReaderTests
     {
         public System.Collections.Generic.List<byte> Wire { get; } = [];
 
+        public List<byte[]> FrameBuffers { get; } = [];
+
         public bool Fail { get; set; }
 
         public async ValueTask<Result<byte[], DfcProtocolError>> TransmitAsync(
@@ -294,6 +329,8 @@ public sealed class ReaderTests
                 return DfcProtocolError.Transport("The link dropped.");
             }
 
+            Assert.That(MemoryMarshal.TryGetArray(frame, out var segment), Is.True);
+            FrameBuffers.Add(segment.Array!);
             Wire.AddRange(frame.ToArray());
             var answer = await inner.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
             if (answer.IsSuccess)

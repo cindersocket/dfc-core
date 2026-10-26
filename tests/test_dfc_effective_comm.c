@@ -59,7 +59,9 @@ static void set_native_authentication(
     memset(secure_messaging, 0, sizeof(*secure_messaging));
     secure_messaging->cipher = DFC_CMD_AUTHENTICATE_AES;
     emulator->secure_messaging = secure_messaging;
+    emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     emulator->auth_key_no = key_no;
+    munit_assert_true(dfc_emulator_native_authentication_active(emulator));
 }
 
 static MunitResult
@@ -377,6 +379,60 @@ static MunitResult
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
 }
+
+static MunitResult test_ev2_direct_retry_preserves_overlapping_response(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = open_file(&credential, DFC_COMM_MAC, 0xE000, 0x69);
+    DfcEmulator* emulator = session->emulator;
+    emulator->ev2_session_active = true;
+    emulator->ev2_authenticated_key_no = 0;
+    emulator->ev2_command_counter = 4;
+
+    uint8_t command[8 + DFC_WIRE_MAC_LENGTH] = {DFC_CMD_READ_DATA, 1, 0, 0, 0, 4, 0, 0};
+    munit_assert_true(dfc_ev2_mac(
+        emulator->ev2_session_mac_key,
+        command[0],
+        emulator->ev2_command_counter,
+        emulator->ev2_transaction_identifier,
+        command + 1,
+        7,
+        NULL,
+        0,
+        command + 8));
+
+    uint8_t response[32];
+    size_t response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, command, sizeof(command), response, 1, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(response_len, ==, 0);
+    munit_assert_uint16(emulator->ev2_command_counter, ==, 5);
+
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            session, command, sizeof(command), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 1 + 4 + DFC_WIRE_MAC_LENGTH);
+    munit_assert_uint8(response[0], ==, DFC_STATUS_OK);
+    munit_assert_memory_equal(4, response + 1, ((uint8_t[]){0x69, 0x69, 0x69, 0x69}));
+    munit_assert_uint16(emulator->ev2_command_counter, ==, 5);
+    munit_assert_memory_equal(
+        sizeof(session->emulator->tx_buffer->data),
+        session->emulator->tx_buffer->data,
+        ((uint8_t[sizeof(session->emulator->tx_buffer->data)]){0}));
+    munit_assert_size(session->emulator->tx_buffer->size_bytes, ==, 0);
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
 #endif
 
 static MunitResult test_ev1_e110_free_read_is_plain(const MunitParameter params[], void* data) {
@@ -389,7 +445,9 @@ static MunitResult test_ev1_e110_free_read_is_plain(const MunitParameter params[
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     munit_assert_not_null(session->emulator->secure_messaging);
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     session->emulator->auth_key_no = 0;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
     const uint8_t read[] = {0x90, DFC_CMD_READ_DATA, 0, 0, 7, 1, 0, 0, 0, 4, 0, 0, 0};
     uint8_t response[64];
@@ -465,6 +523,12 @@ static MunitTest tests[] = {
      NULL},
     {"/chained-effective-plain-counts-once",
      test_chained_effective_plain_counts_once,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev2-direct-retry-preserves-overlapping-response",
+     test_ev2_direct_retry_preserves_overlapping_response,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

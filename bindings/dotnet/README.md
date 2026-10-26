@@ -4,13 +4,33 @@
 and reader-side secure messaging. Protocol behavior runs in the native DFC
 core; the managed layer owns resources and adapts transports.
 
+Install the package, which selects its native library from `runtimes/`:
+
+```xml
+<PackageReference Include="Dfc" Version="2.0.0" />
+```
+
 ## API map
 
 | Namespace | Purpose |
 |---|---|
 | `Dfc.Credentials` | Read, validate, and write `.dfc` text and `.dfcb` octets |
 | `Dfc.Emulation` | Activate and transceive with `DfcVirtualPicc` |
-| `Dfc.Reader` | Drive a virtual or physical card through `IDfcApduExchange` |
+| `Dfc.Reader` | Drive a card and decode clear responses into typed records |
+| `Dfc.Crypto` | Derive AES and two- or three-key TDEA application keys |
+| `Dfc.Sdm` | Authenticate ASCII SDM input and return verified mirrored fields |
+| `Dfc.Transactions` | Reconstruct transaction input and verify its returned receipt |
+
+Raw `DfcResponse` values remain available to applications that need commands
+outside the typed decoder set. `DfcSdmVerifier.Verify` authenticates one
+message. The backend must persist the last accepted read counter for the
+relevant card and application context, then reject duplicate or older counters
+before acting on the result. The binding does not store replay state.
+
+`DfcTransactionMacVerifier` follows the
+[native transaction-input contract](../../src/dfc_transaction_mac.h) for its
+supported commands, fields, padding, and card-order rules. Receipt counter
+history and duplicate detection remain application policy.
 
 ## Load and transceive
 
@@ -50,7 +70,7 @@ For deterministic tests, pass a `DfcScriptedRandomSource` to
 bytes before a new replay segment is appended. A request larger than the queue
 fails without consuming bytes.
 
-The runnable [.NET example](../../examples/dotnet/README.md) validates a
+The runnable [.NET example](https://github.com/cindersocket/dfc-core/tree/master/examples/dotnet) validates a
 credential, activates a virtual card, and performs a multi-frame `GetVersion`
 exchange through the public reader and transport APIs.
 
@@ -67,6 +87,10 @@ dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj \
   -- examples/credentials/v6-minimal.dfcb
 ```
 
+The production project generates XML documentation and treats missing public
+API documentation (`CS1591`) as an error, so the normal Release test build is
+also the binding documentation gate.
+
 Set `DfcNativeDirectory` if the native build is elsewhere. Published packages
 place the library under `runtimes/<RID>/native`; local builds copy it beside the
 test or example assembly. The assembly verifies the complete generated native
@@ -80,3 +104,8 @@ it promptly to clear its managed buffers. The runtime may retain copies created
 by application code. Credential records expose mutable `byte[]` fields whose
 lifetime belongs to the caller; native marshalling temporaries are cleared on
 every exit.
+
+## Security
+
+Report suspected vulnerabilities through the project's
+[private reporting process](https://github.com/cindersocket/dfc-core/security/policy).

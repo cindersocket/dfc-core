@@ -3,13 +3,20 @@ use core::{alloc::Layout, mem::MaybeUninit, ptr::NonNull};
 
 use dfc_core_sys as sys;
 
+use crate::{PiccAuthenticationMode, Selection};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Error returned by the allocation-free target-facing API.
 pub enum TargetError {
+    /// An input, output buffer, or native layout value is invalid.
     InvalidArgument,
+    /// Storage for a credential or virtual card could not be allocated.
     OutOfMemory,
+    /// The target API failed with this native status code.
     Native(i32),
 }
 
+/// Result error used by target-role operations.
 pub type Error = TargetError;
 
 fn layout(value: sys::DfcTargetLayout) -> Result<Layout, Error> {
@@ -24,18 +31,26 @@ fn checked(status: i32) -> Result<(), Error> {
     }
 }
 
+/// Owned credential storage for a `role-target` build.
+///
+/// The credential is destroyed and its allocation released on drop.
 pub struct TargetCredential {
     storage: NonNull<u8>,
     layout: Layout,
 }
 
+// SAFETY: target credential storage is uniquely owned by this wrapper and the
+// native API does not retain thread-local pointers into it.
 unsafe impl Send for TargetCredential {}
 
 impl TargetCredential {
+    /// Decodes a binary credential into target-owned storage.
     pub fn decode(content: &[u8]) -> Result<Self, Error> {
         let layout = layout(unsafe { sys::dfc_target_credential_layout() })?;
         let storage = NonNull::new(unsafe { alloc_zeroed(layout) }).ok_or(Error::OutOfMemory)?;
-        unsafe { sys::dfc_target_credential_init(storage.as_ptr().cast()) };
+        // The decoder establishes the credential defaults before publishing any
+        // fields and clears every failure. Starting from zeroed storage also
+        // covers malformed inputs rejected before that initialization point.
         if let Err(error) = checked(unsafe {
             sys::dfc_target_credential_decode(
                 storage.as_ptr().cast(),
@@ -52,10 +67,12 @@ impl TargetCredential {
         Ok(Self { storage, layout })
     }
 
+    /// Revalidates all model invariants.
     pub fn validate(&self) -> Result<(), Error> {
         checked(unsafe { sys::dfc_target_credential_validate(self.storage.as_ptr().cast()) })
     }
 
+    /// Returns the exact number of bytes required by [`Self::encode_into`].
     pub fn encoded_len(&self) -> Result<usize, Error> {
         let mut len = 0;
         checked(unsafe {
@@ -69,6 +86,10 @@ impl TargetCredential {
         Ok(len)
     }
 
+    /// Encodes the credential into caller-owned storage.
+    ///
+    /// Returns the number of bytes written. A short buffer is reported as a
+    /// native error and is not partially published.
     pub fn encode_into(&self, output: &mut [u8]) -> Result<usize, Error> {
         let mut len = output.len();
         checked(unsafe {
@@ -92,9 +113,81 @@ impl Drop for TargetCredential {
     }
 }
 
+/// Activation parameters produced by the target virtual card.
 pub struct TargetActivation(pub sys::DfcTargetActivation);
-pub struct TargetSnapshot(pub sys::DfcTargetSnapshot);
+/// Public state snapshot produced by the target virtual card.
+pub struct TargetSnapshot(sys::DfcTargetSnapshot);
 
+impl TargetSnapshot {
+    /// Returns the current selection level.
+    pub fn selection(&self) -> Selection {
+        match self.0.selected {
+            0 => Selection::None,
+            1 => Selection::Picc,
+            2 => Selection::Application,
+            _ => unreachable!("native PICC returned an invalid selection state"),
+        }
+    }
+
+    /// Returns the selected model index and AID, or `None` outside application selection.
+    ///
+    /// The AID is in credential-model order, most-significant octet first.
+    pub fn selected_application(&self) -> Option<(u32, &[u8; 3])> {
+        (self.selection() == Selection::Application)
+            .then_some((self.0.selected_application_index, &self.0.selected_aid))
+    }
+
+    /// Returns whether persistent card state has changed since export.
+    pub fn is_dirty(&self) -> bool {
+        self.0.dirty != 0
+    }
+
+    /// Returns the active native authentication cipher, or `None` while unauthenticated.
+    pub fn authentication(&self) -> Option<PiccAuthenticationMode> {
+        match self.0.auth_mode {
+            0 => None,
+            value if value == PiccAuthenticationMode::Legacy as u8 => {
+                Some(PiccAuthenticationMode::Legacy)
+            }
+            value if value == PiccAuthenticationMode::Iso as u8 => {
+                Some(PiccAuthenticationMode::Iso)
+            }
+            value if value == PiccAuthenticationMode::Aes as u8 => {
+                Some(PiccAuthenticationMode::Aes)
+            }
+            _ => unreachable!("native PICC returned an invalid authentication mode"),
+        }
+    }
+
+    /// Returns the authenticated key number, or `None` while unauthenticated.
+    pub fn authenticated_key_number(&self) -> Option<u8> {
+        self.authentication().map(|_| self.0.auth_key_no)
+    }
+
+    /// Returns the EV2 command counter, or `None` outside EV2.
+    pub fn ev2_command_counter(&self) -> Option<u32> {
+        (self.0.ev2_active != 0).then_some(self.0.ev2_command_counter)
+    }
+
+    /// Returns the EV2 key number, or `None` outside EV2.
+    pub fn ev2_key_number(&self) -> Option<u8> {
+        (self.0.ev2_active != 0).then_some(self.0.ev2_key_no)
+    }
+
+    /// Returns whether virtual-card selection completed.
+    pub fn virtual_card_selected(&self) -> bool {
+        self.0.virtual_card_selected != 0
+    }
+
+    /// Returns whether proximity verification completed.
+    pub fn proximity_verified(&self) -> bool {
+        self.0.proximity_verified != 0
+    }
+}
+
+/// Virtual card backed by Rust-owned native storage for `role-target` builds.
+///
+/// The card owns its credential and releases both allocations on drop.
 pub struct TargetVirtualPicc {
     raw: NonNull<sys::DfcTargetPicc>,
     storage: NonNull<u8>,
@@ -102,9 +195,12 @@ pub struct TargetVirtualPicc {
     credential: TargetCredential,
 }
 
+// SAFETY: the native handle and its backing allocation are uniquely owned, and
+// every state-changing operation requires `&mut self`.
 unsafe impl Send for TargetVirtualPicc {}
 
 impl TargetVirtualPicc {
+    /// Creates a virtual card and takes ownership of `credential`.
     pub fn new(credential: TargetCredential) -> Result<Self, Error> {
         credential.validate()?;
         let layout = layout(unsafe { sys::dfc_target_picc_layout() })?;
@@ -132,16 +228,21 @@ impl TargetVirtualPicc {
         })
     }
 
+    /// Starts a new RF activation and returns its transport parameters.
     pub fn activate(&mut self) -> Result<TargetActivation, Error> {
         let mut value = MaybeUninit::uninit();
         checked(unsafe { sys::dfc_target_picc_activate(self.raw.as_ptr(), value.as_mut_ptr()) })?;
         Ok(TargetActivation(unsafe { value.assume_init() }))
     }
 
+    /// Exchanges one complete native or ISO-wrapped command.
+    ///
+    /// The returned value is the number of response bytes written.
     pub fn exchange_into(&mut self, command: &[u8], response: &mut [u8]) -> Result<usize, Error> {
         self.exchange_inner(command, response, false)
     }
 
+    /// Exchanges one ISO-DEP frame and writes the response frame in place.
     pub fn frame_exchange_into(
         &mut self,
         frame: &[u8],
@@ -182,23 +283,29 @@ impl TargetVirtualPicc {
         Ok(len)
     }
 
+    /// Ends the RF field and clears protocol and authentication state.
     pub fn field_off(&mut self) -> Result<(), Error> {
         checked(unsafe { sys::dfc_target_picc_field_off(self.raw.as_ptr()) })
     }
+    /// Resets transport state while retaining the credential model.
     pub fn reset_protocol(&mut self) -> Result<(), Error> {
         checked(unsafe { sys::dfc_target_picc_reset_protocol(self.raw.as_ptr()) })
     }
+    /// Advances the virtual card's monotonic clock by `milliseconds`.
     pub fn advance_time(&mut self, milliseconds: u32) -> Result<(), Error> {
         checked(unsafe { sys::dfc_target_picc_advance_time(self.raw.as_ptr(), milliseconds) })
     }
+    /// Marks the current credential state as persisted by the caller.
     pub fn mark_persisted(&mut self) -> Result<(), Error> {
         checked(unsafe { sys::dfc_target_picc_mark_persisted(self.raw.as_ptr()) })
     }
+    /// Returns a public, non-secret state snapshot.
     pub fn snapshot(&self) -> Result<TargetSnapshot, Error> {
         let mut value = MaybeUninit::uninit();
         checked(unsafe { sys::dfc_target_picc_snapshot(self.raw.as_ptr(), value.as_mut_ptr()) })?;
         Ok(TargetSnapshot(unsafe { value.assume_init() }))
     }
+    /// Borrows the credential owned by this virtual card.
     pub fn credential(&self) -> &TargetCredential {
         &self.credential
     }

@@ -1,3 +1,9 @@
+"""Private ctypes layouts, library loading, and checked scalar conversion.
+
+Function declarations live in the named registries beside this module.  This
+module remains the compatibility facade imported by the public binding.
+"""
+
 from __future__ import annotations
 
 import ctypes as C
@@ -23,6 +29,9 @@ OK, INVALID_ARGUMENT, BUFFER_TOO_SMALL, OUT_OF_MEMORY, UNSUPPORTED, RANDOM_FAILE
 )
 OWNER_PICC = LAYOUT_VALUES["DFC_FFI_OWNER_PICC"]
 PICC_BUFFER_TOO_SMALL = LAYOUT_VALUES["DFC_FFI_PICC_BUFFER_TOO_SMALL"]
+READER_PENDING = LAYOUT_VALUES["DFC_FFI_READER_PENDING"]
+READER_BUFFER_TOO_SMALL = LAYOUT_VALUES["DFC_FFI_READER_BUFFER_TOO_SMALL"]
+READER_CARD_ERROR = LAYOUT_VALUES["DFC_FFI_READER_CARD_ERROR"]
 MESSAGE_MAX = LAYOUT_VALUES["DFC_FFI_MESSAGE_MAX"]
 AUTH_AES = LAYOUT_VALUES["DFC_FFI_AUTH_AES"]
 ISO_AUTH_TDEA2 = LAYOUT_VALUES["DFC_FFI_ISO_AUTH_TDEA2"]
@@ -375,210 +384,12 @@ def _library_candidates() -> list[Path | str]:
 
 
 def _declare(lib: C.CDLL) -> None:
-    lib.dfc_ffi_abi_version.restype = C.c_uint32
+    from ._native_signatures import declare
+
     try:
-        lib.dfc_ffi_layout_fingerprint.restype = C.c_uint64
+        declare(lib, globals())
     except AttributeError as error:
-        raise ImportError("dfc native library has no layout fingerprint") from error
-    lib.dfc_ffi_struct_sizes.argtypes = [C.POINTER(StructSizes)]
-    lib.dfc_ffi_capabilities.argtypes = [C.POINTER(Capabilities)]
-    for name in ("credential_free", "picc_free"):
-        getattr(lib, f"dfc_ffi_{name}").argtypes = [Handle]
-    # Pointer-heavy calls use explicit signatures where ctypes conversion matters.
-    lib.dfc_ffi_credential_parse_text.argtypes = [
-        C.c_char_p,
-        C.c_size_t,
-        C.POINTER(Handle),
-        C.POINTER(Error),
-    ]
-    lib.dfc_ffi_credential_decode.argtypes = [P8, C.c_size_t, C.POINTER(Handle), C.POINTER(Error)]
-    lib.dfc_ffi_credential_load.argtypes = lib.dfc_ffi_credential_decode.argtypes
-    for n in ("encode", "write_text"):
-        getattr(lib, f"dfc_ffi_credential_{n}").argtypes = [
-            Handle,
-            C.c_void_p,
-            C.c_size_t,
-            C.POINTER(C.c_size_t),
-        ]
-    lib.dfc_ffi_credential_validate.argtypes = [Handle]
-    lib.dfc_ffi_credential_get_card.argtypes = [Handle, C.POINTER(Card)]
-    lib.dfc_ffi_credential_get_picc.argtypes = [Handle, C.POINTER(PiccSettings)]
-    for n in ("application_count", "file_count"):
-        getattr(lib, f"dfc_ffi_credential_{n}").argtypes = [Handle]
-        getattr(lib, f"dfc_ffi_credential_{n}").restype = C.c_uint32
-    lib.dfc_ffi_credential_get_application.argtypes = [Handle, C.c_uint32, C.POINTER(Application)]
-    lib.dfc_ffi_credential_get_file.argtypes = [Handle, C.c_uint32, C.POINTER(File)]
-    lib.dfc_ffi_credential_get_file_data.argtypes = [
-        Handle,
-        C.c_uint32,
-        P8,
-        C.c_size_t,
-        C.POINTER(C.c_size_t),
-    ]
-    lib.dfc_ffi_credential_get_key.argtypes = [
-        Handle,
-        C.c_int32,
-        C.c_uint32,
-        C.c_uint32,
-        C.POINTER(Key),
-    ]
-    # A void pointer permits NULL as well as a live CFUNCTYPE callback.
-    lib.dfc_ffi_picc_create.argtypes = [Handle, C.c_void_p, C.c_void_p, C.POINTER(Handle)]
-    for name, typ in (
-        ("activate", Activation),
-        ("snapshot", Snapshot),
-        ("diagnostic_snapshot", DiagnosticSnapshot),
-    ):
-        getattr(lib, f"dfc_ffi_picc_{name}").argtypes = [Handle, C.POINTER(typ)]
-    for name in ("exchange", "frame_exchange"):
-        getattr(lib, f"dfc_ffi_picc_{name}").argtypes = [
-            Handle,
-            P8,
-            C.c_size_t,
-            P8,
-            C.c_size_t,
-            C.POINTER(C.c_size_t),
-        ]
-    lib.dfc_ffi_picc_response_capacity.argtypes = []
-    lib.dfc_ffi_picc_response_capacity.restype = C.c_size_t
-    lib.dfc_ffi_picc_export.argtypes = [Handle, C.POINTER(Handle)]
-    lib.dfc_ffi_picc_advance_time.argtypes = [Handle, C.c_uint32]
-    lib.dfc_ffi_reader_session_new.argtypes = [C.POINTER(Handle)]
-    lib.dfc_ffi_reader_session_new.restype = C.c_int32
-    lib.dfc_ffi_reader_session_free.argtypes = [Handle]
-    lib.dfc_ffi_reader_session_free.restype = None
-    lib.dfc_ffi_reader_session_clear.argtypes = [Handle]
-    lib.dfc_ffi_reader_session_clear.restype = None
-    lib.dfc_ffi_reader_session_state.argtypes = [Handle, C.POINTER(ReaderState)]
-    lib.dfc_ffi_reader_session_state.restype = C.c_int32
-    lib.dfc_ffi_reader_exchange_new.argtypes = [C.POINTER(Handle)]
-    lib.dfc_ffi_reader_exchange_new.restype = C.c_int32
-    lib.dfc_ffi_reader_exchange_free.argtypes = [Handle]
-    lib.dfc_ffi_reader_exchange_free.restype = None
-    lib.dfc_ffi_reader_authenticate_begin.argtypes = [
-        Handle,
-        Handle,
-        C.c_uint32,
-        C.c_uint8,
-        C.c_uint8,
-        P8,
-        C.c_size_t,
-        P8,
-        C.c_size_t,
-    ]
-    lib.dfc_ffi_reader_authenticate_begin.restype = C.c_int32
-    lib.dfc_ffi_reader_authenticate_iso7816_begin.argtypes = [
-        Handle,
-        Handle,
-        C.c_uint8,
-        P8,
-        C.c_size_t,
-        C.c_uint8,
-        P8,
-        P8,
-        C.c_size_t,
-    ]
-    lib.dfc_ffi_reader_authenticate_iso7816_begin.restype = C.c_int32
-    lib.dfc_ffi_reader_authenticate_ev2_begin.argtypes = [
-        Handle,
-        Handle,
-        C.c_uint32,
-        C.c_uint8,
-        C.c_uint8,
-        P8,
-        P8,
-        P8,
-        C.c_size_t,
-    ]
-    lib.dfc_ffi_reader_authenticate_ev2_begin.restype = C.c_int32
-    lib.dfc_ffi_reader_exchange_begin.argtypes = [
-        Handle,
-        Handle,
-        C.c_uint32,
-        C.c_uint8,
-        P8,
-        C.c_size_t,
-        C.c_uint8,
-        C.c_int32,
-    ]
-    lib.dfc_ffi_reader_exchange_begin.restype = C.c_int32
-    for name in ("write_data", "write_record"):
-        function = getattr(lib, f"dfc_ffi_reader_{name}_begin")
-        function.argtypes = [
-            Handle,
-            Handle,
-            C.c_uint32,
-            C.c_uint8,
-            C.c_uint32,
-            P8,
-            C.c_size_t,
-            C.c_uint8,
-        ]
-        function.restype = C.c_int32
-    lib.dfc_ffi_reader_update_record_begin.argtypes = [
-        Handle,
-        Handle,
-        C.c_uint32,
-        C.c_uint8,
-        C.c_uint32,
-        C.c_uint32,
-        P8,
-        C.c_size_t,
-        C.c_uint8,
-    ]
-    lib.dfc_ffi_reader_update_record_begin.restype = C.c_int32
-    lib.dfc_ffi_reader_create_delegated_application_begin.argtypes = [
-        Handle,
-        Handle,
-        C.c_uint32,
-        P8,
-        C.c_size_t,
-        P8,
-        P8,
-        P8,
-        P8,
-        C.c_size_t,
-        C.c_uint8,
-    ]
-    lib.dfc_ffi_reader_create_delegated_application_begin.restype = C.c_int32
-    lib.dfc_ffi_reader_step.argtypes = [
-        Handle,
-        P8,
-        C.c_size_t,
-        P8,
-        C.c_size_t,
-        C.POINTER(C.c_size_t),
-    ]
-    lib.dfc_ffi_reader_step.restype = C.c_int32
-    lib.dfc_ffi_reader_result_data.argtypes = [Handle, P8, C.c_size_t, C.POINTER(C.c_size_t)]
-    lib.dfc_ffi_reader_result_data.restype = C.c_int32
-    lib.dfc_ffi_reader_result_status.argtypes = [Handle]
-    lib.dfc_ffi_reader_result_status.restype = C.c_uint8
-    lib.dfc_ffi_reader_change_key_cryptogram.argtypes = [
-        Handle,
-        C.c_uint8,
-        P8,
-        C.c_size_t,
-        P8,
-        C.c_uint8,
-        C.c_uint8,
-        P8,
-        C.c_size_t,
-        C.POINTER(C.c_size_t),
-    ]
-    lib.dfc_ffi_reader_change_key_cryptogram.restype = C.c_int32
-    lib.dfc_ffi_reader_change_key_ev2_data.argtypes = [
-        Handle,
-        C.c_uint8,
-        C.c_uint8,
-        P8,
-        P8,
-        C.c_uint8,
-        P8,
-        C.c_size_t,
-        C.POINTER(C.c_size_t),
-    ]
-    lib.dfc_ffi_reader_change_key_ev2_data.restype = C.c_int32
+        raise ImportError(f"dfc native library is missing {error.name}") from error
 
 
 _loaded: C.CDLL | None = None
@@ -617,13 +428,20 @@ def byte_pointer(data: bytes | bytearray | memoryview) -> tuple[C.Array[C.c_uint
     return array, C.cast(array, P8)
 
 
+def secure_zero(value: C.Array[C.c_uint8]) -> None:
+    """Wipe a temporary native byte array owned by the Python binding."""
+    library().dfc_ffi_secure_zero(C.cast(value, C.c_void_p), C.sizeof(value))
+
+
 def variable_output(call: object, *args: object) -> bytes:
     size = C.c_size_t()
     status = call(*args, None, 0, C.byref(size))  # type: ignore[operator]
     if status not in (OK, BUFFER_TOO_SMALL):
         raise_status(status)
     out = (C.c_uint8 * max(1, size.value))()
-    status = call(*args, out, size.value, C.byref(size))  # type: ignore[operator]
+    output_type = call.argtypes[-3]  # type: ignore[attr-defined]
+    output = C.cast(out, output_type)
+    status = call(*args, output, size.value, C.byref(size))  # type: ignore[operator]
     raise_status(status)
     return bytes(out[: size.value])
 

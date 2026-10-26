@@ -14,6 +14,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dfc\Dfc.csproj" />
+    <None Include="..\..\..\..\tests\command-constructor-vectors.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\..\tests\command-constructor-boundaries.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\..\tests\authentication-boundaries.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The native library from the CMake build, next to the test assembly. -->

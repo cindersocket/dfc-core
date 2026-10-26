@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).with_name("check_desfire_vectors.py")
+ROOT = MODULE_PATH.parent.parent
 SPEC = importlib.util.spec_from_file_location("check_desfire_vectors", MODULE_PATH)
 assert SPEC and SPEC.loader
 CHECKER = importlib.util.module_from_spec(SPEC)
@@ -163,6 +164,31 @@ class DesfireVectorGrammarTests(unittest.TestCase):
         expected = self.write_vector("v4/synthetic/nested/example.vec")
         with patch.object(CHECKER, "VECTOR_ROOT", self.vector_root):
             self.assertEqual(CHECKER.vector_paths(), [expected])
+
+    def test_sdm_verifier_fixtures_are_bound_to_physical_captures(self) -> None:
+        verifier_source = (ROOT / "tests/test_dfc_sdm_verify.c").read_text(encoding="utf-8")
+        captures = (
+            (
+                "hardware_genuine_ev3_sdm_picc_native_iso.vec",
+                "exchange native-apdu 90BD0000070200000030000000",
+                "342FFCCF91C2B0730E2F4735A009A666A63259C3FD050C6E",
+            ),
+            (
+                "hardware_genuine_ev3_sdm_encrypted_file_native_iso.vec",
+                "exchange iso-apdu 00B0000044",
+                "0483B4F2CF1890000001163F0AC4319102F37F4B61FE6BFDE1469CF53E287D682A2E",
+            ),
+        )
+        for filename, command, message in captures:
+            with self.subTest(vector=filename):
+                path = CHECKER.VECTOR_ROOT / "v4" / "hardware" / filename
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("origin: physical-card", text)
+                encoded = message.encode("ascii").hex().upper()
+                status = "9000" if "iso-apdu" in command else "9100"
+                self.assertIn(f"{command} => {encoded}{status}", text)
+                self.assertIn(f"Captured response: {path.relative_to(ROOT)}", verifier_source)
+                self.assertIn(f'"{message}"', verifier_source)
 
 
 if __name__ == "__main__":

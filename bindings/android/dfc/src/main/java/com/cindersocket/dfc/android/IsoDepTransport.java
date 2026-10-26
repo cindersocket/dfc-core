@@ -11,6 +11,12 @@ import java.util.Objects;
 public final class IsoDepTransport implements DfcTransport {
   private final IsoDep isoDep;
 
+  /**
+   * Wraps an Android ISO-DEP connection without taking ownership of it.
+   *
+   * @param isoDep connected tag transport; the caller remains responsible for closing it
+   * @throws NullPointerException if {@code isoDep} is {@code null}
+   */
   public IsoDepTransport(IsoDep isoDep) {
     this.isoDep = Objects.requireNonNull(isoDep, "isoDep");
   }

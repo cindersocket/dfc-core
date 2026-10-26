@@ -51,13 +51,19 @@ public enum DfcIso7816AuthAlgorithm : byte
 }
 
 /// <summary>A reader session's state.</summary>
+/// <param name="Kind">The active authentication family, or None.</param>
+/// <param name="KeyNo">The authenticated key number, or null when unauthenticated.</param>
+/// <param name="Ev2CommandCounter">The command counter, or null outside EV2.</param>
+/// <param name="Ev2TransactionIdentifier">The transaction identifier, or null outside EV2.</param>
+/// <param name="Ev2CardCapabilities">The card capabilities, or null outside EV2.</param>
+/// <param name="Ev2ReaderCapabilities">The reader capabilities, or null outside EV2.</param>
 public sealed record DfcReaderSession(
     DfcSessionKind Kind,
-    byte KeyNo,
-    ushort Ev2CommandCounter,
-    byte[] Ev2TransactionIdentifier,
-    byte[] Ev2CardCapabilities,
-    byte[] Ev2ReaderCapabilities
+    byte? KeyNo,
+    ushort? Ev2CommandCounter,
+    byte[]? Ev2TransactionIdentifier,
+    byte[]? Ev2CardCapabilities,
+    byte[]? Ev2ReaderCapabilities
 );
 
 /// <summary>The card's final status and its clear answer.</summary>
@@ -93,15 +99,16 @@ public sealed record DfcDelegatedApplicationRequest(
 /// </summary>
 public sealed class DfcReader : IDisposable
 {
-    private const int Pending = 1;
-    private const int FrameCapacity = 300;
-    private const int ResultCapacity = 1024;
+    private const int Pending = (int)Native.DFC_FFI_READER_PENDING;
+    private const int BufferTooSmall = (int)Native.DFC_FFI_READER_BUFFER_TOO_SMALL;
+    private const int InitialFrameCapacity = 64;
 
     private readonly IDfcApduExchange transport;
     private readonly IDfcRandomSource random;
     private readonly DfcFraming framing;
     private readonly ReaderHandle session;
     private readonly ReaderHandle exchange;
+    private byte[] frameBuffer = new byte[InitialFrameCapacity];
 
     /// <summary>Creates a reader over <paramref name="transport" />.</summary>
     public DfcReader(IDfcApduExchange transport, DfcFraming framing = DfcFraming.Iso7816, IDfcRandomSource? random = null)
@@ -132,13 +139,15 @@ public sealed class DfcReader : IDisposable
             using var handles = this.AcquireHandles();
             NativeReaderState state;
             _ = Native.dfc_ffi_reader_session_state(handles.Session, &state);
+            var authenticated = state.AuthMode != 0;
+            var ev2 = state.AuthMode == Native.DFC_FFI_AUTH_EV2;
             return new DfcReaderSession(
                 (DfcSessionKind)state.AuthMode,
-                state.KeyNo,
-                (ushort)state.Ev2CommandCounter,
-                new ReadOnlySpan<byte>(state.Ev2TransactionIdentifier, 4).ToArray(),
-                new ReadOnlySpan<byte>(state.Ev2CardCapabilities, 6).ToArray(),
-                new ReadOnlySpan<byte>(state.Ev2ReaderCapabilities, 6).ToArray()
+                authenticated ? state.KeyNo : null,
+                ev2 ? (ushort)state.Ev2CommandCounter : null,
+                ev2 ? new ReadOnlySpan<byte>(state.Ev2TransactionIdentifier, 4).ToArray() : null,
+                ev2 ? new ReadOnlySpan<byte>(state.Ev2CardCapabilities, 6).ToArray() : null,
+                ev2 ? new ReadOnlySpan<byte>(state.Ev2ReaderCapabilities, 6).ToArray() : null
             );
         }
     }
@@ -296,9 +305,14 @@ public sealed class DfcReader : IDisposable
         CancellationToken cancellationToken = default
     )
     {
+        var challengeLength = NativeAuthenticationChallengeLength(mode, key.Length);
+        if (challengeLength is null)
+        {
+            return new DfcProtocolError(DfcProtocolErrorKind.Invalid, "The authentication mode and key length are incompatible.");
+        }
+
         using var handles = this.AcquireHandles();
-        var challengeLength = mode == DfcAuthenticationMode.Aes || key.Length == 24 ? 16 : 8;
-        var randomA = new byte[challengeLength];
+        var randomA = new byte[challengeLength.Value];
         this.random.Fill(randomA);
         var st = this.BeginAuthenticate(handles, mode, keyNo, key, randomA);
         CryptographicZero(randomA);
@@ -309,6 +323,18 @@ public sealed class DfcReader : IDisposable
 
         var result = await this.RunAsync(handles, cancellationToken).ConfigureAwait(false);
         return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
+    }
+
+    internal static int? NativeAuthenticationChallengeLength(DfcAuthenticationMode mode, int keyLength)
+    {
+        return (mode, keyLength) switch
+        {
+            (DfcAuthenticationMode.D40, 8 or 16) => 8,
+            (DfcAuthenticationMode.Iso, 8 or 16) => 8,
+            (DfcAuthenticationMode.Iso, 24) => 16,
+            (DfcAuthenticationMode.Aes, 16) => 16,
+            _ => null,
+        };
     }
 
     private unsafe int BeginAuthenticate(
@@ -739,6 +765,7 @@ public sealed class DfcReader : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        CryptographicZero(this.frameBuffer);
         this.exchange.Dispose();
         this.session.Dispose();
     }
@@ -815,15 +842,37 @@ public sealed class DfcReader : IDisposable
     )
     {
         byte[]? answer = null;
+        var frame = this.frameBuffer;
         while (true)
         {
-            var (status, frame) = this.Step(handles, answer);
+            var (status, frameLength) = this.Step(handles, answer, frame);
+            if (status == BufferTooSmall && frameLength > frame.Length)
+            {
+                CryptographicZero(frame);
+                frame = new byte[frameLength];
+                this.frameBuffer = frame;
+                continue;
+            }
+
             if (status != Pending)
             {
+                CryptographicZero(frame);
                 return status == 0 ? this.Collect(handles) : Failure<DfcResponse>(handles, status);
             }
 
-            var sent = await this.TransmitAsync(handles, frame, cancellationToken).ConfigureAwait(false);
+            Result<byte[], DfcProtocolError> sent;
+            try
+            {
+                sent = await this.TransmitAsync(
+                    handles,
+                    frame.AsMemory(0, frameLength),
+                    cancellationToken
+                ).ConfigureAwait(false);
+            }
+            finally
+            {
+                CryptographicZero(frame);
+            }
             if (sent.IsFailure)
             {
                 ClearSession(handles);
@@ -851,9 +900,12 @@ public sealed class DfcReader : IDisposable
         }
     }
 
-    private unsafe (int Status, byte[] Frame) Step(ReaderHandles handles, byte[]? answer)
+    private unsafe (int Status, int FrameLength) Step(
+        ReaderHandles handles,
+        byte[]? answer,
+        byte[] frame
+    )
     {
-        var frame = new byte[FrameCapacity];
         nuint length;
         int st;
         fixed (byte* a = answer)
@@ -864,24 +916,38 @@ public sealed class DfcReader : IDisposable
                 a,
                 (nuint)(answer?.Length ?? 0),
                 f,
-                FrameCapacity,
+                (nuint)frame.Length,
                 &length
             );
         }
 
-        return (st, st == Pending ? frame[..(int)length] : []);
+        return (st, st is Pending or BufferTooSmall ? checked((int)length) : 0);
     }
 
     private unsafe Result<DfcResponse, DfcProtocolError> Collect(ReaderHandles handles)
     {
-        var data = new byte[ResultCapacity];
         nuint length;
-        fixed (byte* d = data)
+        var st = Native.dfc_ffi_reader_result_data(handles.Exchange, null, 0, &length);
+        if (st != 0)
         {
-            _ = Native.dfc_ffi_reader_result_data(handles.Exchange, d, ResultCapacity, &length);
+            return Failure<DfcResponse>(handles, st);
         }
 
-        return new DfcResponse(Native.dfc_ffi_reader_result_status(handles.Exchange), data[..(int)length]);
+        var data = new byte[checked((int)length)];
+        byte empty = 0;
+        fixed (byte* d = data)
+        {
+            st = Native.dfc_ffi_reader_result_data(
+                handles.Exchange,
+                data.Length == 0 ? &empty : d,
+                (nuint)data.Length,
+                &length
+            );
+        }
+
+        return st == 0
+            ? new DfcResponse(Native.dfc_ffi_reader_result_status(handles.Exchange), data)
+            : Failure<DfcResponse>(handles, st);
     }
 
     private static Result<T, DfcProtocolError> Failure<T>(ReaderHandles handles, int status)
