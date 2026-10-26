@@ -1224,16 +1224,24 @@ size_t dfc_der_length(const uint8_t* data, size_t capacity) {
 // them; anything else, or out of order, is malformed.
 #define MAX_COMPONENTS 17
 
+_Static_assert(DFC_DER_MAX_SIZE <= UINT16_MAX, "DER offsets must fit uint16_t");
+
 typedef struct {
+    const uint8_t* base;
     const uint8_t* order;
-    const uint8_t* encoded[MAX_COMPONENTS];
     uint32_t present;
+    uint16_t encoded_offset[MAX_COMPONENTS];
     uint8_t count;
 } Fields;
+
+#if DFC_BUILD_ROLE == DFC_ROLE_TARGET && SIZE_MAX == UINT32_MAX
+_Static_assert(sizeof(Fields) <= 48, "DER field index must remain stack-bounded");
+#endif
 
 static bool r_fields(Slice body, const uint8_t* order, size_t order_len, Fields* out) {
     memset(out, 0, sizeof(*out));
     if(order_len > MAX_COMPONENTS) return false;
+    out->base = body.p;
     out->order = order;
     out->count = (uint8_t)order_len;
 
@@ -1253,16 +1261,19 @@ static bool r_fields(Slice body, const uint8_t* order, size_t order_len, Fields*
         uint32_t bit = UINT32_C(1) << idx;
         if(out->present & bit) return false; // duplicate
         if(idx < cursor) return false; // out of declaration order
+        size_t offset = (size_t)(encoded - out->base);
+        if(offset > UINT16_MAX) return false;
         cursor = idx + 1;
         out->present |= bit;
-        out->encoded[idx] = encoded;
+        out->encoded_offset[idx] = (uint16_t)offset;
     }
     return true;
 }
 
 static const uint8_t* f_get(const Fields* f, uint8_t tag) {
     for(size_t i = 0; i < f->count; i++) {
-        if(f->order[i] == tag && (f->present & (UINT32_C(1) << i))) return f->encoded[i];
+        if(f->order[i] == tag && (f->present & (UINT32_C(1) << i)))
+            return f->base + f->encoded_offset[i];
     }
     return NULL;
 }
