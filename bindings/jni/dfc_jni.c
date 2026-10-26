@@ -1429,7 +1429,7 @@ JNIEXPORT void JNICALL Java_com_cindersocket_dfc_DfcNative_readerAuthenticateEv2
         key_no,
         key_bytes,
         random_bytes,
-        capability_bytes,
+        capabilities_len == 0 ? NULL : capability_bytes,
         capabilities_len);
     if(status != DFC_FFI_OK) throw_dfc(env, status, 0, 0, "could not begin EV2 authentication");
 cleanup:

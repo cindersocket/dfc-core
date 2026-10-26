@@ -120,6 +120,8 @@ public final class DfcJniNarrowingTest {
       byte[] key = new byte[16];
       byte[] random8 = new byte[8];
       byte[] random16 = new byte[16];
+      DfcNative.readerAuthenticateEv2(handle, ISO, true, 0, key, random16, none);
+      check(DfcNative.readerStep(handle, null) != null, "empty EV2 capabilities accepted");
       authenticationRefusalPreservesPending(handle, "oversized authentication key",
           () -> DfcNative.readerAuthenticate(handle, ISO, 0x1A, 0, new byte[25], random8));
       authenticationRefusalPreservesPending(handle, "oversized authentication challenge",
