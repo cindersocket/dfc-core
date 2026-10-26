@@ -27,12 +27,25 @@ class VirtualPicc:
     Construction transfers ``credential`` into the card on success. A failed
     construction leaves the credential owned by its caller. Pass ``random``
     only for deterministic testing; it must return exactly the requested
-    number of bytes.
+    number of bytes. Callback failures surface from the later operation that
+    requests randomness, rather than from construction.
     """
 
     def __init__(
         self, credential: Credential, random: Callable[[int], bytes] | None = None
     ) -> None:
+        """Create a virtual card and transfer ``credential`` on success.
+
+        Args:
+            credential: Owned credential to move into the native card.
+            random: Optional deterministic source for tests. It must return the
+                exact requested byte count.
+
+        Raises:
+            DfcError: If native card construction fails. The caller retains the
+                credential when construction fails.
+        """
+
         self._lock = threading.RLock()
         self._lifetime_lock = threading.Lock()
         self._closed = False
@@ -118,7 +131,15 @@ class VirtualPicc:
         self.close()
 
     def activate(self) -> Activation:
-        """Return the card's activation data without changing protocol state."""
+        """Read the card's activation data without changing protocol state.
+
+        Returns:
+            UID, ATS, ATQA, SAK, protocol, and RF-detail bytes.
+
+        Raises:
+            RuntimeError: If the virtual card is closed.
+            DfcError: If native activation fails.
+        """
 
         with self._lock, self._lease() as handle:
             value = N.Activation()
@@ -164,16 +185,53 @@ class VirtualPicc:
             return bytes(output[: length.value])
 
     def exchange(self, command: bytes) -> bytes:
-        """Exchange one complete native command or ISO 7816 APDU."""
+        """Exchange one complete native command or ISO 7816 APDU.
+
+        Args:
+            command: Unframed native command or complete ISO 7816 APDU.
+
+        Returns:
+            Native status plus data, or a complete ISO 7816 response APDU.
+
+        Raises:
+            RandomSourceError: If the configured random callback fails or has
+                the wrong output length during this operation.
+            RuntimeError: If the virtual card is closed.
+            DfcError: If protocol processing fails.
+        """
 
         return self._exchange("exchange", command)
 
     def transceive(self, command: bytes) -> bytes:
-        """Exchange reader framing bytes, making this PICC a blocking transport."""
+        """Exchange reader framing bytes as a blocking transport.
+
+        Args:
+            command: Bytes emitted by ``Reader`` in its configured framing.
+
+        Returns:
+            Response bytes in the same framing convention.
+
+        Raises:
+            RandomSourceError: If a random-using operation fails its callback.
+            RuntimeError: If the virtual card is closed.
+            DfcError: If protocol processing fails.
+        """
         return self.exchange(command)
 
     def frame_exchange(self, frame: bytes) -> bytes:
-        """Exchange one complete ISO-DEP block."""
+        """Exchange one complete ISO-DEP block.
+
+        Args:
+            frame: Complete ISO-DEP block, including its PCB byte.
+
+        Returns:
+            One complete ISO-DEP response block.
+
+        Raises:
+            RandomSourceError: If a random-using operation fails its callback.
+            RuntimeError: If the virtual card is closed.
+            DfcError: If frame processing fails.
+        """
 
         return self._exchange("frame_exchange", frame)
 
@@ -182,27 +240,59 @@ class VirtualPicc:
             N.raise_status(getattr(N.library(), f"dfc_ffi_picc_{name}")(handle, *args))
 
     def field_off(self) -> None:
-        """End the RF session, clearing authentication and transient protocol state."""
+        """End the RF session and clear transient protocol state.
+
+        Raises:
+            RuntimeError: If the virtual card is closed.
+            DfcError: If native processing fails.
+        """
 
         self._simple("field_off")
 
     def reset_protocol(self) -> None:
-        """Reset protocol state while retaining the card's persistent model."""
+        """Reset protocol state while retaining the persistent model.
+
+        Raises:
+            RuntimeError: If the virtual card is closed.
+            DfcError: If native processing fails.
+        """
 
         self._simple("reset_protocol")
 
     def advance_time(self, milliseconds: int) -> None:
-        """Advance the card timer by a nonnegative number of milliseconds."""
+        """Advance the card timer by a nonnegative duration.
+
+        Args:
+            milliseconds: Elapsed time in milliseconds, limited to unsigned 32 bits.
+
+        Raises:
+            InvalidArgumentError: If the duration is out of range.
+            RuntimeError: If the virtual card is closed.
+        """
 
         self._simple("advance_time", N.unsigned(milliseconds, 32, "milliseconds"))
 
     def mark_persisted(self) -> None:
-        """Mark the current card model clean after the caller persists an export."""
+        """Mark the current model clean after persisting an export.
+
+        Raises:
+            RuntimeError: If the virtual card is closed.
+            DfcError: If native processing fails.
+        """
 
         self._simple("mark_persisted")
 
     def snapshot(self) -> Snapshot:
-        """Return non-secret selection, authentication, and transaction state."""
+        """Read non-secret selection, authentication, and transaction state.
+
+        Returns:
+            A Python-owned state snapshot. Inactive optional fields are ``None``
+            and inactive byte fields are empty.
+
+        Raises:
+            RuntimeError: If the virtual card is closed.
+            DfcError: If native state cannot be read.
+        """
 
         with self._lock, self._lease() as handle:
             s = N.Snapshot()
@@ -249,7 +339,15 @@ class VirtualPicc:
                 N.library().dfc_ffi_secure_zero(C.byref(native), C.sizeof(native))
 
     def export(self) -> Credential:
-        """Return a newly owned credential containing the card's current model."""
+        """Copy the card's current model into a credential.
+
+        Returns:
+            A newly owned credential that must be closed.
+
+        Raises:
+            RuntimeError: If the virtual card is closed.
+            DfcError: If the model cannot be copied.
+        """
 
         with self._lock, self._lease() as handle:
             out = N.Handle()

@@ -25,6 +25,19 @@ class TransactionMacVerifier:
     """
 
     def __init__(self, key: bytes, uid: bytes, counter: int, capacity: int = 128) -> None:
+        """Create a verifier with a private key and bounded transcript.
+
+        Args:
+            key: Secret 16-byte Transaction-MAC key.
+            uid: Four- or seven-byte card UID.
+            counter: Initial unsigned 32-bit transaction counter.
+            capacity: Positive maximum transcript size in bytes.
+
+        Raises:
+            ValueError: If a length, counter, or capacity is invalid.
+            TransactionMacError: If native verifier allocation fails.
+        """
+
         if len(key) != 16 or len(uid) not in (4, 7) or capacity <= 0:
             raise ValueError("expected a 16-byte key, 4- or 7-byte UID, and positive capacity")
         _unsigned("counter", counter, 32)
@@ -85,7 +98,19 @@ class TransactionMacVerifier:
     def add_data(
         self, command: int, file_number: int, offset: int, length: int, data: bytes
     ) -> None:
-        """Append a data-file operation and its plain bytes to the transcript."""
+        """Append a data-file operation and its plain bytes.
+
+        Args:
+            command: One-byte command instruction.
+            file_number: One-byte file number.
+            offset: Unsigned 32-bit file offset.
+            length: Unsigned 32-bit command length field.
+            data: Plain operation bytes in card-processing order.
+
+        Raises:
+            ValueError: If a numeric field is out of range.
+            TransactionMacError: If the transcript has insufficient capacity.
+        """
 
         self._data("add_data", command, file_number, offset, length, data)
 
@@ -98,7 +123,20 @@ class TransactionMacVerifier:
         length: int,
         data: bytes,
     ) -> None:
-        """Append a record update and its plain record bytes to the transcript."""
+        """Append a record update and its plain record bytes.
+
+        Args:
+            command: One-byte command instruction.
+            file_number: One-byte file number.
+            record_number: Unsigned 32-bit record number.
+            offset: Unsigned 32-bit offset within the record.
+            length: Unsigned 32-bit command length field.
+            data: Plain operation bytes in card-processing order.
+
+        Raises:
+            ValueError: If a numeric field is out of range.
+            TransactionMacError: If the transcript has insufficient capacity.
+        """
 
         _unsigned("command", command, 8)
         _unsigned("file number", file_number, 8)
@@ -123,7 +161,17 @@ class TransactionMacVerifier:
             _native.secure_zero(raw)
 
     def add_value(self, command: int, file_number: int, value: int) -> None:
-        """Append a value-file operation using its unsigned 32-bit wire value."""
+        """Append a value-file operation using its unsigned wire value.
+
+        Args:
+            command: One-byte command instruction.
+            file_number: One-byte file number.
+            value: Unsigned 32-bit value carried by the command.
+
+        Raises:
+            ValueError: If a numeric field is out of range.
+            TransactionMacError: If the transcript has insufficient capacity.
+        """
 
         _unsigned("command", command, 8)
         _unsigned("file number", file_number, 8)
@@ -135,7 +183,15 @@ class TransactionMacVerifier:
         )
 
     def add_clear_record(self, file_number: int) -> None:
-        """Append a clear-record-file operation to the transcript."""
+        """Append a clear-record-file operation.
+
+        Args:
+            file_number: One-byte file number.
+
+        Raises:
+            ValueError: If ``file_number`` is out of range.
+            TransactionMacError: If the transcript has insufficient capacity.
+        """
 
         _unsigned("file number", file_number, 8)
         self._raise(
@@ -143,7 +199,16 @@ class TransactionMacVerifier:
         )
 
     def add_reader_id(self, current: bytes, encrypted_previous: bytes) -> None:
-        """Append the current and encrypted previous 16-byte reader identifiers."""
+        """Append the current and encrypted previous reader identifiers.
+
+        Args:
+            current: Current 16-byte reader identifier.
+            encrypted_previous: Encrypted 16-byte previous reader identifier.
+
+        Raises:
+            ValueError: If either identifier is not 16 bytes.
+            TransactionMacError: If the transcript has insufficient capacity.
+        """
 
         if len(current) != 16 or len(encrypted_previous) != 16:
             raise ValueError("reader IDs must be 16 bytes")
@@ -160,7 +225,18 @@ class TransactionMacVerifier:
             _native.secure_zero(previous_raw)
 
     def verify(self, mac: bytes) -> bool:
-        """Return whether ``mac`` is the eight-byte receipt for this transcript."""
+        """Verify the receipt for the accumulated transcript.
+
+        Args:
+            mac: Eight-byte transaction MAC returned by the card.
+
+        Returns:
+            ``True`` for a valid receipt, otherwise ``False``.
+
+        Raises:
+            ValueError: If ``mac`` is not eight bytes.
+            TransactionMacError: If native verification cannot be performed.
+        """
 
         if len(mac) != 8:
             raise ValueError("transaction MAC must be 8 bytes")

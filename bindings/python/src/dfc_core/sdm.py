@@ -8,7 +8,7 @@ from .errors import DfcError
 
 
 class SdmVerificationError(DfcError):
-    pass
+    """SDM authentication, field decoding, or decryption failed."""
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,10 @@ class SdmField:
 
     ``offset`` always counts ASCII message bytes. ``length`` counts decoded UID
     octets for ``plain_uid`` and ASCII message bytes for encrypted fields.
+
+    Attributes:
+        offset: Zero-based byte offset in the ASCII message.
+        length: Slot-specific decoded or encoded length described by ``SdmConfig``.
     """
 
     offset: int
@@ -31,6 +35,14 @@ class SdmConfig:
     many ASCII bytes. ``encrypted_picc_data.length`` is 32 or 64 ASCII bytes.
     ``encrypted_file_data.length`` is a nonzero multiple of 32 ASCII bytes.
     A configured plain read counter occupies six ASCII bytes.
+
+    Attributes:
+        mac_input_offset: First ASCII-message byte authenticated by the SDM MAC.
+        mac_offset: First ASCII-message byte containing the 16-character MAC.
+        plain_uid: Optional UID location using decoded UID length units.
+        plain_read_counter_offset: Optional six-character read-counter location.
+        encrypted_picc_data: Optional encrypted PICC field in ASCII byte units.
+        encrypted_file_data: Optional encrypted file field in ASCII byte units.
     """
 
     mac_input_offset: int
@@ -43,6 +55,14 @@ class SdmConfig:
 
 @dataclass(frozen=True)
 class SdmResult:
+    """Authenticated fields published by ``verify_sdm``.
+
+    Attributes:
+        uid: Verified UID, or ``None`` when not configured.
+        read_counter: Verified read counter, or ``None`` when not configured.
+        decrypted_file_data: Verified clear file bytes, empty when not configured.
+    """
+
     uid: bytes | None
     read_counter: int | None
     decrypted_file_data: bytes
@@ -92,7 +112,27 @@ def verify_sdm(
     file_read_key: bytes,
     meta_read_key: bytes | None = None,
 ) -> SdmResult:
-    """Authenticate one ASCII SDM message and return only verified fields."""
+    """Authenticate one ASCII SDM message and publish verified fields.
+
+    Offsets and encrypted lengths in ``config`` count bytes in ``message``.
+    Plain UID length counts decoded UID bytes. Native copies of the message,
+    keys, and decrypted data are wiped before return; Python-owned immutable
+    inputs and returned values remain in Python memory.
+
+    Args:
+        message: Complete ASCII message containing configured hexadecimal fields.
+        config: Locations and lengths of authenticated message fields.
+        file_read_key: Sixteen-byte key used for the MAC and file-data decryption.
+        meta_read_key: Optional 16-byte key for encrypted PICC data.
+
+    Returns:
+        Authenticated UID, read counter, and decrypted file data. Unconfigured
+        fields are ``None`` or empty bytes.
+
+    Raises:
+        ValueError: If a key, offset, or field length is invalid.
+        SdmVerificationError: If decoding, authentication, or decryption fails.
+    """
     if len(file_read_key) != 16 or (meta_read_key is not None and len(meta_read_key) != 16):
         raise ValueError("SDM keys must be 16 bytes")
     _validate_config(len(message), config)

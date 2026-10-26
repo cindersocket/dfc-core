@@ -5,6 +5,13 @@ class DfcError(Exception):
     """Base error carrying the stable native status code."""
 
     def __init__(self, status: int, message: str | None = None) -> None:
+        """Create an error from a stable native status.
+
+        Args:
+            status: Native FFI status code.
+            message: Optional operation-specific explanation.
+        """
+
         self.status = status
         super().__init__(message or f"dfc operation failed with status {status}")
 
@@ -33,6 +40,14 @@ class CredentialError(DfcError):
     """Credential parsing, decoding, encoding, or model validation failed."""
 
     def __init__(self, status: int, message: str, line: int = 0) -> None:
+        """Create a credential error with optional source location.
+
+        Args:
+            status: Native FFI status code.
+            message: Parse, codec, or validation detail.
+            line: One-based text line, or zero when no line applies.
+        """
+
         self.line = line
         super().__init__(status, f"line {line}: {message}" if line else message)
 
@@ -45,6 +60,13 @@ class CardError(ProtocolError):
     """A card returned a terminal status byte instead of command data."""
 
     def __init__(self, status: int, card_status: int) -> None:
+        """Create an error from binding and card statuses.
+
+        Args:
+            status: Binding-level reader status.
+            card_status: One-byte status returned by the card.
+        """
+
         self.card_status = card_status
         super().__init__(status, f"card returned status 0x{card_status:02X}")
 

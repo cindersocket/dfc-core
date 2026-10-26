@@ -7,6 +7,14 @@ from . import _native
 
 
 class DiversificationAlgorithm(IntEnum):
+    """Key algorithm used by the diversification operation.
+
+    Values:
+        AES128: Produce a 16-byte AES key.
+        TDEA2: Produce a 16-byte two-key TDEA key.
+        TDEA3: Produce a 24-byte three-key TDEA key.
+    """
+
     AES128 = 0
     TDEA2 = 1
     TDEA3 = 2
@@ -17,7 +25,23 @@ def diversify_key(
     master_key: bytes,
     diversification_input: bytes,
 ) -> bytes:
-    """Derive one DESFire key using AN10922."""
+    """Derive one key from a master key and diversification input.
+
+    Native copies of the master key, input, and result are wiped before return.
+    The immutable Python inputs and returned key remain owned by the caller.
+
+    Args:
+        algorithm: Output-key algorithm and length.
+        master_key: AES or TDEA master key accepted by the selected algorithm.
+        diversification_input: Application-defined diversification bytes.
+
+    Returns:
+        A 16-byte AES/two-key TDEA key or 24-byte three-key TDEA key.
+
+    Raises:
+        ValueError: If ``algorithm`` is not a supported enum value.
+        DfcError: If a key length or input is invalid, or derivation fails.
+    """
     key_length = {
         DiversificationAlgorithm.AES128: 16,
         DiversificationAlgorithm.TDEA2: 16,

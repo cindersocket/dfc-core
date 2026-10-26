@@ -10,10 +10,18 @@ from .models import CommunicationMode, FileType
 
 
 class ResponseDecodeError(DfcError):
-    pass
+    """A clear card response is malformed or unsupported by its typed decoder."""
 
 
 class AccessKind(IntEnum):
+    """Meaning of one four-bit file access-right entry.
+
+    Values:
+        KEY: Access requires authentication with ``Access.key_number``.
+        FREE: Access does not require authentication.
+        DENIED: Access is disabled.
+    """
+
     KEY = 0
     FREE = 1
     DENIED = 2
@@ -21,12 +29,28 @@ class AccessKind(IntEnum):
 
 @dataclass(frozen=True)
 class Access:
+    """Decoded access requirement for one file operation.
+
+    Attributes:
+        kind: Whether access uses a key, is free, or is denied.
+        key_number: Required key number only when ``kind`` is ``KEY``.
+    """
+
     kind: AccessKind
     key_number: int | None = None
 
 
 @dataclass(frozen=True)
 class AccessRights:
+    """Decoded file access requirements.
+
+    Attributes:
+        read: Requirement for read operations.
+        write: Requirement for write operations.
+        read_write: Combined read/write key requirement.
+        change: Requirement for changing file settings.
+    """
+
     read: Access
     write: Access
     read_write: Access
@@ -35,6 +59,18 @@ class AccessRights:
 
 @dataclass(frozen=True)
 class VersionPart:
+    """One seven-byte hardware or software version block.
+
+    Attributes:
+        vendor_id: Manufacturer identifier.
+        type: Product-type byte.
+        subtype: Product-subtype byte.
+        major_version: Major version byte.
+        minor_version: Minor version byte.
+        storage_size: Encoded storage-size byte.
+        protocol: Protocol identifier byte.
+    """
+
     vendor_id: int
     type: int
     subtype: int
@@ -46,6 +82,17 @@ class VersionPart:
 
 @dataclass(frozen=True)
 class Version:
+    """Typed, fully assembled GetVersion response.
+
+    Attributes:
+        hardware: Hardware version block.
+        software: Software version block.
+        uid: Seven-byte manufacturing UID in response order.
+        batch_number: Five-byte manufacturing batch number.
+        production_week: Production-week byte as encoded by the card.
+        production_year: Production-year byte as encoded by the card.
+    """
+
     hardware: VersionPart
     software: VersionPart
     uid: bytes
@@ -56,6 +103,26 @@ class Version:
 
 @dataclass(frozen=True)
 class FileSettings:
+    """Typed fields from a supported GetFileSettings response.
+
+    Type-specific attributes are ``None`` when they do not apply. Transaction-MAC
+    file settings are not decoded by this API and return ``ResponseDecodeError``.
+
+    Attributes:
+        type: Standard, backup, value, linear-record, or cyclic-record file type.
+        communication_mode: Configured secure-messaging mode.
+        access_rights_raw: Packed two-byte access-rights value.
+        access: Decoded read, write, read/write, and change requirements.
+        size: Data-file size in bytes.
+        lower_limit: Signed lower limit for a value file.
+        upper_limit: Signed upper limit for a value file.
+        limited_credit_value: Signed limited-credit amount for a value file.
+        limited_credit_enabled: Whether limited credit is enabled.
+        record_size: Record size in bytes.
+        max_records: Configured record capacity.
+        current_records: Current record count.
+    """
+
     type: FileType
     communication_mode: CommunicationMode
     access_rights_raw: int
@@ -72,6 +139,22 @@ class FileSettings:
 
 @dataclass(frozen=True)
 class KeySettings:
+    """Typed fields from a GetKeySettings response.
+
+    Extended key-set attributes are ``None`` when the response carries only the
+    basic four-byte form.
+
+    Attributes:
+        settings_1: First raw key-settings byte.
+        settings_2: Second raw key-settings byte.
+        key_type: Encoded key-type bits.
+        key_count: Number of configured keys.
+        active_key_set_version: Optional active key-set version.
+        key_set_count: Optional number of key sets.
+        max_key_size: Optional maximum keys per set.
+        key_set_settings: Optional raw key-set policy byte.
+    """
+
     settings_1: int
     settings_2: int
     key_type: int
@@ -96,6 +179,18 @@ def _part(data: bytes) -> VersionPart:
 
 
 def decode_version(response: bytes) -> Version:
+    """Decode an assembled GetVersion response.
+
+    Args:
+        response: All 28 response-data bytes, without status or APDU framing.
+
+    Returns:
+        The hardware, software, UID, batch, week, and year fields.
+
+    Raises:
+        ResponseDecodeError: If the response is not exactly 28 bytes.
+    """
+
     raw, pointer = _input(response)
     output = (C.c_uint8 * 28)()
     _check(_native.library().dfc_ffi_response_decode_version(pointer, len(response), output, 28))
@@ -105,6 +200,18 @@ def decode_version(response: bytes) -> Version:
 
 
 def decode_application_ids(response: bytes) -> tuple[bytes, ...]:
+    """Decode application IDs into model/display-order values.
+
+    Args:
+        response: Concatenated three-byte wire-order AIDs, without status framing.
+
+    Returns:
+        Three-byte AIDs in model/display order.
+
+    Raises:
+        ResponseDecodeError: If the length is not divisible by three or decoding fails.
+    """
+
     if len(response) % 3:
         raise ResponseDecodeError(1, "application ID response length is not divisible by three")
     raw, pointer = _input(response)
@@ -121,6 +228,18 @@ def decode_application_ids(response: bytes) -> tuple[bytes, ...]:
 
 
 def decode_file_ids(response: bytes) -> tuple[int, ...]:
+    """Decode file numbers from GetFileIDs response data.
+
+    Args:
+        response: Response data without status or APDU framing.
+
+    Returns:
+        File numbers in card-returned order.
+
+    Raises:
+        ResponseDecodeError: If native decoding rejects the response.
+    """
+
     raw, pointer = _input(response)
     output = (C.c_uint8 * max(1, len(response)))()
     length = C.c_size_t()
@@ -139,6 +258,18 @@ def _access(data: bytes) -> Access:
 
 
 def decode_file_settings(response: bytes) -> FileSettings:
+    """Decode supported file settings into type-specific fields.
+
+    Args:
+        response: GetFileSettings response data without status or APDU framing.
+
+    Returns:
+        Common settings plus fields for the decoded file type.
+
+    Raises:
+        ResponseDecodeError: If the response is malformed or its file type is unsupported.
+    """
+
     raw, pointer = _input(response)
     output = (C.c_uint8 * 32)()
     _check(
@@ -181,6 +312,18 @@ def decode_file_settings(response: bytes) -> FileSettings:
 
 
 def decode_key_settings(response: bytes) -> KeySettings:
+    """Decode basic or extended PICC/application key settings.
+
+    Args:
+        response: GetKeySettings response data without status or APDU framing.
+
+    Returns:
+        Basic fields and optional extended key-set fields.
+
+    Raises:
+        ResponseDecodeError: If the response has an unsupported length or encoding.
+    """
+
     raw, pointer = _input(response)
     output = (C.c_uint8 * 9)()
     _check(
@@ -201,6 +344,18 @@ def decode_key_settings(response: bytes) -> KeySettings:
 
 
 def decode_key_version(response: bytes) -> int:
+    """Decode the byte returned by GetKeyVersion.
+
+    Args:
+        response: Response data without status or APDU framing.
+
+    Returns:
+        The unsigned key-version byte.
+
+    Raises:
+        ResponseDecodeError: If the response does not contain exactly one byte.
+    """
+
     raw, pointer = _input(response)
     output = C.c_uint8()
     _check(

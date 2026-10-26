@@ -118,6 +118,18 @@ class Credential:
     """An owned native credential. Close it promptly or use it as a context manager."""
 
     def __init__(self, handle: N.Handle) -> None:
+        """Take ownership of a non-null native credential handle.
+
+        Applications normally use ``parse``, ``decode``, or ``load`` rather than
+        constructing this low-level ownership wrapper directly.
+
+        Args:
+            handle: Non-null native credential handle whose ownership is transferred.
+
+        Raises:
+            ValueError: If ``handle`` is null.
+        """
+
         if not handle:
             raise ValueError("null credential handle")
         self._handle = handle
@@ -145,25 +157,61 @@ class Credential:
 
     @classmethod
     def parse(cls, text: str) -> Credential:
-        """Parse one textual credential into a newly owned native handle."""
+        """Parse one textual credential.
+
+        Args:
+            text: Complete credential text.
+
+        Returns:
+            A newly owned credential that must be closed.
+
+        Raises:
+            CredentialError: If parsing or model validation fails.
+        """
 
         return cls._read("parse_text", text.encode("utf-8"))
 
     @classmethod
     def decode(cls, content: bytes) -> Credential:
-        """Decode one binary credential into a newly owned native handle."""
+        """Decode one binary credential.
+
+        Args:
+            content: Complete encoded credential.
+
+        Returns:
+            A newly owned credential that must be closed.
+
+        Raises:
+            CredentialError: If decoding or model validation fails.
+        """
 
         return cls._read("decode", content)
 
     @classmethod
     def load(cls, content: bytes | str) -> Credential:
-        """Load text or binary credential content, detecting bytes by their first octet."""
+        """Load text or binary credential content.
+
+        Byte input is detected by its first octet; string input is parsed as text.
+
+        Args:
+            content: Complete text or binary credential.
+
+        Returns:
+            A newly owned credential that must be closed.
+
+        Raises:
+            CredentialError: If decoding, parsing, or validation fails.
+        """
 
         return cls._read("load", content.encode() if isinstance(content, str) else content)
 
     @property
     def closed(self) -> bool:
-        """Return whether this object has released or transferred its native handle."""
+        """Report whether this object released or transferred its handle.
+
+        Returns:
+            ``True`` when no native credential remains owned by this object.
+        """
 
         return not self._finalizer.alive
 
@@ -186,13 +234,29 @@ class Credential:
         self.close()
 
     def encode(self) -> bytes:
-        """Return the validated credential in canonical binary form."""
+        """Encode the validated credential in canonical binary form.
+
+        Returns:
+            A Python-owned binary credential.
+
+        Raises:
+            CredentialError: If the model is invalid or encoding fails.
+            RuntimeError: If this credential is closed.
+        """
 
         with self._lock:
             return N.variable_output(N.library().dfc_ffi_credential_encode, self._open())
 
     def to_text(self) -> str:
-        """Return the validated credential in canonical UTF-8 text form."""
+        """Render the validated credential as canonical UTF-8 text.
+
+        Returns:
+            A Python-owned credential string.
+
+        Raises:
+            CredentialError: If the model is invalid or rendering fails.
+            RuntimeError: If this credential is closed.
+        """
 
         with self._lock:
             return N.variable_output(
@@ -200,7 +264,12 @@ class Credential:
             ).decode()
 
     def validate(self) -> None:
-        """Raise ``CredentialError`` if the current native model is invalid."""
+        """Validate the current native model.
+
+        Raises:
+            CredentialError: If the model violates a credential constraint.
+            RuntimeError: If this credential is closed.
+        """
 
         with self._lock:
             N.raise_status(N.library().dfc_ffi_credential_validate(self._open()))
@@ -211,6 +280,13 @@ class Credential:
         The returned model owns its byte strings. Closing this credential does
         not invalidate them, and Python cannot securely wipe those immutable
         copies.
+
+        Returns:
+            An immutable Python snapshot of the complete credential model.
+
+        Raises:
+            RuntimeError: If this credential is closed.
+            DfcError: If the native model cannot be read.
         """
 
         with self._lock:
