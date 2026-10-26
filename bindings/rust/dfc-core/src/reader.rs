@@ -12,6 +12,14 @@ const MAX_UPDATE_DATA: usize = 255 - 10;
 // header bytes and Le; native framing needs less space than this same bound.
 const MAX_OUTPUT_CAPACITY: usize = 261;
 
+fn native_auth_challenge_length(cipher: u8, key_length: usize) -> Option<usize> {
+    match (cipher, key_length) {
+        (0x0a, 8 | 16) | (0x1a, 8 | 16) => Some(8),
+        (0x1a, 24) | (0xaa, 16) => Some(16),
+        _ => None,
+    }
+}
+
 struct ApduBuffer {
     bytes: Vec<u8>,
 }
@@ -563,6 +571,9 @@ impl<T: Transport> Reader<T> {
         key: &[u8],
         random_a: &[u8],
     ) -> Result<Response, ReaderError<T::Error>> {
+        if native_auth_challenge_length(cipher, key.len()) != Some(random_a.len()) {
+            return Err(ReaderError::Dfc(Error::InvalidArgument));
+        }
         status(unsafe {
             sys::dfc_ffi_reader_authenticate_begin(
                 self.exchange.as_ptr(),
@@ -866,6 +877,32 @@ impl<T: Transport> Reader<T> {
                     return Err(ReaderError::Transport(error));
                 }
             };
+        }
+    }
+}
+
+#[cfg(test)]
+mod authentication_boundary_tests {
+    use super::native_auth_challenge_length;
+
+    #[test]
+    fn native_authentication_boundaries_match_shared_contract() {
+        for line in include_str!("../../../../tests/authentication-boundaries.txt").lines() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let fields: Vec<_> = line.split('|').collect();
+            let cipher = match fields[0] {
+                "legacy" => 0x0a,
+                "iso" => 0x1a,
+                "aes" => 0xaa,
+                other => panic!("unknown cipher {other}"),
+            };
+            let key_length = fields[1].parse().expect("key length");
+            let challenge_length = fields[2].parse().expect("challenge length");
+            let accepted =
+                native_auth_challenge_length(cipher, key_length) == Some(challenge_length);
+            assert_eq!(accepted, fields[3] == "yes", "{line}");
         }
     }
 }

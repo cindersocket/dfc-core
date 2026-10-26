@@ -908,6 +908,68 @@ static size_t native_auth_command_capacity(DfcReaderFraming framing, size_t data
                                                 data_len + 1;
 }
 
+static FILE* open_authentication_boundary_contract(void) {
+    FILE* contract = fopen("authentication-boundaries.txt", "r");
+    return contract ? contract : fopen("tests/authentication-boundaries.txt", "r");
+}
+
+static uint8_t authentication_command(const char* cipher) {
+    if(strcmp(cipher, "legacy") == 0) return DFC_CMD_AUTHENTICATE_LEGACY;
+    if(strcmp(cipher, "iso") == 0) return DFC_CMD_AUTHENTICATE_ISO;
+    if(strcmp(cipher, "aes") == 0) return DFC_CMD_AUTHENTICATE_AES;
+    munit_errorf("unknown authentication cipher in shared contract: %s", cipher);
+    return 0;
+}
+
+static MunitResult test_authentication_boundaries_match_shared_contract(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    FILE* contract = open_authentication_boundary_contract();
+    munit_assert_not_null(contract);
+
+    char line[96];
+    size_t cases = 0;
+    while(fgets(line, sizeof(line), contract)) {
+        if(line[0] == '#') continue;
+        char cipher_name[8];
+        char accepted_name[4];
+        size_t key_len = 0;
+        size_t challenge_len = 0;
+        munit_assert_int(
+            sscanf(
+                line, "%7[^|]|%zu|%zu|%3s", cipher_name, &key_len, &challenge_len, accepted_name),
+            ==,
+            4);
+
+        uint8_t cipher = authentication_command(cipher_name);
+        bool accepted = strcmp(accepted_name, "yes") == 0;
+        uint8_t key[DFC_MAX_KEY_LEN] = {0};
+        uint8_t random_a[DFC_EV2_RANDOM_LENGTH] = {0};
+        DfcReaderSession session;
+        DfcReaderExchange exchange;
+        dfc_reader_session_init(&session);
+        DfcReaderStatus status = dfc_reader_authenticate_begin(
+            &exchange,
+            &session,
+            DfcReaderFramingNative,
+            cipher,
+            0,
+            key,
+            key_len,
+            random_a,
+            challenge_len);
+        munit_assert_int(status, ==, accepted ? DfcReaderOk : DfcReaderInvalid);
+        if(accepted)
+            munit_assert_size(dfc_reader_challenge_length(cipher, key_len), ==, challenge_len);
+        cases++;
+    }
+    fclose(contract);
+    munit_assert_size(cases, ==, 12);
+    return MUNIT_OK;
+}
+
 static MunitResult
     test_authentication_output_capacity_retries(const MunitParameter params[], void* data) {
     (void)params;
@@ -4259,6 +4321,12 @@ static MunitTest tests[] = {
      NULL},
     {"/authentication-output-capacity-retries",
      test_authentication_output_capacity_retries,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/authentication-boundaries-match-shared-contract",
+     test_authentication_boundaries_match_shared_contract,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

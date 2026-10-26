@@ -304,9 +304,14 @@ public sealed class DfcReader : IDisposable
         CancellationToken cancellationToken = default
     )
     {
+        var challengeLength = NativeAuthenticationChallengeLength(mode, key.Length);
+        if (challengeLength is null)
+        {
+            return new DfcProtocolError(DfcProtocolErrorKind.Invalid, "The authentication mode and key length are incompatible.");
+        }
+
         using var handles = this.AcquireHandles();
-        var challengeLength = mode == DfcAuthenticationMode.Aes || key.Length == 24 ? 16 : 8;
-        var randomA = new byte[challengeLength];
+        var randomA = new byte[challengeLength.Value];
         this.random.Fill(randomA);
         var st = this.BeginAuthenticate(handles, mode, keyNo, key, randomA);
         CryptographicZero(randomA);
@@ -317,6 +322,18 @@ public sealed class DfcReader : IDisposable
 
         var result = await this.RunAsync(handles, cancellationToken).ConfigureAwait(false);
         return result.IsSuccess ? UnitResult.Success<DfcProtocolError>() : result.Error;
+    }
+
+    internal static int? NativeAuthenticationChallengeLength(DfcAuthenticationMode mode, int keyLength)
+    {
+        return (mode, keyLength) switch
+        {
+            (DfcAuthenticationMode.D40, 8 or 16) => 8,
+            (DfcAuthenticationMode.Iso, 8 or 16) => 8,
+            (DfcAuthenticationMode.Iso, 24) => 16,
+            (DfcAuthenticationMode.Aes, 16) => 16,
+            _ => null,
+        };
     }
 
     private unsafe int BeginAuthenticate(

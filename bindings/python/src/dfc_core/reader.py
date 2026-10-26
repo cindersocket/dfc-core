@@ -24,6 +24,9 @@ READER_CARD_ERROR = N.READER_CARD_ERROR
 INITIAL_OUTPUT_CAPACITY = 64
 MAX_RANGE_DATA = 255 - 7
 MAX_UPDATE_DATA = 255 - 10
+AUTHENTICATE_LEGACY = 0x0A
+AUTHENTICATE_ISO = 0x1A
+AUTHENTICATE_AES = 0xAA
 
 
 def _closed_enum(value: int, enum_type: type[Framing | CommunicationMode], name: str) -> int:
@@ -45,6 +48,17 @@ def _challenge(value: bytes | None, length: int, name: str) -> bytearray:
     """Return an exact replay challenge, drawing randomness only when omitted."""
     _validate_challenge(value, length, name)
     return bytearray(secrets.token_bytes(length) if value is None else value)
+
+
+def _native_auth_challenge_length(cipher: int, key_length: int) -> int:
+    """Return the challenge size for one valid native authentication pair."""
+    if cipher == AUTHENTICATE_LEGACY and key_length in (8, 16):
+        return 8
+    if cipher == AUTHENTICATE_ISO and key_length in (8, 16, 24):
+        return 16 if key_length == 24 else 8
+    if cipher == AUTHENTICATE_AES and key_length == 16:
+        return 16
+    raise InvalidArgumentError(-1, "cipher and key length are incompatible")
 
 
 @dataclass(frozen=True, slots=True)
@@ -725,7 +739,7 @@ class Reader:
         cipher_id = N.unsigned(cipher, 8, "cipher")
         key_number = N.unsigned(key_no, 8, "key_no")
         framing = self._native_framing()
-        challenge_length = 16 if cipher_id == N.AUTH_AES or len(key) == 24 else 8
+        challenge_length = _native_auth_challenge_length(cipher_id, len(key))
         challenge = _challenge(random_a, challenge_length, "random_a")
         keybuf, keyptr = N.byte_pointer(key)
         randbuf, randptr = N.byte_pointer(challenge)

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
-from dfc_core import Reader, _native
+from dfc_core import InvalidArgumentError, Reader, _native
 from dfc_core import reader as reader_module
+
+AUTH_BOUNDARIES = Path(__file__).parents[3] / "tests" / "authentication-boundaries.txt"
 
 ChallengeCall = Callable[[Reader, bytes | None], object]
 
@@ -95,6 +98,26 @@ RANDOM_CHALLENGE_CASES: list[tuple[str, int, str, ChallengeCall]] = [
         ),
     ),
 ]
+
+
+def test_native_authentication_boundaries_match_shared_contract() -> None:
+    cipher_ids = {
+        "legacy": reader_module.AUTHENTICATE_LEGACY,
+        "iso": reader_module.AUTHENTICATE_ISO,
+        "aes": reader_module.AUTHENTICATE_AES,
+    }
+    for raw in AUTH_BOUNDARIES.read_text().splitlines():
+        if not raw or raw.startswith("#"):
+            continue
+        cipher, key_length, challenge_length, accepted = raw.split("|")
+        try:
+            actual = reader_module._native_auth_challenge_length(
+                cipher_ids[cipher], int(key_length)
+            )
+        except InvalidArgumentError:
+            assert accepted == "no", raw
+        else:
+            assert (actual == int(challenge_length)) == (accepted == "yes"), raw
 
 
 @pytest.mark.parametrize(

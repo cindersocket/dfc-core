@@ -228,7 +228,7 @@ public final class DfcReader implements AutoCloseable {
         handle, framing.nativeValue, cipher.nativeValue, keyNumber, key, randomA);
     complete(handle);
   }
-  private static int challengeLength(Cipher cipher, int keyLength) {
+  static int challengeLength(Cipher cipher, int keyLength) {
     boolean valid = switch (cipher) {
       case LEGACY -> keyLength == 8 || keyLength == 16;
       case ISO -> keyLength == 8 || keyLength == 16 || keyLength == 24;

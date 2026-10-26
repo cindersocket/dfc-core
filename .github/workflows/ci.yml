@@ -376,10 +376,12 @@ jobs:
             tests/java/DfcReaderHeaderBoundsTest.java tests/java/DfcJniNarrowingTest.java \
             tests/java/DfcLayoutCompatibilityTest.java tests/java/DfcSecretLifetimeTest.java \
             tests/java/DfcCommandRangeTest.java \
+            tests/java/DfcAuthenticationBoundaryTest.java \
             tests/java/DfcNativeLoaderTest.java \
             tests/java/DfcAdvancedApiTest.java \
             examples/java/DfcTransceiveExample.java
           java -cp build-jni/java com.cindersocket.dfc.DfcCommandRangeTest
+          java -cp build-jni/java com.cindersocket.dfc.DfcAuthenticationBoundaryTest
           java -cp build-jni/java com.cindersocket.dfc.DfcNativeLoaderTest
           java -cp build-jni/java com.cindersocket.dfc.DfcSecretLifetimeTest
           java -Djava.library.path=build-jni -cp build-jni/java DfcJniSmokeTest \
