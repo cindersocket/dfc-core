@@ -59,7 +59,9 @@ static void set_native_authentication(
     memset(secure_messaging, 0, sizeof(*secure_messaging));
     secure_messaging->cipher = DFC_CMD_AUTHENTICATE_AES;
     emulator->secure_messaging = secure_messaging;
+    emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     emulator->auth_key_no = key_no;
+    munit_assert_true(dfc_emulator_native_authentication_active(emulator));
 }
 
 static MunitResult
@@ -443,7 +445,9 @@ static MunitResult test_ev1_e110_free_read_is_plain(const MunitParameter params[
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     munit_assert_not_null(session->emulator->secure_messaging);
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     session->emulator->auth_key_no = 0;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
     const uint8_t read[] = {0x90, DFC_CMD_READ_DATA, 0, 0, 7, 1, 0, 0, 0, 4, 0, 0, 0};
     uint8_t response[64];

@@ -603,7 +603,9 @@ static void assert_commit_reader_id_oracle(uint8_t cipher, size_t key_length) {
     uint8_t key[DFC_AES_KEY_LENGTH] = {0};
     emulator->secure_messaging = dfc_secure_messaging_alloc(cipher, key, key_length, NULL);
     munit_assert_not_null(emulator->secure_messaging);
+    emulator->auth_cipher = cipher;
     emulator->auth_key_no = 0;
+    munit_assert_true(dfc_emulator_native_authentication_active(emulator));
 
     uint8_t command[1 + DFC_TRANSACTION_READER_ID_LENGTH + DFC_WIRE_MAC_LENGTH] = {
         DFC_CMD_COMMIT_READER_ID};
@@ -721,7 +723,9 @@ static void assert_full_value_transaction_oracle(uint8_t cipher, size_t key_leng
         fixture.session->emulator->secure_messaging =
             dfc_secure_messaging_alloc(cipher, session_key, key_length, NULL);
         munit_assert_not_null(fixture.session->emulator->secure_messaging);
+        fixture.session->emulator->auth_cipher = cipher;
         fixture.session->emulator->auth_key_no = 0;
+        munit_assert_true(dfc_emulator_native_authentication_active(fixture.session->emulator));
 
         uint8_t amount[4] = {
             (uint8_t)amounts[index],

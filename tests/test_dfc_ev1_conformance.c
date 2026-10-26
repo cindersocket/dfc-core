@@ -1092,7 +1092,9 @@ static MunitResult
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     session->emulator->auth_key_no = 0x00;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
     uint8_t response[64];
     size_t response_len = 0;
@@ -1127,7 +1129,9 @@ static MunitResult
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     session->emulator->auth_key_no = 0x00;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
     uint8_t response[64];
     size_t response_len = 0;
@@ -1146,7 +1150,10 @@ static MunitResult
     dfc_secure_messaging_free(session->emulator->secure_messaging);
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
+    munit_assert_not_null(session->emulator->secure_messaging);
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     session->emulator->auth_key_no = 0x00;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
     uint8_t body[] = {0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x11, 0x22};
     // MACt = first 8 bytes of EV1 command CMAC (stored as IV after update).
@@ -1251,7 +1258,9 @@ static MunitResult
     session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     session->emulator->selected_application = DfcEmulatorSelectedApplicationApp;
+    session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     session->emulator->auth_key_no = 0x00;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
 
     uint8_t response[64];
     size_t response_len = 0;
@@ -1764,7 +1773,9 @@ static DfcVirtualPiccSession*
     session->emulator->secure_messaging =
         dfc_secure_messaging_alloc(cipher, session_key, sizeof(session_key), NULL);
     munit_assert_not_null(session->emulator->secure_messaging);
+    session->emulator->auth_cipher = cipher;
     session->emulator->auth_key_no = 0;
+    munit_assert_true(dfc_emulator_native_authentication_active(session->emulator));
     return session;
 }
 
@@ -1883,7 +1894,9 @@ static MunitResult
     free_session->emulator->secure_messaging = dfc_secure_messaging_alloc(
         DFC_CMD_AUTHENTICATE_AES, session_key, sizeof(session_key), NULL);
     munit_assert_not_null(free_session->emulator->secure_messaging);
+    free_session->emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
     free_session->emulator->auth_key_no = 0;
+    munit_assert_true(dfc_emulator_native_authentication_active(free_session->emulator));
     const uint8_t free_change[] = {
         0x90, DFC_CMD_CHANGE_FILE_SETTINGS, 0, 0, 4, 1, DFC_COMM_MAC, 0xEE, 0xEE, 0};
     assert_trailing_status(free_session, free_change, sizeof(free_change), DFC_STATUS_OK);
