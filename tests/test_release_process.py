@@ -195,6 +195,7 @@ class ReleaseProcessTests(unittest.TestCase):
 
         self.assertIn('root="$PWD/stage/dfc-core-native-', workflow)
         self.assertIn('PATH="$root/bin:$PATH" ctest', workflow)
+        self.assertIn("wheel_pattern='*cp312*win_amd64.whl'", workflow)
         self.assertIn('package_path / "lib64" / name', native)
         self.assertIn('package_path.parent / "lib64" / name', native)
         self.assertIn("*.dfc text eol=lf", attributes.splitlines())

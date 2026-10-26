@@ -271,7 +271,11 @@ jobs:
         shell: bash
         run: |
           uvx --from twine==6.2.0 twine check dist/python/*
-          wheel=$(find dist/python -name '*cp312*.whl' -print -quit)
+          wheel_pattern='*cp312*.whl'
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            wheel_pattern='*cp312*win_amd64.whl'
+          fi
+          wheel=$(find dist/python -name "$wheel_pattern" -print -quit)
           DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
             python examples/python/virtual_card.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
