@@ -472,7 +472,7 @@ pub enum PiccAuthenticationMode {
     Legacy = 0x0a,
     /// ISO authentication.
     Iso = 0x1a,
-    /// AES authentication. [`Snapshot::ev2_command_counter`] distinguishes EV2.
+    /// AES authentication. An active EV2 command counter in the snapshot distinguishes EV2.
     Aes = 0xaa,
 }
 

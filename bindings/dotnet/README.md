@@ -87,6 +87,10 @@ dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj \
   -- examples/credentials/v6-minimal.dfcb
 ```
 
+The production project generates XML documentation and treats missing public
+API documentation (`CS1591`) as an error, so the normal Release test build is
+also the binding documentation gate.
+
 Set `DfcNativeDirectory` if the native build is elsewhere. Published packages
 place the library under `runtimes/<RID>/native`; local builds copy it beside the
 test or example assembly. The assembly verifies the complete generated native

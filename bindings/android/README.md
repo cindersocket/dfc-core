@@ -58,7 +58,11 @@ The checked-in Gradle wrapper builds the AAR, example APK, and Android lint:
 cd bindings/android
 ./gradlew --no-daemon :dfc:assembleRelease :sample:assembleRelease \
   :dfc:lintRelease :dfc:testDebugUnitTest
+./gradlew --no-daemon :dfc:androidJavadocs
 ```
+
+`androidJavadocs` runs doclint with warnings treated as errors and produces the
+documentation used by the Javadoc artifact.
 
 The artifacts are `dfc/build/outputs/aar/dfc-release.aar` and
 `../../examples/android/build/outputs/apk/release/sample-release.apk`. The

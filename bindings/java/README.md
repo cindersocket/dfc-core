@@ -120,7 +120,13 @@ java -Djava.library.path=build-jni -cp build-jni/java DfcJniReplayRandomTest \
 java -Djava.library.path=build-jni -cp build-jni/java DfcAdvancedApiTest
 java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
   examples/credentials/v6-minimal.dfc
+javadoc -quiet -public -Xdoclint:all -Werror \
+  -d build-jni/javadoc \
+  bindings/java/src/main/java/com/cindersocket/dfc/*.java
 ```
+
+The Javadoc command is a required build gate. It rejects malformed comments,
+missing references, and warnings rather than publishing partial API docs.
 
 The native library must be discoverable through `java.library.path` or the
 platform loader. JNI compares the linked core's layout fingerprint with the

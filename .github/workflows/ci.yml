@@ -31,6 +31,8 @@ jobs:
         run: python3 tests/test_check_decoder_registry.py
       - name: Test documentation link checker
         run: python3 tests/test_check_docs.py
+      - name: Test binding documentation gates
+        run: python3 tests/test_binding_documentation_ci.py
       - name: Check DESFire vector integrity
         run: python3 tests/check_desfire_vectors.py
       - name: Test DESFire vector grammar
@@ -390,6 +392,11 @@ jobs:
             com.cindersocket.dfc.DfcLayoutCompatibilityTest native
           java -Djava.library.path=build-jni -cp build-jni/java DfcTransceiveExample \
             examples/credentials/v6-minimal.dfc
+      - name: Build strict public Javadocs
+        run: >-
+          javadoc -quiet -public -Xdoclint:all -Werror
+          -d build-jni/javadoc
+          bindings/java/src/main/java/com/cindersocket/dfc/*.java
 
   android:
     name: Android AAR and sample
@@ -410,6 +417,9 @@ jobs:
           :sample:assembleRelease
           :dfc:lintRelease
           :dfc:testDebugUnitTest
+      - name: Build strict Android Javadocs
+        working-directory: bindings/android
+        run: ./gradlew --no-daemon :dfc:androidJavadocs
       - name: Run minified native-exception smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -447,6 +457,8 @@ jobs:
             python examples/python/virtual_card.py
           DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
             python examples/python/verify_backend.py
+      - name: Check Python public documentation
+        run: python3 scripts/check-docs.py
       - name: Check Python types and formatting
         working-directory: bindings/python
         run: |
@@ -475,6 +487,9 @@ jobs:
         run: |
           cargo test --workspace
           cargo clippy --workspace --all-targets -- -D warnings
+          cargo rustdoc -p dfc-core --lib -- -D warnings
+          cargo rustdoc -p dfc-core --lib --no-default-features \
+            --features system,role-target,profile-full-ev3 -- -D warnings
           cargo test --manifest-path examples/rust-virtual-picc/Cargo.toml
           cargo clippy --manifest-path examples/rust-virtual-picc/Cargo.toml --all-targets -- -D warnings
           cargo run --manifest-path examples/rust-virtual-picc/Cargo.toml -- examples/credentials/v6-minimal.dfcb
@@ -503,6 +518,9 @@ jobs:
       - name: Check the workspace at the declared MSRV
         run: |
           cargo check --workspace --all-targets
+          cargo rustdoc -p dfc-core --lib -- -D warnings
+          cargo rustdoc -p dfc-core --lib --no-default-features \
+            --features system,role-target,profile-full-ev3 -- -D warnings
           cargo check --manifest-path bindings/rust/dfc-core/Cargo.toml \
             --target thumbv7em-none-eabihf --no-default-features \
             --features bundled,role-target,profile-full-ev3

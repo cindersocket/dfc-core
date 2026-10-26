@@ -39,6 +39,7 @@ artifacts from both source archives and exercises their consumer entry points:
    ```sh
    ./scripts/check-format.sh
    python3 tests/test_check_docs.py
+python3 tests/test_binding_documentation_ci.py
    python3 tests/test_check_stack_usage.py
    python3 tests/test_ci_unit_workflow.py
    python3 tests/test_check_version.py

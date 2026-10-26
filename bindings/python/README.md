@@ -158,6 +158,7 @@ MYPYPATH=bindings/python/src \
   uv run --project bindings/python mypy \
   --config-file bindings/python/pyproject.toml examples/python/virtual_card.py
 uv run --project bindings/python pytest bindings/python/tests
+python3 scripts/check-docs.py
 ```
 
 ## Secret lifetime
