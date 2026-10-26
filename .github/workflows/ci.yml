@@ -523,7 +523,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.120.0
         with:
           targets: thumbv7em-none-eabihf
       - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
