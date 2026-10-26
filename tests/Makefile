@@ -230,7 +230,9 @@ test: check-common-runtime check-constant-time-auth check-command-modules check-
 	@for test in $(REDUCED_TESTS); do ./$$test || exit 1; done
 
 check-cipher-profile-matrix:
-	DFC_TINY_CRYPTO_DIR=$(abspath $(TINY_CRYPTO_DIR)) ../scripts/check-cipher-profile-matrix.sh
+	@if [ "$(CRYPTO_BACKEND)" = "tiny" ]; then \
+		DFC_TINY_CRYPTO_DIR=$(abspath $(TINY_CRYPTO_DIR)) ../scripts/check-cipher-profile-matrix.sh; \
+	fi
 
 $(CONFORMANCE_RUNNER): test_dfc_conformance_vectors.c $(CONFORMANCE_COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -292,6 +294,7 @@ check-secure-messaging-policy:
 
 check-ffi-layout-registry:
 	python3 ../scripts/generate-ffi-layout.py --check
+	python3 test_ffi_generator.py
 
 test_dfc_static_signature_ev2: test_dfc_static_signature.c dfc_virtual_picc_test_helpers.c $(COMMON)
 	$(CC) $(CFLAGS) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV2 -o $@ $^ $(LDFLAGS)
