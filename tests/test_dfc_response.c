@@ -81,6 +81,15 @@ static MunitResult test_directory_decoders(const MunitParameter params[], void* 
         DfcResponseDecodeOk);
     munit_assert_size(count, ==, 3);
     munit_assert_memory_equal(sizeof(files), files, wire_files);
+
+    uint8_t in_place_files[] = {1, 7, 31};
+    munit_assert_int(
+        dfc_response_decode_file_ids(
+            in_place_files, sizeof(in_place_files), in_place_files, sizeof(in_place_files), &count),
+        ==,
+        DfcResponseDecodeOk);
+    munit_assert_size(count, ==, 3);
+    munit_assert_memory_equal(sizeof(in_place_files), in_place_files, wire_files);
     return MUNIT_OK;
 }
 

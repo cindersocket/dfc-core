@@ -392,23 +392,23 @@ static jbyteArray decode_list(JNIEnv* env, jbyteArray response, JniListDecoder d
     size_t response_len = 0;
     uint8_t* response_bytes = copy_array(env, response, &response_len, false);
     if((*env)->ExceptionCheck(env)) return NULL;
-    size_t capacity = response_len;
-    uint8_t* output = capacity == 0 ? NULL : malloc(capacity);
-    if(capacity != 0 && output == NULL) {
-        secure_free(response_bytes, response_len);
-        throw_dfc(env, DFC_FFI_OUT_OF_MEMORY, 0, 0, "out of memory");
-        return NULL;
-    }
     size_t output_len = 0;
-    int32_t status = decoder(response_bytes, response_len, output, capacity, &output_len);
-    secure_free(response_bytes, response_len);
+    // List decoders never expand their input and support in-place output. Reuse
+    // the JNI copy so a response needs one native allocation instead of two.
+    int32_t status =
+        decoder(response_bytes, response_len, response_bytes, response_len, &output_len);
     if(status != DFC_FFI_RESPONSE_OK) {
-        secure_free(output, capacity);
+        secure_free(response_bytes, response_len);
         throw_dfc(env, status, 0, 0, "response decode failed");
         return NULL;
     }
-    jbyteArray result = make_array(env, output, output_len);
-    secure_free(output, capacity);
+    if(output_len > response_len) {
+        secure_free(response_bytes, response_len);
+        throw_dfc(env, DFC_FFI_INVALID_ARGUMENT, 0, 0, "invalid decoded response length");
+        return NULL;
+    }
+    jbyteArray result = make_array(env, response_bytes, output_len);
+    secure_free(response_bytes, response_len);
     return result;
 }
 

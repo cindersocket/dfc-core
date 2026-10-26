@@ -133,7 +133,8 @@ DfcResponseDecodeStatus dfc_response_decode_file_ids(
         return DfcResponseDecodeMalformed;
     *file_id_count = response_len;
     if(file_id_capacity < response_len) return DfcResponseDecodeBufferTooSmall;
-    if(response_len != 0) memcpy(file_ids, response, response_len);
+    // JNI and other adapters may reuse their response buffer for decoded IDs.
+    if(response_len != 0 && file_ids != response) memcpy(file_ids, response, response_len);
     return DfcResponseDecodeOk;
 }
 
