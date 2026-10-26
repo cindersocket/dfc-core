@@ -934,7 +934,6 @@ static MunitResult test_create_prevalidation(const MunitParameter params[], void
     fixture_open(&fixture, existing_transaction_mac);
     open_pending(&fixture, "mixed");
     uint8_t file_number = strcmp(failure, "duplicate-number") == 0 ? 1 : 5;
-    if(strcmp(failure, "invalid-number") == 0) file_number = DFC_EV1_MAX_FILE_NUMBER + 1;
     if(strcmp(failure, "file-count") == 0) {
         uint8_t next = 6;
         while(fixture.credential.num_files < DFC_MAX_FILES) {
@@ -949,6 +948,7 @@ static MunitResult test_create_prevalidation(const MunitParameter params[], void
     PendingState pending_before = capture_pending_state(&fixture);
     uint8_t apdu[64];
     size_t apdu_len = build_create_transaction_mac(file_number, apdu);
+    if(strcmp(failure, "invalid-number") == 0) apdu[5] = DFC_EV1_MAX_FILE_NUMBER + 1;
     uint8_t expected = DFC_STATUS_PARAMETER_ERROR;
     if(strcmp(failure, "malformed") == 0) {
         apdu[4]--;
