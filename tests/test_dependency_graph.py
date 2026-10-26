@@ -158,6 +158,7 @@ class DependencyGraphTests(unittest.TestCase):
             snapshot = json.loads(output.read_text(encoding="utf-8"))
         manifest = snapshot["manifests"]["CMakeLists.txt"]
         resolved = next(iter(manifest["resolved"].values()))
+        self.assertRegex(snapshot["scanned"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         self.assertRegex(
             resolved["package_url"],
             r"^pkg:github/mistial-dev/tiny-crypto-c@[0-9a-f]{40}$",
@@ -175,6 +176,7 @@ class DependencyGraphTests(unittest.TestCase):
                     **os.environ,
                     "GITHUB_RUN_ID": run_id,
                     "GITHUB_RUN_ATTEMPT": run_attempt,
+                    "DFC_DEPENDENCY_SCANNED_AT": "2026-10-26T05:08:16Z",
                 }
                 subprocess.run(
                     ["python3", str(script), "--output", str(output)],
