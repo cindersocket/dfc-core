@@ -1452,14 +1452,24 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_readerStep(
     (void)type;
     JniReader* wrapper = reader_handle(env, handle);
     if(wrapper == NULL) return NULL;
+    uint8_t answer_bytes[JNI_READER_FRAME_MAX];
     size_t answer_len = 0;
-    uint8_t* answer_bytes = copy_array(env, answer, &answer_len, true);
-    if((*env)->ExceptionCheck(env)) return NULL;
+    if(!copy_bounded_array_or_null(
+           env,
+           answer,
+           answer_bytes,
+           sizeof(answer_bytes),
+           &answer_len,
+           true,
+           "reader answer is too large")) {
+        dfc_ffi_secure_zero(answer_bytes, sizeof(answer_bytes));
+        return NULL;
+    }
     uint8_t frame[JNI_READER_FRAME_MAX];
     size_t frame_len = 0;
     int32_t status = dfc_ffi_reader_step(
         wrapper->exchange, answer_bytes, answer_len, frame, sizeof(frame), &frame_len);
-    secure_free(answer_bytes, answer_len);
+    dfc_ffi_secure_zero(answer_bytes, sizeof(answer_bytes));
     if(status == 1) return make_array_and_wipe(env, frame, frame_len, sizeof(frame));
     dfc_ffi_secure_zero(frame, sizeof(frame));
     if(status == 0) {

@@ -108,6 +108,7 @@ public sealed class DfcReader : IDisposable
     private readonly DfcFraming framing;
     private readonly ReaderHandle session;
     private readonly ReaderHandle exchange;
+    private byte[] frameBuffer = new byte[InitialFrameCapacity];
 
     /// <summary>Creates a reader over <paramref name="transport" />.</summary>
     public DfcReader(IDfcApduExchange transport, DfcFraming framing = DfcFraming.Iso7816, IDfcRandomSource? random = null)
@@ -764,6 +765,7 @@ public sealed class DfcReader : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        CryptographicZero(this.frameBuffer);
         this.exchange.Dispose();
         this.session.Dispose();
     }
@@ -840,26 +842,37 @@ public sealed class DfcReader : IDisposable
     )
     {
         byte[]? answer = null;
-        var frame = new byte[InitialFrameCapacity];
+        var frame = this.frameBuffer;
         while (true)
         {
             var (status, frameLength) = this.Step(handles, answer, frame);
             if (status == BufferTooSmall && frameLength > frame.Length)
             {
-                Array.Resize(ref frame, frameLength);
+                CryptographicZero(frame);
+                frame = new byte[frameLength];
+                this.frameBuffer = frame;
                 continue;
             }
 
             if (status != Pending)
             {
+                CryptographicZero(frame);
                 return status == 0 ? this.Collect(handles) : Failure<DfcResponse>(handles, status);
             }
 
-            var sent = await this.TransmitAsync(
-                handles,
-                frame.AsMemory(0, frameLength),
-                cancellationToken
-            ).ConfigureAwait(false);
+            Result<byte[], DfcProtocolError> sent;
+            try
+            {
+                sent = await this.TransmitAsync(
+                    handles,
+                    frame.AsMemory(0, frameLength),
+                    cancellationToken
+                ).ConfigureAwait(false);
+            }
+            finally
+            {
+                CryptographicZero(frame);
+            }
             if (sent.IsFailure)
             {
                 ClearSession(handles);

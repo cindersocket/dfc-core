@@ -553,6 +553,7 @@ class Reader:
         self.transport, self.framing = transport, Framing(framing)
         self._lock = threading.RLock()
         self._in_transport_callback = False
+        self._step_output = (C.c_uint8 * INITIAL_OUTPUT_CAPACITY)()
         self._session, self._exchange = N.Handle(), N.Handle()
         lib = N.library()
         N.raise_status(lib.dfc_ffi_reader_session_new(C.byref(self._session)))
@@ -581,6 +582,7 @@ class Reader:
         """Wipe and release native reader state; repeated calls are safe."""
 
         with self._lock:
+            N.secure_zero(self._step_output)
             self._finalizer()
             self._session = N.Handle()
             self._exchange = N.Handle()
@@ -637,21 +639,32 @@ class Reader:
             answer = b""
             while True:
                 _raw, pointer = N.byte_pointer(answer)
-                capacity, length = INITIAL_OUTPUT_CAPACITY, C.c_size_t()
-                out = (C.c_uint8 * capacity)()
+                length = C.c_size_t()
                 while True:
+                    capacity = len(self._step_output)
                     status = N.library().dfc_ffi_reader_step(
-                        self._exchange, pointer, len(answer), out, capacity, C.byref(length)
+                        self._exchange,
+                        pointer,
+                        len(answer),
+                        self._step_output,
+                        capacity,
+                        C.byref(length),
                     )
                     if status != READER_BUFFER_TOO_SMALL:
                         break
-                    capacity *= 2
-                    out = (C.c_uint8 * capacity)()
+                    required = length.value
+                    if required <= capacity:
+                        required = capacity * 2
+                    grown = (C.c_uint8 * required)()
+                    N.secure_zero(self._step_output)
+                    self._step_output = grown
                 if status == READER_PENDING:
                     try:
                         self._in_transport_callback = True
                         try:
-                            answer = bytes(self.transport.transceive(bytes(out[: length.value])))
+                            frame = bytes(self._step_output[: length.value])
+                            N.secure_zero(self._step_output)
+                            answer = bytes(self.transport.transceive(frame))
                         finally:
                             self._in_transport_callback = False
                     except BaseException:
@@ -660,6 +673,7 @@ class Reader:
                         raise
                     self._open()
                     continue
+                N.secure_zero(self._step_output)
                 if status == READER_CARD_ERROR:
                     raise CardError(
                         status, N.library().dfc_ffi_reader_result_status(self._exchange)

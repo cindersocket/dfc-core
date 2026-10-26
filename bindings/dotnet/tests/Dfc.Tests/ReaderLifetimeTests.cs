@@ -1,11 +1,11 @@
 namespace Dfc.Tests;
 
 using System;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpFunctionalExtensions;
 using Dfc.Credentials;
-using Dfc.Emulation;
 using Dfc.Reader;
 using NUnit.Framework;
 
@@ -56,6 +56,7 @@ public sealed class ReaderLifetimeTests
         {
             Assert.That(actual, Is.SameAs(expected));
             Assert.That(reader.IsAuthenticated, Is.False);
+            Assert.That(FrameBuffer(reader), Has.All.EqualTo((byte)0));
         });
     }
 
@@ -88,7 +89,10 @@ public sealed class ReaderLifetimeTests
     {
         using var picc = Fixtures.Picc(Fixtures.Credential());
         var reader = new DfcReader(picc);
+        Array.Fill(FrameBuffer(reader), (byte)0xA5);
         reader.Dispose();
+
+        Assert.That(FrameBuffer(reader), Has.All.EqualTo((byte)0));
 
         var exception = Assert.ThrowsAsync<ObjectDisposedException>(
             async () => _ = await reader.ExchangeAsync(DfcCommand.GetVersion())
@@ -130,7 +134,7 @@ public sealed class ReaderLifetimeTests
 
         var response = Fixtures.Ok(await operation);
         Assert.That(response.Data, Has.Length.GreaterThan(0));
-        var exception = Assert.Throws<ObjectDisposedException>(() => reader.ClearSession());
+        var exception = Assert.Throws<ObjectDisposedException>(reader.ClearSession);
         Assert.That(exception!.ObjectName, Is.EqualTo(nameof(DfcReader)));
     }
 
@@ -154,7 +158,10 @@ public sealed class ReaderLifetimeTests
     {
         private DfcReader? reader;
 
-        public void Attach(DfcReader value) => reader = value;
+        public void Attach(DfcReader value)
+        {
+            this.reader = value;
+        }
 
         public async ValueTask<Result<byte[], DfcProtocolError>> TransmitAsync(
             ReadOnlyMemory<byte> frame,
@@ -162,70 +169,43 @@ public sealed class ReaderLifetimeTests
         )
         {
             var answer = await inner.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref reader, null)?.Dispose();
+            Interlocked.Exchange(ref this.reader, null)?.Dispose();
             return answer;
         }
     }
 
     private static async Task InvokeAsync(string operation, DfcReader reader)
     {
-        switch (operation)
+        _ = operation switch
         {
-            case "exchange":
-                _ = await reader.ExchangeAsync(DfcCommand.GetVersion());
-                break;
-            case "write-data":
-                _ = await reader.WriteDataAsync(Fixtures.FilePlain, 0, new byte[1]);
-                break;
-            case "write-record":
-                _ = await reader.WriteRecordAsync(Fixtures.FilePlain, 0, new byte[1]);
-                break;
-            case "update-record":
-                _ = await reader.UpdateRecordAsync(Fixtures.FilePlain, 0, 0, new byte[1]);
-                break;
-            case "authenticate":
-                _ = await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0);
-                break;
-            case "authenticate-iso7816":
-                _ = await reader.AuthenticateIso7816Async(0, DfcIso7816AuthAlgorithm.Aes, Fixtures.AesKey0);
-                break;
-            case "authenticate-ev2-first":
-                _ = await reader.AuthenticateEv2FirstAsync(0, Fixtures.AesKey0);
-                break;
-            case "authenticate-ev2-non-first":
-                _ = await reader.AuthenticateEv2NonFirstAsync(0, Fixtures.AesKey0);
-                break;
-            case "change-key":
-                _ = await reader.ChangeKeyAsync(1, Fixtures.AesKey1, Fixtures.AesKey1, true, 0);
-                break;
-            case "change-key-ev2":
-                _ = await reader.ChangeKeyEv2Async(0, 1, Fixtures.AesKey1, Fixtures.AesKey1, 0);
-                break;
-            case "delegated-application":
-                _ = await reader.CreateDelegatedApplicationAsync(
-                    new DfcDelegatedApplicationRequest(
-                        [0x0A, 0x0B, 0x0C],
-                        1,
-                        0,
-                        64,
-                        0x0F,
-                        0x81,
-                        new byte[16],
-                        new byte[16],
-                        new byte[24],
-                        0
-                    )
-                );
-                break;
-            case "proximity-check":
-                _ = await reader.ProximityCheckAsync(new byte[16]);
-                break;
-            case "select-virtual-card":
-                _ = await reader.SelectVirtualCardAsync(new byte[] { 0x01 }, new byte[16], new byte[16]);
-                break;
-            default:
-                throw new InvalidOperationException($"Unknown reader operation {operation}.");
-        }
+            "exchange" => await reader.ExchangeAsync(DfcCommand.GetVersion()),
+            "write-data" => await reader.WriteDataAsync(Fixtures.FilePlain, 0, new byte[1]),
+            "write-record" => await reader.WriteRecordAsync(Fixtures.FilePlain, 0, new byte[1]),
+            "update-record" => await reader.UpdateRecordAsync(Fixtures.FilePlain, 0, 0, new byte[1]),
+            "authenticate" => await reader.AuthenticateAsync(DfcAuthenticationMode.Aes, 0, Fixtures.AesKey0),
+            "authenticate-iso7816" => await reader.AuthenticateIso7816Async(0, DfcIso7816AuthAlgorithm.Aes, Fixtures.AesKey0),
+            "authenticate-ev2-first" => await reader.AuthenticateEv2FirstAsync(0, Fixtures.AesKey0),
+            "authenticate-ev2-non-first" => await reader.AuthenticateEv2NonFirstAsync(0, Fixtures.AesKey0),
+            "change-key" => await reader.ChangeKeyAsync(1, Fixtures.AesKey1, Fixtures.AesKey1, true, 0),
+            "change-key-ev2" => await reader.ChangeKeyEv2Async(0, 1, Fixtures.AesKey1, Fixtures.AesKey1, 0),
+            "delegated-application" => await reader.CreateDelegatedApplicationAsync(
+                                new DfcDelegatedApplicationRequest(
+                                    [0x0A, 0x0B, 0x0C],
+                                    1,
+                                    0,
+                                    64,
+                                    0x0F,
+                                    0x81,
+                                    new byte[16],
+                                    new byte[16],
+                                    new byte[24],
+                                    0
+                                )
+                            ),
+            "proximity-check" => await reader.ProximityCheckAsync(new byte[16]),
+            "select-virtual-card" => await reader.SelectVirtualCardAsync(new byte[] { 0x01 }, new byte[16], new byte[16]),
+            _ => throw new InvalidOperationException($"Unknown reader operation {operation}."),
+        };
     }
 
     private sealed class ThrowingTransport(IDfcApduExchange inner) : IDfcApduExchange
@@ -239,15 +219,22 @@ public sealed class ReaderLifetimeTests
             CancellationToken cancellationToken
         )
         {
-            if (Exception is null || SuccessfulCallsBeforeThrow-- > 0)
+            if (this.Exception is null || this.SuccessfulCallsBeforeThrow-- > 0)
             {
                 return await inner.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
             }
-            throw Exception;
+            throw this.Exception;
         }
     }
 
     private sealed class TransportProbeException : Exception;
+
+    private static byte[] FrameBuffer(DfcReader reader)
+    {
+        return (byte[])typeof(DfcReader)
+            .GetField("frameBuffer", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(reader)!;
+    }
 
     private sealed class BlockingTransport(IDfcApduExchange inner) : IDfcApduExchange
     {
@@ -263,10 +250,10 @@ public sealed class ReaderLifetimeTests
         )
         {
             var answer = await inner.TransmitAsync(frame, cancellationToken).ConfigureAwait(false);
-            if (Interlocked.Exchange(ref block, 0) != 0)
+            if (Interlocked.Exchange(ref this.block, 0) != 0)
             {
-                Entered.TrySetResult();
-                await Continue.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                this.Entered.TrySetResult();
+                await this.Continue.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
             return answer;
         }
@@ -276,12 +263,15 @@ public sealed class ReaderLifetimeTests
     {
         private DfcReader? reader;
 
-        public void Attach(DfcReader value) => reader = value;
+        public void Attach(DfcReader value)
+        {
+            this.reader = value;
+        }
 
         public void Fill(Span<byte> destination)
         {
             destination.Clear();
-            Interlocked.Exchange(ref reader, null)?.Dispose();
+            Interlocked.Exchange(ref this.reader, null)?.Dispose();
         }
     }
 }

@@ -135,6 +135,25 @@ def test_picc_retry_capacity_accepts_raised_native_capacity() -> None:
     assert _retry_capacity(8193) == 8193
 
 
+def test_reader_reuses_step_scratch_between_exchanges(monkeypatch: pytest.MonkeyPatch) -> None:
+    class UnusedTransport:
+        def transceive(self, _frame: bytes) -> bytes:
+            pytest.fail("completed reader step unexpectedly used the transport")
+
+    reader = Reader(UnusedTransport())
+    library = _native.library()
+
+    def complete_step(*_args: object) -> int:
+        return 0
+
+    monkeypatch.setattr(library, "dfc_ffi_reader_step", complete_step)
+    scratch = reader._step_output
+    reader._run()
+    reader._run()
+    assert reader._step_output is scratch
+    reader.close()
+
+
 FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-minimal.dfcb"
 MAXIMAL_TEXT_FIXTURE = Path(__file__).parents[3] / "examples" / "credentials" / "v6-maximal.dfc"
 

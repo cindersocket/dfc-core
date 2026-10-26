@@ -711,17 +711,60 @@ impl VirtualPicc {
 
     /// Exchanges one complete native or ISO-wrapped command.
     pub fn exchange(&mut self, command: &[u8]) -> Result<Vec<u8>, Error> {
-        self.exchange_inner(command, false)
+        let mut response = Vec::new();
+        self.exchange_into(command, &mut response)?;
+        Ok(response)
+    }
+
+    /// Exchanges one command into caller-owned storage that can be reused.
+    pub fn exchange_into(&mut self, command: &[u8], response: &mut Vec<u8>) -> Result<(), Error> {
+        self.exchange_inner(command, false, response)
     }
 
     /// Exchanges one ISO-DEP frame, including transport chaining and retries.
     pub fn frame_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, Error> {
-        self.exchange_inner(frame, true)
+        let mut response = Vec::new();
+        self.frame_exchange_into(frame, &mut response)?;
+        Ok(response)
     }
 
-    fn exchange_inner(&mut self, input: &[u8], frame: bool) -> Result<Vec<u8>, Error> {
+    /// Exchanges one ISO-DEP frame into caller-owned reusable storage.
+    pub fn frame_exchange_into(
+        &mut self,
+        frame: &[u8],
+        response: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        self.exchange_inner(frame, true, response)
+    }
+
+    fn exchange_inner(
+        &mut self,
+        input: &[u8],
+        frame: bool,
+        response: &mut Vec<u8>,
+    ) -> Result<(), Error> {
+        let result = self.exchange_inner_unchecked(input, frame, response);
+        if result.is_err() {
+            unsafe { sys::dfc_ffi_secure_zero(response.as_mut_ptr().cast(), response.len()) };
+            response.clear();
+        }
+        result
+    }
+
+    fn exchange_inner_unchecked(
+        &mut self,
+        input: &[u8],
+        frame: bool,
+        response: &mut Vec<u8>,
+    ) -> Result<(), Error> {
         const INITIAL_RESPONSE_CAPACITY: usize = 256;
-        let mut response = vec![0; INITIAL_RESPONSE_CAPACITY];
+        unsafe { sys::dfc_ffi_secure_zero(response.as_mut_ptr().cast(), response.len()) };
+        if response.capacity() < INITIAL_RESPONSE_CAPACITY {
+            response
+                .try_reserve_exact(INITIAL_RESPONSE_CAPACITY - response.capacity())
+                .map_err(|_| Error::OutOfMemory)?;
+        }
+        response.resize(INITIAL_RESPONSE_CAPACITY, 0);
         let mut len = 0;
         let call = if frame {
             sys::dfc_ffi_picc_frame_exchange
@@ -763,8 +806,11 @@ impl VirtualPicc {
         if len > response.len() {
             return Err(Error::InvalidArgument);
         }
+        unsafe {
+            sys::dfc_ffi_secure_zero(response.as_mut_ptr().add(len).cast(), response.len() - len)
+        };
         response.truncate(len);
-        Ok(response)
+        Ok(())
     }
 
     /// Ends the RF field and clears protocol and authentication state.
@@ -934,6 +980,46 @@ mod tests {
         assert_eq!(calls.load(Ordering::Relaxed), 2);
         picc.reset_protocol().expect("reset after random failure");
         assert!(picc.exchange(&[0x90, 0x60, 0, 0, 0]).is_ok());
+    }
+
+    #[test]
+    fn picc_exchange_reuses_caller_owned_response_storage() {
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
+        picc.activate().expect("activation");
+        let mut response = Vec::with_capacity(256);
+        let allocation = response.as_ptr();
+
+        picc.exchange_into(&[0x90, 0x60, 0, 0, 0], &mut response)
+            .expect("first exchange");
+        assert_eq!(response.as_ptr(), allocation);
+        picc.exchange_into(&[0x90, 0x60, 0, 0, 0], &mut response)
+            .expect("second exchange");
+        assert_eq!(response.as_ptr(), allocation);
+    }
+
+    #[test]
+    fn picc_exchange_wipes_unused_reused_response_storage() {
+        let credential = Credential::decode(include_bytes!(
+            "../../../../examples/credentials/v6-minimal.dfcb"
+        ))
+        .expect("fixture");
+        let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
+        picc.activate().expect("activation");
+        let mut response = vec![0xA5; 256];
+
+        picc.exchange_into(&[0x90, 0x60, 0, 0, 0], &mut response)
+            .expect("exchange");
+        let initialized_capacity =
+            unsafe { std::slice::from_raw_parts(response.as_ptr(), response.capacity()) };
+        assert!(
+            initialized_capacity[response.len()..]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
     }
 
     struct PiccTransport(VirtualPicc);

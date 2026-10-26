@@ -116,6 +116,10 @@ public final class DfcJniNarrowingTest {
       check(DfcNative.readerStep(handle, null) != null, "maximum instruction accepted");
       DfcNative.readerBegin(handle, ISO, 0x60, none, 0, -1);
       check(DfcNative.readerStep(handle, null) != null, "reader usable after refusals");
+      DfcNative.readerBegin(handle, ISO, 0x60, none, 0, -1);
+      refused("oversized reader answer", () -> DfcNative.readerStep(handle, new byte[601]));
+      check(DfcNative.readerStep(handle, null) != null,
+          "oversized answer refusal preserved pending command");
 
       byte[] key = new byte[16];
       byte[] random8 = new byte[8];
