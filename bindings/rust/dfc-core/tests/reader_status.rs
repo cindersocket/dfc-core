@@ -108,10 +108,8 @@ impl Transport for CorruptD40MacTransport {
 }
 
 fn d40_reader(forge_empty: bool) -> Reader<CorruptD40MacTransport> {
-    let credential = Credential::decode(include_bytes!(
-        "../../../../examples/credentials/v6-auth-commands.dfcb"
-    ))
-    .expect("fixture");
+    let credential =
+        Credential::decode(include_bytes!("fixtures/v6-auth-commands.dfcb")).expect("fixture");
     let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
     picc.activate().expect("activation");
     let mut reader = Reader::new(

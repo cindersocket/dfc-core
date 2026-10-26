@@ -932,10 +932,8 @@ mod tests {
 
     #[test]
     fn random_failure_aborts_without_mutating_picc() {
-        let credential = Credential::decode(include_bytes!(
-            "../../../../examples/credentials/v6-minimal.dfcb"
-        ))
-        .expect("fixture");
+        let credential = Credential::decode(include_bytes!("../tests/fixtures/v6-minimal.dfcb"))
+            .expect("fixture");
         let mut picc =
             VirtualPicc::from_credential_with_random(credential, |_| Vec::new()).expect("PICC");
         picc.activate().expect("activation");
@@ -958,10 +956,8 @@ mod tests {
             atomic::{AtomicUsize, Ordering},
         };
 
-        let credential = Credential::decode(include_bytes!(
-            "../../../../examples/credentials/v6-minimal.dfcb"
-        ))
-        .expect("fixture");
+        let credential = Credential::decode(include_bytes!("../tests/fixtures/v6-minimal.dfcb"))
+            .expect("fixture");
         let calls = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&calls);
         let mut picc = VirtualPicc::from_credential_with_random(credential, move |length| {
@@ -984,10 +980,8 @@ mod tests {
 
     #[test]
     fn picc_exchange_reuses_caller_owned_response_storage() {
-        let credential = Credential::decode(include_bytes!(
-            "../../../../examples/credentials/v6-minimal.dfcb"
-        ))
-        .expect("fixture");
+        let credential = Credential::decode(include_bytes!("../tests/fixtures/v6-minimal.dfcb"))
+            .expect("fixture");
         let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
         picc.activate().expect("activation");
         let mut response = Vec::with_capacity(256);
@@ -1003,10 +997,8 @@ mod tests {
 
     #[test]
     fn picc_exchange_wipes_unused_reused_response_storage() {
-        let credential = Credential::decode(include_bytes!(
-            "../../../../examples/credentials/v6-minimal.dfcb"
-        ))
-        .expect("fixture");
+        let credential = Credential::decode(include_bytes!("../tests/fixtures/v6-minimal.dfcb"))
+            .expect("fixture");
         let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
         picc.activate().expect("activation");
         let mut response = vec![0xA5; 256];
@@ -1034,10 +1026,8 @@ mod tests {
     #[test]
     fn reader_clear_header_is_never_narrowed_before_native_check() {
         const NATIVE_MAX_CLEAR_HEADER: u32 = 10;
-        let credential = Credential::decode(include_bytes!(
-            "../../../../examples/credentials/v6-minimal.dfcb"
-        ))
-        .expect("fixture");
+        let credential = Credential::decode(include_bytes!("../tests/fixtures/v6-minimal.dfcb"))
+            .expect("fixture");
         let mut picc = VirtualPicc::from_credential(credential).expect("PICC");
         picc.activate().expect("activation");
         let mut reader = Reader::new(PiccTransport(picc), Framing::Iso7816).expect("reader");
@@ -1087,10 +1077,8 @@ mod tests {
     #[cfg(target_pointer_width = "64")]
     #[test]
     fn credential_index_above_u32_is_refused_not_wrapped() {
-        let credential = Credential::decode(include_bytes!(
-            "../../../../examples/credentials/v6-maximal.dfcb"
-        ))
-        .expect("fixture");
+        let credential = Credential::decode(include_bytes!("../tests/fixtures/v6-maximal.dfcb"))
+            .expect("fixture");
         let wrapped = u32::MAX as usize + 1;
         assert!(credential.application(0).is_ok());
         assert!(credential.file(0).is_ok());
@@ -1107,7 +1095,7 @@ mod tests {
 
     #[test]
     fn limited_credit_value_is_exposed_by_the_public_file_model() {
-        let text = include_str!("../../../../examples/credentials/v6-maximal.dfc").replace(
+        let text = include_str!("../tests/fixtures/v6-maximal.dfc").replace(
             "Application 00 File 02 Limited Credit: 01\n",
             "Application 00 File 02 Limited Credit: 01\nApplication 00 File 02 Limited Credit Value: 37\n",
         );
