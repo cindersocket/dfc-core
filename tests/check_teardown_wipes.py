@@ -256,7 +256,7 @@ def main() -> None:
 
     change_key = reader[
         reader.index("DfcReaderStatus dfc_reader_change_key_cryptogram(") : reader.index(
-            "static bool wire_mac_8("
+            "// ------------------------------------------------------------ EV2 keys ---"
         )
     ]
     for local in ("stored", "clear", "iv"):
@@ -327,15 +327,15 @@ def main() -> None:
             "void dfc_emulator_reset_session("
         )
     ]
-    for local in (
-        "iso_auth_card_first",
-        "iso_auth_host_first",
-        "iso_auth_external_iv",
-        "iso_auth_key",
-    ):
-        expression = f"dfc_secure_wipe(emulator->{local}, sizeof(emulator->{local}))"
-        if expression not in iso_cleanup:
-            raise SystemExit(f"ISO authentication cleanup does not wipe {local}")
+    if "dfc_emulator_clear_pending_authentication_storage(emulator)" not in iso_cleanup:
+        raise SystemExit("ISO authentication cleanup does not wipe shared pending secrets")
+    pending_cleanup = emulator[
+        emulator.index("void dfc_emulator_clear_pending_authentication_storage(") : emulator.index(
+            "void dfc_emulator_clear_iso_authentication("
+        )
+    ]
+    if "dfc_secure_wipe(&emulator->pending_authentication" not in pending_cleanup:
+        raise SystemExit("shared pending authentication cleanup does not wipe its union")
     if "dfc_emulator_clear_iso_authentication(emulator)" not in virtual_picc:
         raise SystemExit("virtual PICC does not use centralized ISO authentication cleanup")
 

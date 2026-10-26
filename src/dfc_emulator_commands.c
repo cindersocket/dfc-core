@@ -767,25 +767,6 @@ static void handle_create_delegated_application(
     dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
 }
 
-static bool delegated_wire_mac(
-    const uint8_t key[DFC_AES_KEY_LENGTH],
-    const uint8_t* data,
-    size_t data_len,
-    uint8_t output[DFC_DELEGATED_MAC_LENGTH]) {
-    if(!output) return false;
-    memset(output, 0, DFC_DELEGATED_MAC_LENGTH);
-    if(!key || (data_len != 0 && !data)) return false;
-    uint8_t full_mac[DFC_AES_CMAC_LENGTH] = {0};
-    if(!aes_cmac((uint8_t*)key, DFC_AES_KEY_LENGTH, (uint8_t*)data, data_len, full_mac)) {
-        dfc_secure_wipe(full_mac, sizeof(full_mac));
-        return false;
-    }
-    for(size_t index = 0; index < DFC_DELEGATED_MAC_LENGTH; index++)
-        output[index] = full_mac[(index * 2) + 1];
-    dfc_secure_wipe(full_mac, sizeof(full_mac));
-    return true;
-}
-
 static void handle_create_delegated_application_continuation(
     DfcEmulator* emulator,
     const uint8_t* buffer,
@@ -838,7 +819,7 @@ static void handle_create_delegated_application_continuation(
     memcpy(dam_input, emulator->delegated_creation_header, dam_input_len);
     memcpy(dam_input + dam_input_len, encrypted_key, DFC_DELEGATED_ENCRYPTED_KEY_LENGTH);
     dam_input_len += DFC_DELEGATED_ENCRYPTED_KEY_LENGTH;
-    if(!delegated_wire_mac(
+    if(!dfc_ev2_wire_mac(
            emulator->credential->picc_dam_mac_key, dam_input, dam_input_len, expected_dam_mac) ||
        !dfc_ct_equal(expected_dam_mac, dam_mac, sizeof(expected_dam_mac))) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);

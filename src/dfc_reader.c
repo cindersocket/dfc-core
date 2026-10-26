@@ -1948,19 +1948,6 @@ cleanup:
     return status;
 }
 
-// AES CMAC truncated to the odd-indexed octets, as every EV2-era MAC is.
-static bool wire_mac_8(const uint8_t key[16], const uint8_t* input, size_t len, uint8_t out[8]) {
-    uint8_t full[DFC_AES_CMAC_LENGTH];
-    if(!aes_cmac((uint8_t*)key, DFC_AES_KEY_LENGTH, (uint8_t*)input, len, full)) {
-        memset(out, 0, DFC_WIRE_MAC_LENGTH);
-        dfc_secure_wipe(full, sizeof(full));
-        return false;
-    }
-    dfc_truncate_aes_wire_mac(full, out);
-    dfc_secure_wipe(full, sizeof(full));
-    return true;
-}
-
 // ------------------------------------------------------------ EV2 keys ---
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -2046,7 +2033,7 @@ DfcReaderStatus dfc_reader_create_delegated_application_begin(
 
     dam_input[0] = DFC_CMD_CREATE_DELEGATED_APPLICATION;
     memcpy(dam_input + 1, body, body_len);
-    if(!wire_mac_8(dam_mac_key, dam_input, 1 + body_len, body + body_len)) {
+    if(!dfc_ev2_wire_mac(dam_mac_key, dam_input, 1 + body_len, body + body_len)) {
         goto cleanup;
     }
     body_len += DFC_DELEGATED_MAC_LENGTH;
@@ -2104,7 +2091,7 @@ bool dfc_reader_proximity_check_mac(
     len += published_len;
     if(transcript_len) memcpy(input + len, transcript, transcript_len);
     len += transcript_len;
-    bool ok = wire_mac_8(key, input, len, mac);
+    bool ok = dfc_ev2_wire_mac(key, input, len, mac);
     dfc_secure_wipe(input, sizeof(input));
     return ok;
 }
@@ -2189,7 +2176,7 @@ DfcReaderStatus dfc_reader_virtual_card_authenticate_apdu(
     out[2] = 0x00;
     out[3] = 0x00;
     out[4] = DFC_WIRE_MAC_LENGTH;
-    if(!wire_mac_8(select_mac_key, input, sizeof(input), out + 5)) {
+    if(!dfc_ev2_wire_mac(select_mac_key, input, sizeof(input), out + 5)) {
         dfc_secure_wipe(input, sizeof(input));
         dfc_secure_wipe(out, 5 + DFC_WIRE_MAC_LENGTH);
         return DfcReaderInvalid;
