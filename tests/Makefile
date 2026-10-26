@@ -150,7 +150,7 @@ FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers \
 	check-credential-passes \
 	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
-	check-secure-messaging-policy \
+	check-secure-messaging-policy check-ffi-export-inventory \
 	check-ffi-layout-registry fuzz clean
 
 # One pattern rule serves every suite: each links the whole core, so a suite
@@ -197,7 +197,9 @@ test_dfc_roll_key_set_wipe: test_dfc_roll_key_set_wipe.c $(CORE)/dfc_credential.
 		$(CORE)/dfc_crypto.c $(HOST)/dfc_port_host.c $(CRYPTO_SRC) munit/munit.c $(LDFLAGS)
 
 test_dfc_ffi_reduced_profile: test_dfc_ffi_reduced_profile.c $(CORE_SRC) \
-		../ffi/dfc_ffi.c ../ffi/dfc_ffi_an10922.c ../ffi/dfc_ffi_response.c \
+		../ffi/dfc_ffi.c ../ffi/dfc_ffi_an10922.c ../ffi/dfc_ffi_credential.c \
+		../ffi/dfc_ffi_model.c ../ffi/dfc_ffi_picc.c ../ffi/dfc_ffi_reader.c \
+		../ffi/dfc_ffi_response.c \
 		../ffi/dfc_ffi_sdm.c ../ffi/dfc_ffi_transaction_mac.c \
 		../port/ffi/dfc_port_ffi.c ../port/host/dfc_bytebuf_host.c $(CRYPTO_SRC)
 	$(CC) $(CFLAGS) -I../ffi -I../port/ffi \
@@ -222,7 +224,7 @@ test_dfc_transaction_snapshot_large: test_dfc_transaction_snapshot.c \
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-layout-registry check-cipher-profile-matrix vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-export-inventory check-ffi-layout-registry check-cipher-profile-matrix vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(DES_CHAIN_FAULT_TEST)
@@ -295,6 +297,9 @@ check-random-failure-registry:
 
 check-secure-messaging-policy:
 	python3 check_secure_messaging_policy.py
+
+check-ffi-export-inventory:
+	python3 check_ffi_export_inventory.py
 
 check-ffi-layout-registry:
 	python3 ../scripts/generate-ffi-layout.py --check

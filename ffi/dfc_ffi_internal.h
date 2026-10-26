@@ -1,9 +1,38 @@
 #ifndef DFC_FFI_INTERNAL_H
 #define DFC_FFI_INTERNAL_H
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "dfc_ffi.h"
 
 #include "dfc_common.h"
+#include "dfc_credential.h"
+
+// The public header keeps handles opaque. FFI implementation files share the
+// credential layout so ownership can move between model and PICC APIs.
+struct DfcFfiCredential {
+    DfcCredential model;
+};
+
+// Decoders and clones publish every credential byte before returning, so a
+// raw allocation avoids clearing the large model immediately before overwrite.
+static inline DfcFfiCredential* dfc_ffi_credential_alloc_uninitialized(void) {
+    return malloc(sizeof(DfcFfiCredential));
+}
+
+static inline void
+    dfc_ffi_set_error(DfcFfiError* error, int32_t status, uint32_t line, const char* message) {
+    if(!error) return;
+    error->status = status;
+    error->line = line;
+    memset(error->message, 0, sizeof(error->message));
+    if(message) {
+        size_t length = strlen(message);
+        if(length >= sizeof(error->message)) length = sizeof(error->message) - 1;
+        memcpy(error->message, message, length);
+    }
+}
 
 static inline bool dfc_ffi_ranges_overlap(
     const void* first,

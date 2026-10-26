@@ -278,6 +278,10 @@ endif()
 set(DFC_FFI_IMPLEMENTATION_SOURCES
         ffi/dfc_ffi.c
         ffi/dfc_ffi_an10922.c
+        ffi/dfc_ffi_credential.c
+        ffi/dfc_ffi_model.c
+        ffi/dfc_ffi_picc.c
+        ffi/dfc_ffi_reader.c
         ffi/dfc_ffi_response.c
         ffi/dfc_ffi_sdm.c
         ffi/dfc_ffi_transaction_mac.c)

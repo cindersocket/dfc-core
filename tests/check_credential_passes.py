@@ -58,7 +58,7 @@ def move_before(source: str, signature: str, statement: str, marker: str) -> str
 
 def problems(ffi: str, der: str) -> list[str]:
     failures: list[str] = []
-    raw = function(ffi, "static DfcFfiCredential* credential_alloc_uninitialized(")
+    raw = function(ffi, "static inline DfcFfiCredential* dfc_ffi_credential_alloc_uninitialized(")
     canonical = function(ffi, "static DfcFfiCredential* credential_alloc(")
     if "malloc(sizeof(DfcFfiCredential))" not in raw or "calloc(" in raw:
         failures.append("raw FFI credentials must use one uninitialized allocation")
@@ -71,7 +71,7 @@ def problems(ffi: str, der: str) -> list[str]:
     for name in ("parse_text", "decode", "clone"):
         body = function(ffi, f"int32_t dfc_ffi_credential_{name}(")
         if (
-            "credential_alloc_uninitialized()" not in body
+            "dfc_ffi_credential_alloc_uninitialized()" not in body
             or "credential_alloc()" in body
             or "dfc_credential_clear" in body
         ):
@@ -99,14 +99,14 @@ def problems(ffi: str, der: str) -> list[str]:
 
     clone = " ".join(function(ffi, "int32_t dfc_ffi_credential_clone(").split())
     clone_publish = re.compile(
-        r"\*out\s*=\s*credential_alloc_uninitialized\(\);\s*"
+        r"\*out\s*=\s*dfc_ffi_credential_alloc_uninitialized\(\);\s*"
         r"if\s*\(\s*!\*out\s*\)\s*return\s+DFC_FFI_OUT_OF_MEMORY;\s*"
         r"dfc_credential_copy_model\(\s*&\(\*out\)->model,\s*&credential->model\s*\);"
     )
     if not clone_publish.search(clone):
         failures.append("FFI clone must immediately copy the complete credential after allocation")
 
-    if ffi.count("credential_alloc_uninitialized()") != 4:
+    if ffi.count("dfc_ffi_credential_alloc_uninitialized()") != 4:
         failures.append("raw FFI credential allocation escaped its reviewed callers")
 
     new = function(ffi, "int32_t dfc_ffi_credential_new(")
@@ -120,7 +120,10 @@ def problems(ffi: str, der: str) -> list[str]:
 
 
 def main() -> None:
-    ffi = (ROOT / "ffi/dfc_ffi.c").read_text(encoding="utf-8")
+    ffi = "\n".join(
+        (ROOT / "ffi" / name).read_text(encoding="utf-8")
+        for name in ("dfc_ffi_internal.h", "dfc_ffi_credential.c", "dfc_ffi_model.c")
+    )
     der = (ROOT / "src/dfc_der.c").read_text(encoding="utf-8")
     failures = problems(ffi, der)
     if failures:
@@ -128,7 +131,7 @@ def main() -> None:
 
     ffi_mutants = [
         ffi.replace("malloc(sizeof(DfcFfiCredential))", "calloc(1, sizeof(DfcFfiCredential))", 1),
-        ffi.replace("credential_alloc_uninitialized()", "credential_alloc()", 1),
+        ffi.replace("dfc_ffi_credential_alloc_uninitialized()", "credential_alloc()", 1),
     ]
     for name in ("parse_text", "decode"):
         signature = f"int32_t dfc_ffi_credential_{name}("

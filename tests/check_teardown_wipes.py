@@ -70,7 +70,11 @@ def main() -> None:
     emulator_crypto = (ROOT / "src" / "dfc_emulator_crypto.c").read_text(encoding="utf-8")
     des_chain = (ROOT / "src" / "dfc_crypto_des_chain.c").read_text(encoding="utf-8")
     emulator_auth = (ROOT / "src" / "dfc_emulator_commands_auth.c").read_text(encoding="utf-8")
-    ffi = (ROOT / "ffi" / "dfc_ffi.c").read_text(encoding="utf-8")
+    ffi = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "ffi").glob("dfc_ffi*.c"))
+        if path.name != "dfc_target_ffi.c"
+    )
     reader = (ROOT / "src" / "dfc_reader.c").read_text(encoding="utf-8")
     virtual_picc = (ROOT / "src" / "dfc_virtual_picc.c").read_text(encoding="utf-8")
     emulator_commands = commands
@@ -162,7 +166,9 @@ def main() -> None:
             )
         ],
         "reader D40 send": reader[
-            reader.index("static bool\n    d40_send(") : reader.index("static void put_le32(")
+            reader.index("static bool\n    d40_send(") : reader.index(
+                "// The full EV1 CMAC chained from the session IV."
+            )
         ],
     }
     for name, caller in d40_callers.items():
