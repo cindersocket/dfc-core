@@ -175,13 +175,6 @@ static bool
         false, DfcCryptoDesChainForward, key, key_len, zero_iv, in, out, len);
 }
 
-static void put_le32(uint8_t* out, uint32_t value) {
-    out[0] = (uint8_t)value;
-    out[1] = (uint8_t)(value >> 8);
-    out[2] = (uint8_t)(value >> 16);
-    out[3] = (uint8_t)(value >> 24);
-}
-
 // The full EV1 CMAC chained from the session IV. It becomes the next IV, and
 // its first eight octets are what goes on the wire.
 static bool ev1_cmac_segments(
@@ -1915,10 +1908,10 @@ DfcReaderStatus dfc_reader_change_key_cryptogram(
     uint8_t crc_head[2] = {DFC_CMD_CHANGE_KEY, (uint8_t)(key_no & 0x3F)};
     uint32_t crc = dfc_crc32_extend(0xFFFFFFFFu, crc_head, sizeof(crc_head));
     crc = dfc_crc32_extend(crc, clear, cursor);
-    put_le32(clear + cursor, crc);
+    dfc_write_uint32_le(clear + cursor, crc);
     cursor += 4;
     if(different) {
-        put_le32(clear + cursor, dfc_crc32(stored, key_len));
+        dfc_write_uint32_le(clear + cursor, dfc_crc32(stored, key_len));
         cursor += 4;
     }
     size_t block = block_size(session->sm.cipher);
@@ -2176,7 +2169,7 @@ DfcReaderStatus dfc_reader_virtual_card_authenticate_apdu(
     out[2] = 0x00;
     out[3] = 0x00;
     out[4] = DFC_WIRE_MAC_LENGTH;
-    if(!dfc_ev2_wire_mac(select_mac_key, input, sizeof(input), out + 5)) {
+    if(!dfc_aes_wire_mac(select_mac_key, input, sizeof(input), out + 5)) {
         dfc_secure_wipe(input, sizeof(input));
         dfc_secure_wipe(out, 5 + DFC_WIRE_MAC_LENGTH);
         return DfcReaderInvalid;

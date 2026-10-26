@@ -207,6 +207,20 @@ extern const uint8_t DFC_ISO_AID[7];
 #define DFC_CHANGE_KEY_ACCESS_SAME       0x0E
 #define DFC_CHANGE_KEY_ACCESS_FROZEN     0x0F
 
+// Decode one logical access-right nibble. Access rights stay in host order
+// inside the engine; only APDU ingress and egress convert the two wire octets.
+static inline uint8_t dfc_access_nibble(uint16_t access_rights, unsigned shift) {
+    return (uint8_t)((access_rights >> shift) & 0x0Fu);
+}
+
+// Store the little-endian counters and CRC values used by native commands.
+static inline void dfc_write_uint32_le(uint8_t output[4], uint32_t value) {
+    output[0] = (uint8_t)value;
+    output[1] = (uint8_t)(value >> 8);
+    output[2] = (uint8_t)(value >> 16);
+    output[3] = (uint8_t)(value >> 24);
+}
+
 // Access-right nibble values
 #define DFC_ACCESS_FREE 0x0E
 #define DFC_ACCESS_DENY 0x0F

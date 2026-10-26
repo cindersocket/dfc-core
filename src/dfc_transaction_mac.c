@@ -121,13 +121,6 @@ static void write_uint24_le(uint8_t output[3], uint32_t value) {
     output[2] = (uint8_t)(value >> 16);
 }
 
-static void write_uint32_le(uint8_t output[4], uint32_t value) {
-    output[0] = (uint8_t)value;
-    output[1] = (uint8_t)(value >> 8);
-    output[2] = (uint8_t)(value >> 16);
-    output[3] = (uint8_t)(value >> 24);
-}
-
 bool dfc_transaction_mac_derive_session_key(
     const uint8_t key[DFC_AES_KEY_LENGTH],
     const uint8_t* uid,
@@ -146,7 +139,7 @@ bool dfc_transaction_mac_derive_session_key(
         DFC_DERIVATION_COUNTER_LOW,
         DFC_DERIVED_AES_KEY_LENGTH_HIGH,
         DFC_DERIVED_AES_KEY_LENGTH_LOW};
-    write_uint32_le(vector + DFC_TRANSACTION_VECTOR_COUNTER_OFFSET, counter);
+    dfc_write_uint32_le(vector + DFC_TRANSACTION_VECTOR_COUNTER_OFFSET, counter);
     memcpy(vector + DFC_TRANSACTION_VECTOR_UID_OFFSET, uid, uid_length);
     bool ok = aes_cmac((uint8_t*)key, DFC_AES_KEY_LENGTH, vector, sizeof(vector), session_key);
     dfc_secure_wipe(vector, sizeof(vector));
@@ -556,7 +549,7 @@ DfcTransactionMacStatus dfc_transaction_mac_add_value(
         command != DFC_CMD_LIMITED_CREDIT))
         return DfcTransactionMacInvalid;
     uint8_t encoded[4];
-    write_uint32_le(encoded, value);
+    dfc_write_uint32_le(encoded, value);
     return dfc_transaction_mac_input_add_value(
                verifier->input,
                verifier->input_capacity,

@@ -51,16 +51,8 @@ static bool require_selected_application(DfcEmulator* emulator, DfcByteBuf* tx_b
     return false;
 }
 
-bool dfc_emulator_command_is_authenticated_with_key(const DfcEmulator* emulator, uint8_t key_no) {
-    return (dfc_emulator_native_authentication_active(emulator) && emulator->auth_key_no == key_no)
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-           || (emulator->ev2_session_active && emulator->ev2_authenticated_key_no == key_no)
-#endif
-        ;
-}
-
 bool dfc_emulator_command_is_authenticated_as_master(const DfcEmulator* emulator) {
-    return dfc_emulator_command_is_authenticated_with_key(emulator, 0x00);
+    return dfc_emulator_is_authenticated_with_key(emulator, 0x00);
 }
 
 uint8_t dfc_emulator_command_current_key_settings_1(DfcEmulator* emulator) {
@@ -148,10 +140,6 @@ bool dfc_emulator_command_require_directory_access(DfcEmulator* emulator, DfcByt
     return false;
 }
 
-static uint8_t access_nibble(uint16_t access_rights, unsigned shift) {
-    return (uint8_t)((access_rights >> shift) & 0x0F);
-}
-
 // DfcFile::access_rights holds the logical nibble order:
 // read at shift 12, write at shift 8, read&write at shift 4, change at shift 0.
 // The wire carries the same value least-significant octet first, so the APDU
@@ -160,19 +148,19 @@ static uint8_t access_nibble(uint16_t access_rights, unsigned shift) {
 // AIDs use the same boundary conversion. Every access-rights decision below
 // goes through these four accessors; never a bare shift.
 static uint8_t access_read_nibble(uint16_t access_rights) {
-    return access_nibble(access_rights, 12);
+    return dfc_access_nibble(access_rights, 12);
 }
 
 static uint8_t access_write_nibble(uint16_t access_rights) {
-    return access_nibble(access_rights, 8);
+    return dfc_access_nibble(access_rights, 8);
 }
 
 static uint8_t access_read_write_nibble(uint16_t access_rights) {
-    return access_nibble(access_rights, 4);
+    return dfc_access_nibble(access_rights, 4);
 }
 
 uint8_t dfc_emulator_command_access_change_nibble(uint16_t access_rights) {
-    return access_nibble(access_rights, 0);
+    return dfc_access_nibble(access_rights, 0);
 }
 
 bool dfc_emulator_command_key_references_exist(
@@ -203,12 +191,6 @@ void dfc_emulator_command_access_rights_to_wire(uint16_t access_rights, uint8_t 
 // alongside it, never in place of it.
 static uint8_t access_primary_nibble(uint16_t access_rights, bool write) {
     return write ? access_write_nibble(access_rights) : access_read_nibble(access_rights);
-}
-
-bool dfc_emulator_command_access_nibble_allows(uint8_t nibble, const DfcEmulator* emulator) {
-    if(nibble == DFC_ACCESS_FREE) return true;
-    if(nibble == DFC_ACCESS_DENY) return false;
-    return dfc_emulator_command_is_authenticated_with_key(emulator, nibble);
 }
 
 bool dfc_emulator_command_file_allows_read(const DfcFile* file, const DfcEmulator* emulator) {

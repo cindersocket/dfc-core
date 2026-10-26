@@ -497,7 +497,7 @@ void dfc_emulator_command_get_file_counters(
         return;
     }
     if(counter_access != DFC_SDM_FREE_ACCESS &&
-       !dfc_emulator_command_is_authenticated_with_key(emulator, counter_access)) {
+       !dfc_emulator_is_authenticated_with_key(emulator, counter_access)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }

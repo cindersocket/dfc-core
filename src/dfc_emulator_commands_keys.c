@@ -496,9 +496,8 @@ static bool key_set_change_authorized(const DfcEmulator* emulator, const DfcAppl
                                DFC_KS1_CHANGE_KEY_ACCESS_SHIFT);
     if(access == DFC_CHANGE_KEY_ACCESS_FROZEN) return false;
     if(access == DFC_CHANGE_KEY_ACCESS_SAME)
-        return dfc_emulator_command_is_authenticated_with_key(emulator, 0);
-    return access < app->num_keys &&
-           dfc_emulator_command_is_authenticated_with_key(emulator, access);
+        return dfc_emulator_is_authenticated_with_key(emulator, 0);
+    return access < app->num_keys && dfc_emulator_is_authenticated_with_key(emulator, access);
 }
 
 static DfcApplication* key_set_target_application(
@@ -639,8 +638,7 @@ void dfc_emulator_command_roll_key_set(
     DfcApplication* app = key_set_target_application(emulator, buffer[1], tx_buffer);
     if(!app) return;
     uint8_t roll_key = app->key_set_settings & DFC_KEY_SET_NUMBER_MASK;
-    if(roll_key >= app->num_keys ||
-       !dfc_emulator_command_is_authenticated_with_key(emulator, roll_key)) {
+    if(roll_key >= app->num_keys || !dfc_emulator_is_authenticated_with_key(emulator, roll_key)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }

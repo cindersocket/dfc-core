@@ -32,6 +32,8 @@ bool dfc_emulator_file_access_allowed(
     const DfcFile* file,
     DfcFileAccess access);
 bool dfc_emulator_file_access_is_free(const DfcFile* file, DfcFileAccess access);
+bool dfc_emulator_is_authenticated_with_key(const DfcEmulator* emulator, uint8_t key_no);
+bool dfc_emulator_access_nibble_allows(const DfcEmulator* emulator, uint8_t nibble);
 uint8_t* dfc_emulator_key_version(DfcEmulator* emulator, uint8_t key_no);
 void dfc_emulator_discard_command_chain(DfcEmulator* emulator);
 // End authentication and command state while preserving the open file transaction.

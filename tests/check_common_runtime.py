@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COMMON_C = ROOT / "src" / "dfc_common.c"
 COMMON_H = ROOT / "src" / "dfc_common.h"
+CORE_SOURCES = tuple((ROOT / "src").glob("*.c"))
 STDIO_SYMBOLS = {
     "fprintf",
     "fwrite",
@@ -42,6 +43,13 @@ def main() -> None:
     assert "dfc_log_buffer" not in source
     assert "dfc_log_buffer" not in header
     assert "DfcAuthParameters" not in header
+    combined_sources = "\n".join(path.read_text(encoding="utf-8") for path in CORE_SOURCES)
+    for obsolete_helper in (
+        "static uint8_t access_nibble(",
+        "static void put_le32(",
+        "static void write_uint32_le(",
+    ):
+        assert obsolete_helper not in combined_sources
 
     with tempfile.TemporaryDirectory() as directory:
         obj = Path(directory) / "dfc_common.o"

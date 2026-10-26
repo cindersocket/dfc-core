@@ -552,7 +552,7 @@ void dfc_emulator_command_change_file_settings(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
-    if(!dfc_emulator_command_access_nibble_allows(change_key, emulator)) {
+    if(!dfc_emulator_access_nibble_allows(emulator, change_key)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }

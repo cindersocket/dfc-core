@@ -36,8 +36,8 @@ static DfcResponseAccess decode_access(uint8_t nibble) {
 static DfcResponseAccessRights decode_access_rights(uint16_t rights) {
     DfcResponseAccessRights decoded = {
         .read = decode_access((uint8_t)(rights >> 12)),
-        .write = decode_access((uint8_t)((rights >> 8) & 0x0Fu)),
-        .read_write = decode_access((uint8_t)((rights >> 4) & 0x0Fu)),
+        .write = decode_access(dfc_access_nibble(rights, 8)),
+        .read_write = decode_access(dfc_access_nibble(rights, 4)),
         .change = decode_access((uint8_t)(rights & 0x0Fu)),
     };
     return decoded;

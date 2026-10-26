@@ -5,12 +5,6 @@
 
 #if DFC_ENABLE_EMULATOR
 #if DFC_ENABLE_TRANSACTION_MAC
-static void write_uint32_le(uint8_t output[DFC_UINT32_BYTE_COUNT], uint32_t value) {
-    for(size_t index = 0; index < DFC_UINT32_BYTE_COUNT; index++) {
-        output[index] = (uint8_t)(value >> (index * DFC_BITS_PER_BYTE));
-    }
-}
-
 static DfcFile* transaction_mac_file(DfcEmulator* emulator) {
     return dfc_credential_find_transaction_mac_file(
         emulator->credential, emulator->selected_app_index);
@@ -444,7 +438,7 @@ void dfc_emulator_command_value_delta(
 
 #if DFC_ENABLE_TRANSACTION_MAC
     uint8_t encoded_amount[DFC_UINT32_BYTE_COUNT];
-    write_uint32_le(encoded_amount, (uint32_t)amount);
+    dfc_write_uint32_le(encoded_amount, (uint32_t)amount);
     if(!dfc_emulator_command_transaction_mac_add_value(emulator, cmd, apdu[1], encoded_amount)) {
         dfc_secure_wipe(encoded_amount, sizeof(encoded_amount));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_BOUNDARY_ERROR);
@@ -534,7 +528,7 @@ void dfc_emulator_command_commit_reader_id(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
-    uint8_t read_write = (uint8_t)((file->access_rights >> 4) & 0x0F);
+    uint8_t read_write = dfc_access_nibble(file->access_rights, 4);
     if(read_write == DFC_ACCESS_DENY || emulator->transaction_reader_id_pending) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
@@ -559,7 +553,7 @@ void dfc_emulator_command_commit_reader_id(
     vector[2] = DFC_DERIVATION_COUNTER_LOW;
     vector[3] = DFC_DERIVED_AES_KEY_LENGTH_HIGH;
     vector[4] = DFC_DERIVED_AES_KEY_LENGTH_LOW;
-    write_uint32_le(vector + DFC_TRANSACTION_VECTOR_COUNTER_OFFSET, next_counter);
+    dfc_write_uint32_le(vector + DFC_TRANSACTION_VECTOR_COUNTER_OFFSET, next_counter);
     memcpy(
         vector + DFC_TRANSACTION_VECTOR_UID_OFFSET,
         emulator->credential->uid,
@@ -717,7 +711,7 @@ void dfc_emulator_command_commit_transaction(
     uint8_t mac[DFC_WIRE_MAC_LENGTH] = {0};
     uint32_t next_counter = 0;
     if(transaction_file) {
-        uint8_t read_write = (uint8_t)((transaction_file->access_rights >> 4) & 0x0F);
+        uint8_t read_write = dfc_access_nibble(transaction_file->access_rights, 4);
         if(read_write != DFC_ACCESS_DENY && !emulator->transaction_reader_id_pending) {
             dfc_secure_wipe(mac, sizeof(mac));
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);

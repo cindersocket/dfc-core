@@ -21,7 +21,6 @@ void dfc_emulator_command_append_status_payload(
     uint8_t status,
     const uint8_t* payload,
     size_t payload_len);
-bool dfc_emulator_command_is_authenticated_with_key(const DfcEmulator* emulator, uint8_t key_no);
 bool dfc_emulator_command_is_authenticated_as_master(const DfcEmulator* emulator);
 uint8_t dfc_emulator_command_current_key_settings_1(DfcEmulator* emulator);
 uint8_t dfc_emulator_command_current_key_settings_2(DfcEmulator* emulator);
@@ -33,7 +32,6 @@ bool dfc_emulator_command_key_references_exist(
     size_t key_count);
 uint16_t dfc_emulator_command_access_rights_from_wire(uint8_t first, uint8_t second);
 void dfc_emulator_command_access_rights_to_wire(uint16_t access_rights, uint8_t out[2]);
-bool dfc_emulator_command_access_nibble_allows(uint8_t nibble, const DfcEmulator* emulator);
 void dfc_emulator_command_emit_payload_with_chaining(
     DfcEmulator* emulator,
     DfcByteBuf* tx_buffer,

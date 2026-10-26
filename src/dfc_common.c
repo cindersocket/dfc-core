@@ -38,13 +38,13 @@ bool dfc_access_rights_are_valid(uint16_t rights, size_t key_count) {
 bool dfc_transaction_mac_access_rights_are_valid(uint16_t rights, size_t key_count) {
     // This file type reserves the write nibble and requires its disabled value.
     return dfc_access_rights_are_valid(rights, key_count) &&
-           (((rights >> 8) & 0x0F) == DFC_ACCESS_DENY);
+           dfc_access_nibble(rights, 8) == DFC_ACCESS_DENY;
 }
 
 bool dfc_sdm_access_rights_are_valid(uint16_t rights, size_t key_count) {
     uint8_t meta_read = (uint8_t)(rights >> 12);
-    uint8_t file_read = (uint8_t)(rights >> 8) & 0x0F;
-    uint8_t reserved = (uint8_t)(rights >> 4) & 0x0F;
+    uint8_t file_read = dfc_access_nibble(rights, 8);
+    uint8_t reserved = dfc_access_nibble(rights, 4);
     uint8_t counter_read = (uint8_t)rights & 0x0F;
     // The wire sends the low byte first, but the model keeps semantic nibble order.
     return access_nibble_is_valid(meta_read, key_count) &&
