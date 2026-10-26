@@ -47,23 +47,25 @@ typedef struct {
 } DfcPendingEv2Authentication;
 #endif
 
-// Only one native authentication handshake can await AdditionalFrame. Keeping
-// the protocol-specific secrets in explicit arms prevents both sets from
-// consuming resident RAM while preserving their independent control state.
+// Only one authentication handshake can await its continuation. Keeping every
+// protocol's secrets in named arms gives cleanup one complete storage extent.
 typedef union {
     DfcPendingNativeAuthentication native;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     DfcPendingEv2Authentication ev2;
 #endif
-} DfcPendingAuthentication;
-_Static_assert(
-    sizeof(DfcPendingAuthentication) ==
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
-        sizeof(DfcPendingEv2Authentication),
-#else
-        sizeof(DfcPendingNativeAuthentication),
+#if DFC_ENABLE_ISO7816_AUTH
+    struct {
+        uint8_t iso_auth_card_first[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+        uint8_t iso_auth_host_first[DFC_ISO7816_AUTH_CHALLENGE_LONG];
+        uint8_t iso_auth_external_iv[DFC_AES_KEY_LENGTH];
+        uint8_t iso_auth_key[DFC_MAX_KEY_LEN];
+    };
 #endif
-    "pending authentication storage must not contain both protocol arms");
+} DfcPendingAuthenticationStorage;
+_Static_assert(
+    sizeof(DfcPendingAuthenticationStorage) >= sizeof(DfcPendingNativeAuthentication),
+    "pending authentication storage must hold native authentication");
 
 typedef struct {
     DfcByteBuf* tx_buffer;
@@ -148,7 +150,11 @@ typedef struct {
     uint8_t auth_key_no;
     uint8_t pending_auth_cipher;
     uint8_t pending_auth_key_no;
-    DfcPendingAuthentication pending_authentication;
+    // Native and ISO authentication continuations cannot be live together:
+    // either family rejects and retires the other before accepting its next
+    // step. Control fields remain outside so wiping secrets cannot change the
+    // state machine that owns them.
+    DfcPendingAuthenticationStorage pending_authentication;
     bool awaiting_step2;
 #if DFC_ENABLE_ISO7816_AUTH
     // 0 idle, 1 challenge issued, 2 external authentication succeeded.
@@ -157,10 +163,6 @@ typedef struct {
     uint8_t iso_auth_key_no;
     uint8_t iso_auth_cipher;
     uint8_t iso_auth_reference;
-    uint8_t iso_auth_card_first[DFC_ISO7816_AUTH_CHALLENGE_LONG];
-    uint8_t iso_auth_host_first[DFC_ISO7816_AUTH_CHALLENGE_LONG];
-    uint8_t iso_auth_external_iv[DFC_AES_KEY_LENGTH];
-    uint8_t iso_auth_key[DFC_MAX_KEY_LEN];
 #endif
     uint8_t get_version_frame;
     // Chained native response residual (after the first frame).
@@ -217,6 +219,13 @@ typedef struct {
     uint8_t delegated_creation_header[DFC_DELEGATED_CREATE_MAX_HEADER_LENGTH];
 #endif
 } DfcEmulator;
+
+#if DFC_ENABLE_ISO7816_AUTH
+_Static_assert(
+    offsetof(DfcPendingAuthenticationStorage, native) ==
+        offsetof(DfcPendingAuthenticationStorage, iso_auth_card_first),
+    "native and ISO pending authentication must share storage");
+#endif
 
 #if DFC_ENABLE_EMULATOR
 

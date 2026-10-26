@@ -551,6 +551,10 @@ void dfc_emulator_publish_transaction(DfcEmulator* emulator) {
     dfc_credential_mark_dirty(emulator->credential);
 }
 
+void dfc_emulator_clear_pending_authentication_storage(DfcEmulator* emulator) {
+    dfc_secure_wipe(&emulator->pending_authentication, sizeof(DfcPendingAuthenticationStorage));
+}
+
 void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
 #if DFC_ENABLE_ISO7816_AUTH
     emulator->iso_auth_phase = 0;
@@ -559,13 +563,9 @@ void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator) {
     emulator->iso_auth_cipher = 0;
     emulator->iso_auth_reference = 0;
     emulator->iso_auth_key_len = 0;
-    dfc_secure_wipe(emulator->iso_auth_card_first, sizeof(emulator->iso_auth_card_first));
-    dfc_secure_wipe(emulator->iso_auth_host_first, sizeof(emulator->iso_auth_host_first));
-    dfc_secure_wipe(emulator->iso_auth_external_iv, sizeof(emulator->iso_auth_external_iv));
-    dfc_secure_wipe(emulator->iso_auth_key, sizeof(emulator->iso_auth_key));
-#else
-    (void)emulator;
 #endif
+    /* The shared storage also holds native authentication secrets. */
+    dfc_emulator_clear_pending_authentication_storage(emulator);
 }
 
 void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
@@ -579,7 +579,6 @@ void dfc_emulator_retire_authentication(DfcEmulator* emulator) {
     clear_native_authentication(emulator);
     emulator->pending_auth_cipher = 0;
     emulator->pending_auth_key_no = 0;
-    dfc_secure_wipe(&emulator->pending_authentication, sizeof(emulator->pending_authentication));
     emulator->get_version_frame = 0;
     emulator->pending_chain_len = 0;
     emulator->pending_chain_offset = 0;

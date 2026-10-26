@@ -284,9 +284,9 @@ static bool iso_auth_key(
     if(!(commands & DFC_AUTH_COMMAND_ISO7816) || (disabled & DFC_SM_DISABLE_EV1)) return false;
     const uint8_t* key = dfc_credential_key(credential, app, key_no);
     if(key)
-        memcpy(emulator->iso_auth_key, key, key_len);
+        memcpy(emulator->pending_authentication.iso_auth_key, key, key_len);
     else
-        memset(emulator->iso_auth_key, 0, key_len);
+        memset(emulator->pending_authentication.iso_auth_key, 0, key_len);
     emulator->iso_auth_key_len = key_len;
     emulator->iso_auth_cipher = cipher;
     emulator->iso_auth_key_no = key_no;
@@ -334,14 +334,14 @@ static DfcVirtualPiccStatus handle_iso_external_authenticate(
     DfcVirtualPiccStatus result;
     bool decrypted = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
                          dfc_worker_aes_cbc_decrypt(
-                             emulator->iso_auth_key,
+                             emulator->pending_authentication.iso_auth_key,
                              emulator->iso_auth_key_len,
                              iv,
                              challenge_len * 2,
                              apdu + 5,
                              clear) :
                          dfc_worker_des_cbc_decrypt(
-                             emulator->iso_auth_key,
+                             emulator->pending_authentication.iso_auth_key,
                              emulator->iso_auth_key_len,
                              iv,
                              challenge_len * 2,
@@ -351,7 +351,10 @@ static DfcVirtualPiccStatus handle_iso_external_authenticate(
         result = DfcVirtualPiccStatusProtocolError;
         goto iso_external_cleanup;
     }
-    if(!dfc_ct_equal(clear + challenge_len, emulator->iso_auth_card_first, challenge_len)) {
+    if(!dfc_ct_equal(
+           clear + challenge_len,
+           emulator->pending_authentication.iso_auth_card_first,
+           challenge_len)) {
         dfc_emulator_clear_iso_authentication(emulator);
         result = iso_auth_status(
             DFC_ISO7816_SW_SECURITY_HI,
@@ -361,11 +364,14 @@ static DfcVirtualPiccStatus handle_iso_external_authenticate(
             response_len);
         goto iso_external_cleanup;
     }
-    memcpy(emulator->iso_auth_host_first, clear, challenge_len);
+    memcpy(emulator->pending_authentication.iso_auth_host_first, clear, challenge_len);
     size_t block_len = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
                            DFC_AES_KEY_LENGTH :
                            DFC_SM_LEGACY_BLOCK_SIZE;
-    memcpy(emulator->iso_auth_external_iv, apdu + 5 + challenge_len * 2 - block_len, block_len);
+    memcpy(
+        emulator->pending_authentication.iso_auth_external_iv,
+        apdu + 5 + challenge_len * 2 - block_len,
+        block_len);
     emulator->iso_auth_phase = 2;
     result = iso_auth_status(
         DFC_ISO7816_SW_OK_HI, DFC_ISO7816_SW_OK_LO, response, response_capacity, response_len);
@@ -425,19 +431,19 @@ static DfcVirtualPiccStatus handle_iso_internal_authenticate(
     memcpy(clear + challenge_len, apdu + 5, challenge_len);
     memcpy(
         iv,
-        emulator->iso_auth_external_iv,
+        emulator->pending_authentication.iso_auth_external_iv,
         emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ? DFC_AES_KEY_LENGTH :
                                                                 DFC_SM_LEGACY_BLOCK_SIZE);
     bool encrypted = emulator->iso_auth_cipher == DFC_CMD_AUTHENTICATE_AES ?
                          dfc_worker_aes_cbc_encrypt(
-                             emulator->iso_auth_key,
+                             emulator->pending_authentication.iso_auth_key,
                              emulator->iso_auth_key_len,
                              iv,
                              challenge_len * 2,
                              clear,
                              response) :
                          dfc_worker_des_cbc_encrypt(
-                             emulator->iso_auth_key,
+                             emulator->pending_authentication.iso_auth_key,
                              emulator->iso_auth_key_len,
                              iv,
                              challenge_len * 2,
@@ -449,9 +455,9 @@ static DfcVirtualPiccStatus handle_iso_internal_authenticate(
     }
     dfc_derive_session_key(
         emulator->iso_auth_cipher,
-        emulator->iso_auth_key,
+        emulator->pending_authentication.iso_auth_key,
         emulator->iso_auth_key_len,
-        emulator->iso_auth_host_first,
+        emulator->pending_authentication.iso_auth_host_first,
         clear,
         session_key,
         &session_key_len);
@@ -520,10 +526,10 @@ static DfcVirtualPiccStatus handle_iso_authenticate(
         if(dfc_random_fill(challenge, challenge_len)) {
             dfc_emulator_clear_iso_authentication(emulator);
             dfc_emulator_clear_active_authentication(emulator);
-            memcpy(emulator->iso_auth_card_first, challenge, challenge_len);
+            memcpy(emulator->pending_authentication.iso_auth_card_first, challenge, challenge_len);
             emulator->iso_auth_challenge_len = (uint8_t)challenge_len;
             emulator->iso_auth_phase = 1;
-            memcpy(response, emulator->iso_auth_card_first, challenge_len);
+            memcpy(response, emulator->pending_authentication.iso_auth_card_first, challenge_len);
             response[challenge_len] = DFC_ISO7816_SW_OK_HI;
             response[challenge_len + 1] = DFC_ISO7816_SW_OK_LO;
             *response_len = challenge_len + DFC_ISO7816_STATUS_WORD_LENGTH;

@@ -974,10 +974,22 @@ static void fill_iso_auth_pending_scratch(DfcEmulator* emulator, uint8_t phase) 
     emulator->iso_auth_cipher = DFC_CMD_AUTHENTICATE_ISO;
     emulator->iso_auth_reference = DFC_ISO7816_AUTH_APP_REFERENCE | 3;
     emulator->iso_auth_key_len = 16;
-    memset(emulator->iso_auth_card_first, 0x11, sizeof(emulator->iso_auth_card_first));
-    memset(emulator->iso_auth_host_first, 0x22, sizeof(emulator->iso_auth_host_first));
-    memset(emulator->iso_auth_external_iv, 0x33, sizeof(emulator->iso_auth_external_iv));
-    memset(emulator->iso_auth_key, 0x44, sizeof(emulator->iso_auth_key));
+    memset(
+        emulator->pending_authentication.iso_auth_card_first,
+        0x11,
+        sizeof(emulator->pending_authentication.iso_auth_card_first));
+    memset(
+        emulator->pending_authentication.iso_auth_host_first,
+        0x22,
+        sizeof(emulator->pending_authentication.iso_auth_host_first));
+    memset(
+        emulator->pending_authentication.iso_auth_external_iv,
+        0x33,
+        sizeof(emulator->pending_authentication.iso_auth_external_iv));
+    memset(
+        emulator->pending_authentication.iso_auth_key,
+        0x44,
+        sizeof(emulator->pending_authentication.iso_auth_key));
 }
 
 static void assert_iso_auth_pending_scratch_cleared(const DfcEmulator* emulator) {
@@ -989,12 +1001,21 @@ static void assert_iso_auth_pending_scratch_cleared(const DfcEmulator* emulator)
     munit_assert_uint8(emulator->iso_auth_reference, ==, 0);
     munit_assert_size(emulator->iso_auth_key_len, ==, 0);
     munit_assert_memory_equal(
-        sizeof(emulator->iso_auth_card_first), emulator->iso_auth_card_first, zero);
+        sizeof(emulator->pending_authentication.iso_auth_card_first),
+        emulator->pending_authentication.iso_auth_card_first,
+        zero);
     munit_assert_memory_equal(
-        sizeof(emulator->iso_auth_host_first), emulator->iso_auth_host_first, zero);
+        sizeof(emulator->pending_authentication.iso_auth_host_first),
+        emulator->pending_authentication.iso_auth_host_first,
+        zero);
     munit_assert_memory_equal(
-        sizeof(emulator->iso_auth_external_iv), emulator->iso_auth_external_iv, zero);
-    munit_assert_memory_equal(sizeof(emulator->iso_auth_key), emulator->iso_auth_key, zero);
+        sizeof(emulator->pending_authentication.iso_auth_external_iv),
+        emulator->pending_authentication.iso_auth_external_iv,
+        zero);
+    munit_assert_memory_equal(
+        sizeof(emulator->pending_authentication.iso_auth_key),
+        emulator->pending_authentication.iso_auth_key,
+        zero);
 }
 
 static MunitResult test_iso_auth_terminal_paths_clear_pending_scratch(

@@ -37,6 +37,9 @@ void dfc_emulator_discard_command_chain(DfcEmulator* emulator);
 // End authentication and command state while preserving the open file transaction.
 void dfc_emulator_retire_authentication(DfcEmulator* emulator);
 void dfc_emulator_clear_iso_authentication(DfcEmulator* emulator);
+// Wipe every pending-authentication secret without changing either protocol's
+// phase or routing fields. Callers own those control-state transitions.
+void dfc_emulator_clear_pending_authentication_storage(DfcEmulator* emulator);
 bool dfc_emulator_abort_pending_native_work(DfcEmulator* emulator);
 bool dfc_emulator_abort_transaction(DfcEmulator* emulator);
 void dfc_emulator_publish_transaction(DfcEmulator* emulator);

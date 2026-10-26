@@ -25,7 +25,7 @@ static void clear_pending_authentication_state(DfcEmulator* emulator) {
     emulator->ev2_authentication_non_first = false;
     emulator->ev2_pending_authenticated_key_no = 0;
 #endif
-    dfc_secure_wipe(&emulator->pending_authentication, sizeof(emulator->pending_authentication));
+    dfc_emulator_clear_pending_authentication_storage(emulator);
 }
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING

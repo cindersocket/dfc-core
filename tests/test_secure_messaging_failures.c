@@ -297,10 +297,18 @@ static void assert_iso_auth_pending_cleared(const DfcEmulator* emulator) {
     munit_assert_uint8(emulator->iso_auth_cipher, ==, 0);
     munit_assert_uint8(emulator->iso_auth_reference, ==, 0);
     munit_assert_size(emulator->iso_auth_key_len, ==, 0);
-    assert_zeroed(emulator->iso_auth_card_first, sizeof(emulator->iso_auth_card_first));
-    assert_zeroed(emulator->iso_auth_host_first, sizeof(emulator->iso_auth_host_first));
-    assert_zeroed(emulator->iso_auth_external_iv, sizeof(emulator->iso_auth_external_iv));
-    assert_zeroed(emulator->iso_auth_key, sizeof(emulator->iso_auth_key));
+    assert_zeroed(
+        emulator->pending_authentication.iso_auth_card_first,
+        sizeof(emulator->pending_authentication.iso_auth_card_first));
+    assert_zeroed(
+        emulator->pending_authentication.iso_auth_host_first,
+        sizeof(emulator->pending_authentication.iso_auth_host_first));
+    assert_zeroed(
+        emulator->pending_authentication.iso_auth_external_iv,
+        sizeof(emulator->pending_authentication.iso_auth_external_iv));
+    assert_zeroed(
+        emulator->pending_authentication.iso_auth_key,
+        sizeof(emulator->pending_authentication.iso_auth_key));
 }
 
 static DfcReaderStatus run_exchange(FaultLink* link, DfcReaderExchange* exchange) {
