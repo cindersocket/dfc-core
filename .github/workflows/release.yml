@@ -256,7 +256,7 @@ jobs:
           version: "0.13.5"
       - name: Stage self-contained Python package
         run: python3 scripts/stage-python-package.py build/python-package
-      - uses: pypa/cibuildwheel@9c00cb4f6b517705a3794b22395aedc36257242c # v3.2.1
+      - uses: pypa/cibuildwheel@b9e566a2b284570af229f6c2a33673410d0389a3 # v4.3.4
         env:
           CIBW_BUILD: cp311-* cp312-* cp313-* cp314-*
           CIBW_SKIP: "*-musllinux_*"
