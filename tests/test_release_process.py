@@ -193,6 +193,7 @@ class ReleaseProcessTests(unittest.TestCase):
         native = (ROOT / "bindings/python/src/dfc_core/_native.py").read_text(encoding="utf-8")
 
         self.assertIn('root="$PWD/stage/dfc-core-native-', workflow)
+        self.assertIn('PATH="$root/bin:$PATH" ctest', workflow)
         self.assertIn('package_path / "lib64" / name', native)
         self.assertIn('package_path.parent / "lib64" / name', native)
 
