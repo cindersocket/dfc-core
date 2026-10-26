@@ -20,6 +20,18 @@ def load_generator():
 
 
 class FfiGeneratorTests(unittest.TestCase):
+    def test_jni_packed_contract_has_fixed_offsets_and_lengths(self) -> None:
+        generator = load_generator()
+
+        contract = dict(generator.JNI_PACKED_LAYOUT)
+        self.assertEqual(contract["DFC_JNI_SNAPSHOT_SIZE"], 18)
+        self.assertEqual(contract["DFC_JNI_DIAGNOSTIC_MAC_KEY_OFFSET"], 20)
+        self.assertEqual(contract["DFC_JNI_DIAGNOSTIC_SIZE"], 36)
+        self.assertEqual(contract["DFC_JNI_READER_STATE_READER_CAPABILITIES_OFFSET"], 16)
+        self.assertEqual(contract["DFC_JNI_READER_STATE_SIZE"], 22)
+        self.assertIn("DFC_JNI_SNAPSHOT_SIZE", generator.jni_c_layout())
+        self.assertIn("DFC_JNI_DIAGNOSTIC_SIZE = 36", generator.jni_java_layout())
+
     def test_every_export_has_one_generated_signature(self) -> None:
         generator = load_generator()
         signatures = generator.signatures()

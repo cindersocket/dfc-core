@@ -116,8 +116,11 @@ public final class DfcReader implements AutoCloseable {
    * @throws DfcException if native state export fails
    */
   public synchronized DfcReaderSession session() throws DfcException {
-    java.nio.ByteBuffer data = java.nio.ByteBuffer.wrap(DfcNative.readerState(state.require()));
-    int rawMode = data.get() & 0xff;
+    byte[] packed = DfcNative.readerState(state.require());
+    if (packed.length != DfcJniLayout.DFC_JNI_READER_STATE_SIZE)
+      throw new AssertionError("native reader returned an invalid state length");
+    java.nio.ByteBuffer data = java.nio.ByteBuffer.wrap(packed);
+    int rawMode = data.get(DfcJniLayout.DFC_JNI_READER_STATE_AUTH_MODE_OFFSET) & 0xff;
     DfcReaderSession.AuthenticationMode mode = switch (rawMode) {
       case 0 -> DfcReaderSession.AuthenticationMode.NONE;
       case (int) DfcLayout.DFC_FFI_AUTH_LEGACY -> DfcReaderSession.AuthenticationMode.LEGACY;
@@ -126,13 +129,16 @@ public final class DfcReader implements AutoCloseable {
       case (int) DfcLayout.DFC_FFI_AUTH_EV2 -> DfcReaderSession.AuthenticationMode.EV2;
       default -> throw new AssertionError("native reader returned an invalid authentication mode");
     };
-    int keyNumber = data.get() & 0xff;
-    int counter = data.getInt();
+    int keyNumber = data.get(DfcJniLayout.DFC_JNI_READER_STATE_KEY_OFFSET) & 0xff;
+    int counter = data.getInt(DfcJniLayout.DFC_JNI_READER_STATE_COMMAND_COUNTER_OFFSET);
     byte[] transactionIdentifier = new byte[EV2_TRANSACTION_IDENTIFIER_LENGTH];
+    data.position(DfcJniLayout.DFC_JNI_READER_STATE_TRANSACTION_ID_OFFSET);
     data.get(transactionIdentifier);
     byte[] cardCapabilities = new byte[EV2_CAPABILITIES_LENGTH];
+    data.position(DfcJniLayout.DFC_JNI_READER_STATE_CARD_CAPABILITIES_OFFSET);
     data.get(cardCapabilities);
     byte[] readerCapabilities = new byte[EV2_CAPABILITIES_LENGTH];
+    data.position(DfcJniLayout.DFC_JNI_READER_STATE_READER_CAPABILITIES_OFFSET);
     data.get(readerCapabilities);
     boolean authenticated = mode != DfcReaderSession.AuthenticationMode.NONE;
     boolean ev2 = mode == DfcReaderSession.AuthenticationMode.EV2;

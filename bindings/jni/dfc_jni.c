@@ -10,6 +10,7 @@
 #include "dfc_common.h"
 #include "dfc_ffi.h"
 #include "dfc_ffi_layout.h"
+#include "dfc_jni_layout.h"
 #include "dfc_jni_queue.h"
 
 #define JNI_PICC_RESPONSE_INITIAL 256u
@@ -1004,7 +1005,7 @@ JNIEXPORT jbyteArray JNICALL
         throw_dfc(env, status, 0, 0, "virtual PICC activation failed");
         return NULL;
     }
-    uint8_t packed[1 + 10 + 1 + 2 + 1 + 1 + 20];
+    uint8_t packed[DFC_JNI_ACTIVATION_MAX_SIZE];
     size_t offset = 0;
     packed[offset++] = (uint8_t)activation.uid_len;
     memcpy(packed + offset, activation.uid, activation.uid_len);
@@ -1033,22 +1034,19 @@ JNIEXPORT jbyteArray JNICALL
         throw_dfc(env, status, 0, 0, "could not read virtual PICC state");
         return NULL;
     }
-    uint8_t packed[18];
-    size_t offset = 0;
-    packed[offset++] = (uint8_t)snapshot.selected;
-    put_u32_be(packed + offset, snapshot.selected_application_index);
-    offset += 4;
-    memcpy(packed + offset, snapshot.selected_aid, 3);
-    offset += 3;
-    packed[offset++] = snapshot.dirty;
-    packed[offset++] = snapshot.auth_mode;
-    packed[offset++] = snapshot.auth_key_no;
-    put_u32_be(packed + offset, snapshot.ev2_command_counter);
-    offset += 4;
-    packed[offset++] = snapshot.ev2_active;
-    packed[offset++] = snapshot.virtual_card_selected;
-    packed[offset++] = snapshot.proximity_verified;
-    jbyteArray result = make_array_and_wipe(env, packed, offset, sizeof(packed));
+    uint8_t packed[DFC_JNI_SNAPSHOT_SIZE] = {0};
+    packed[DFC_JNI_SNAPSHOT_SELECTED_OFFSET] = (uint8_t)snapshot.selected;
+    put_u32_be(
+        packed + DFC_JNI_SNAPSHOT_APPLICATION_INDEX_OFFSET, snapshot.selected_application_index);
+    memcpy(packed + DFC_JNI_SNAPSHOT_AID_OFFSET, snapshot.selected_aid, 3);
+    packed[DFC_JNI_SNAPSHOT_DIRTY_OFFSET] = snapshot.dirty;
+    packed[DFC_JNI_SNAPSHOT_AUTH_MODE_OFFSET] = snapshot.auth_mode;
+    packed[DFC_JNI_SNAPSHOT_AUTH_KEY_OFFSET] = snapshot.auth_key_no;
+    put_u32_be(packed + DFC_JNI_SNAPSHOT_COMMAND_COUNTER_OFFSET, snapshot.ev2_command_counter);
+    packed[DFC_JNI_SNAPSHOT_EV2_ACTIVE_OFFSET] = snapshot.ev2_active;
+    packed[DFC_JNI_SNAPSHOT_VIRTUAL_CARD_OFFSET] = snapshot.virtual_card_selected;
+    packed[DFC_JNI_SNAPSHOT_PROXIMITY_OFFSET] = snapshot.proximity_verified;
+    jbyteArray result = make_array_and_wipe(env, packed, sizeof(packed), sizeof(packed));
     dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));
     return result;
 }
@@ -1067,8 +1065,16 @@ JNIEXPORT jbyteArray JNICALL Java_com_cindersocket_dfc_DfcNative_piccDiagnosticS
         throw_dfc(env, status, 0, 0, "could not read diagnostic PICC state");
         return NULL;
     }
-    uint8_t packed[sizeof(snapshot)];
-    memcpy(packed, &snapshot, sizeof(packed));
+    uint8_t packed[DFC_JNI_DIAGNOSTIC_SIZE] = {0};
+    memcpy(
+        packed + DFC_JNI_DIAGNOSTIC_TRANSACTION_ID_OFFSET,
+        snapshot.transaction_identifier,
+        sizeof(snapshot.transaction_identifier));
+    memcpy(
+        packed + DFC_JNI_DIAGNOSTIC_ENCRYPTION_KEY_OFFSET,
+        snapshot.encryption_key,
+        sizeof(snapshot.encryption_key));
+    memcpy(packed + DFC_JNI_DIAGNOSTIC_MAC_KEY_OFFSET, snapshot.mac_key, sizeof(snapshot.mac_key));
     jbyteArray result = make_array_and_wipe(env, packed, sizeof(packed), sizeof(packed));
     dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));
     return result;
@@ -1518,19 +1524,23 @@ JNIEXPORT jbyteArray JNICALL
         throw_dfc(env, status, 0, 0, "could not read reader state");
         return NULL;
     }
-    uint8_t packed[22];
-    size_t offset = 0;
-    packed[offset++] = state.auth_mode;
-    packed[offset++] = state.key_no;
-    put_u32_be(packed + offset, state.ev2_command_counter);
-    offset += 4;
-    memcpy(packed + offset, state.ev2_transaction_identifier, 4);
-    offset += 4;
-    memcpy(packed + offset, state.ev2_card_capabilities, 6);
-    offset += 6;
-    memcpy(packed + offset, state.ev2_reader_capabilities, 6);
-    offset += 6;
-    jbyteArray result = make_array_and_wipe(env, packed, offset, sizeof(packed));
+    uint8_t packed[DFC_JNI_READER_STATE_SIZE] = {0};
+    packed[DFC_JNI_READER_STATE_AUTH_MODE_OFFSET] = state.auth_mode;
+    packed[DFC_JNI_READER_STATE_KEY_OFFSET] = state.key_no;
+    put_u32_be(packed + DFC_JNI_READER_STATE_COMMAND_COUNTER_OFFSET, state.ev2_command_counter);
+    memcpy(
+        packed + DFC_JNI_READER_STATE_TRANSACTION_ID_OFFSET,
+        state.ev2_transaction_identifier,
+        sizeof(state.ev2_transaction_identifier));
+    memcpy(
+        packed + DFC_JNI_READER_STATE_CARD_CAPABILITIES_OFFSET,
+        state.ev2_card_capabilities,
+        sizeof(state.ev2_card_capabilities));
+    memcpy(
+        packed + DFC_JNI_READER_STATE_READER_CAPABILITIES_OFFSET,
+        state.ev2_reader_capabilities,
+        sizeof(state.ev2_reader_capabilities));
+    jbyteArray result = make_array_and_wipe(env, packed, sizeof(packed), sizeof(packed));
     dfc_ffi_secure_zero(&state, sizeof(state));
     return result;
 }

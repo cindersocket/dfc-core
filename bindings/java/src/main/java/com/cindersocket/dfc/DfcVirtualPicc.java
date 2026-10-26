@@ -82,6 +82,8 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
     int sak = data.get() & 0xff;
     byte[] ats = new byte[data.get() & 0xff];
     data.get(ats);
+    if (data.hasRemaining())
+      throw new AssertionError("native PICC returned trailing activation data");
     return new DfcActivation(uid, atqa, sak, ats);
   }
   /**
@@ -132,18 +134,23 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
    * @throws DfcException if native state export fails
    */
   public synchronized DfcPiccSnapshot snapshot() throws DfcException {
-    ByteBuffer data = ByteBuffer.wrap(DfcNative.piccSnapshot(state.require()));
-    DfcPiccSnapshot.Selection selected = switch (data.get() & 0xff) {
-      case 0 -> DfcPiccSnapshot.Selection.NONE;
-      case 1 -> DfcPiccSnapshot.Selection.PICC;
-      case 2 -> DfcPiccSnapshot.Selection.APPLICATION;
-      default -> throw new AssertionError("native PICC returned an invalid selection state");
-    };
-    int applicationIndex = data.getInt();
+    byte[] packed = DfcNative.piccSnapshot(state.require());
+    if (packed.length != DfcJniLayout.DFC_JNI_SNAPSHOT_SIZE)
+      throw new AssertionError("native PICC returned an invalid snapshot length");
+    ByteBuffer data = ByteBuffer.wrap(packed);
+    DfcPiccSnapshot.Selection selected =
+        switch (data.get(DfcJniLayout.DFC_JNI_SNAPSHOT_SELECTED_OFFSET) & 0xff) {
+          case 0 -> DfcPiccSnapshot.Selection.NONE;
+          case 1 -> DfcPiccSnapshot.Selection.PICC;
+          case 2 -> DfcPiccSnapshot.Selection.APPLICATION;
+          default -> throw new AssertionError("native PICC returned an invalid selection state");
+        };
+    int applicationIndex = data.getInt(DfcJniLayout.DFC_JNI_SNAPSHOT_APPLICATION_INDEX_OFFSET);
     byte[] aid = new byte[3];
+    data.position(DfcJniLayout.DFC_JNI_SNAPSHOT_AID_OFFSET);
     data.get(aid);
-    boolean dirty = data.get() != 0;
-    int rawAuthenticationMode = data.get() & 0xff;
+    boolean dirty = data.get(DfcJniLayout.DFC_JNI_SNAPSHOT_DIRTY_OFFSET) != 0;
+    int rawAuthenticationMode = data.get(DfcJniLayout.DFC_JNI_SNAPSHOT_AUTH_MODE_OFFSET) & 0xff;
     DfcPiccSnapshot.AuthenticationMode authenticationMode = switch (rawAuthenticationMode) {
       case 0 -> null;
       case (int) DfcLayout.DFC_FFI_AUTH_LEGACY -> DfcPiccSnapshot.AuthenticationMode.LEGACY;
@@ -151,11 +158,11 @@ public final class DfcVirtualPicc implements DfcTransport, AutoCloseable {
       case (int) DfcLayout.DFC_FFI_AUTH_AES -> DfcPiccSnapshot.AuthenticationMode.AES;
       default -> throw new AssertionError("native PICC returned an invalid authentication mode");
     };
-    int authenticationKeyNumber = data.get() & 0xff;
-    int ev2Counter = data.getInt();
-    boolean ev2Active = data.get() != 0;
-    boolean virtualCardSelected = data.get() != 0;
-    boolean proximityVerified = data.get() != 0;
+    int authenticationKeyNumber = data.get(DfcJniLayout.DFC_JNI_SNAPSHOT_AUTH_KEY_OFFSET) & 0xff;
+    int ev2Counter = data.getInt(DfcJniLayout.DFC_JNI_SNAPSHOT_COMMAND_COUNTER_OFFSET);
+    boolean ev2Active = data.get(DfcJniLayout.DFC_JNI_SNAPSHOT_EV2_ACTIVE_OFFSET) != 0;
+    boolean virtualCardSelected = data.get(DfcJniLayout.DFC_JNI_SNAPSHOT_VIRTUAL_CARD_OFFSET) != 0;
+    boolean proximityVerified = data.get(DfcJniLayout.DFC_JNI_SNAPSHOT_PROXIMITY_OFFSET) != 0;
     boolean applicationSelected = selected == DfcPiccSnapshot.Selection.APPLICATION;
     return new DfcPiccSnapshot(selected, applicationSelected ? applicationIndex : null,
         applicationSelected ? aid : new byte[0], dirty, authenticationMode,
