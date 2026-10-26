@@ -102,11 +102,11 @@ def main() -> None:
             "DfcCleaner.register(this, state)",
             "Arrays.fill(bytes, (byte) 0)",
         ),
-        "bindings/jni/dfc_jni.c": (
+        "bindings/jni/dfc_jni_picc.c": (
             "piccDiagnosticSnapshot",
-            "make_array_and_wipe",
             "dfc_ffi_secure_zero(&snapshot",
         ),
+        "bindings/jni/dfc_jni.c": ("make_array_and_wipe",),
         "bindings/dotnet/src/Dfc/Emulation/DfcVirtualPicc.cs": (
             "DfcDiagnosticSnapshot : IDisposable",
             "CryptographicOperations.ZeroMemory",

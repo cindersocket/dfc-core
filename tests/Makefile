@@ -151,7 +151,7 @@ FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
 .PHONY: test test-backends vectors vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile check-cipher-profile-matrix \
 	profile-builds role-builds ffi-role-builds \
-	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers \
+	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-jni-export-inventory \
 	check-credential-passes \
 	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
 	check-secure-messaging-policy check-ffi-export-inventory \
@@ -228,7 +228,7 @@ test_dfc_transaction_snapshot_large: test_dfc_transaction_snapshot.c \
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-export-inventory check-ffi-layout-registry check-cipher-profile-matrix vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds ffi-role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-jni-export-inventory check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-export-inventory check-ffi-layout-registry check-cipher-profile-matrix vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds ffi-role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(DES_CHAIN_FAULT_TEST)
@@ -283,6 +283,9 @@ check-jni-wipes:
 
 check-jni-result-buffers:
 	python3 check_jni_result_buffers.py
+
+check-jni-export-inventory:
+	python3 check_jni_export_inventory.py
 
 check-virtual-picc-auth-cleanup:
 	python3 check_virtual_picc_auth_cleanup.py

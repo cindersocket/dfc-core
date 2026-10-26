@@ -1,9 +1,8 @@
 """Keep bounded JNI result decoding to one native scratch allocation."""
 
 import re
-from pathlib import Path
 
-SOURCE = Path(__file__).parents[1] / "bindings" / "jni" / "dfc_jni.c"
+from jni_sources import combined_jni_source
 
 
 def decode_list_body(source: str) -> str:
@@ -42,7 +41,7 @@ def problems(source: str) -> list[str]:
 
 
 def main() -> None:
-    source = SOURCE.read_text(encoding="utf-8")
+    source = combined_jni_source()
     failures = problems(source)
     mutants = (
         source.replace(

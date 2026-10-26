@@ -1,9 +1,8 @@
 """Keep JNI-owned credential, session, and plaintext buffers on wiped exits."""
 
 import re
-from pathlib import Path
 
-SOURCE = Path(__file__).parents[1] / "bindings" / "jni" / "dfc_jni.c"
+from jni_sources import combined_jni_source
 
 
 def problems(source: str) -> list[str]:
@@ -17,7 +16,7 @@ def problems(source: str) -> list[str]:
         failures.append("JNI heap buffer bypasses wipe-before-free:\n" + "\n".join(raw_frees))
 
     required = {
-        "central heap cleanup": "static void secure_free(void* buffer, size_t length)",
+        "central heap cleanup": "void secure_free(void* buffer, size_t length)",
         "activation stack": "dfc_ffi_secure_zero(&activation, sizeof(activation))",
         "snapshot stack": "dfc_ffi_secure_zero(&snapshot, sizeof(snapshot))",
         "reader state stack": "dfc_ffi_secure_zero(&state, sizeof(state))",
@@ -68,7 +67,7 @@ def problems(source: str) -> list[str]:
         },
     }
     allowed_heap_copies = {"sdmVerify": 1}
-    if "static bool copy_bounded_array(" not in source:
+    if "bool copy_bounded_array(" not in source:
         failures.append("bounded JNI inputs have no fixed-scratch copy helper")
     for method, scratch_buffers in bounded_methods.items():
         body = re.search(
@@ -96,7 +95,7 @@ def problems(source: str) -> list[str]:
 
 
 def main() -> None:
-    source = SOURCE.read_text(encoding="utf-8")
+    source = combined_jni_source()
     failures = problems(source)
     mutants = (
         source.replace("dfc_ffi_secure_zero(&snapshot, sizeof(snapshot));", ""),

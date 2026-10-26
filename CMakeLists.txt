@@ -391,7 +391,10 @@ if(DFC_BUILD_JNI)
         ${DFC_FFI_IMPLEMENTATION_SOURCES}
         port/ffi/dfc_port_ffi.c
         port/host/dfc_bytebuf_host.c
-        bindings/jni/dfc_jni.c)
+        bindings/jni/dfc_jni.c
+        bindings/jni/dfc_jni_credential.c
+        bindings/jni/dfc_jni_picc.c
+        bindings/jni/dfc_jni_reader.c)
     target_include_directories(dfc_jni PRIVATE
         ffi src port port/ffi port/host ${JNI_INCLUDE_DIRS})
     target_compile_definitions(dfc_jni PUBLIC ${DFC_DEFINITIONS} DFC_ENABLE_FFI=1
@@ -403,7 +406,9 @@ if(DFC_BUILD_JNI)
     if(WIN32)
         target_link_libraries(dfc_jni PRIVATE bcrypt)
     endif()
-    set_target_properties(dfc_jni PROPERTIES C_VISIBILITY_PRESET default)
+    # Family modules share internal helpers, but only JNIEXPORT entry points
+    # belong in the dynamic symbol table.
+    set_target_properties(dfc_jni PROPERTIES C_VISIBILITY_PRESET hidden)
     install(TARGETS dfc_jni LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 
     if(DFC_BUILD_TESTS)
