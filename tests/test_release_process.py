@@ -192,6 +192,7 @@ class ReleaseProcessTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         native = (ROOT / "bindings/python/src/dfc_core/_native.py").read_text(encoding="utf-8")
         attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+        cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
 
         self.assertIn('root="$PWD/stage/dfc-core-native-', workflow)
         self.assertIn('PATH="$root/bin:$PATH" ctest', workflow)
@@ -200,6 +201,7 @@ class ReleaseProcessTests(unittest.TestCase):
         self.assertIn('package_path / "lib64" / name', native)
         self.assertIn('package_path.parent / "lib64" / name', native)
         self.assertIn("*.dfc text eol=lf", attributes.splitlines())
+        self.assertIn('CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded', cmake)
 
     def test_rust_package_owns_its_test_fixtures(self) -> None:
         fixture_dir = ROOT / "bindings/rust/dfc-core/tests/fixtures"

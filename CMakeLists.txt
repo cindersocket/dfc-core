@@ -19,6 +19,12 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+# Keep Windows packages self-contained. Callers can still select another MSVC
+# runtime explicitly when they control deployment of the matching redistributable.
+if(MSVC AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 set(DFC_ROLE "simulator" CACHE STRING "Build role: target, host or simulator")
 set_property(CACHE DFC_ROLE PROPERTY STRINGS target host simulator)
 set(DFC_PROFILE "full_ev3" CACHE STRING
