@@ -114,7 +114,11 @@ jobs:
             -DCMAKE_PREFIX_PATH="$root" ${{ matrix.arch }}
           cmake --build package-consumer --config Release --parallel
           if [[ "${{ matrix.rid }}" != win-arm64 ]]; then
-            ctest --test-dir package-consumer -C Release --output-on-failure
+            if [[ "${{ runner.os }}" == Windows ]]; then
+              PATH="$root/bin:$PATH" ctest --test-dir package-consumer -C Release --output-on-failure
+            else
+              ctest --test-dir package-consumer -C Release --output-on-failure
+            fi
           fi
           mkdir -p "runtimes/${{ matrix.rid }}/native"
           cp "build-release/${{ matrix.lib }}" "runtimes/${{ matrix.rid }}/native/"
