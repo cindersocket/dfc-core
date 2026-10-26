@@ -366,23 +366,28 @@ def _library_candidates() -> list[Path | str]:
     override = os.environ.get("DFC_LIBRARY_PATH")
     if override:
         return [Path(override)]
-    name = (
-        "dfc.dll"
+    names = (
+        ("libdfc.dll", "dfc.dll")
         if sys.platform == "win32"
-        else "libdfc.dylib"
+        else ("libdfc.dylib",)
         if sys.platform == "darwin"
-        else "libdfc.so"
+        else ("libdfc.so",)
     )
     package = files("dfc_core")
     package_path = Path(str(package))
-    return [
-        package_path / "lib" / name,
-        package_path / "lib64" / name,
-        package_path.parent / "lib" / name,
-        package_path.parent / "lib64" / name,
-        package_path / name,
-        name,
-    ]
+    candidates: list[Path | str] = []
+    for name in names:
+        candidates.extend(
+            [
+                package_path / "lib" / name,
+                package_path / "lib64" / name,
+                package_path.parent / "lib" / name,
+                package_path.parent / "lib64" / name,
+                package_path / name,
+                name,
+            ]
+        )
+    return candidates
 
 
 def _declare(lib: C.CDLL) -> None:
