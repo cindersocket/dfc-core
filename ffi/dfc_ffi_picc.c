@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "dfc_der.h"
+#include "dfc_emulator_i.h"
 #include "dfc_port_ffi.h"
 
 #if DFC_ENABLE_EMULATOR
@@ -194,17 +195,19 @@ int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out) {
         memcpy(out->selected_aid, picc->credential->model.apps[e->selected_app_index].aid, 3);
     }
     out->dirty = picc->credential->model.dirty;
-    if(e->secure_messaging) {
-        out->auth_mode = e->secure_messaging->cipher;
-        out->auth_key_no = e->auth_key_no;
-    }
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     out->ev2_active = e->ev2_session_active;
     if(e->ev2_session_active) {
+        out->auth_mode = DFC_CMD_AUTHENTICATE_AES;
+        out->auth_key_no = e->ev2_authenticated_key_no;
         out->ev2_key_no = e->ev2_authenticated_key_no;
         out->ev2_command_counter = e->ev2_command_counter;
     }
 #endif
+    if(dfc_emulator_native_authentication_active(e)) {
+        out->auth_mode = e->auth_cipher;
+        out->auth_key_no = e->auth_key_no;
+    }
 #if DFC_ENABLE_VIRTUAL_CARD
     out->virtual_card_selected = e->virtual_card_selected;
 #endif

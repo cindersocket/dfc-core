@@ -4,7 +4,9 @@
 #include "dfc_ffi.h"
 #include "dfc_credential.h"
 #include "dfc_der.h"
+#include "dfc_emulator_i.h"
 #include "dfc_reader.h"
+#include "dfc_virtual_picc.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -15,6 +17,13 @@ static int failures;
 
 struct DfcFfiCredential {
     DfcCredential model;
+};
+
+struct DfcFfiPicc {
+    DfcFfiCredential* credential;
+    DfcVirtualPiccSession* session;
+    DfcFfiRandomCallback random;
+    void* random_context;
 };
 
 // Credential builders return the stable model-status family described by the
@@ -1702,6 +1711,34 @@ int main(void) {
     CHECK(snapshot.auth_mode == 0xAA);
     CHECK(snapshot.selected == 2);
     CHECK(memcmp(snapshot.selected_aid, APPLICATION_AID, sizeof(APPLICATION_AID)) == 0);
+
+    dfc_emulator_retire_authentication(picc->session->emulator);
+    memset(&snapshot, 0xA5, sizeof(snapshot));
+    CHECK(dfc_ffi_picc_snapshot(picc, &snapshot) == 0);
+    CHECK(snapshot.auth_mode == 0);
+    CHECK(snapshot.auth_key_no == 0);
+    CHECK(snapshot.ev2_active == 0);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    DfcEmulator* emulator = picc->session->emulator;
+    emulator->secure_messaging->cipher = DFC_CMD_AUTHENTICATE_AES;
+    emulator->ev2_session_active = true;
+    emulator->ev2_authenticated_key_no = 3;
+    CHECK(dfc_ffi_picc_snapshot(picc, &snapshot) == 0);
+    CHECK(snapshot.auth_mode == DFC_CMD_AUTHENTICATE_AES);
+    CHECK(snapshot.auth_key_no == 3);
+    CHECK(snapshot.ev2_active == 1);
+    CHECK(snapshot.ev2_key_no == 3);
+
+    // A terminal EV2 protection failure retires the session but can leave the
+    // allocated secure-messaging object configured for AES.
+    emulator->ev2_session_active = false;
+    memset(&snapshot, 0xA5, sizeof(snapshot));
+    CHECK(dfc_ffi_picc_snapshot(picc, &snapshot) == 0);
+    CHECK(snapshot.auth_mode == 0);
+    CHECK(snapshot.auth_key_no == 0);
+    CHECK(snapshot.ev2_active == 0);
+#endif
 
     DfcFfiDiagnosticSnapshot diagnostic;
     memset(&diagnostic, 0xA5, sizeof(diagnostic));

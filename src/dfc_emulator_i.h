@@ -10,7 +10,8 @@
 DfcApplication* dfc_emulator_current_app(DfcEmulator* emulator);
 bool dfc_emulator_accepts_auth_cipher(DfcEmulator* emulator, uint8_t cipher);
 static inline bool dfc_emulator_native_authentication_active(const DfcEmulator* emulator) {
-    return emulator->secure_messaging != NULL && emulator->secure_messaging->cipher != 0;
+    return emulator->auth_cipher != 0 && emulator->secure_messaging != NULL &&
+           emulator->secure_messaging->cipher == emulator->auth_cipher;
 }
 size_t dfc_emulator_key_len(DfcEmulator* emulator);
 size_t dfc_emulator_num_keys(DfcEmulator* emulator);

@@ -158,6 +158,8 @@
   family, and enforce exact export ownership in the build (#223, #227, #228).
 - Export the complete public FFI from every build role, with hygienic
   unsupported stubs and linked-symbol validation (#230).
+- Report authentication in hosted and target PICC snapshots only while the
+  corresponding authorization is active (#231).
 - Consolidate AES wire-MAC, access-right, authentication, and little-endian
   helpers to reduce duplicate code and keep reduced profiles linkable
   (#226, #229).
