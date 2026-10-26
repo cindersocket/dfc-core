@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 (Unreleased)
+## 2.0.0 (2026-10-25)
 
 - Add allocation-free AN10922 key diversification for AES-128, two-key TDEA,
   and three-key TDEA, including DESFire key-version preservation (#19).
