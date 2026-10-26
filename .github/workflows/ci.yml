@@ -487,8 +487,9 @@ jobs:
         with:
           name: native-layout-mismatch
           path: mismatch
-      - name: Install the ARM C toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
+        with:
+          release: "13.3.Rel1"
       - name: Test hosted bindings and transceive example
         run: |
           cargo test --workspace
@@ -519,8 +520,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           targets: thumbv7em-none-eabihf
-      - name: Install the ARM C toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
+        with:
+          release: "13.3.Rel1"
       - name: Check the workspace at the declared MSRV
         run: |
           cargo check --workspace --all-targets

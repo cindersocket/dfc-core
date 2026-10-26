@@ -18,12 +18,18 @@ def workflow_text() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
 
 
-def unit_job() -> str:
+def workflow_job(name: str) -> str:
     workflow = workflow_text()
-    match = re.search(r"(?ms)^  unit:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow)
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow
+    )
     if match is None:
-        raise AssertionError("unit job not found")
+        raise AssertionError(f"{name} job not found")
     return match.group("body")
+
+
+def unit_job() -> str:
+    return workflow_job("unit")
 
 
 def matrix_rows(job: str) -> list[tuple[str, ...]]:
@@ -137,6 +143,16 @@ class UnitWorkflowTests(unittest.TestCase):
             "examples/credentials/v6-minimal.dfcb",
             workflow_text(),
         )
+
+    def test_rust_jobs_use_the_pinned_arm_toolchain(self) -> None:
+        workflow = workflow_text()
+        pinned_toolchain = (
+            "carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1"
+        )
+
+        self.assertEqual(workflow_job("rust").count(pinned_toolchain), 1)
+        self.assertEqual(workflow_job("rust-msrv").count(pinned_toolchain), 1)
+        self.assertNotIn("apt-get install -y gcc-arm-none-eabi", workflow)
 
 
 if __name__ == "__main__":
