@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Keep every public FFI declaration implemented once, in its owning module."""
 
 import argparse
