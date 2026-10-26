@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings = decode_file_settings(&settings_response)
         .map_err(|error| format!("file settings: {error:?}"))?;
     println!(
-        "file type={}, communication={}",
+        "file type={:?}, communication={:?}",
         settings.file_type, settings.communication_mode
     );
 
