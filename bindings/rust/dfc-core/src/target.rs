@@ -48,7 +48,9 @@ impl TargetCredential {
     pub fn decode(content: &[u8]) -> Result<Self, Error> {
         let layout = layout(unsafe { sys::dfc_target_credential_layout() })?;
         let storage = NonNull::new(unsafe { alloc_zeroed(layout) }).ok_or(Error::OutOfMemory)?;
-        unsafe { sys::dfc_target_credential_init(storage.as_ptr().cast()) };
+        // The decoder establishes the credential defaults before publishing any
+        // fields and clears every failure. Starting from zeroed storage also
+        // covers malformed inputs rejected before that initialization point.
         if let Err(error) = checked(unsafe {
             sys::dfc_target_credential_decode(
                 storage.as_ptr().cast(),

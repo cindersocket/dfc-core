@@ -92,17 +92,21 @@ unsafe extern "C" {
     /// # Safety
     ///
     /// `storage` must identify a live credential initialized by
-    /// [`dfc_target_credential_init`]. It must be destroyed exactly once and
-    /// must not still be borrowed by a live target virtual card.
+    /// [`dfc_target_credential_init`] or left initialized by any
+    /// [`dfc_target_credential_decode`] attempt. It must be destroyed exactly
+    /// once and must not still be borrowed by a live target virtual card.
     pub fn dfc_target_credential_destroy(storage: *mut c_void);
 
-    /// Decodes binary credential bytes into initialized storage.
+    /// Decodes binary credential bytes into zeroed or initialized storage.
     ///
     /// # Safety
     ///
-    /// `storage` must identify a live initialized credential. `content` must
-    /// be readable for `len` bytes. The input may overlap neither the credential
-    /// storage nor memory the credential owns.
+    /// `storage` must identify writable storage with the layout returned by
+    /// [`dfc_target_credential_layout`]. It must either be entirely zeroed or
+    /// initialized by [`dfc_target_credential_init`]. `content` must be readable
+    /// for `len` bytes. The input may overlap neither the credential storage nor
+    /// memory the credential owns. After this call, `storage` is initialized and
+    /// must be destroyed exactly once, including when decoding fails.
     pub fn dfc_target_credential_decode(
         storage: *mut c_void,
         content: *const u8,
