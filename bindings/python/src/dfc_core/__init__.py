@@ -63,7 +63,11 @@ from .transaction_mac import TransactionMacError, TransactionMacVerifier
 
 
 def capabilities() -> Capabilities:
-    """Return the role, profile, enabled features, and model limits of the loaded core."""
+    """Read build capabilities from the loaded native library.
+
+    Returns:
+        The ABI version, role, profile, enabled features, and model limits.
+    """
 
     raw = _native.Capabilities()
     _native.library().dfc_ffi_capabilities(raw)
@@ -84,6 +88,12 @@ def capabilities() -> Capabilities:
 def random_bytes(length: int) -> bytes:
     """Return ``length`` bytes from the core's operating-system random source.
 
+    Args:
+        length: Number of random bytes to produce.
+
+    Returns:
+        Exactly ``length`` bytes.
+
     Raises:
         ValueError: If ``length`` is negative.
         DfcError: If the operating-system source cannot satisfy the request.
@@ -101,6 +111,13 @@ def fixed_time_equal(left: bytes, right: bytes) -> bool:
 
     Inputs of different lengths return ``False`` without calling the native
     comparison because their lengths are already public to the Python caller.
+
+    Args:
+        left: First byte string.
+        right: Second byte string.
+
+    Returns:
+        ``True`` only when the lengths and contents match.
     """
 
     if len(left) != len(right):

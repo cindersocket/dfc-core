@@ -37,7 +37,12 @@ def inspect_card_details(credential_path: Path) -> tuple[str, str, int, bytes]:
             if response.status != 0:
                 raise RuntimeError(f"read data failed: {response.status:#04x}")
 
-    return activation.uid.hex(":"), application.aid.hex(), settings.size or 0, response.data
+    return (
+        activation.uid.hex(":"),
+        application.aid.hex(),
+        settings.size or 0,
+        response.data,
+    )
 
 
 def inspect_card(credential_path: Path) -> tuple[str, str, bytes]:
