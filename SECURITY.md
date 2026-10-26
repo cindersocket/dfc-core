@@ -4,8 +4,8 @@
 
 | Version | Security support |
 | --- | --- |
-| 2.0.x (unreleased) | Development fixes |
-| 1.2.x | Supported until 2.0.0 is released |
+| 2.0.x | Supported |
+| 1.2.x | Not supported |
 | Earlier releases | Not supported |
 
 The changelog identifies the current release status. This table is updated when
