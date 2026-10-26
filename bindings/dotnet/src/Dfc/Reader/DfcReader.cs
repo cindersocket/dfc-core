@@ -99,9 +99,9 @@ public sealed record DfcDelegatedApplicationRequest(
 /// </summary>
 public sealed class DfcReader : IDisposable
 {
-    private const int Pending = 1;
-    private const int FrameCapacity = 300;
-    private const int ResultCapacity = 1024;
+    private const int Pending = (int)Native.DFC_FFI_READER_PENDING;
+    private const int BufferTooSmall = (int)Native.DFC_FFI_READER_BUFFER_TOO_SMALL;
+    private const int InitialFrameCapacity = 64;
 
     private readonly IDfcApduExchange transport;
     private readonly IDfcRandomSource random;
@@ -823,15 +823,26 @@ public sealed class DfcReader : IDisposable
     )
     {
         byte[]? answer = null;
+        var frame = new byte[InitialFrameCapacity];
         while (true)
         {
-            var (status, frame) = this.Step(handles, answer);
+            var (status, frameLength) = this.Step(handles, answer, frame);
+            if (status == BufferTooSmall && frameLength > frame.Length)
+            {
+                Array.Resize(ref frame, frameLength);
+                continue;
+            }
+
             if (status != Pending)
             {
                 return status == 0 ? this.Collect(handles) : Failure<DfcResponse>(handles, status);
             }
 
-            var sent = await this.TransmitAsync(handles, frame, cancellationToken).ConfigureAwait(false);
+            var sent = await this.TransmitAsync(
+                handles,
+                frame.AsMemory(0, frameLength),
+                cancellationToken
+            ).ConfigureAwait(false);
             if (sent.IsFailure)
             {
                 ClearSession(handles);
@@ -859,9 +870,12 @@ public sealed class DfcReader : IDisposable
         }
     }
 
-    private unsafe (int Status, byte[] Frame) Step(ReaderHandles handles, byte[]? answer)
+    private unsafe (int Status, int FrameLength) Step(
+        ReaderHandles handles,
+        byte[]? answer,
+        byte[] frame
+    )
     {
-        var frame = new byte[FrameCapacity];
         nuint length;
         int st;
         fixed (byte* a = answer)
@@ -872,24 +886,38 @@ public sealed class DfcReader : IDisposable
                 a,
                 (nuint)(answer?.Length ?? 0),
                 f,
-                FrameCapacity,
+                (nuint)frame.Length,
                 &length
             );
         }
 
-        return (st, st == Pending ? frame[..(int)length] : []);
+        return (st, st is Pending or BufferTooSmall ? checked((int)length) : 0);
     }
 
     private unsafe Result<DfcResponse, DfcProtocolError> Collect(ReaderHandles handles)
     {
-        var data = new byte[ResultCapacity];
         nuint length;
-        fixed (byte* d = data)
+        var st = Native.dfc_ffi_reader_result_data(handles.Exchange, null, 0, &length);
+        if (st != 0)
         {
-            _ = Native.dfc_ffi_reader_result_data(handles.Exchange, d, ResultCapacity, &length);
+            return Failure<DfcResponse>(handles, st);
         }
 
-        return new DfcResponse(Native.dfc_ffi_reader_result_status(handles.Exchange), data[..(int)length]);
+        var data = new byte[checked((int)length)];
+        byte empty = 0;
+        fixed (byte* d = data)
+        {
+            st = Native.dfc_ffi_reader_result_data(
+                handles.Exchange,
+                data.Length == 0 ? &empty : d,
+                (nuint)data.Length,
+                &length
+            );
+        }
+
+        return st == 0
+            ? new DfcResponse(Native.dfc_ffi_reader_result_status(handles.Exchange), data)
+            : Failure<DfcResponse>(handles, st);
     }
 
     private static Result<T, DfcProtocolError> Failure<T>(ReaderHandles handles, int status)
