@@ -55,6 +55,19 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
             ":sample:connectedMinifiedSmokeAndroidTest :dfc:connectedMismatchAndroidTest",
             workflow,
         )
+        kvm_rule = 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
+        reload_rules = "sudo udevadm control --reload-rules"
+        trigger_kvm = "sudo udevadm trigger --name-match=kvm"
+        emulator_action = "reactivecircus/android-emulator-runner"
+        self.assertIn(kvm_rule, workflow)
+        self.assertIn(reload_rules, workflow)
+        self.assertIn(trigger_kvm, workflow)
+        self.assertLess(
+            workflow.index(kvm_rule),
+            workflow.index(reload_rules),
+        )
+        self.assertLess(workflow.index(reload_rules), workflow.index(trigger_kvm))
+        self.assertLess(workflow.index(trigger_kvm), workflow.index(emulator_action))
         self.assertNotIn("cd bindings/android\n", workflow)
 
 
