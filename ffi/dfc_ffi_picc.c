@@ -265,4 +265,85 @@ int32_t dfc_ffi_picc_create_take(
 void dfc_ffi_picc_free(DfcFfiPicc* picc) {
     DFC_UNUSED(picc);
 }
+
+int32_t dfc_ffi_picc_activate(DfcFfiPicc* picc, DfcFfiActivation* out) {
+    DFC_UNUSED(picc);
+    if(out) memset(out, 0, sizeof(*out));
+    return DFC_FFI_UNSUPPORTED;
+}
+
+size_t dfc_ffi_picc_response_capacity(void) {
+    return 0;
+}
+
+int32_t dfc_ffi_picc_exchange(
+    DfcFfiPicc* picc,
+    const uint8_t* command,
+    size_t command_len,
+    uint8_t* response,
+    size_t response_cap,
+    size_t* response_len) {
+    DFC_UNUSED(picc);
+    DFC_UNUSED(command);
+    DFC_UNUSED(command_len);
+    DFC_UNUSED(response);
+    DFC_UNUSED(response_cap);
+    if(response_len) *response_len = 0;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_frame_exchange(
+    DfcFfiPicc* picc,
+    const uint8_t* frame,
+    size_t frame_len,
+    uint8_t* response,
+    size_t response_cap,
+    size_t* response_len) {
+    DFC_UNUSED(picc);
+    DFC_UNUSED(frame);
+    DFC_UNUSED(frame_len);
+    DFC_UNUSED(response);
+    DFC_UNUSED(response_cap);
+    if(response_len) *response_len = 0;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_field_off(DfcFfiPicc* picc) {
+    DFC_UNUSED(picc);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_reset_protocol(DfcFfiPicc* picc) {
+    DFC_UNUSED(picc);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_advance_time(DfcFfiPicc* picc, uint32_t elapsed_milliseconds) {
+    DFC_UNUSED(picc);
+    DFC_UNUSED(elapsed_milliseconds);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_snapshot(const DfcFfiPicc* picc, DfcFfiSnapshot* out) {
+    DFC_UNUSED(picc);
+    if(out) memset(out, 0, sizeof(*out));
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_diagnostic_snapshot(const DfcFfiPicc* picc, DfcFfiDiagnosticSnapshot* out) {
+    DFC_UNUSED(picc);
+    if(out) memset(out, 0, sizeof(*out));
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_export(const DfcFfiPicc* picc, DfcFfiCredential** out) {
+    DFC_UNUSED(picc);
+    if(out) *out = NULL;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_picc_mark_persisted(DfcFfiPicc* picc) {
+    DFC_UNUSED(picc);
+    return DFC_FFI_UNSUPPORTED;
+}
 #endif

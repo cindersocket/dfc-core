@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Keep every public FFI declaration implemented once, in its owning module."""
 
+import argparse
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -52,7 +54,28 @@ def expected_owner(name: str) -> str:
     return "dfc_ffi.c"
 
 
+def linked_exports(binary: Path) -> set[str]:
+    """Return public FFI definitions present in one fully linked role image."""
+    output = subprocess.run(
+        ["nm", "-g", str(binary)], check=True, capture_output=True, text=True
+    ).stdout
+    exports: set[str] = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or fields[-2].upper() == "U":
+            continue
+        name = fields[-1]
+        if name.startswith("_dfc_ffi_"):
+            name = name[1:]
+        if name.startswith("dfc_ffi_"):
+            exports.add(name)
+    return exports
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--linked-image", type=Path)
+    args = parser.parse_args()
     declarations = declared_exports()
     if not declarations:
         raise SystemExit("no public FFI exports found")
@@ -85,6 +108,13 @@ def main() -> None:
             failures.append(f"{name}: expected one definition, found {owners}")
         elif owners[0] != expected_owner(name):
             failures.append(f"{name}: implemented by {owners[0]}, expected {expected_owner(name)}")
+
+    if args.linked_image is not None:
+        missing_linked = sorted(declarations - linked_exports(args.linked_image))
+        if missing_linked:
+            failures.append(
+                f"{args.linked_image}: missing linked exports: " + ", ".join(missing_linked)
+            )
 
     if failures:
         raise SystemExit("\n".join(failures))

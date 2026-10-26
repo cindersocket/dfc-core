@@ -421,4 +421,285 @@ int32_t dfc_ffi_reader_change_key_ev2_data(
     return DFC_FFI_UNSUPPORTED;
 #endif
 }
+#else
+int32_t dfc_ffi_reader_session_new(DfcFfiReaderSession** out) {
+    if(out) *out = NULL;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+void dfc_ffi_reader_session_free(DfcFfiReaderSession* session) {
+    DFC_UNUSED(session);
+}
+
+void dfc_ffi_reader_session_clear(DfcFfiReaderSession* session) {
+    DFC_UNUSED(session);
+}
+
+int32_t dfc_ffi_reader_session_state(const DfcFfiReaderSession* session, DfcFfiReaderState* out) {
+    DFC_UNUSED(session);
+    if(out) memset(out, 0, sizeof(*out));
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_exchange_new(DfcFfiReaderExchange** out) {
+    if(out) *out = NULL;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+void dfc_ffi_reader_exchange_free(DfcFfiReaderExchange* exchange) {
+    DFC_UNUSED(exchange);
+}
+
+int32_t dfc_ffi_reader_authenticate_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t cipher,
+    uint8_t key_no,
+    const uint8_t* key,
+    size_t key_len,
+    const uint8_t* random_a,
+    size_t random_a_len) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(framing);
+    DFC_UNUSED(cipher);
+    DFC_UNUSED(key_no);
+    DFC_UNUSED(key);
+    DFC_UNUSED(key_len);
+    DFC_UNUSED(random_a);
+    DFC_UNUSED(random_a_len);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_authenticate_iso7816_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint8_t key_reference,
+    const uint8_t* key,
+    size_t key_len,
+    uint8_t algorithm,
+    const uint8_t* random_first,
+    const uint8_t* random_second,
+    size_t random_len) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(key_reference);
+    DFC_UNUSED(key);
+    DFC_UNUSED(key_len);
+    DFC_UNUSED(algorithm);
+    DFC_UNUSED(random_first);
+    DFC_UNUSED(random_second);
+    DFC_UNUSED(random_len);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_authenticate_ev2_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t first,
+    uint8_t key_no,
+    const uint8_t* key,
+    const uint8_t* random_a,
+    const uint8_t* capabilities,
+    size_t capabilities_len) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(framing);
+    DFC_UNUSED(first);
+    DFC_UNUSED(key_no);
+    DFC_UNUSED(key);
+    DFC_UNUSED(random_a);
+    DFC_UNUSED(capabilities);
+    DFC_UNUSED(capabilities_len);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_exchange_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t ins,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode,
+    int32_t header_len) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(framing);
+    DFC_UNUSED(ins);
+    DFC_UNUSED(data);
+    DFC_UNUSED(data_len);
+    DFC_UNUSED(comm_mode);
+    DFC_UNUSED(header_len);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_write_data_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(framing);
+    DFC_UNUSED(file_number);
+    DFC_UNUSED(offset);
+    DFC_UNUSED(data);
+    DFC_UNUSED(data_len);
+    DFC_UNUSED(comm_mode);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_write_record_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(framing);
+    DFC_UNUSED(file_number);
+    DFC_UNUSED(offset);
+    DFC_UNUSED(data);
+    DFC_UNUSED(data_len);
+    DFC_UNUSED(comm_mode);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_update_record_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    uint8_t file_number,
+    uint32_t record_number,
+    uint32_t offset,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(framing);
+    DFC_UNUSED(file_number);
+    DFC_UNUSED(record_number);
+    DFC_UNUSED(offset);
+    DFC_UNUSED(data);
+    DFC_UNUSED(data_len);
+    DFC_UNUSED(comm_mode);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_create_delegated_application_begin(
+    DfcFfiReaderExchange* exchange,
+    DfcFfiReaderSession* session,
+    uint32_t framing,
+    const uint8_t* header,
+    size_t header_len,
+    const uint8_t* dam_encryption_key,
+    const uint8_t* dam_mac_key,
+    const uint8_t* random_prefix,
+    const uint8_t* initial_key,
+    size_t initial_key_len,
+    uint8_t initial_version) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(session);
+    DFC_UNUSED(framing);
+    DFC_UNUSED(header);
+    DFC_UNUSED(header_len);
+    DFC_UNUSED(dam_encryption_key);
+    DFC_UNUSED(dam_mac_key);
+    DFC_UNUSED(random_prefix);
+    DFC_UNUSED(initial_key);
+    DFC_UNUSED(initial_key_len);
+    DFC_UNUSED(initial_version);
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_step(
+    DfcFfiReaderExchange* exchange,
+    const uint8_t* response,
+    size_t response_len,
+    uint8_t* out,
+    size_t out_cap,
+    size_t* out_len) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(response);
+    DFC_UNUSED(response_len);
+    DFC_UNUSED(out);
+    DFC_UNUSED(out_cap);
+    if(out_len) *out_len = 0;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+uint8_t dfc_ffi_reader_result_status(const DfcFfiReaderExchange* exchange) {
+    DFC_UNUSED(exchange);
+    return 0;
+}
+
+int32_t dfc_ffi_reader_result_data(
+    DfcFfiReaderExchange* exchange,
+    uint8_t* out,
+    size_t cap,
+    size_t* len) {
+    DFC_UNUSED(exchange);
+    DFC_UNUSED(out);
+    DFC_UNUSED(cap);
+    if(len) *len = 0;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_change_key_cryptogram(
+    const DfcFfiReaderSession* session,
+    uint8_t key_no,
+    const uint8_t* new_key,
+    size_t key_len,
+    const uint8_t* current_key,
+    uint8_t aes_key,
+    uint8_t new_version,
+    uint8_t* out,
+    size_t out_cap,
+    size_t* out_len) {
+    DFC_UNUSED(session);
+    DFC_UNUSED(key_no);
+    DFC_UNUSED(new_key);
+    DFC_UNUSED(key_len);
+    DFC_UNUSED(current_key);
+    DFC_UNUSED(aes_key);
+    DFC_UNUSED(new_version);
+    DFC_UNUSED(out);
+    DFC_UNUSED(out_cap);
+    if(out_len) *out_len = 0;
+    return DFC_FFI_UNSUPPORTED;
+}
+
+int32_t dfc_ffi_reader_change_key_ev2_data(
+    const DfcFfiReaderSession* session,
+    uint8_t key_set_no,
+    uint8_t key_no,
+    const uint8_t* new_key,
+    const uint8_t* current_key,
+    uint8_t new_version,
+    uint8_t* out,
+    size_t out_cap,
+    size_t* out_len) {
+    DFC_UNUSED(session);
+    DFC_UNUSED(key_set_no);
+    DFC_UNUSED(key_no);
+    DFC_UNUSED(new_key);
+    DFC_UNUSED(current_key);
+    DFC_UNUSED(new_version);
+    DFC_UNUSED(out);
+    DFC_UNUSED(out_cap);
+    if(out_len) *out_len = 0;
+    return DFC_FFI_UNSUPPORTED;
+}
 #endif

@@ -136,6 +136,10 @@ PROFILES := minimal_ev1 full_ev1 full_ev2 minimal_ev3
 ROLES := target host simulator
 ROLE_PROFILES := $(PROFILES) full_ev3
 ROLE_DIR := role-build
+FFI_ROLE_DIR := role-build/ffi
+FFI_SRC := ../ffi/dfc_ffi.c ../ffi/dfc_ffi_an10922.c ../ffi/dfc_ffi_credential.c \
+	../ffi/dfc_ffi_model.c ../ffi/dfc_ffi_picc.c ../ffi/dfc_ffi_reader.c \
+	../ffi/dfc_ffi_response.c ../ffi/dfc_ffi_sdm.c ../ffi/dfc_ffi_transaction_mac.c
 ROLE_FORBIDDEN_target := dfc_text_ dfc_reader_ dfc_command_ dfc_desfire_command_name dfc_iso_dep_control_frame_name
 ROLE_FORBIDDEN_host := dfc_emulator_ dfc_virtual_picc_
 ROLE_FORBIDDEN_simulator :=
@@ -146,7 +150,7 @@ FUZZ_TIME ?= 300
 FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
 .PHONY: test test-backends vectors vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile check-cipher-profile-matrix \
-	profile-builds role-builds \
+	profile-builds role-builds ffi-role-builds \
 	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers \
 	check-credential-passes \
 	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
@@ -224,7 +228,7 @@ test_dfc_transaction_snapshot_large: test_dfc_transaction_snapshot.c \
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-export-inventory check-ffi-layout-registry check-cipher-profile-matrix vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-export-inventory check-ffi-layout-registry check-cipher-profile-matrix vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds ffi-role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(DES_CHAIN_FAULT_TEST)
@@ -361,6 +365,20 @@ role-builds:
 		./$$d/smoke || exit 1; \
 		echo "ok ($$(cat $$d/*.o | wc -c | tr -d ' ') object bytes)"; \
 	done; done
+
+ffi-role-builds:
+	@echo "=== linked FFI exports by role ==="
+	@for r in $(ROLES); do \
+		printf "  %-10s " "$$r"; \
+		d=$(FFI_ROLE_DIR)/$$r; rm -rf $$d; mkdir -p $$d; \
+		flags="-DDFC_BUILD_ROLE=DFC_ROLE_$$(echo $$r | tr a-z A-Z) -DDFC_BUILD_PROFILE=DFC_PROFILE_FULL_EV3 -DDFC_ENABLE_FFI=1"; \
+		$(CC) $(CFLAGS) $$flags -I../ffi -I../port/ffi -o $$d/exports \
+			test_ffi_role_exports.c $(CORE_SRC) $(FFI_SRC) ../port/ffi/dfc_port_ffi.c \
+			../port/host/dfc_bytebuf_host.c $(CRYPTO_SRC) $(LDFLAGS) || exit 1; \
+		./$$d/exports || exit 1; \
+		python3 check_ffi_export_inventory.py --linked-image $$d/exports || exit 1; \
+		echo ok; \
+	done
 
 # The model API remains linkable when both serialization formats are omitted.
 # Referencing it from dfc_role_smoke makes declaration/definition guard drift a
