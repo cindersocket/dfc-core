@@ -264,6 +264,7 @@ jobs:
         env:
           CIBW_BUILD: cp311-* cp312-* cp313-* cp314-*
           CIBW_SKIP: "*-musllinux_*"
+          CIBW_ARCHS_WINDOWS: AMD64
         with:
           package-dir: build/python-package
           output-dir: dist/python
