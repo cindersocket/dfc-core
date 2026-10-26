@@ -14,8 +14,19 @@
   the configured file-data limit remain verifiable (#159).
 - Expose the new diversification, decoder, SDM, and Transaction MAC APIs through
   the Python, Rust, Java, Android, and .NET bindings.
+- Document every public binding API with enforced Python, Rust, Java, Android,
+  and .NET documentation builds.
+- Split Python native declarations by responsibility, name every FFI parameter,
+  and verify the complete signature registry against the public C header.
 - Replace closed-domain binding integers with typed enums and make inactive
   snapshot and session fields explicit in the 2.0 source APIs (#199).
+- Validate Python replay challenges before random generation or native and
+  transport calls, preventing undersized EV2 buffers from reaching fixed-length
+  native reads.
+- Reject invalid ISO authentication references, algorithm and key combinations,
+  replay challenge lengths, and EV2 capability inputs in Java before transport.
+- Define SDM offsets and field-specific length units consistently across the
+  native API and bindings, including absent-field validation.
 - Add installable native and binding packages with one verified release
   inventory and package-consumer smoke tests (#156).
 - Publish complete dependency metadata, configure automated dependency updates,
@@ -68,6 +79,8 @@
 - Add runnable transceive examples for .NET, Java, Android, Python, and Rust.
 - Make semantic application-selection helpers consistently accept the
   human-readable application identifier order in every binding.
+- Verify application identifier order end to end across command encoding,
+  response decoding, card selection, and exported snapshots.
 - Correct Java communication-mode values and Python reader FFI declarations,
   validate key-set storage widths at the FFI boundary, and enforce Rust 1.85
   compatibility in CI.
