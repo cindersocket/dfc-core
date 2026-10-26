@@ -4,6 +4,10 @@ use dfc_core_sys as sys;
 
 const INITIAL_OUTPUT_CAPACITY: usize = 64;
 const SELECT_APPLICATION_INSTRUCTION: u8 = 0x5a;
+const MAX_FILE_NUMBER: u8 = 31;
+const MAX_U24: u32 = 0x00ff_ffff;
+const MAX_RANGE_DATA: usize = 255 - 7;
+const MAX_UPDATE_DATA: usize = 255 - 10;
 // Native commands carry at most 255 data bytes. ISO 7816 wrapping adds five
 // header bytes and Le; native framing needs less space than this same bound.
 const MAX_OUTPUT_CAPACITY: usize = 261;
@@ -119,12 +123,226 @@ pub struct Command {
 }
 
 impl Command {
+    fn empty(instruction: u8) -> Self {
+        Self {
+            instruction,
+            data: Vec::new(),
+        }
+    }
+
+    fn one_file(instruction: u8, file_number: u8) -> Result<Self, Error> {
+        if file_number > MAX_FILE_NUMBER {
+            return Err(Error::InvalidArgument);
+        }
+        Ok(Self {
+            instruction,
+            data: vec![file_number],
+        })
+    }
+
     /// Select an application using the AID order stored by the credential model.
     pub fn select_application(aid: [u8; 3]) -> Self {
         Self {
             instruction: SELECT_APPLICATION_INSTRUCTION,
             data: aid.into_iter().rev().collect(),
         }
+    }
+
+    /// Builds GetVersion.
+    pub fn get_version() -> Self {
+        Self::empty(0x60)
+    }
+
+    /// Builds GetFreeMemory.
+    pub fn get_free_memory() -> Self {
+        Self::empty(0x6e)
+    }
+
+    /// Builds FormatPICC.
+    pub fn format_picc() -> Self {
+        Self::empty(0xfc)
+    }
+
+    /// Builds GetKeySettings for the current selection.
+    pub fn get_key_settings() -> Self {
+        Self::empty(0x45)
+    }
+
+    /// Builds GetApplicationIDs.
+    pub fn get_application_ids() -> Self {
+        Self::empty(0x6a)
+    }
+
+    /// Builds GetDFNames.
+    pub fn get_df_names() -> Self {
+        Self::empty(0x6d)
+    }
+
+    /// Builds GetFileIDs for the current selection.
+    pub fn get_file_ids() -> Self {
+        Self::empty(0x6f)
+    }
+
+    /// Builds GetISOFileIDs.
+    pub fn get_iso_file_ids() -> Self {
+        Self::empty(0x61)
+    }
+
+    /// Builds GetCardUID.
+    pub fn get_card_uid() -> Self {
+        Self::empty(0x51)
+    }
+
+    /// Builds ReadSignature.
+    pub fn read_signature(signature_id: u8) -> Self {
+        Self {
+            instruction: 0x3c,
+            data: vec![signature_id],
+        }
+    }
+
+    /// Builds GetKeyVersion.
+    pub fn get_key_version(key_number: u8) -> Self {
+        Self {
+            instruction: 0x64,
+            data: vec![key_number],
+        }
+    }
+
+    /// Builds GetFileSettings.
+    pub fn get_file_settings(file_number: u8) -> Result<Self, Error> {
+        Self::one_file(0xf5, file_number)
+    }
+
+    /// Builds GetFileCounters.
+    pub fn get_file_counters(file_number: u8) -> Result<Self, Error> {
+        Self::one_file(0xf6, file_number)
+    }
+
+    /// Builds DeleteFile.
+    pub fn delete_file(file_number: u8) -> Result<Self, Error> {
+        Self::one_file(0xdf, file_number)
+    }
+
+    /// Builds ClearRecordFile.
+    pub fn clear_record_file(file_number: u8) -> Result<Self, Error> {
+        Self::one_file(0xeb, file_number)
+    }
+
+    /// Builds GetValue.
+    pub fn get_value(file_number: u8) -> Result<Self, Error> {
+        Self::one_file(0x6c, file_number)
+    }
+
+    /// Builds ReadData with little-endian unsigned 24-bit fields.
+    pub fn read_data(file_number: u8, offset: u32, length: u32) -> Result<Self, Error> {
+        if file_number > MAX_FILE_NUMBER || offset > MAX_U24 || length > MAX_U24 {
+            return Err(Error::InvalidArgument);
+        }
+        let mut data = Vec::with_capacity(7);
+        data.push(file_number);
+        data.extend_from_slice(&offset.to_le_bytes()[..3]);
+        data.extend_from_slice(&length.to_le_bytes()[..3]);
+        Ok(Self {
+            instruction: 0xbd,
+            data,
+        })
+    }
+
+    fn range_with_data(
+        instruction: u8,
+        file_number: u8,
+        offset: u32,
+        data: &[u8],
+    ) -> Result<Self, Error> {
+        if file_number > MAX_FILE_NUMBER || offset > MAX_U24 || data.len() > MAX_RANGE_DATA {
+            return Err(Error::InvalidArgument);
+        }
+        let mut command_data = Vec::with_capacity(7 + data.len());
+        command_data.push(file_number);
+        command_data.extend_from_slice(&offset.to_le_bytes()[..3]);
+        command_data.extend_from_slice(&(data.len() as u32).to_le_bytes()[..3]);
+        command_data.extend_from_slice(data);
+        Ok(Self {
+            instruction,
+            data: command_data,
+        })
+    }
+
+    /// Builds WriteData.
+    pub fn write_data(file_number: u8, offset: u32, data: &[u8]) -> Result<Self, Error> {
+        Self::range_with_data(0x3d, file_number, offset, data)
+    }
+
+    /// Builds ReadRecords.
+    pub fn read_records(file_number: u8, record_number: u32, count: u32) -> Result<Self, Error> {
+        let mut command = Self::read_data(file_number, record_number, count)?;
+        command.instruction = 0xbb;
+        Ok(command)
+    }
+
+    /// Builds WriteRecord.
+    pub fn write_record(file_number: u8, offset: u32, data: &[u8]) -> Result<Self, Error> {
+        Self::range_with_data(0x3b, file_number, offset, data)
+    }
+
+    /// Builds UpdateRecord.
+    pub fn update_record(
+        file_number: u8,
+        record_number: u32,
+        offset: u32,
+        data: &[u8],
+    ) -> Result<Self, Error> {
+        if record_number > MAX_U24 || data.len() > MAX_UPDATE_DATA {
+            return Err(Error::InvalidArgument);
+        }
+        let tail = Self::range_with_data(0xdb, file_number, offset, data)?.data;
+        let mut command_data = Vec::with_capacity(tail.len() + 3);
+        command_data.push(file_number);
+        command_data.extend_from_slice(&record_number.to_le_bytes()[..3]);
+        command_data.extend_from_slice(&tail[1..]);
+        Ok(Self {
+            instruction: 0xdb,
+            data: command_data,
+        })
+    }
+
+    fn value_operation(instruction: u8, file_number: u8, amount: i32) -> Result<Self, Error> {
+        if file_number > MAX_FILE_NUMBER {
+            return Err(Error::InvalidArgument);
+        }
+        let mut data = Vec::with_capacity(5);
+        data.push(file_number);
+        data.extend_from_slice(&amount.to_le_bytes());
+        Ok(Self { instruction, data })
+    }
+
+    /// Builds Credit.
+    pub fn credit(file_number: u8, amount: i32) -> Result<Self, Error> {
+        Self::value_operation(0x0c, file_number, amount)
+    }
+
+    /// Builds Debit.
+    pub fn debit(file_number: u8, amount: i32) -> Result<Self, Error> {
+        Self::value_operation(0xdc, file_number, amount)
+    }
+
+    /// Builds LimitedCredit.
+    pub fn limited_credit(file_number: u8, amount: i32) -> Result<Self, Error> {
+        Self::value_operation(0x1c, file_number, amount)
+    }
+
+    /// Builds CommitTransaction, optionally carrying its option octet.
+    pub fn commit_transaction(option: Option<u8>) -> Self {
+        Self {
+            instruction: 0xc7,
+            data: option.into_iter().collect(),
+        }
+    }
+
+    /// Builds AbortTransaction.
+    pub fn abort_transaction() -> Self {
+        Self::empty(0xa7)
     }
 }
 

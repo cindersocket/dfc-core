@@ -22,6 +22,8 @@ READER_PENDING = 1
 READER_BUFFER_TOO_SMALL = 3
 READER_CARD_ERROR = 6
 INITIAL_OUTPUT_CAPACITY = 64
+MAX_RANGE_DATA = 255 - 7
+MAX_UPDATE_DATA = 255 - 10
 
 
 def _closed_enum(value: int, enum_type: type[Framing | CommunicationMode], name: str) -> int:
@@ -60,6 +62,11 @@ class Command:
     def __post_init__(self) -> None:
         if not 0 <= self.instruction <= 255:
             raise ValueError("instruction must fit in one byte")
+
+    @staticmethod
+    def _validate_file_number(file_number: int) -> None:
+        if not 0 <= file_number <= 31:
+            raise ValueError("file number must be between 0 and 31")
 
     @classmethod
     def select_application(cls, aid: bytes) -> Command:
@@ -102,6 +109,12 @@ class Command:
         return cls(0x6E)
 
     @classmethod
+    def format_picc(cls) -> Command:
+        """Build FormatPICC."""
+
+        return cls(0xFC)
+
+    @classmethod
     def get_key_settings(cls) -> Command:
         """Build GetKeySettings for the current selection.
 
@@ -122,6 +135,12 @@ class Command:
         return cls(0x6A)
 
     @classmethod
+    def get_df_names(cls) -> Command:
+        """Build GetDFNames."""
+
+        return cls(0x6D)
+
+    @classmethod
     def get_file_ids(cls) -> Command:
         """Build GetFileIDs for the current selection.
 
@@ -132,6 +151,12 @@ class Command:
         return cls(0x6F)
 
     @classmethod
+    def get_iso_file_ids(cls) -> Command:
+        """Build GetISOFileIDs."""
+
+        return cls(0x61)
+
+    @classmethod
     def get_card_uid(cls) -> Command:
         """Build GetCardUID.
 
@@ -140,6 +165,18 @@ class Command:
         """
 
         return cls(0x51)
+
+    @classmethod
+    def read_signature(cls, signature_id: int = 0) -> Command:
+        """Build ReadSignature with a one-byte signature identifier."""
+
+        return cls(0x3C, bytes((signature_id,)))
+
+    @classmethod
+    def get_key_version(cls, key_number: int) -> Command:
+        """Build GetKeyVersion with a one-byte key number."""
+
+        return cls(0x64, bytes((key_number,)))
 
     @classmethod
     def commit_transaction(cls, option: int | None = None) -> Command:
@@ -182,9 +219,38 @@ class Command:
             ValueError: If ``file_number`` is outside 0 through 31.
         """
 
-        if not 0 <= file_number <= 31:
-            raise ValueError("file number must be between 0 and 31")
+        cls._validate_file_number(file_number)
         return cls(instruction, bytes((file_number,)))
+
+    @classmethod
+    def get_file_settings(cls, file_number: int) -> Command:
+        """Build GetFileSettings for a file numbered from 0 through 31."""
+
+        return cls.file_operation(0xF5, file_number)
+
+    @classmethod
+    def get_file_counters(cls, file_number: int) -> Command:
+        """Build GetFileCounters for a file numbered from 0 through 31."""
+
+        return cls.file_operation(0xF6, file_number)
+
+    @classmethod
+    def delete_file(cls, file_number: int) -> Command:
+        """Build DeleteFile for a file numbered from 0 through 31."""
+
+        return cls.file_operation(0xDF, file_number)
+
+    @classmethod
+    def clear_record_file(cls, file_number: int) -> Command:
+        """Build ClearRecordFile for a file numbered from 0 through 31."""
+
+        return cls.file_operation(0xEB, file_number)
+
+    @classmethod
+    def get_value(cls, file_number: int) -> Command:
+        """Build GetValue for a file numbered from 0 through 31."""
+
+        return cls.file_operation(0x6C, file_number)
 
     @classmethod
     def read_data(cls, file_number: int, offset: int, length: int) -> Command:
@@ -202,12 +268,85 @@ class Command:
             ValueError: If the file number or either 24-bit field is out of range.
         """
 
-        if not 0 <= file_number <= 31 or not 0 <= offset < 1 << 24 or not 0 <= length < 1 << 24:
+        cls._validate_file_number(file_number)
+        if not 0 <= offset < 1 << 24 or not 0 <= length < 1 << 24:
             raise ValueError("read-data field is out of range")
         return cls(
             0xBD,
             bytes((file_number,)) + offset.to_bytes(3, "little") + length.to_bytes(3, "little"),
         )
+
+    @classmethod
+    def _range_with_data(
+        cls, instruction: int, file_number: int, offset: int, data: bytes
+    ) -> Command:
+        cls._validate_file_number(file_number)
+        if not 0 <= offset < 1 << 24:
+            raise ValueError("file range is out of range")
+        if len(data) > MAX_RANGE_DATA:
+            raise ValueError("command data does not fit one native frame")
+        return cls(
+            instruction,
+            bytes((file_number,))
+            + offset.to_bytes(3, "little")
+            + len(data).to_bytes(3, "little")
+            + data,
+        )
+
+    @classmethod
+    def write_data(cls, file_number: int, offset: int, data: bytes) -> Command:
+        """Build WriteData with a copied byte payload."""
+
+        return cls._range_with_data(0x3D, file_number, offset, bytes(data))
+
+    @classmethod
+    def read_records(cls, file_number: int, record_number: int, count: int) -> Command:
+        """Build ReadRecords with unsigned 24-bit record fields."""
+
+        command = cls.read_data(file_number, record_number, count)
+        return cls(0xBB, command.data)
+
+    @classmethod
+    def write_record(cls, file_number: int, offset: int, data: bytes) -> Command:
+        """Build WriteRecord with a copied byte payload."""
+
+        return cls._range_with_data(0x3B, file_number, offset, bytes(data))
+
+    @classmethod
+    def update_record(
+        cls, file_number: int, record_number: int, offset: int, data: bytes
+    ) -> Command:
+        """Build UpdateRecord with unsigned 24-bit record fields."""
+
+        if not 0 <= record_number < 1 << 24:
+            raise ValueError("record number is out of range")
+        if len(data) > MAX_UPDATE_DATA:
+            raise ValueError("command data does not fit one native frame")
+        tail = cls._range_with_data(0xDB, file_number, offset, bytes(data)).data
+        return cls(0xDB, tail[:1] + record_number.to_bytes(3, "little") + tail[1:])
+
+    @classmethod
+    def _value_operation(cls, instruction: int, file_number: int, amount: int) -> Command:
+        cls._validate_file_number(file_number)
+        return cls(instruction, bytes((file_number,)) + amount.to_bytes(4, "little", signed=True))
+
+    @classmethod
+    def credit(cls, file_number: int, amount: int) -> Command:
+        """Build Credit with a signed 32-bit amount."""
+
+        return cls._value_operation(0x0C, file_number, amount)
+
+    @classmethod
+    def debit(cls, file_number: int, amount: int) -> Command:
+        """Build Debit with a signed 32-bit amount."""
+
+        return cls._value_operation(0xDC, file_number, amount)
+
+    @classmethod
+    def limited_credit(cls, file_number: int, amount: int) -> Command:
+        """Build LimitedCredit with a signed 32-bit amount."""
+
+        return cls._value_operation(0x1C, file_number, amount)
 
 
 class Reader:

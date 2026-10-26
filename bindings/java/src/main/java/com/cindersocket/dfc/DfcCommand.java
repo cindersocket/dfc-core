@@ -9,6 +9,9 @@ import java.util.Objects;
  * @param data command payload in wire order
  */
 public record DfcCommand(int instruction, byte[] data) {
+  private static final int MAX_COMMAND_DATA = 255;
+  private static final int RANGE_HEADER_LENGTH = 7;
+  private static final int UPDATE_HEADER_LENGTH = 10;
   private static final int GET_VERSION = 0x60;
   private static final int GET_FREE_MEMORY = 0x6e;
   private static final int FORMAT_PICC = 0xfc;
@@ -48,6 +51,8 @@ public record DfcCommand(int instruction, byte[] data) {
     if ((instruction & ~0xff) != 0)
       throw new IllegalArgumentException("instruction");
     data = Objects.requireNonNull(data, "data").clone();
+    if (data.length > MAX_COMMAND_DATA)
+      throw new IllegalArgumentException("command data exceeds one native frame");
   }
   /**
    * Returns the payload.
@@ -128,6 +133,16 @@ public record DfcCommand(int instruction, byte[] data) {
     return new DfcCommand(COMMIT_TRANSACTION, new byte[0]);
   }
   /**
+   * Creates CommitTransaction with an option octet.
+   *
+   * @param option unsigned one-byte command option
+   * @return the command
+   * @throws IllegalArgumentException if {@code option} is outside the unsigned byte range
+   */
+  public static DfcCommand commitTransaction(int option) {
+    return oneByte(COMMIT_TRANSACTION, option);
+  }
+  /**
    * Creates AbortTransaction.
    * @return the command
    */
@@ -157,52 +172,52 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates GetFileSettings.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @return a GetFileSettings command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand getFileSettings(int fileNumber) {
-    return oneByte(GET_FILE_SETTINGS, fileNumber);
+    return oneFile(GET_FILE_SETTINGS, fileNumber);
   }
   /**
    * Creates GetFileCounters.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @return a GetFileCounters command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand getFileCounters(int fileNumber) {
-    return oneByte(GET_FILE_COUNTERS, fileNumber);
+    return oneFile(GET_FILE_COUNTERS, fileNumber);
   }
   /**
    * Creates DeleteFile.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @return a DeleteFile command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand deleteFile(int fileNumber) {
-    return oneByte(DELETE_FILE, fileNumber);
+    return oneFile(DELETE_FILE, fileNumber);
   }
   /**
    * Creates ClearRecordFile.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @return a ClearRecordFile command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand clearRecordFile(int fileNumber) {
-    return oneByte(CLEAR_RECORD_FILE, fileNumber);
+    return oneFile(CLEAR_RECORD_FILE, fileNumber);
   }
   /**
    * Creates GetValue.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @return a GetValue command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand getValue(int fileNumber) {
-    return oneByte(GET_VALUE, fileNumber);
+    return oneFile(GET_VALUE, fileNumber);
   }
   /**
    * Creates SelectApplication.
@@ -220,7 +235,7 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates ReadData.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param offset unsigned 24-bit byte offset
    * @param length unsigned 24-bit byte count
    * @return a ReadData command
@@ -232,7 +247,7 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates WriteData.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param offset unsigned 24-bit byte offset
    * @param value bytes to write; copied into the command
    * @return a WriteData command
@@ -245,7 +260,7 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates ReadRecords.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param firstRecord unsigned 24-bit first record number
    * @param count unsigned 24-bit record count; zero requests all remaining records
    * @return a ReadRecords command
@@ -257,7 +272,7 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates WriteRecord.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param offset unsigned 24-bit byte offset within the record
    * @param value bytes to write; copied into the command
    * @return a WriteRecord command
@@ -270,7 +285,7 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates UpdateRecord.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param recordNumber unsigned 24-bit record number
    * @param offset unsigned 24-bit byte offset within the record
    * @param value bytes to write; copied into the command
@@ -283,6 +298,8 @@ public record DfcCommand(int instruction, byte[] data) {
       int fileNumber, int recordNumber, int offset, byte[] value) {
     if ((recordNumber & ~0xffffff) != 0)
       throw new IllegalArgumentException("recordNumber");
+    if (Objects.requireNonNull(value, "value").length > MAX_COMMAND_DATA - UPDATE_HEADER_LENGTH)
+      throw new IllegalArgumentException("value exceeds one native frame");
     byte[] tail = writeRange(UPDATE_RECORD, fileNumber, offset, value).data();
     byte[] data = new byte[tail.length + 3];
     data[0] = tail[0];
@@ -293,10 +310,10 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates Credit.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param amount signed 32-bit credit amount
    * @return a Credit command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand credit(int fileNumber, int amount) {
     return valueOperation(CREDIT, fileNumber, amount);
@@ -304,10 +321,10 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates Debit.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param amount signed 32-bit debit amount
    * @return a Debit command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand debit(int fileNumber, int amount) {
     return valueOperation(DEBIT, fileNumber, amount);
@@ -315,10 +332,10 @@ public record DfcCommand(int instruction, byte[] data) {
   /**
    * Creates LimitedCredit.
    *
-   * @param fileNumber unsigned one-byte file number
+   * @param fileNumber file number from 0 through 31
    * @param amount signed 32-bit limited-credit amount
    * @return a LimitedCredit command
-   * @throws IllegalArgumentException if {@code fileNumber} is outside the unsigned byte range
+   * @throws IllegalArgumentException if {@code fileNumber} is outside 0 through 31
    */
   public static DfcCommand limitedCredit(int fileNumber, int amount) {
     return valueOperation(LIMITED_CREDIT, fileNumber, amount);
@@ -328,8 +345,18 @@ public record DfcCommand(int instruction, byte[] data) {
       throw new IllegalArgumentException("byte value");
     return new DfcCommand(instruction, new byte[] {(byte) value});
   }
+  private static DfcCommand oneFile(int instruction, int fileNumber) {
+    validateFileNumber(fileNumber);
+    return new DfcCommand(instruction, new byte[] {(byte) fileNumber});
+  }
+  private static void validateFileNumber(int fileNumber) {
+    if (fileNumber < 0 || fileNumber > 31)
+      throw new IllegalArgumentException("fileNumber");
+  }
   private static DfcCommand writeRange(int instruction, int fileNumber, int offset, byte[] value) {
     Objects.requireNonNull(value, "value");
+    if (value.length > MAX_COMMAND_DATA - RANGE_HEADER_LENGTH)
+      throw new IllegalArgumentException("value exceeds one native frame");
     byte[] header = fileRange(fileNumber, offset, value.length);
     byte[] data = new byte[header.length + value.length];
     System.arraycopy(header, 0, data, 0, header.length);
@@ -337,14 +364,13 @@ public record DfcCommand(int instruction, byte[] data) {
     return new DfcCommand(instruction, data);
   }
   private static DfcCommand valueOperation(int instruction, int fileNumber, int amount) {
-    if ((fileNumber & ~0xff) != 0)
-      throw new IllegalArgumentException("fileNumber");
+    validateFileNumber(fileNumber);
     return new DfcCommand(instruction,
         new byte[] {(byte) fileNumber, (byte) amount, (byte) (amount >>> 8), (byte) (amount >>> 16),
             (byte) (amount >>> 24)});
   }
   private static byte[] fileRange(int fileNumber, int offset, int length) {
-    if ((fileNumber & ~0xff) != 0 || offset < 0 || offset > 0xffffff || length < 0
+    if (fileNumber < 0 || fileNumber > 31 || offset < 0 || offset > 0xffffff || length < 0
         || length > 0xffffff)
       throw new IllegalArgumentException("file range");
     return new byte[] {(byte) fileNumber, (byte) offset, (byte) (offset >>> 8),
