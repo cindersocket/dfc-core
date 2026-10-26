@@ -108,7 +108,7 @@ class UnitWorkflowTests(unittest.TestCase):
             job,
             r"(?s)- name: Fetch tiny-crypto-c\n"
             r"        if: matrix\.backend == 'tiny'\n"
-            r"        uses: actions/checkout@v4",
+            r"        uses: actions/checkout@v7",
         )
 
     def test_apt_waits_are_bounded(self) -> None:

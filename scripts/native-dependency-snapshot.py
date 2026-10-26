@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -26,7 +28,12 @@ def tiny_revision() -> str:
 
 
 def snapshot(
-    repository: str, commit: str, ref: str, run_id: str, run_attempt: str
+    repository: str,
+    commit: str,
+    ref: str,
+    run_id: str,
+    run_attempt: str,
+    scanned: str,
 ) -> dict[str, object]:
     revision = tiny_revision()
     package_url = f"pkg:github/mistial-dev/tiny-crypto-c@{revision}"
@@ -34,6 +41,7 @@ def snapshot(
         "version": 0,
         "sha": commit,
         "ref": ref,
+        "scanned": scanned,
         "job": {
             # GitHub replaces the previous snapshot for this stable job identity.
             "correlator": "dfc-core-native-cmake",
@@ -74,9 +82,13 @@ def submit(payload: dict[str, object], repository: str, token: str) -> None:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        if response.status != 201:
-            raise RuntimeError(f"dependency submission returned HTTP {response.status}")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.status != 201:
+                raise RuntimeError(f"dependency submission returned HTTP {response.status}")
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"dependency submission returned HTTP {error.code}: {detail}") from error
 
 
 def main() -> None:
@@ -90,7 +102,10 @@ def main() -> None:
     ref = os.environ.get("GITHUB_REF", "refs/heads/local")
     run_id = os.environ.get("GITHUB_RUN_ID", "local")
     run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
-    payload = snapshot(repository, commit, ref, run_id, run_attempt)
+    scanned = os.environ.get("DFC_DEPENDENCY_SCANNED_AT") or datetime.datetime.now(
+        datetime.UTC
+    ).isoformat(timespec="seconds").replace("+00:00", "Z")
+    payload = snapshot(repository, commit, ref, run_id, run_attempt, scanned)
 
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if args.output:

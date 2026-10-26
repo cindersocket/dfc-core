@@ -122,6 +122,10 @@ class DependencyGraphTests(unittest.TestCase):
         self.assertEqual(workflows.count("native-dependency-snapshot.py --submit"), 1)
         self.assertEqual(workflows.count("gradle/actions/dependency-submission@"), 1)
         self.assertEqual(workflows.count("dependency-graph: generate-and-submit"), 1)
+        self.assertEqual(
+            workflows.count('dependency-graph-include-configurations: ".*RuntimeClasspath"'),
+            1,
+        )
 
     def test_inventory_check_runs_in_pull_request_ci(self) -> None:
         text = CI_WORKFLOW.read_text(encoding="utf-8")
@@ -158,6 +162,7 @@ class DependencyGraphTests(unittest.TestCase):
             snapshot = json.loads(output.read_text(encoding="utf-8"))
         manifest = snapshot["manifests"]["CMakeLists.txt"]
         resolved = next(iter(manifest["resolved"].values()))
+        self.assertRegex(snapshot["scanned"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
         self.assertRegex(
             resolved["package_url"],
             r"^pkg:github/mistial-dev/tiny-crypto-c@[0-9a-f]{40}$",
@@ -175,6 +180,7 @@ class DependencyGraphTests(unittest.TestCase):
                     **os.environ,
                     "GITHUB_RUN_ID": run_id,
                     "GITHUB_RUN_ATTEMPT": run_attempt,
+                    "DFC_DEPENDENCY_SCANNED_AT": "2026-10-26T05:08:16Z",
                 }
                 subprocess.run(
                     ["python3", str(script), "--output", str(output)],

@@ -15,11 +15,11 @@ jobs:
     name: Formatting and documentation
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -85,15 +85,15 @@ jobs:
       matrix:
         entry_point: [native, android, dotnet, python, java, rust]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the Android NDK
         if: matrix.entry_point == 'android'
@@ -101,7 +101,7 @@ jobs:
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libmbedtls-dev
       - name: Fetch tiny-crypto-c
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mistial-dev/tiny-crypto-c
           ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the toolchain
         run: |
           sudo apt-get update
@@ -144,7 +144,7 @@ jobs:
         run: make -C tests fuzz CC=clang FUZZ_TIME=300
       - name: Upload crashing inputs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: credential-fuzz-artifacts
           path: build-fuzz/artifacts
@@ -154,13 +154,13 @@ jobs:
     name: CMake build configuration
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
       - name: Fetch tiny-crypto-c
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mistial-dev/tiny-crypto-c
           ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
@@ -172,19 +172,19 @@ jobs:
     name: Cortex-M4 footprint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
         with:
           release: "13.3.Rel1"
       - name: Fetch tiny-crypto-c
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mistial-dev/tiny-crypto-c
           ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
           path: dependencies/tiny-crypto-c
       - name: Check the full EV3 target footprint
         run: TINY_CRYPTO_DIR="$PWD/dependencies/tiny-crypto-c" ./scripts/check-embedded-footprint.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: cortex-m4-footprint
@@ -205,7 +205,7 @@ jobs:
           - { label: "tiny, memory", backend: tiny, sanitize: "memory", cc: clang, release: "", packages: "clang libclang-rt-18-dev" }
           - { label: "tiny GCC Release", backend: tiny, sanitize: "", cc: gcc, release: "1", packages: "" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         timeout-minutes: 5
       - name: Install required packages
         if: matrix.packages != ''
@@ -225,7 +225,7 @@ jobs:
             install -y --no-install-recommends ${{ matrix.packages }}
       - name: Fetch tiny-crypto-c
         if: matrix.backend == 'tiny'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         timeout-minutes: 5
         with:
           repository: mistial-dev/tiny-crypto-c
@@ -250,9 +250,9 @@ jobs:
           - { rid: win-x64, os: windows-2022, file: build/Release/libdfc.dll, test: true }
           - { rid: win-arm64, os: windows-2022, file: build/Release/libdfc.dll, test: false, arch: "-A ARM64" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fetch tiny-crypto-c
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mistial-dev/tiny-crypto-c
           ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
@@ -270,7 +270,7 @@ jobs:
         run: |
           mkdir -p runtimes/${{ matrix.rid }}/native
           cp -L ${{ matrix.file }} runtimes/${{ matrix.rid }}/native/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}
           path: runtimes
@@ -279,9 +279,9 @@ jobs:
     name: Mismatched native layout fixture
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fetch tiny-crypto-c
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mistial-dev/tiny-crypto-c
           ref: 64fccd69ae2405574575f971f8b72f5e3e403f56
@@ -297,7 +297,7 @@ jobs:
           mkdir mismatch
           cp build-mismatch/libdfc.so mismatch/
           cp build-mismatch/libdfc.so.2 mismatch/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-layout-mismatch
           path: mismatch/libdfc.so*
@@ -314,11 +314,11 @@ jobs:
           - { rid: osx-arm64, os: macos-14 }
           - { rid: win-x64, os: windows-2022 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: native-${{ matrix.rid }}
           path: runtimes
@@ -326,7 +326,7 @@ jobs:
         shell: bash
         run: mkdir -p build && cp runtimes/${{ matrix.rid }}/native/* build/
       - run: dotnet test bindings/dotnet/Dfc.sln -c Release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: matrix.rid == 'linux-x64'
         with:
           name: native-layout-mismatch
@@ -347,8 +347,8 @@ jobs:
     name: Java JNI
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -408,8 +408,8 @@ jobs:
     name: Android AAR and sample
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -422,7 +422,7 @@ jobs:
           :dfc:assembleRelease
           :sample:assembleRelease
           :dfc:lintRelease
-          :dfc:testDebugUnitTest
+          :dfc:testMismatchUnitTest
       - name: Build strict Android Javadocs
         working-directory: bindings/android
         run: ./gradlew --no-daemon :dfc:androidJavadocs
@@ -439,7 +439,7 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: bindings/android/gradlew --no-daemon -p bindings/android :sample:connectedMinifiedSmokeAndroidTest :dfc:connectedMismatchAndroidTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dfc-android
           path: |
@@ -451,9 +451,9 @@ jobs:
     needs: mismatch-native
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-layout-mismatch
           path: mismatch
@@ -484,12 +484,12 @@ jobs:
     needs: mismatch-native
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: thumbv7em-none-eabihf
           components: clippy
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: native-layout-mismatch
           path: mismatch
@@ -522,7 +522,7 @@ jobs:
     name: Rust 1.85 minimum version
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           targets: thumbv7em-none-eabihf
@@ -544,17 +544,17 @@ jobs:
     needs: [native, dotnet]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: native-*
           merge-multiple: true
           path: bindings/dotnet/src/Dfc/runtimes
       - run: dotnet pack bindings/dotnet/src/Dfc/Dfc.csproj -c Release -o packages
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nuget
           path: packages/*.nupkg

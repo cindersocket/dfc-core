@@ -7,9 +7,12 @@ new package manifest, lockfile, binding, or build system is introduced.
 Cargo lockfiles, NuGet project files, and GitHub Actions workflows are parsed by
 GitHub directly. The Android build uses GitHub's Gradle dependency-submission
 action because Gradle has no static manifest format that contains the resolved
-graph. The native submission records the exact tiny-crypto-c revision pinned by
-CMake. A system mbedTLS installation is selected and resolved by the consuming
-build, so the repository does not submit a made-up global mbedTLS version.
+graph. It submits runtime classpaths, which describe dependencies carried by the
+Android library and sample without treating the Android build toolchain as an
+application dependency. The native submission records the exact tiny-crypto-c
+revision pinned by CMake. A system mbedTLS installation is selected and resolved
+by the consuming build, so the repository does not submit a made-up global
+mbedTLS version.
 
 The Python wheel has no Python runtime dependencies. Its build and test tools
 remain development inputs in `bindings/python/pyproject.toml`; they are not

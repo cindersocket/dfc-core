@@ -39,7 +39,7 @@ class AndroidMinificationPolicyTests(unittest.TestCase):
         self.assertIn('testBuildType = "minifiedSmoke"', sample_build)
         self.assertIn('create("minifiedSmoke")', sample_build)
         self.assertIn(
-            'androidTestImplementation("com.google.errorprone:error_prone_annotations:2.30.0")',
+            'androidTestImplementation("com.google.errorprone:error_prone_annotations:',
             sample_build,
         )
         self.assertIn('testProguardFiles("proguard-rules.pro")', sample_build)

@@ -34,10 +34,24 @@ class SecurityPolicyTests(unittest.TestCase):
 
         self.assertIsNotNone(version)
         current = version.group(1)
-        self.assertIn(f"## {current} (Unreleased)", changelog)
+        heading = re.search(
+            rf"^## {re.escape(current)} \((Unreleased|\d{{4}}-\d{{2}}-\d{{2}})\)$",
+            changelog,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(heading)
+        released = heading.group(1) != "Unreleased"
         expected_rows = [
-            f"| {current.rsplit('.', 1)[0]}.x (unreleased) | Development fixes |",
-            f"| 1.2.x | Supported until {current} is released |",
+            (
+                f"| {current.rsplit('.', 1)[0]}.x | Supported |"
+                if released
+                else f"| {current.rsplit('.', 1)[0]}.x (unreleased) | Development fixes |"
+            ),
+            (
+                "| 1.2.x | Not supported |"
+                if released
+                else f"| 1.2.x | Supported until {current} is released |"
+            ),
             "| Earlier releases | Not supported |",
         ]
         table_rows = [
