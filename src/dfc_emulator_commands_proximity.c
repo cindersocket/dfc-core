@@ -1,5 +1,4 @@
 #include "dfc_emulator_commands_i.h"
-#include "dfc_ev2_crypto.h"
 
 #if DFC_ENABLE_EMULATOR && DFC_ENABLE_PROXIMITY_CHECK
 
@@ -27,7 +26,7 @@ static bool proximity_wire_mac(
     memcpy(input + input_len, emulator->proximity_transcript, emulator->proximity_transcript_len);
     input_len += emulator->proximity_transcript_len;
 
-    bool ok = dfc_ev2_wire_mac(key, input, input_len, output);
+    bool ok = dfc_aes_wire_mac(key, input, input_len, output);
     dfc_secure_wipe(input, sizeof(input));
     return ok;
 }

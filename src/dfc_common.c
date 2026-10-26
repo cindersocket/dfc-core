@@ -1,5 +1,9 @@
 #include "dfc_common.h"
 
+#if DFC_ENABLE_AES_CRYPTO
+#include "aes_cmac.h"
+#endif
+
 bool dfc_uid_length_is_valid(size_t length) {
     return length == DFC_DESFIRE_UID_SHORT_LEN || length == DFC_DESFIRE_UID_LEN ||
            length == DFC_DESFIRE_UID_LONG_LEN;
@@ -78,6 +82,26 @@ void dfc_truncate_aes_wire_mac(
     uint8_t wire[DFC_WIRE_MAC_LENGTH]) {
     for(size_t i = 0; i < DFC_WIRE_MAC_LENGTH; i++)
         wire[i] = full[i * 2 + 1];
+}
+
+bool dfc_aes_wire_mac(
+    const uint8_t key[DFC_AES_KEY_LENGTH],
+    const uint8_t* input,
+    size_t input_len,
+    uint8_t output[DFC_WIRE_MAC_LENGTH]) {
+    if(!output) return false;
+    memset(output, 0, DFC_WIRE_MAC_LENGTH);
+    if(!key || (input_len != 0 && !input)) return false;
+
+#if DFC_ENABLE_AES_CRYPTO
+    uint8_t full[DFC_AES_CMAC_LENGTH] = {0};
+    bool success = aes_cmac((uint8_t*)key, DFC_AES_KEY_LENGTH, (uint8_t*)input, input_len, full);
+    if(success) dfc_truncate_aes_wire_mac(full, output);
+    dfc_secure_wipe(full, sizeof(full));
+    return success;
+#else
+    return false;
+#endif
 }
 
 void dfc_secure_wipe(void* buffer, size_t length) {

@@ -1971,7 +1971,7 @@ DfcReaderStatus dfc_reader_change_key_ev2_command(
     }
     clear[len++] = new_version;
     if(!same) {
-        put_le32(clear + len, dfc_crc32(new_key, DFC_AES_KEY_LENGTH));
+        dfc_write_uint32_le(clear + len, dfc_crc32(new_key, DFC_AES_KEY_LENGTH));
         len += 4;
     }
     DfcCommandStatus st = dfc_command_change_key_ev2(command, key_set_no, key_no, clear, len);
@@ -2033,7 +2033,7 @@ DfcReaderStatus dfc_reader_create_delegated_application_begin(
 
     dam_input[0] = DFC_CMD_CREATE_DELEGATED_APPLICATION;
     memcpy(dam_input + 1, body, body_len);
-    if(!dfc_ev2_wire_mac(dam_mac_key, dam_input, 1 + body_len, body + body_len)) {
+    if(!dfc_aes_wire_mac(dam_mac_key, dam_input, 1 + body_len, body + body_len)) {
         goto cleanup;
     }
     body_len += DFC_DELEGATED_MAC_LENGTH;
@@ -2091,7 +2091,7 @@ bool dfc_reader_proximity_check_mac(
     len += published_len;
     if(transcript_len) memcpy(input + len, transcript, transcript_len);
     len += transcript_len;
-    bool ok = dfc_ev2_wire_mac(key, input, len, mac);
+    bool ok = dfc_aes_wire_mac(key, input, len, mac);
     dfc_secure_wipe(input, sizeof(input));
     return ok;
 }

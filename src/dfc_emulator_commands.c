@@ -819,7 +819,7 @@ static void handle_create_delegated_application_continuation(
     memcpy(dam_input, emulator->delegated_creation_header, dam_input_len);
     memcpy(dam_input + dam_input_len, encrypted_key, DFC_DELEGATED_ENCRYPTED_KEY_LENGTH);
     dam_input_len += DFC_DELEGATED_ENCRYPTED_KEY_LENGTH;
-    if(!dfc_ev2_wire_mac(
+    if(!dfc_aes_wire_mac(
            emulator->credential->picc_dam_mac_key, dam_input, dam_input_len, expected_dam_mac) ||
        !dfc_ct_equal(expected_dam_mac, dam_mac, sizeof(expected_dam_mac))) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
