@@ -181,6 +181,46 @@ static MunitResult
     return MUNIT_OK;
 }
 
+// The value commands can each be authorised by more than one right, and the protection follows
+// the right that actually authorised the command (the native rule, measured on a genuine EV3 in
+// hardware_physical_ev3_2k_value_comm_modes.vec). The EV2 layer used to take it from the Write
+// right alone. File: enciphered, Read = key 1, Write = free, Read&Write = denied.
+static MunitResult test_ev2_value_commands_follow_the_authorising_right(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    DfcEmulator emulator;
+    DfcCredential credential;
+    uint8_t clear[8];
+    size_t clear_len = 0;
+    const struct {
+        uint8_t command;
+        bool protected_for_key1;
+        bool protected_for_key0;
+    } cases[] = {
+        // Debit and GetValue: Read (key 1) or Write (free) authorise; key 1 matches Read.
+        {DFC_CMD_DEBIT, true, false},
+        {DFC_CMD_GET_VALUE, true, false},
+        // LimitedCredit: Write (free) or Read&Write (denied); key 1 matches neither.
+        {DFC_CMD_LIMITED_CREDIT, false, false},
+        // Credit: Read&Write only, denied to everyone, so nothing makes it plain.
+        {DFC_CMD_CREDIT, true, true},
+    };
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const uint8_t command[] = {cases[i].command, 1, 5, 0, 0, 0};
+        for(uint8_t key = 0; key < 2; key++) {
+            setup_ev2_file(&emulator, &credential, DFC_COMM_ENCIPHERED, 0x1EFE, key);
+            const bool expect_protected = key == 1 ? cases[i].protected_for_key1 :
+                                                     cases[i].protected_for_key0;
+            const DfcEv2CommandSecurity security = dfc_ev2_prepare_command(
+                &emulator, command, sizeof(command), clear, sizeof(clear), &clear_len);
+            munit_assert_true((security == DfcEv2CommandPlainCounted) == !expect_protected);
+        }
+    }
+    return MUNIT_OK;
+}
+
 static MunitResult
     test_ev2_prepare_uses_effective_comm(const MunitParameter params[], void* data) {
     (void)params;
@@ -493,6 +533,12 @@ static MunitTest tests[] = {
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     {"/accepts-ev2-authentication",
      test_effective_comm_accepts_ev2_authentication,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev2-value-commands-follow-the-authorising-right",
+     test_ev2_value_commands_follow_the_authorising_right,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

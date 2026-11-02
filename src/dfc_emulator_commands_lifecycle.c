@@ -437,6 +437,10 @@ void dfc_emulator_command_get_file_settings(
             file->type, file->comm_settings, file->access_rights, file->data_len, settings);
         dfc_bytebuf_append_bytes(tx_buffer, settings, sizeof(settings));
     }
+    // A file created with the additional-access-rights flag reports a count of them (zero)
+    // after its settings (measured on a genuine EV3, hardware_physical_ev3_2k_create_comm_bytes.vec).
+    if((file->comm_settings & DFC_FILE_OPTION_ADDITIONAL_RIGHTS) != 0)
+        dfc_bytebuf_append_byte(tx_buffer, 0x00);
 }
 
 static void apply_change_file_settings(
@@ -547,8 +551,9 @@ static void apply_change_file_settings(
     }
 #endif
 #if DFC_ENABLE_SDM
-    const bool data_file = file->type == DFC_FILE_TYPE_STANDARD_DATA ||
-                           file->type == DFC_FILE_TYPE_BACKUP_DATA;
+    // SDM exists only on standard data files; on any other kind (backup data included) the flag
+    // and the settings body are refused rather than stored.
+    const bool data_file = file->type == DFC_FILE_TYPE_STANDARD_DATA;
     if(settings && !data_file) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
@@ -963,8 +968,13 @@ static void publish_created_file(DfcEmulator* emulator, DfcFile* file, DfcByteBu
 static bool new_file_settings_are_valid(
     DfcEmulator* emulator,
     uint8_t comm_settings,
-    uint16_t access_rights) {
-    return dfc_communication_settings_is_valid(comm_settings) &&
+    uint16_t access_rights,
+    bool sdm_flag_allowed) {
+    // The SDM flag may be set at creation only on a standard data file that has an ISO file
+    // id; on every other file type the card refuses it (9E). See
+    // hardware_physical_ev3_2k_create_comm_bytes.vec and the SDM captures.
+    return (sdm_flag_allowed || (comm_settings & DFC_SDM_ENABLED_MASK) == 0) &&
+           dfc_communication_settings_is_valid(comm_settings) &&
            dfc_access_rights_are_valid(access_rights, emulator_num_keys(emulator));
 }
 
@@ -1030,7 +1040,19 @@ void dfc_emulator_command_create_std_data_file(
     // The communication mode must be one the card defines (plain, MACed or
     // enciphered); anything else is refused rather than stored. Checked after the
     // free-memory checks, which the card answers first.
-    if(!new_file_settings_are_valid(emulator, comm_settings, access_rights)) {
+    // A standard data file created with the SDM flag but no ISO file id is refused with 9D
+    // (a genuine EV3, hardware_physical_ev3_2k_create_comm_bytes.vec); with an ISO file id it
+    // is accepted (the SDM captures).
+    if(file_type == DFC_FILE_TYPE_STANDARD_DATA && (comm_settings & DFC_SDM_ENABLED_MASK) != 0 &&
+       !has_iso_file_id) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+    if(!new_file_settings_are_valid(
+           emulator,
+           comm_settings,
+           access_rights,
+           file_type == DFC_FILE_TYPE_STANDARD_DATA && has_iso_file_id)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
@@ -1111,7 +1133,8 @@ void dfc_emulator_command_create_record_file(
            emulator,
            apdu[settings_offset],
            dfc_emulator_command_access_rights_from_wire(
-               apdu[settings_offset + 1], apdu[settings_offset + 2]))) {
+               apdu[settings_offset + 1], apdu[settings_offset + 2]),
+           false)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }
@@ -1164,7 +1187,10 @@ void dfc_emulator_command_create_value_file(
     // enciphered); anything else is refused rather than stored. Checked after the
     // free-memory checks, which the card answers first.
     if(!new_file_settings_are_valid(
-           emulator, apdu[2], dfc_emulator_command_access_rights_from_wire(apdu[3], apdu[4]))) {
+           emulator,
+           apdu[2],
+           dfc_emulator_command_access_rights_from_wire(apdu[3], apdu[4]),
+           false)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
         return;
     }

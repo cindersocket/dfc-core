@@ -1025,8 +1025,8 @@
     },
     {
       "path": "v4/emulator/modeled_ev3_sdm_random_id_plain_uid.vec",
-      "sha256": "690338241bd89942bb91f7fc7a26be72cc49f8dc0bf0be453e5416c69851ceff",
-      "size": 607,
+      "sha256": "9278b785d8ee477514045b9b5dad50d885c259077a24295d553c6e64c7eaa2d2",
+      "size": 754,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV3 Random ID plain UID mirror",
@@ -1039,8 +1039,8 @@
     },
     {
       "path": "v4/emulator/modeled_ev3_sdm_ten_byte_encrypted_uid.vec",
-      "sha256": "9113da53fe74c4eff41df3d983c05cbd42560feedd087f9a33b1e99bd0558fc5",
-      "size": 937,
+      "sha256": "0a9e3edc87a9a7339477a8b2508cd04d71cab0e8c6ad829ded7cde419be017a1",
+      "size": 1084,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV3 ten-byte UID encrypted PICC data",
@@ -2099,6 +2099,20 @@
         "origin": "physical-card",
         "replayable": true,
         "steps": 238
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_create_comm_bytes.vec",
+      "sha256": "d10888d33de734e4bbb10af1a0ac1beb9664bd38e352ad9abd49275d9b77cf51",
+      "size": 3986,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K file creation with unusual communication bytes (provisional batch)",
+        "case-id": "hardware-physical-ev3-2k-create-comm-bytes",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 50
       }
     },
     {

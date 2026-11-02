@@ -21,14 +21,15 @@ void dfc_emulator_command_write_record(
             tx_buffer, dfc_emulator_file_lookup_failure_status(apdu[1], file != NULL));
         return;
     }
-    if(!dfc_emulator_record_storage_is_consistent(file)) {
-        // The stored bytes do not cover the declared records: refuse, never index.
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
     if(!dfc_emulator_command_file_allows_write(file, emulator)) {
         dfc_bytebuf_append_byte(
             tx_buffer, dfc_emulator_command_file_access_refusal_status(file, true));
+        return;
+    }
+    // Only a reader the file's rights admit learns anything about how it is stored.
+    if(!dfc_emulator_record_storage_is_consistent(file)) {
+        // The stored bytes do not cover the declared records: refuse, never index.
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
 
@@ -174,14 +175,15 @@ void dfc_emulator_command_update_record(
             tx_buffer, dfc_emulator_file_lookup_failure_status(apdu[1], file != NULL));
         return;
     }
-    if(!dfc_emulator_record_storage_is_consistent(file)) {
-        // The stored bytes do not cover the declared records: refuse, never index.
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
     if(!dfc_emulator_command_file_allows_read_write(file, emulator)) {
         dfc_bytebuf_append_byte(
             tx_buffer, dfc_emulator_command_file_read_write_refusal_status(file));
+        return;
+    }
+    // Only a reader the file's rights admit learns anything about how it is stored.
+    if(!dfc_emulator_record_storage_is_consistent(file)) {
+        // The stored bytes do not cover the declared records: refuse, never index.
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
     uint32_t record_number = read_uint24_le(apdu + 2);
@@ -286,14 +288,15 @@ void dfc_emulator_command_clear_record_file(
             tx_buffer, dfc_emulator_file_lookup_failure_status(apdu[1], file != NULL));
         return;
     }
-    if(!dfc_emulator_record_storage_is_consistent(file)) {
-        // The stored bytes do not cover the declared records: refuse, never index.
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
     if(!dfc_emulator_command_file_allows_read_write(file, emulator)) {
         dfc_bytebuf_append_byte(
             tx_buffer, dfc_emulator_command_file_read_write_refusal_status(file));
+        return;
+    }
+    // Only a reader the file's rights admit learns anything about how it is stored.
+    if(!dfc_emulator_record_storage_is_consistent(file)) {
+        // The stored bytes do not cover the declared records: refuse, never index.
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
 #if DFC_ENABLE_TRANSACTION_MAC

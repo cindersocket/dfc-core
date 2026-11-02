@@ -977,14 +977,15 @@ static void
             tx_buffer, dfc_emulator_file_lookup_failure_status(apdu[1], file != NULL));
         return;
     }
-    if(!dfc_emulator_record_storage_is_consistent(file)) {
-        // The stored bytes do not cover the declared records: refuse, never index.
-        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
-        return;
-    }
     if(!dfc_emulator_command_file_allows_read(file, emulator)) {
         dfc_bytebuf_append_byte(
             tx_buffer, dfc_emulator_command_file_access_refusal_status(file, false));
+        return;
+    }
+    // Only a reader the file's rights admit learns anything about how it is stored.
+    if(!dfc_emulator_record_storage_is_consistent(file)) {
+        // The stored bytes do not cover the declared records: refuse, never index.
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
         return;
     }
 

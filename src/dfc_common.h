@@ -304,10 +304,12 @@ uint32_t dfc_crc32_extend(uint32_t crc, const uint8_t* data, size_t length);
 uint32_t dfc_crc32(const uint8_t* data, size_t length);
 
 // File communication settings
-#define DFC_COMM_PLAIN      0x00
-#define DFC_COMM_MAC        0x01
-#define DFC_COMM_ENCIPHERED 0x03
-#define DFC_COMM_MODE_MASK  0x03
+#define DFC_COMM_PLAIN                    0x00
+#define DFC_COMM_MAC                      0x01
+#define DFC_COMM_ENCIPHERED               0x03
+#define DFC_COMM_MODE_MASK                0x03
+// File option bit 7: the file settings are followed by a count of additional access rights.
+#define DFC_FILE_OPTION_ADDITIONAL_RIGHTS 0x80
 
 #define DFC_TRANSACTION_MAC_KEY_TYPE_AES 0x02
 

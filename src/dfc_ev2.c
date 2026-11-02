@@ -33,7 +33,7 @@ static bool command_file_access(uint8_t command, DfcFileAccess* access) {
         *access = DfcFileAccessWrite;
         return true;
     case DFC_CMD_UPDATE_RECORD:
-    case DFC_CMD_CREDIT: // not measured; see dfc_emulator_command_value_delta
+    case DFC_CMD_CREDIT:
         *access = DfcFileAccessReadWrite;
         return true;
     case DFC_CMD_CHANGE_FILE_SETTINGS:
@@ -54,6 +54,24 @@ static uint8_t command_file_comm(
     if(target) *target = file;
     if(file && command[0] == DFC_CMD_GET_FILE_COUNTERS) return DFC_COMM_ENCIPHERED;
     if(!file || !command_file_access(command[0], &access)) return DFC_COMM_PLAIN;
+    // The value commands can each be authorised by more than one right. The protection then
+    // follows the same rule the native handlers use: a session key that matches any of those
+    // rights forces the file's mode, otherwise a free one makes the command plain (measured:
+    // hardware_physical_ev3_2k_value_comm_modes.vec).
+    switch(dfc_file_command_base(command[0])) {
+    case DFC_CMD_GET_VALUE:
+    case DFC_CMD_DEBIT:
+        return dfc_emulator_file_effective_comm_settings_for_rights(
+            emulator, file, true, true, true, file->comm_settings);
+    case DFC_CMD_LIMITED_CREDIT:
+        return dfc_emulator_file_effective_comm_settings_for_rights(
+            emulator, file, false, true, true, file->comm_settings);
+    case DFC_CMD_CREDIT:
+        return dfc_emulator_file_effective_comm_settings_for_rights(
+            emulator, file, false, false, true, file->comm_settings);
+    default:
+        break;
+    }
     uint8_t configured = command[0] == DFC_CMD_CHANGE_FILE_SETTINGS ? DFC_COMM_ENCIPHERED :
                                                                       file->comm_settings;
     return dfc_emulator_file_effective_comm_settings(emulator, file, access, configured);

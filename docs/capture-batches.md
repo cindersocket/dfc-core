@@ -60,11 +60,13 @@ grep -l 'capture-batch: iso-write-2026-11-01' tests/vectors/desfire/v*/*/*.vec
   authentication with the card's own random recovered from its first answer.
 - **Files:** `tests/vectors/desfire/v6/hardware/hardware_physical_ev3_2k_value_rights.vec` and
   `hardware_physical_ev3_2k_value_comm_modes.vec` and
-  `hardware_physical_ev3_2k_iso_update_binary_transaction.vec`
+  `hardware_physical_ev3_2k_iso_update_binary_transaction.vec` and
+  `hardware_physical_ev3_2k_create_comm_bytes.vec`
 - **What it shows:** which of the Read, Write and Read&Write rights each of GetValue, Credit,
   Debit and LimitedCredit needs, when a refusal is `AE` versus `9D`, and which right decides
   whether an authenticated value command is plain or enciphered, and how ISO UPDATE BINARY and
-  READ BINARY interact with an open native transaction.
+  READ BINARY interact with an open native transaction, and how file creation treats unusual
+  communication bytes.
 - **What it changed in the emulator** (undo these if the batch is retired):
   - `src/dfc_emulator_commands_transactions.c`: GetValue accepts the Write right too; the
     refusal status of GetValue, Credit, Debit and LimitedCredit follows which rights could
@@ -76,3 +78,11 @@ grep -l 'capture-batch: iso-write-2026-11-01' tests/vectors/desfire/v*/*/*.vec
     (`abort_transaction_after_failed_iso_data_command`).
   - `tests/test_dfc_transaction_selection.c`: the failing-update cases of the old unit test were
     removed in favour of the vector.
+  - `src/dfc_common.c`, `src/dfc_emulator_commands_lifecycle.c`: file creation accepts mode 2 and
+    the additional-access-rights flag and refuses the SDM flag except on a standard data file
+    with an ISO file id; GetFileSettings appends the zero count byte; ChangeFileSettings accepts
+    SDM only on standard data files.
+  - `src/dfc_ev2.c`: the EV2 layer picks the protection of a value command with the same
+    set-level rule as the native handlers.
+  - `tests/test_dfc_der.c`, `tests/test_dfc_text.c`, `tests/test_dfc_model.c`: the byte they use
+    as "invalid" is now `0x04`, and the model sweep expects modes 0-3 and bit 7 to be valid.

@@ -150,6 +150,19 @@ command in between.
 - A successful ISO READ BINARY leaves the staged write alone; CommitTransaction publishes it.
 - ISO APPEND RECORD is different: it discards the staged write (see above).
 
+## The communication byte when a file is created
+
+Vector: `hardware_physical_ev3_2k_create_comm_bytes.vec` (same provisional batch), with the SDM
+captures in `v4/hardware`. CreateStdDataFile, CreateBackupDataFile, CreateLinearRecordFile and
+CreateValueFile, each with an unusual communication byte, then GetFileSettings.
+
+- Mode values 0 to 3 are all accepted and reported back as given.
+- Bit 7 (additional access rights) is accepted and reported back, with one zero byte, the count
+  of additional access rights, after the settings.
+- Bit 2 (a reserved bit) is refused with `9E` on every type.
+- The SDM flag (bit 6) is refused with `9E` on a backup, record or value file. On a standard
+  data file it is refused with `9D` unless the file has an ISO file id, and accepted with one.
+
 ## Rules that are not measured
 
 These follow how DESFire access rights are meant to work, not a capture, and the
