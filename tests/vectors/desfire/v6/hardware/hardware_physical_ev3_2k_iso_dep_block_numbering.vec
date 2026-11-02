@@ -1,0 +1,254 @@
+# PROVENANCE: measured from a second genuine DESFire EV3 2K with Proxmark3 (random UID).
+# Frames were built as raw wire bytes. The card keeps one block
+# number per activation, never checks the reader's number, and treats every
+# received I-block, including a repeat, as a new block. The older request-
+# chaining capture's note that a repeated fragment is not appended was an
+# over-reading: this file shows a repeat IS appended.
+name: genuine EV3 2K ISO-DEP block numbering and framing states
+case-id: hardware-physical-ev3-2k-iso-dep-block-numbering
+origin: physical-card
+feature-version: 6
+source: physical-card-proxmark3
+requires: record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+
+# Equivalent freely provisioned replay fixture: application 123456 with ISO file
+# ids, standard file 1 (16 bytes) and linear record files 2 and 3
+# (four 4-byte records). Access is free, so no authentication is replayed.
+scan
+status 905A00000300000000 => 00
+status 90CA0000071234560F2100E100 => 00
+status 905A00000312345600 => 00
+status 90CD00000901011000EEEE10000000 => 00
+status 90C100000C02021000EEEE04000004000000 => 00
+status 90C100000C03031000EEEE04000004000000 => 00
+status 908D00001701000000100000A0A1A2A3A4A5A6A7A8A9AAABACADAEAF00 => 00
+
+# Reader numbers are never checked
+# The reader sends 02 in every frame; the card's own number still toggles 02, 03, 02, 03.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 02906F000000 => 030102039100
+frame-exchange 02906F000000 => 020102039100
+frame-exchange 02906F000000 => 030102039100
+
+# First reader frame numbered 1
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 03905A00000312345600 => 029100
+frame-exchange 03906F000000 => 030102039100
+frame-exchange 03906F000000 => 020102039100
+
+# R-blocks straight after RATS
+# The card's number starts at 1: A3 and B3 return an empty I-block 03.
+field-off
+scan
+frame-exchange E080 => 0565810280
+expect-error protocol-error frame-exchange A2
+
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange A3 => 03
+
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange B2 => A3
+
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange B3 => 03
+
+# R-block A2 when idle after one command
+# Repeating the last number retransmits the last block; the other number gives silence (ACK) or an R(ACK) (NAK).
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03906F000000 => 030102039100
+expect-error protocol-error frame-exchange A2
+frame-exchange 02906F000000 => 020102039100
+
+# R-block A3 when idle after one command
+# Repeating the last number retransmits the last block; the other number gives silence (ACK) or an R(ACK) (NAK).
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03906F000000 => 030102039100
+frame-exchange A3 => 030102039100
+frame-exchange 02906F000000 => 020102039100
+
+# R-block B2 when idle after one command
+# Repeating the last number retransmits the last block; the other number gives silence (ACK) or an R(ACK) (NAK).
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03906F000000 => 030102039100
+frame-exchange B2 => A3
+frame-exchange 02906F000000 => 020102039100
+
+# R-block B3 when idle after one command
+# Repeating the last number retransmits the last block; the other number gives silence (ACK) or an R(ACK) (NAK).
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03906F000000 => 030102039100
+frame-exchange B3 => 030102039100
+frame-exchange 02906F000000 => 020102039100
+
+# Empty I-block
+# An I-block with no INF is answered with an empty I-block.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03 => 03
+frame-exchange 02 => 02
+
+# NAD bit set
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+expect-error protocol-error frame-exchange 0600905A0000
+
+# CID bit with CID 0 (none negotiated), then CID 1
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0A00906F000000 => 0B000102039100
+expect-error protocol-error frame-exchange 0A01906F000000
+
+# DESELECT ends the activation
+# Everything after DESELECT is ignored.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange C2 => C2
+expect-error protocol-error frame-exchange 02906F000000
+expect-error protocol-error frame-exchange A2
+expect-error protocol-error frame-exchange B2
+
+# DESELECT twice
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange C2 => C2
+expect-error protocol-error frame-exchange C2
+
+# Other S-blocks are ignored
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+expect-error protocol-error frame-exchange F201
+expect-error protocol-error frame-exchange F200
+
+# A second RATS is ignored and does not reset the card number
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+expect-error protocol-error frame-exchange E080
+frame-exchange 02905A00000312345600 => 039100
+
+# Chain with every fragment numbered 0 succeeds
+# The write lands: reader numbers do not matter.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 12908D0000170100000010 => A3
+frame-exchange 120000A0A1A2A3A4A5A6A7 => A2
+frame-exchange 02A8A9AAABACADAEAF00 => 039100
+
+# A repeated first fragment is appended again
+# The command is longer than its Lc, so it ends in 917E instead of succeeding.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 12908D0000170100000010 => A3
+frame-exchange 12908D0000170100000010 => A2
+frame-exchange 130000A0A1A2A3A4A5A6A7 => A3
+frame-exchange 02A8A9AAABACADAEAF00 => 02917E
+
+# R-block A2 inside a request chain
+# The chain survives: the remaining fragments still complete.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 12908D0000170100000010 => A3
+expect-error protocol-error frame-exchange A2
+frame-exchange 120000A0A1A2A3A4A5A6A7 => A2
+frame-exchange 02A8A9AAABACADAEAF00 => 039100
+
+# R-block A3 inside a request chain
+# The chain survives: the remaining fragments still complete.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 12908D0000170100000010 => A3
+frame-exchange A3 => A3
+frame-exchange 120000A0A1A2A3A4A5A6A7 => A2
+frame-exchange 02A8A9AAABACADAEAF00 => 039100
+
+# R-block B2 inside a request chain
+# The chain survives: the remaining fragments still complete.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 12908D0000170100000010 => A3
+frame-exchange B2 => A3
+frame-exchange 120000A0A1A2A3A4A5A6A7 => A2
+frame-exchange 02A8A9AAABACADAEAF00 => 039100
+
+# R-block B3 inside a request chain
+# The chain survives: the remaining fragments still complete.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 12908D0000170100000010 => A3
+frame-exchange B3 => A3
+frame-exchange 120000A0A1A2A3A4A5A6A7 => A2
+frame-exchange 02A8A9AAABACADAEAF00 => 039100
+
+
+# Chained response with 16-byte frames (RATS FSDI 0)
+# RATS E0 00 limits the card to 16-byte frames, so an 18-byte answer is sent as a 13-byte
+# block (chain bit set) and a 5-byte block. A reader R(ACK) repeating the card's last number
+# retransmits the last block; the other number asks for the next one. After the final block
+# a repeat of its number retransmits it, and the other number is ignored.
+field-off
+scan
+frame-exchange E000 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390BD0000070100000000000000 => 13A0A1A2A3A4A5A6A7A8A9AAABAC
+frame-exchange A3 => 13A0A1A2A3A4A5A6A7A8A9AAABAC
+frame-exchange A2 => 02ADAEAF9100
+frame-exchange A2 => 02ADAEAF9100
+expect-error protocol-error frame-exchange A3

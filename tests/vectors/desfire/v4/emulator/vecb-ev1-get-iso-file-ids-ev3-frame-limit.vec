@@ -1,0 +1,52 @@
+# Converted from tests/test_dfc_ev1_conformance.c test /get-iso-file-ids-chains-when-many (now removed): the literal
+# APDUs and statuses the unit test asserted are replayed here byte for byte,
+# and the engine's answers are the ones the test required. The EV1 half of that test is ev1_get-iso-file-ids-chains-when-many.vec. This is the other half: on an EV3 the measured card limits GetISOFileIDs to 27 identifiers per frame (DFC_EV3_ISO_FIDS_PER_FRAME), so 32 identifiers arrive as 27 and then 5.
+
+name: vecB ev1: EV3 GetISOFileIDs frame limit
+case-id: vecb-ev1-get-iso-file-ids-ev3-frame-limit
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /get-iso-file-ids-chains-when-many
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-generation: EV3
+picc-storage: 4096
+scan
+status   90CA0000070102030F2113E100 => 00
+status   905A00000301020300 => 00
+status   90CD00000900001000EEEE01000000 => 00
+status   90CD00000901011000EEEE01000000 => 00
+status   90CD00000902021000EEEE01000000 => 00
+status   90CD00000903031000EEEE01000000 => 00
+status   90CD00000904041000EEEE01000000 => 00
+status   90CD00000905051000EEEE01000000 => 00
+status   90CD00000906061000EEEE01000000 => 00
+status   90CD00000907071000EEEE01000000 => 00
+status   90CD00000908081000EEEE01000000 => 00
+status   90CD00000909091000EEEE01000000 => 00
+status   90CD0000090A0A1000EEEE01000000 => 00
+status   90CD0000090B0B1000EEEE01000000 => 00
+status   90CD0000090C0C1000EEEE01000000 => 00
+status   90CD0000090D0D1000EEEE01000000 => 00
+status   90CD0000090E0E1000EEEE01000000 => 00
+status   90CD0000090F0F1000EEEE01000000 => 00
+status   90CD00000910101000EEEE01000000 => 00
+status   90CD00000911111000EEEE01000000 => 00
+status   90CD00000912121000EEEE01000000 => 00
+status   90CD00000913131000EEEE01000000 => 00
+status   90CD00000914141000EEEE01000000 => 00
+status   90CD00000915151000EEEE01000000 => 00
+status   90CD00000916161000EEEE01000000 => 00
+status   90CD00000917171000EEEE01000000 => 00
+status   90CD00000918181000EEEE01000000 => 00
+status   90CD00000919191000EEEE01000000 => 00
+status   90CD0000091A1A1000EEEE01000000 => 00
+status   90CD0000091B1B1000EEEE01000000 => 00
+status   90CD0000091C1C1000EEEE01000000 => 00
+status   90CD0000091D1D1000EEEE01000000 => 00
+status   90CD0000091E1E1000EEEE01000000 => 00
+status   90CD0000091F1F1000EEEE01000000 => 00
+exchange native-apdu 9061000000 => 00100110021003100410051006100710081009100A100B100C100D100E100F1010101110121013101410151016101710181019101A1091AF
+exchange native-apdu 90AF000000 => 1B101C101D101E101F109100

@@ -1,0 +1,107 @@
+# PROVENANCE: measured from a second genuine DESFire EV3 2K with Proxmark3 (random UID).
+# Each session is a real DES (legacy) authentication as application key 0 with the card's
+# random recovered from its first answer; the reader's own random is fixed by the client.
+# File 1 gives key 0 read access and nobody write access; file 2 gives key 0 write access
+# and nobody read access. The card presents a 4-byte random ID, so replay uses a fixed
+# 7-byte UID; no frame under test depends on it. Sections run in order: later ones depend
+# on the records the earlier ones left.
+name: genuine EV3 2K authenticated access against restricted file rights
+case-id: hardware-physical-ev3-2k-authenticated-rights
+origin: physical-card
+feature-version: 6
+source: physical-card-proxmark3
+requires: record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+
+# Provisioning, built the way the card was: free files first, data written, then the
+# restricted rights set through ChangeFileSettings (its Change right was still free).
+scan
+status 905A00000300000000 => 00
+status 90CA0000071234560F2100E100 => 00
+status 905A00000312345600 => 00
+status 90CD00000901011000EEEE10000000 => 00
+status 90C100000C02021000EEEE04000004000000 => 00
+status 908D00001701000000100000A0A1A2A3A4A5A6A7A8A9AAABACADAEAF00 => 00
+status 903B00000B020000000400000000000000 => 00
+status 90C7000000 => 00
+status 905F0000040100F00F00 => 00
+status 905F0000040200F0F000 => 00
+
+
+# Authenticated as key 0: clear the write-only record file
+field-off
+scan
+exchange native 5A123456 => 00
+inject-random 66A399FE5C4864A1
+exchange native 0A00 => AF094FFCA4528E74A5
+exchange native AFCEAD373DB80EABF875AC885F71170AFF => 00FB796C9AAFBF71D3
+exchange native EB02 => 9D
+
+# Authenticated as key 0: read file 1 (read right is key 0)
+field-off
+scan
+exchange native 5A123456 => 00
+inject-random C6EE0AC821B92EC3
+exchange native 0A00 => AF20C54DA5A63CED6D
+exchange native AFCEAD373DB80EABF8E064654ACE94846F => 00FB796C9AAFBF71D3
+exchange native F501 => 000000F00F100000
+exchange native BD01000000000000 => 00A0A1A2A3A4A5A6A7A8A9AAABACADAEAF
+
+# Unauthenticated: read file 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native F501 => 000000F00F100000
+exchange native BD01000000000000 => AE
+
+# Authenticated as key 0: write file 1 (write right is denied to everyone)
+field-off
+scan
+exchange native 5A123456 => 00
+inject-random 8BA7E37CFC361327
+exchange native 0A00 => AFFFF96474EF9C2AF3
+exchange native AFCEAD373DB80EABF8C62CE18085308CD7 => 00FB796C9AAFBF71D3
+exchange native F501 => 000000F00F100000
+exchange native 3D010000001000000102030405060708090A0B0C0D0E0F10 => 9D
+
+# Authenticated as key 0: append a record to file 2 (write right is key 0)
+field-off
+scan
+exchange native 5A123456 => 00
+inject-random 0E46062BDA0B53A3
+exchange native 0A00 => AFBD9255751432BED9
+exchange native AFCEAD373DB80EABF8FFE23A3E46E0B3A7 => 00FB796C9AAFBF71D3
+exchange native F502 => 000300F0F0040000040000010000
+exchange native 3B02000000040000A1A2A3A4 => 00
+exchange native C7 => 00
+
+# Authenticated as key 0: read file 2 (read right is denied to everyone)
+field-off
+scan
+exchange native 5A123456 => 00
+inject-random CD8F0D3180CD0724
+exchange native 0A00 => AFA03821137B5F9F38
+exchange native AFCEAD373DB80EABF8A9FBABBADAB039E9 => 00FB796C9AAFBF71D3
+exchange native BB02000000010000 => 9D
+
+# Unauthenticated: write a record to file 2
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native F502 => 000300F0F0040000040000020000
+exchange native 3B02000000040000B1B2B3B4 => AE
+
+# Unauthenticated: read file 2
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native BB02000000010000 => 9D

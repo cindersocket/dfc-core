@@ -1,0 +1,23 @@
+# Converted from tests/test_dfc_ev1_conformance.c test /create-file-beyond-capacity (now removed): the literal
+# APDUs and statuses the unit test asserted are replayed here byte for byte,
+# and the engine's answers are the ones the test required. On the default 2 KiB card free memory starts at 0x000800; a 0x000801 byte file is out of EEPROM, a 0x000800 byte file fits and leaves no free memory, after which even a record file is out of EEPROM. The GetVersion storage code check is ev1_get-version-frames.vec.
+
+name: vecB ev1: 2 KiB card capacity limits
+case-id: vecb-ev1-create-file-beyond-capacity-2k
+origin: synthetic
+requires: record-files
+source: tests/test_dfc_ev1_conformance.c /create-file-beyond-capacity
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-storage: 2048
+scan
+exchange native-apdu 906E000000 => 0008009100
+status   90CA0000050102030F0100 => 00
+status   905A00000301020300 => 00
+status   90CD0000070100EEEE01080000 => 0E
+status   90CD0000070100EEEE00080000 => 00
+exchange native-apdu 906E000000 => 0000009100
+status   90C100000A0200EEEE01000001000000 => 0E

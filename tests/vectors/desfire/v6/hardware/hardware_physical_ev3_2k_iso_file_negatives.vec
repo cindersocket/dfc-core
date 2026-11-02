@@ -1,0 +1,260 @@
+# PROVENANCE: measured from a second genuine DESFire EV3 2K with Proxmark3 (random UID).
+# Frames were built as raw wire bytes, not with the client's commands.
+# A short file identifier selects its file for later commands, including for
+# APPEND RECORD, and selection happens before validation: a failed SFI command
+# still moves it. Errors for out-of-range reads, reserved or absent ids, wrong
+# lengths, and full record files are recorded as the silicon returned them.
+name: genuine EV3 2K ISO file access negative and weird states
+case-id: hardware-physical-ev3-2k-iso-file-negatives
+origin: physical-card
+feature-version: 6
+source: physical-card-proxmark3
+requires: record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+
+# Equivalent freely provisioned replay fixture: application 123456 with ISO file
+# ids, standard files 1 and 4 (16 bytes) and linear record files 2 and 3
+# (four 4-byte records). Access is free, so no authentication is replayed.
+scan
+status 905A00000300000000 => 00
+status 90CA0000071234560F2100E100 => 00
+status 905A00000312345600 => 00
+status 90CD00000901011000EEEE10000000 => 00
+status 90C100000C02021000EEEE04000004000000 => 00
+status 90C100000C03031000EEEE04000004000000 => 00
+status 90CD00000904041000EEEE10000000 => 00
+status 908D00001701000000100000A0A1A2A3A4A5A6A7A8A9AAABACADAEAF00 => 00
+status 908D000017040000001000004444444444444444444444444444444400 => 00
+
+# wrapped: unknown INS, wrong CLA 91, unknown ISO INS, short A4
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390FE000000 => 03911C
+frame-exchange 02916F000000 => 021C
+frame-exchange 0300FF000000 => 036D00
+frame-exchange 0200A40400 => 026A87
+
+# wrapped length mismatches: Lc=5 no data / no Le / trailing byte
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03906F000005 => 03917E
+frame-exchange 02906F0000 => 02917E
+frame-exchange 03906F00000000 => 03917E
+frame-exchange 0200 => 026700
+
+# ISO read binary with no file selected
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300B0000000 => 036985
+
+# ISO select: 1001 ok, FFFF reserved, 9999 absent, 3F00, bad P1
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300A4020C021001 => 039000
+frame-exchange 0200A4020C02FFFF => 026A82
+frame-exchange 0300A4020C029999 => 036A82
+frame-exchange 0200A4020C023F00 => 026A82
+frame-exchange 0300A4090C021001 => 036A86
+
+# ISO read binary: offset beyond, Le beyond, offset at end
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300A4020C021001 => 039000
+frame-exchange 0200B0002000 => 026985
+frame-exchange 0300B0000020 => 03A0A1A2A3A4A5A6A7A8A9AAABACADAEAF9000
+frame-exchange 0200B0001000 => 026985
+frame-exchange 0300B0000F01 => 03AF9000
+frame-exchange 0200B0000F02 => 02AF9000
+
+# READ BINARY by SFI: 4 (reads file 4), reserved 1F, absent 9, then current
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300B0840000 => 03444444444444444444444444444444449000
+frame-exchange 0200B09F0000 => 026A86
+frame-exchange 0300B0890000 => 036A82
+frame-exchange 0200B0000000 => 02444444444444444444444444444444449000
+
+# S1 record basics and negatives (file 2)
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010200 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4020C021002 => 039000
+frame-exchange 0200B2010400 => 026985
+frame-exchange 0300E200000501020304 => 036700
+frame-exchange 0205 => 021C
+frame-exchange 0300E2000004A1A2A3A4 => 039000
+frame-exchange 0200B2010400 => 02A1A2A3A49000
+frame-exchange 0300B2000400 => 03A1A2A3A49000
+frame-exchange 0200B2050400 => 026985
+frame-exchange 0300B2010500 => 03A1A2A3A49000
+frame-exchange 0200E2010004B1B2B3B4 => 026A86
+frame-exchange 0300E2000104B1B2B3B4 => 036A86
+frame-exchange 0200E2000004A5A6A7A8 => 029000
+frame-exchange 0300E2000004A9AAABAC => 039000
+frame-exchange 0200E2000004ADAEAFB0 => 029000
+frame-exchange 0300E2000004B5B6B7B8 => 036985
+
+# S2 SFI append selects target (files 2,3)
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010200 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4020C021002 => 039000
+frame-exchange 0200E2001804B1B2B3B4 => 029000
+frame-exchange 0300B2010400 => 03B1B2B3B49000
+frame-exchange 0200E2000004C1C2C3C4 => 029000
+frame-exchange 0300B2011C00 => 03B1B2B3B49000
+frame-exchange 0200B2011400 => 026985
+
+# S3 a failed SFI command still moves the selection (file 2 holds D1.., file 3 is empty)
+# The reads after each failure answer for the file the SFI named, not the one selected before.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010200 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4020C021002 => 039000
+frame-exchange 0200E2000004D1D2D3D4 => 029000
+frame-exchange 0300E20018050102030405 => 036985
+frame-exchange 0200B2010400 => 026985
+frame-exchange 0300E2002004E1E2E3E4 => 036985
+frame-exchange 0200B2010400 => 026985
+frame-exchange 0300E2004804E1E2E3E4 => 036A82
+frame-exchange 0200B2010400 => 026985
+frame-exchange 0300E2001804F1F2F3F4 => 039000
+frame-exchange 0200B2010400 => 02F1F2F3F49000
+
+# S7 READ RECORD with no file selected; READ BINARY SFI bit set but SFI 0
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300B2010400 => 036985
+frame-exchange 0200B0800000 => 026985
+frame-exchange 0300B2010400 => 036985
+
+# S8 type mismatches: READ BINARY on record file, READ RECORD on data file
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300A4020C021002 => 039000
+frame-exchange 0200B0000000 => 026985
+frame-exchange 0300A4020C021001 => 039000
+frame-exchange 0200B2010400 => 026985
+
+# S10 UPDATE BINARY by SFI, current, beyond size, then read back
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300D681000444444444 => 039000
+frame-exchange 0200D6000004A0A1A2A3 => 029000
+frame-exchange 0300D6000F02AABB => 036985
+frame-exchange 0200D6001000 => 026700
+frame-exchange 0300B0810000 => 03A0A1A2A3A4A5A6A7A8A9AAABACADAEAF9000
+frame-exchange 02908D00001701000000100000A0A1A2A3A4A5A6A7A8A9AAABACADAEAF00 => 029100
+
+# S9 READ RECORD by SFI (file 3 holds F1.., file 1 is a data file), then a reserved SFI
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4020C021003 => 039000
+frame-exchange 0200E2000004F1F2F3F4 => 029000
+frame-exchange 0300A4020C021002 => 039000
+frame-exchange 0200B2011C00 => 02F1F2F3F49000
+frame-exchange 0300B2010C00 => 036985
+frame-exchange 0200B201F800 => 026A86
+
+# Wrapped native APDU length rules (genuine EV3), probed with a command whose
+# answer does not depend on file state. With Lc = 0 only the bare 5-byte form,
+# or the header plus a zero two-byte extended Le, reaches the command (919D
+# here); every other length is 917E. With data the final Le byte is REQUIRED:
+# data without Le, and data plus Le plus a trailing byte, both answer 917E.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03906A000000 => 03919D
+frame-exchange 02906A00000000 => 02917E
+frame-exchange 03906A00000001 => 03917E
+frame-exchange 02906A0000000000 => 02919D
+frame-exchange 03906A0000000001 => 03917E
+frame-exchange 02906A000000000000 => 02917E
+frame-exchange 03905A00000312345600 => 039100
+frame-exchange 02905A0000031234560000 => 02917E
+frame-exchange 03905A000003123456 => 03917E
+
+# READ RECORD mode bits and record numbering (genuine EV3, linear file). P2 bits
+# 2-0 must be 100b (one record) or 101b (P1 through the last record); every other
+# value, including 000b, is 6A86. Record 0 is the last written. A short Le
+# truncates the sequence, and an absent record is 6985.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4020C021003 => 039000
+frame-exchange 0200E2000004F1F2F3F4 => 029000
+frame-exchange 0300E2000004A1A2A3A4 => 039000
+frame-exchange 0200B2010000 => 026A86
+frame-exchange 0300B2010100 => 036A86
+frame-exchange 0200B2010200 => 026A86
+frame-exchange 0300B2010300 => 036A86
+frame-exchange 0200B2010400 => 02F1F2F3F49000
+frame-exchange 0300B2010500 => 03F1F2F3F4A1A2A3A49000
+frame-exchange 0200B2010600 => 026A86
+frame-exchange 0300B2010700 => 036A86
+frame-exchange 0200B2000400 => 02A1A2A3A49000
+frame-exchange 0300B2000500 => 03A1A2A3A49000
+frame-exchange 0200B2010402 => 02F1F29000
+frame-exchange 0300B2010500 => 03F1F2F3F4A1A2A3A49000
+frame-exchange 0200B2010502 => 02F1F29000
+frame-exchange 0300B2020500 => 03A1A2A3A49000
+frame-exchange 0200B2030400 => 026985
+frame-exchange 0300B2030500 => 036985
+
+# The wrapped Le byte must be 00; any other value is 917E.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03905A00000312345601 => 03917E
+frame-exchange 02905A000003123456FF => 02917E
+frame-exchange 03905A00000312345600 => 039100
+frame-exchange 02906A0000010000 => 02917E

@@ -4,7 +4,6 @@ name: format application boundaries
 origin: synthetic
 case-id: format-ordinary-application-boundaries
 feature-version: 6
-requires: auth-aes
 source: dfc-core issue 130 regression coverage
 issues: https://github.com/cindersocket/dfc-core/issues/130
 uid: 04112233445566

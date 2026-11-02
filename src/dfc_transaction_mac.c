@@ -431,7 +431,9 @@ DfcTransactionMacStatus dfc_transaction_mac_add_data(
         return DfcTransactionMacInvalid;
     switch(command) {
     case DFC_CMD_READ_DATA:
+    case DFC_CMD_READ_DATA_ISO:
     case DFC_CMD_WRITE_DATA:
+    case DFC_CMD_WRITE_DATA_ISO:
         if(data_length != length) return DfcTransactionMacInvalid;
         break;
     case DFC_CMD_READ_RECORDS:

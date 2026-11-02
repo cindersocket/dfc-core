@@ -1,11 +1,15 @@
 import com.cindersocket.dfc.DfcKeyDiversification;
+import com.cindersocket.dfc.DfcCommand;
 import com.cindersocket.dfc.DfcException;
+import com.cindersocket.dfc.DfcIso7816;
 import com.cindersocket.dfc.DfcReader;
 import com.cindersocket.dfc.DfcResponses;
 import com.cindersocket.dfc.DfcSdm;
 import com.cindersocket.dfc.DfcTransactionMacVerifier;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HexFormat;
 
@@ -41,6 +45,32 @@ public final class DfcAdvancedApiTest {
       return;
     }
     throw new AssertionError(message);
+  }
+
+  private static void testIsoChainedConstructorsAndAppendRecord() throws Exception {
+    require(DfcCommand.readData(1, 2, 3, true).instruction() == 0xAD, "wrong ReadData opcode");
+    require(DfcCommand.writeData(1, 2, hex("A5"), true).instruction() == 0x8D,
+        "wrong WriteData opcode");
+    require(
+        DfcCommand.readRecords(1, 2, 3, true).instruction() == 0xAB, "wrong ReadRecords opcode");
+    require(DfcCommand.writeRecord(1, 2, hex("A5"), true).instruction() == 0x8B,
+        "wrong WriteRecord opcode");
+    require(DfcCommand.updateRecord(1, 2, 3, hex("A5"), true).instruction() == 0xBA,
+        "wrong UpdateRecord opcode");
+    for (String line : Files.readAllLines(Path.of("tests", "iso7816-helper-vectors.txt"))) {
+      if (line.isEmpty() || line.startsWith("#"))
+        continue;
+      String[] fields = line.split("\\|", -1);
+      if (fields[0].equals("append-record")) {
+        requireHex(DfcIso7816.appendRecord(Integer.parseInt(fields[2]), hex(fields[1])), fields[3],
+            "wrong APPEND RECORD APDU");
+      } else {
+        require(fields[0].equals("parse-response"), "unknown ISO helper vector");
+        var response = DfcIso7816.parseResponse(hex(fields[1]));
+        requireHex(response.data(), fields[2], "wrong ISO response data");
+        require(response.statusWord() == Integer.parseInt(fields[3], 16), "wrong ISO status word");
+      }
+    }
   }
 
   private static void requireIllegalArgument(CheckedOperation operation, String message) {
@@ -352,5 +382,6 @@ public final class DfcAdvancedApiTest {
     testSdm();
     testTransactionMac();
     testReaderAuthenticationValidation();
+    testIsoChainedConstructorsAndAppendRecord();
   }
 }

@@ -123,7 +123,13 @@ internal static unsafe partial class Native
     internal static partial int dfc_command_read_data(NativeCommand* command, byte fileNo, uint offset, uint length);
 
     [LibraryImport(Library)]
+    internal static partial int dfc_command_read_data_iso_chaining(NativeCommand* command, byte fileNo, uint offset, uint length);
+
+    [LibraryImport(Library)]
     internal static partial int dfc_command_write_data(NativeCommand* command, byte fileNo, uint offset, byte* data, nuint length);
+
+    [LibraryImport(Library)]
+    internal static partial int dfc_command_write_data_iso_chaining(NativeCommand* command, byte fileNo, uint offset, byte* data, nuint length);
 
     [LibraryImport(Library)]
     internal static partial int dfc_command_read_records(NativeCommand* command, byte fileNo, uint recordNo, uint recordCount, [MarshalAs(UnmanagedType.U1)] bool isoChaining);

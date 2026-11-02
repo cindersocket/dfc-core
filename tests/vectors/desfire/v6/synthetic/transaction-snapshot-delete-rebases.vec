@@ -4,7 +4,7 @@ case-id: transaction-snapshot-delete-rebases-pending-backup
 origin: synthetic
 feature-version: 6
 source: generated transaction snapshot directory regression
-requires: ev3,backup-files
+requires: backup-files
 uid: 04112233445566
 picc-generation: EV3
 picc-storage: 4096

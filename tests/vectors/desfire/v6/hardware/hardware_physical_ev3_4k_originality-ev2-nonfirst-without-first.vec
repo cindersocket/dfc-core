@@ -1,5 +1,10 @@
 # PROVENANCE: measured from the physical EV3 4K card over PC/SC.
 # Factory key material is unknown; continuation intentionally fails.
+# REPLAY BLOCKED (annotation, no captured byte changed): this capture authenticates with PICC
+# key 01, an originality key. (1) The emulator has no PICC key slot 01 (GetKeyVersion answers
+# 9140 where the card answered 00); (2) the card's challenge here is its random encrypted
+# under that key, which is unknown, so the random cannot be recovered for `inject-random`.
+# Replaying it would need a made-up key and random, which would not be the card's bytes.
 name: physical EV3 special authentication originality-ev2-nonfirst-without-first
 case-id: hardware-physical-ev3-4k-originality-ev2-nonfirst-without-first
 origin: physical-card

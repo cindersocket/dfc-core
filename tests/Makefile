@@ -87,7 +87,6 @@ TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_se
 	test_dfc_transaction_snapshot \
 	test_dfc_transaction_mac_lifecycle \
 	test_dfc_transaction_mac_verify \
-	test_dfc_virtual_picc_probe_vectors test_dfc_virtual_picc_lifecycle_vectors \
 	test_dfc_virtual_picc_mutation_vectors test_dfc_virtual_picc_multi_app_vectors \
 	test_dfc_virtual_picc_value_vectors test_dfc_ev1_conformance \
 	test_dfc_file_pool test_dfc_key_pool test_dfc_der test_dfc_profile test_dfc_text \
@@ -103,6 +102,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_se
 	test_dfc_iso_file_access \
 	test_dfc_ev1_response_policy \
 	test_dfc_iso_chained_records_secure test_dfc_iso_response_lifetime \
+	test_dfc_iso_dep_frame_properties \
 	test_dfc_effective_comm test_dfc_get_file_counters \
 	test_dfc_reader_header_bounds test_dfc_decode_failure_atomicity
 
@@ -149,9 +149,9 @@ FUZZ_DIR  ?= ../build-fuzz
 FUZZ_TIME ?= 300
 FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
-.PHONY: test test-backends vectors vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile check-cipher-profile-matrix \
+.PHONY: test test-backends vectors replay-plans check-replay-plans vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile check-cipher-profile-matrix \
 	profile-builds role-builds ffi-role-builds \
-	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-jni-export-inventory \
+	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-virtual-picc-staging check-iso-dep-block-numbers check-jni-wipes check-jni-result-buffers check-jni-export-inventory \
 	check-credential-passes \
 	check-decoder-registry check-random-failure-registry check-snapshot-secret-policy \
 	check-secure-messaging-policy check-ffi-export-inventory \
@@ -228,7 +228,7 @@ test_dfc_transaction_snapshot_large: test_dfc_transaction_snapshot.c \
 $(TOOLS): %: %.c $(COMMON)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-jni-wipes check-jni-result-buffers check-jni-export-inventory check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-export-inventory check-ffi-layout-registry check-cipher-profile-matrix vectors vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds ffi-role-builds codecs-disabled-link test-ev2-profile test-auth-profile
+test: check-common-runtime check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-virtual-picc-staging check-iso-dep-block-numbers check-jni-wipes check-jni-result-buffers check-jni-export-inventory check-virtual-picc-auth-cleanup check-credential-passes check-snapshot-secret-policy check-decoder-registry check-random-failure-registry check-secure-messaging-policy check-ffi-export-inventory check-ffi-layout-registry check-cipher-profile-matrix vectors check-replay-plans vector-parser-regressions vector-profiles $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) $(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) $(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST) $(REDUCED_TESTS) $(TOOLS) profile-builds role-builds ffi-role-builds codecs-disabled-link test-ev2-profile test-auth-profile
 	@for t in $(TESTS); do echo "=== $$t ==="; ./$$t || exit 1; done
 	./$(FAULT_TEST)
 	./$(DES_CHAIN_FAULT_TEST)
@@ -255,6 +255,25 @@ vectors: $(CONFORMANCE_RUNNER)
 	@test -n "$(DFC_VECTORS)" || (echo "no DESFire conformance vectors found"; exit 1)
 	./$(CONFORMANCE_RUNNER) $(DFC_VECTORS)
 
+# Replay plans are what the language bindings run (see docs/conformance-vector-format.md).
+# They are committed so no binding job needs this C runner; check-replay-plans fails
+# when a vector changed without `make -C tests replay-plans`.
+PLAN_DIR := replay-plans
+
+replay-plans: $(CONFORMANCE_RUNNER)
+	rm -rf $(PLAN_DIR)
+	mkdir -p $(PLAN_DIR)
+	./$(CONFORMANCE_RUNNER) --export-plans $(PLAN_DIR) $(DFC_VECTORS)
+
+check-replay-plans: $(CONFORMANCE_RUNNER)
+	@rm -rf $(PLAN_DIR).check && mkdir -p $(PLAN_DIR).check
+	@./$(CONFORMANCE_RUNNER) --export-plans $(PLAN_DIR).check $(DFC_VECTORS) > /dev/null \
+		|| { rm -rf $(PLAN_DIR).check; exit 1; }
+	@diff -r $(PLAN_DIR) $(PLAN_DIR).check > /dev/null \
+		|| { rm -rf $(PLAN_DIR).check; \
+		echo "tests/$(PLAN_DIR) is stale: run make -C tests replay-plans"; exit 1; }
+	@rm -rf $(PLAN_DIR).check
+
 vector-parser-regressions: $(CONFORMANCE_RUNNER)
 	python3 check_vector_parser.py ./$(CONFORMANCE_RUNNER)
 
@@ -277,6 +296,12 @@ check-command-registry:
 
 check-teardown-wipes:
 	python3 check_teardown_wipes.py
+
+check-virtual-picc-staging:
+	python3 check_virtual_picc_staging.py
+
+check-iso-dep-block-numbers:
+	python3 check_iso_dep_block_numbers.py
 
 check-jni-wipes:
 	python3 check_jni_wipes.py

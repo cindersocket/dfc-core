@@ -147,17 +147,30 @@ public sealed record DfcCommand
     // --------------------------------------------------------------- data ---
 
     /// <summary>ReadData.</summary>
-    public static unsafe Result<DfcCommand, DfcProtocolError> ReadData(byte fileNo, uint offset, uint length) =>
-        Encode(c => Native.dfc_command_read_data(c, fileNo, offset, length));
+    public static unsafe Result<DfcCommand, DfcProtocolError> ReadData(
+        byte fileNo,
+        uint offset,
+        uint length,
+        bool isoChaining = false
+    ) => Encode(c => isoChaining
+        ? Native.dfc_command_read_data_iso_chaining(c, fileNo, offset, length)
+        : Native.dfc_command_read_data(c, fileNo, offset, length));
 
     /// <summary>WriteData.</summary>
-    public static unsafe Result<DfcCommand, DfcProtocolError> WriteData(byte fileNo, uint offset, ReadOnlySpan<byte> data)
+    public static unsafe Result<DfcCommand, DfcProtocolError> WriteData(
+        byte fileNo,
+        uint offset,
+        ReadOnlySpan<byte> data,
+        bool isoChaining = false
+    )
     {
         fixed (byte* d = data)
         {
             var dd = d;
             var n = (nuint)data.Length;
-            return Encode(c => Native.dfc_command_write_data(c, fileNo, offset, dd, n));
+            return Encode(c => isoChaining
+                ? Native.dfc_command_write_data_iso_chaining(c, fileNo, offset, dd, n)
+                : Native.dfc_command_write_data(c, fileNo, offset, dd, n));
         }
     }
 

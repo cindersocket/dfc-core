@@ -20,7 +20,7 @@ for file in $staged; do
     [ -f "$file" ] || continue
     case "$file" in
         *.c|*.h|*.java)
-            uvx --from clang-format==21.1.7 clang-format -i "$file"
+            uvx --from clang-format==22.1.8 clang-format -i "$file"
             ;;
         *.py)
             uvx --from ruff==0.17.1 ruff format \

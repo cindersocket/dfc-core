@@ -1,0 +1,18 @@
+# Converted from tests/test_dfc_ev1_conformance.c test /get-version-rejects-extra-data (now removed): the literal
+# APDUs and statuses the unit test asserted are replayed here byte for byte,
+# and the engine's answers are the ones the test required. A GetVersion or its AdditionalFrame carrying a payload is a length error; GetVersion itself still answers.
+
+name: vecB ev1: GetVersion rejects extra data
+case-id: vecb-ev1-get-version-extra-data
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /get-version-rejects-extra-data
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90600000010000 => 7E
+exchange native-apdu 9060000000 => 0401010100160591AF
+status   90AF0000010000 => 7E

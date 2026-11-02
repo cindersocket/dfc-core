@@ -35,7 +35,9 @@ exchange native-apdu 9045000000 => 0F019100
 exchange native-apdu 90640000010000 => 009100
 status   906F000000 => 00
 status   90F50000017F00 => 9E
-status   90BD0000077F00000001000000 => F0
+# Measured on a genuine EV3 (hardware_physical_ev3_2k_bad_commands.vec): a file
+# number above 1F is a parameter error, not an absent file.
+status   90BD0000077F00000001000000 => 9E
 status   90CD0000070100EEEE04000000 => 00
 status   90CD0000070100EEEE04000000 => DE
 exchange native-apdu 906F000000 => 019100

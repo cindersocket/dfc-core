@@ -3,6 +3,11 @@
 // Executes a canonical DESFire vector file against the engine.
 //
 // Usage: test_dfc_conformance_vectors <vector-file> [<vector-file> ...]
+//        test_dfc_conformance_vectors --export-plans <directory> <vector-file> ...
+//
+// --export-plans also writes one language-neutral replay plan per replayable
+// vector (see docs/conformance-vector-format.md, "Replay plans"). The language
+// bindings replay those plans instead of parsing vectors themselves.
 
 #include <stdarg.h>
 #include "dfc_vector_replay_random.h"
@@ -132,6 +137,101 @@ static int parse_hex(const char* s, uint8_t* out, bool* mask, size_t cap) {
 static void hexdump(FILE* f, const uint8_t* b, size_t n) {
     for(size_t i = 0; i < n; i++)
         fprintf(f, "%02X", b[i]);
+}
+
+// ------------------------------------------------------------ replay plan ---
+
+// A replay plan is the vector with every header already applied: the initial
+// credential in the library's own binary encoding, then explicit steps. It is
+// recorded while the vector runs here, so a plan exists only for a vector the C
+// engine passed, and its final credential is what the C engine ended with.
+typedef struct {
+    char* data;
+    size_t length;
+    size_t capacity;
+    bool failed;
+} PlanBuffer;
+
+static const char* g_plan_directory;
+static PlanBuffer g_plan;
+static const char* g_plan_skip;
+static int g_plan_written;
+static int g_plan_skipped;
+
+static void plan_printf(const char* fmt, ...) {
+    if(!g_plan_directory || g_plan.failed) return;
+    va_list ap;
+    va_start(ap, fmt);
+    va_list copy;
+    va_copy(copy, ap);
+    int needed = vsnprintf(NULL, 0, fmt, copy);
+    va_end(copy);
+    if(needed < 0) {
+        g_plan.failed = true;
+        va_end(ap);
+        return;
+    }
+    size_t required = g_plan.length + (size_t)needed + 1;
+    if(required > g_plan.capacity) {
+        size_t capacity = g_plan.capacity ? g_plan.capacity : 4096;
+        while(capacity < required)
+            capacity *= 2;
+        char* grown = realloc(g_plan.data, capacity);
+        if(!grown) {
+            g_plan.failed = true;
+            va_end(ap);
+            return;
+        }
+        g_plan.data = grown;
+        g_plan.capacity = capacity;
+    }
+    vsnprintf(g_plan.data + g_plan.length, g_plan.capacity - g_plan.length, fmt, ap);
+    g_plan.length += (size_t)needed;
+    va_end(ap);
+}
+
+// Uppercase hex, `??` for a wildcard, and `-` for no bytes.
+static void plan_hex(const uint8_t* bytes, const bool* mask, size_t length) {
+    if(length == 0) plan_printf("-");
+    for(size_t i = 0; i < length; i++) {
+        if(mask && !mask[i])
+            plan_printf("??");
+        else
+            plan_printf("%02X", bytes[i]);
+    }
+}
+
+static void plan_reset(void) {
+    free(g_plan.data);
+    memset(&g_plan, 0, sizeof(g_plan));
+    g_plan_skip = NULL;
+}
+
+// "<root>/v6/synthetic/name.vec" becomes "v6-synthetic-name.plan".
+static bool plan_file_name(const char* vector_path, char* out, size_t capacity) {
+    const char* start = vector_path + strlen(vector_path);
+    for(int slashes = 0; start > vector_path; start--) {
+        if(start[-1] == '/' && ++slashes == 3) break;
+    }
+    size_t length = strlen(start);
+    if(length > 4 && strcmp(start + length - 4, ".vec") == 0) length -= 4;
+    if(length + sizeof(".plan") > capacity) return false;
+    for(size_t i = 0; i < length; i++)
+        out[i] = start[i] == '/' ? '-' : start[i];
+    memcpy(out + length, ".plan", sizeof(".plan"));
+    return true;
+}
+
+static bool plan_write(const char* vector_path) {
+    char name[512];
+    char path[1024];
+    if(!plan_file_name(vector_path, name, sizeof(name))) return false;
+    if(snprintf(path, sizeof(path), "%s/%s", g_plan_directory, name) >= (int)sizeof(path))
+        return false;
+    FILE* out = fopen(path, "wb");
+    if(!out) return false;
+    bool ok = !g_plan.failed && fwrite(g_plan.data, 1, g_plan.length, out) == g_plan.length;
+    return fclose(out) == 0 && ok;
 }
 
 // A tolerance clause: the little-endian integer at `offset` may differ from the
@@ -872,6 +972,14 @@ static bool assert_path(
         if(strcmp(field, "iso_file_id") == 0) return cmp_num(st, path, fl->iso_file_id, want);
         if(strcmp(field, "data_len") == 0)
             return cmp_num(st, path, (unsigned long)fl->data_len, want);
+        if(strcmp(field, "record_count") == 0) {
+            if(fl->type != DFC_FILE_TYPE_LINEAR_RECORD &&
+               fl->type != DFC_FILE_TYPE_CYCLIC_RECORD) {
+                fail(st, "assert %s: file is not a record file", path);
+                return false;
+            }
+            return cmp_num(st, path, (unsigned long)fl->state.record.count, want);
+        }
         if(strcmp(field, "data") == 0) {
             const uint8_t* d = dfc_file_data_const(c, fl);
             if(!d && fl->data_len > 0) {
@@ -954,7 +1062,83 @@ static bool vector_uses_scripted_random(FILE* f, bool* scripted) {
     return line_result != VectorLineTooLong;
 }
 
+static void plan_credential_hex(const DfcCredential* credential) {
+    size_t length = 0;
+    uint8_t* encoded = NULL;
+    if(dfc_der_encoded_size(credential, &length) == DfcDerOk && length > 0 &&
+       (encoded = malloc(length)) != NULL &&
+       dfc_der_encode(credential, encoded, length, &length) == DfcDerOk) {
+        plan_hex(encoded, NULL, length);
+    } else {
+        g_plan.failed = true;
+    }
+    free(encoded);
+}
+
+static void plan_begin(const char* path, bool finite_random, const DfcCredential* credential) {
+    char name[512];
+    if(!plan_file_name(path, name, sizeof(name))) {
+        g_plan.failed = true;
+        return;
+    }
+    name[strlen(name) - strlen(".plan")] = '\0';
+    plan_printf(
+        "plan 1\nsource %s\nrandom %s\ncredential ", name, finite_random ? "finite" : "os");
+    plan_credential_hex(credential);
+    plan_printf("\n");
+}
+
+// Vectors whose expected answers depend on a capacity the C runner is built with.
+// The shipped libraries the bindings load use the host profile's larger tables, so
+// the plan records a counted skip instead of an expectation they cannot meet.
+static const struct {
+    const char* basename;
+    const char* reason;
+} g_capacity_bound_vectors[] = {
+    {"vecb-ev1-create-file-full-pool.vec",
+     "answer depends on the runner's DFC_MAX_FILES file table; shipped libraries use "
+     "DFC_HOST_MAX_FILES"},
+};
+
+static void plan_note_capacity_bound(const char* path) {
+    const char* base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    for(size_t i = 0; i < sizeof(g_capacity_bound_vectors) / sizeof(g_capacity_bound_vectors[0]);
+        i++) {
+        if(strcmp(base, g_capacity_bound_vectors[i].basename) == 0 && !g_plan_skip)
+            g_plan_skip = g_capacity_bound_vectors[i].reason;
+    }
+}
+
+// Returns false when a plan was due but could not be written.
+static bool
+    plan_finish(const char* path, bool started, bool failed, const DfcCredential* credential) {
+    if(!g_plan_directory || failed || !started) return true;
+    plan_note_capacity_bound(path);
+    if(g_plan_skip) {
+        char name[512];
+        const char* reason = g_plan_skip;
+        plan_reset();
+        if(!plan_file_name(path, name, sizeof(name))) return false;
+        name[strlen(name) - strlen(".plan")] = '\0';
+        plan_printf("plan 1\nsource %s\nskip %s\n", name, reason);
+        g_plan_skipped++;
+    } else {
+        plan_printf("final ");
+        plan_credential_hex(credential);
+        plan_printf("\n");
+    }
+    if(!plan_write(path)) {
+        fprintf(stderr, "  %s: cannot write the replay plan\n", path);
+        return false;
+    }
+    g_plan_written++;
+    return true;
+}
+
 static bool run_vector(const char* path) {
+    plan_reset();
+    bool plan_started = false;
     dfc_host_clear_random_buffer();
     FILE* f = fopen(path, "r");
     if(!f) {
@@ -1006,6 +1190,10 @@ static bool run_vector(const char* path) {
             continue;
         }
         in_header = false;
+        if(!plan_started) {
+            plan_started = true;
+            plan_begin(path, finite_random_source, &credential);
+        }
 
         char* verb = strtok(p, " \t");
         if(!verb) continue;
@@ -1022,6 +1210,7 @@ static bool run_vector(const char* path) {
                 break;
             }
             have_activation = true;
+            plan_printf("step scan\n");
             continue;
         }
         if(strcmp(verb, "field-off") == 0) {
@@ -1031,6 +1220,7 @@ static bool run_vector(const char* path) {
             }
             if(session) dfc_virtual_picc_field_off(session);
             have_activation = false;
+            plan_printf("step field-off\n");
             continue;
         }
         if(strcmp(verb, "clear-dirty") == 0) {
@@ -1039,6 +1229,7 @@ static bool run_vector(const char* path) {
                 break;
             }
             dfc_credential_clear_dirty(&credential);
+            plan_printf("step clear-dirty\n");
             continue;
         }
         if(strcmp(verb, "random-source") == 0) {
@@ -1050,6 +1241,7 @@ static bool run_vector(const char* path) {
             }
             use_empty_random_script();
             finite_random_source = true;
+            plan_printf("step random-clear\n");
             continue;
         }
         if(strcmp(verb, "set-model") == 0) {
@@ -1062,6 +1254,7 @@ static bool run_vector(const char* path) {
                 break;
             }
             if(!set_model_path(&st, &credential, model_path, value)) break;
+            g_plan_skip = "set-model edits the credential model in place and no binding can";
             continue;
         }
         if(strcmp(verb, "roll-model-key-set") == 0) {
@@ -1079,6 +1272,8 @@ static bool run_vector(const char* path) {
                 fail(&st, "roll-model-key-set needs valid application and key-set indexes");
                 break;
             }
+            g_plan_skip =
+                "roll-model-key-set edits the credential model in place and no binding can";
 #else
             fail(&st, "roll-model-key-set requires key-set support");
             break;
@@ -1101,6 +1296,9 @@ static bool run_vector(const char* path) {
                 fail(&st, "inject-random exceeds the host replay queue");
                 break;
             }
+            plan_printf("step random-inject ");
+            plan_hex(buf, NULL, (size_t)n);
+            plan_printf("\n");
             continue;
         }
         if(strcmp(verb, "advance-time") == 0) {
@@ -1113,6 +1311,7 @@ static bool run_vector(const char* path) {
             }
             if(!session) session = dfc_virtual_picc_session_alloc(&credential);
             dfc_emulator_advance_time(session->emulator, (uint32_t)milliseconds);
+            plan_printf("step advance-time %llu\n", (unsigned long long)milliseconds);
             continue;
         }
         if(strcmp(verb, "assert") == 0) {
@@ -1125,15 +1324,18 @@ static bool run_vector(const char* path) {
                 break;
             }
             assert_path(&st, &credential, session, &activation, have_activation, apath, val);
+            plan_printf("step assert %s %s\n", apath, val);
             continue;
         }
 
         if(strcmp(verb, "expect-error") == 0) {
             char* error_class = strtok(NULL, " \t");
             char* operation = strtok(NULL, " \t");
-            if(!finite_random_source || !error_class ||
-               strcmp(error_class, "random-source") != 0 || !operation) {
-                fail(&st, "expect-error requires a finite random source");
+            bool random_error = error_class && strcmp(error_class, "random-source") == 0;
+            bool protocol_error = error_class && strcmp(error_class, "protocol-error") == 0;
+            if(!operation || (!random_error && !protocol_error) ||
+               (random_error && !finite_random_source)) {
+                fail(&st, "unsupported expect-error class or missing finite random source");
                 break;
             }
 
@@ -1145,10 +1347,15 @@ static bool run_vector(const char* path) {
             uint8_t got[VectorMaximumByteCount];
 
             if(strcmp(operation, "scan") == 0) {
+                if(protocol_error) {
+                    fail(&st, "protocol-error only supports frame-exchange");
+                    break;
+                }
                 if(strtok(NULL, " \t")) {
                     fail(&st, "expected-error scan takes no arguments");
                     break;
                 }
+                plan_printf("step error random-source scan\n");
                 rc = dfc_virtual_picc_scan_iso14443a(session, &activation);
                 if(rc != DfcVirtualPiccStatusOk) have_activation = false;
             } else {
@@ -1158,6 +1365,10 @@ static bool run_vector(const char* path) {
                 }
                 bool frame = strcmp(operation, "frame-exchange") == 0;
                 bool exchange = strcmp(operation, "exchange") == 0;
+                if(protocol_error && !frame) {
+                    fail(&st, "protocol-error only supports frame-exchange");
+                    break;
+                }
                 VectorWireDialect dialect = VectorWireDialectNativeApdu;
                 char* command_hex = strtok(NULL, " \t");
                 if(exchange && command_hex) {
@@ -1182,6 +1393,9 @@ static bool run_vector(const char* path) {
                     break;
                 }
                 (void)dialect;
+                plan_printf("step error %s %s ", error_class, frame ? "frame" : "exchange");
+                plan_hex(command, NULL, (size_t)command_len);
+                plan_printf("\n");
                 rc = frame ?
                          dfc_virtual_picc_iso_dep_frame_exchange(
                              session, command, (size_t)command_len, got, sizeof(got), &got_len) :
@@ -1189,8 +1403,15 @@ static bool run_vector(const char* path) {
                              session, command, (size_t)command_len, got, sizeof(got), &got_len);
             }
             size_t remaining_after = dfc_host_random_remaining();
-            if(!replay_random_failed() || rc != DfcVirtualPiccStatusProtocolError ||
-               got_len != 0 || remaining_after != remaining_before) {
+            if(protocol_error) {
+                if(rc != DfcVirtualPiccStatusProtocolError || got_len != 0) {
+                    fail(
+                        &st, "protocol error mismatch (status=%d response=%zu)", (int)rc, got_len);
+                    break;
+                }
+            } else if(
+                !replay_random_failed() || rc != DfcVirtualPiccStatusProtocolError ||
+                got_len != 0 || remaining_after != remaining_before) {
                 fail(
                     &st,
                     "random-source failure was not atomic "
@@ -1315,7 +1536,20 @@ static bool run_vector(const char* path) {
                 break;
             }
             have_activation = true;
+            plan_printf("step scan\n");
         }
+        plan_printf("step %s ", is_frame ? "frame" : "exchange");
+        plan_hex(cmd, NULL, (size_t)cmd_len);
+        plan_printf(" ");
+        plan_hex(want, mask, (size_t)want_len);
+        for(int t = 0; t < tolerance_count; t++) {
+            plan_printf(
+                " tol=%zu+%zu:%llu",
+                tolerances[t].offset,
+                tolerances[t].length,
+                (unsigned long long)tolerances[t].delta);
+        }
+        plan_printf("\n");
         uint8_t got[VectorMaximumByteCount];
         size_t got_len = 0;
         DfcVirtualPiccStatus rc =
@@ -1335,6 +1569,8 @@ static bool run_vector(const char* path) {
     if(line_result == VectorLineTooLong)
         fail(&st, "line exceeds %d bytes", VectorMaximumLineLength - 1);
 
+    if(!plan_finish(path, plan_started, st.failed, &credential)) st.failed = true;
+    plan_reset();
     if(session) dfc_virtual_picc_session_free(session);
     dfc_host_clear_random_buffer();
     fclose(f);
@@ -1397,14 +1633,19 @@ int main(int argc, char** argv) {
     if(argc == 4 && strcmp(argv[1], "--compile-dfcb") == 0) {
         return compile_vector(argv[2], argv[3]) ? 0 : 1;
     }
-    if(argc < 2) {
-        fprintf(stderr, "usage: %s <vector-file> [...]\n", argv[0]);
+    int first_vector = 1;
+    if(argc >= 3 && strcmp(argv[1], "--export-plans") == 0) {
+        g_plan_directory = argv[2];
+        first_vector = 3;
+    }
+    if(argc <= first_vector) {
+        fprintf(stderr, "usage: %s [--export-plans <directory>] <vector-file> [...]\n", argv[0]);
         return 2;
     }
     int failed = 0;
     int skipped = 0;
     printf("conformance vectors:\n");
-    for(int i = 1; i < argc; i++) {
+    for(int i = first_vector; i < argc; i++) {
         int runnable = vector_is_runnable(argv[i]);
         if(runnable < 0) {
             failed++;
@@ -1416,7 +1657,9 @@ int main(int argc, char** argv) {
         }
         if(!run_vector(argv[i])) failed++;
     }
-    int total = argc - 1;
+    if(g_plan_directory)
+        printf("%d replay plans written (%d are skip-only)\n", g_plan_written, g_plan_skipped);
+    int total = argc - first_vector;
     int ran = total - skipped;
     if(skipped > 0) {
         printf(

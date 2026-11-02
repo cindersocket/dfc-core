@@ -459,7 +459,7 @@ static void check_rejected_file_creation_is_atomic(void) {
     }
 
     DfcFfiFile invalid = plain_file(0, DFC_EV1_MAX_FILE_NUMBER);
-    invalid.comm_settings = 0x02;
+    invalid.comm_settings = 0x04;
     index = UINT32_C(0xA5A5A5A5);
     before = capture_credential_state(credential);
     CHECK(dfc_ffi_credential_add_file(credential, &invalid, &index) == DfcDerMalformed);

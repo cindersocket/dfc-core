@@ -26,6 +26,9 @@ steps and assertion paths are errors.
   `expect-error random-source frame-exchange <frame>` require the operation to
   report a random-source failure with an empty response. The failed draw must
   consume no queued bytes or change session state.
+- `expect-error protocol-error frame-exchange <frame>` requires raw ISO-DEP
+  processing to report a protocol error with an empty response. The session
+  remains active so later steps can verify that a retry or reset recovers.
 - `advance-time <milliseconds>` advances the injected monotonic clock.
 - `assert <path> = <value>` compares credential, emulator, or activation state.
 - `clear-dirty` clears the credential persistence flag.
@@ -143,3 +146,61 @@ valid only after `scan` and before `field-off`.
 records the complete proprietary APDU and a response ending in `91xx`.
 `iso-apdu` records a complete standard ISO command and its ISO status word.
 Frame boundaries and response chaining are part of the expected evidence.
+
+## Replay plans
+
+The language bindings do not parse vectors. `make -C tests replay-plans` runs the
+C runner with `--export-plans`, which writes one plan per replayable vector to
+`tests/replay-plans/`, named `<version>-<directory>-<vector>.plan`. A plan is
+recorded while the C engine passes the vector, so it carries what the engine did
+rather than a second reading of the headers. Plans are committed, and
+`make -C tests check-replay-plans` (part of `make -C tests test`) fails when a
+vector changed without regenerating them. Committing keeps every binding job
+free of the C runner and its crypto backend.
+
+A plan is lines of `key value`, with uppercase hex and `-` for no bytes:
+
+```text
+plan 1
+source v6-synthetic-finite-random-reset
+random finite               # `finite`: draw from the injected queue; `os`: system random
+credential <hex>            # the initial model after every header, in the DER encoding
+step scan | field-off | clear-dirty | advance-time <ms>
+step random-clear | random-inject <hex>
+step exchange <request> <expected> [tol=<offset>+<length>:<delta> ...]
+step frame <request> <expected> [tol=...]
+step error random-source|protocol-error scan|exchange|frame [<request>]
+step assert <path> <value>
+final <hex>                 # the C engine's credential after the last step
+skip <reason>               # instead of the lines above, a counted skip
+```
+
+`status` and `select-application` are already expanded to `exchange`, and a scan
+the runner performed implicitly is explicit. `??` and `tol=` keep their meaning.
+A binding replays each step through its own virtual PICC, injects randoms from a
+queue that refuses, without consuming, a draw it cannot fill, and finally
+exports its credential and compares the encoding to `final`. It evaluates the
+`credential.dirty` and `activation.*` assertions itself; the other credential
+assertions are covered by the final comparison, and `emulator.*` and `session.*`
+assertions are checked by the C runner only.
+
+Two vectors are skipped by every binding, with the reason in the plan:
+`set-model` and `roll-model-key-set` edit the model in place, which no binding
+exposes, and `vecb-ev1-create-file-full-pool` expects the runner's compile-time
+file table, which is smaller than the one the shipped libraries use.
+
+Run a binding's replay locally (each prints replayed and skipped counts):
+
+```sh
+# Python (after building libdfc, see the binding README)
+DFC_LIBRARY_PATH=build/libdfc.so pytest bindings/python/tests/test_replay_plans.py -s
+# Rust
+cargo test -p dfc-core --test replay_plans -- --nocapture
+# .NET
+dotnet test bindings/dotnet/tests/Dfc.Tests/Dfc.Tests.csproj --filter FullyQualifiedName~ReplayPlanTests --logger "console;verbosity=detailed"
+# Java (after building the JNI library as in CI)
+java -Djava.library.path=build-jni -cp build-jni/java DfcReplayPlanTest tests/replay-plans
+```
+
+See also [Measured card behavior](measured-card-behavior.md) for the rules the
+physical-card vectors establish and how a new capture is added.

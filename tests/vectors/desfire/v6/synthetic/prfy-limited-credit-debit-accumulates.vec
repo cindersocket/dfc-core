@@ -1,0 +1,46 @@
+# Prfy: debits accumulate into one LimitedCredit allowance within a transaction.
+#
+# The original unit test /limited-credit-transaction-state only reached the
+# saturating branch of the accumulation (INT32_MAX plus 1), and every other debit
+# was a single debit per transaction, so a mutant that replaced the running
+# allowance with the latest debit amount (pending = amount instead of
+# pending += amount) survived both the unit test and the vector. This vector
+# pins the additive behaviour: two debits (3 and 4) in one transaction give an
+# allowance of 7, visible to LimitedCredit in the same transaction and, once
+# committed, to GetFileSettings.
+#
+# Responses were recorded from the reference engine and cross-checked by hand:
+# 50 - 3 - 4 + 7 = 50 (0x32), and 50 - 3 - 4 = 43 (0x2B).
+
+name: LimitedCredit allowance accumulates across debits
+case-id: prfy-limited-credit-debit-accumulates
+origin: synthetic
+feature-version: 6
+source: tests/test_dfc_virtual_picc_value_vectors.c#/limited-credit-transaction-state
+uid: 0476616C756531
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+status   90CA000005A1B2C30F0100 => 00
+status   905A000003A1B2C300 => 00
+status   90CC0000110400EEEE0000000064000000320000000100 => 00
+# two debits in one transaction: 3 + 4 = 7 available immediately
+status   90DC000005040300000000 => 00
+status   90DC000005040400000000 => 00
+status   901C000005040700000000 => 00
+status   90C7000000 => 00
+exchange native-apdu 906C0000010400 => 320000009100
+# (a refused amount aborts the transaction, so the over-limit probe comes only after a commit)
+# the whole allowance was used, so nothing is left
+status   901C000005040100000000 => BE
+# committed accumulation is what GetFileSettings reports
+status   90DC000005040300000000 => 00
+status   90DC000005040400000000 => 00
+status   90C7000000 => 00
+exchange native-apdu 906C0000010400 => 2B0000009100
+exchange native-apdu 90F50000010400 => 0200EEEE000000006400000007000000019100
+status   901C000005040800000000 => BE
+status   901C000005040700000000 => 00
+status   90C7000000 => 00
+exchange native-apdu 906C0000010400 => 320000009100

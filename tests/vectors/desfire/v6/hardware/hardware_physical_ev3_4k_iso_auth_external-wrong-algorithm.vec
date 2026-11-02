@@ -4,7 +4,7 @@ case-id: hardware-physical-ev3-4k-iso-auth-external-wrong-algorithm
 origin: physical-card
 feature-version: 6
 source: physical-card-pcsc
-requires: ev3,iso7816-auth
+requires: iso7816-auth
 uid: 048222F2CF1890
 picc-generation: EV3
 picc-storage: 4096

@@ -1,0 +1,125 @@
+# PROVENANCE: measured from a factory-fresh genuine DESFire EV3 2K with Proxmark3 on 2026-11-01
+# (random UID; PICC master key at its all-zero default). Same card and batch as
+# hardware_physical_ev3_2k_value_rights.vec.
+# PROVISIONAL BATCH "value-rights-2026-11-01": carries `capture-batch: value-rights-2026-11-01` and
+# `capture-status: provisional`, so it can be thrown away with the rest of the batch if the card
+# proves faulty (see docs/capture-batches.md).
+#
+# What this measures: how ISO UPDATE BINARY and ISO READ BINARY interact with an open native
+# transaction (a staged WriteData on a backup file, or a staged Debit on a value file). The
+# application has a value file 4, a backup data file 5 and a standard data file 6, all free
+# access, the last two with ISO ids 1005 and 1006. Each section's pattern differs so a leftover
+# from an earlier section cannot be mistaken for its own result.
+# Observed:
+#   * A successful ISO UPDATE BINARY publishes the open transaction: the staged write and a staged
+#     Debit are committed along with it (a later CommitTransaction or AbortTransaction answers 0C,
+#     "nothing to do", and the balance already shows the Debit).
+#   * An ISO UPDATE BINARY aimed at a backup file is written at once; the native read shows it
+#     before any commit and CommitTransaction has nothing to commit.
+#   * A FAILING ISO UPDATE BINARY (offset past the end, 6985) discards the open transaction.
+#   * A successful ISO READ BINARY leaves the staged write alone; CommitTransaction publishes it.
+name: genuine EV3 2K ISO UPDATE BINARY and READ BINARY against an open native transaction (provisional batch)
+case-id: hardware-physical-ev3-2k-iso-update-binary-transaction
+origin: physical-card
+capture-batch: value-rights-2026-11-01
+capture-status: provisional
+feature-version: 6
+source: physical-card-proxmark3
+requires: backup-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# fixture: application 123456 with value file 4, backup data file 5 (ISO id 1005) and standard data file 6 (ISO id 1006), all free access
+field-off
+scan
+exchange native CA1234560F2200E1 => 00
+exchange native 5A123456 => 00
+exchange native CC0400EEEE00000000E80300006400000001 => 00
+exchange native CB05051000EEEE100000 => 00
+exchange native CD06061000EEEE100000 => 00
+
+# staged native WriteData on backup file 5, then ISO UPDATE BINARY on standard file 6, then CommitTransaction
+field-off
+scan
+exchange native 5A123456 => 00
+exchange iso-apdu 00A4000C021006 => 9000
+exchange native 3D05000000040000A1A1A1A1 => 00
+exchange iso-apdu 00D600000411111111 => 9000
+exchange native C7 => 0C
+exchange native BD05000000000000 => 00A1A1A1A1000000000000000000000000
+exchange native BD06000000000000 => 0011111111000000000000000000000000
+exchange native 6C04 => 0064000000
+
+# staged native WriteData on backup file 5, then ISO UPDATE BINARY on standard file 6, then AbortTransaction
+field-off
+scan
+exchange native 5A123456 => 00
+exchange iso-apdu 00A4000C021006 => 9000
+exchange native 3D05000000040000A2A2A2A2 => 00
+exchange iso-apdu 00D600000422222222 => 9000
+exchange native A7 => 0C
+exchange native BD05000000000000 => 00A2A2A2A2000000000000000000000000
+exchange native BD06000000000000 => 0022222222000000000000000000000000
+exchange native 6C04 => 0064000000
+
+# staged native Debit of 5, then ISO UPDATE BINARY on standard file 6, then GetValue, AbortTransaction, GetValue
+field-off
+scan
+exchange native 5A123456 => 00
+exchange iso-apdu 00A4000C021006 => 9000
+exchange native DC0405000000 => 00
+exchange iso-apdu 00D600000433333333 => 9000
+exchange native 6C04 => 005F000000
+exchange native A7 => 0C
+exchange native 6C04 => 005F000000
+
+# ISO UPDATE BINARY directly on backup file 5: native read before commit, CommitTransaction, native read
+field-off
+scan
+exchange native 5A123456 => 00
+exchange iso-apdu 00A4000C021005 => 9000
+exchange iso-apdu 00D600000444444444 => 9000
+exchange native BD05000000000000 => 0044444444000000000000000000000000
+exchange native C7 => 0C
+exchange native BD05000000000000 => 0044444444000000000000000000000000
+
+# ISO UPDATE BINARY directly on backup file 5: native read before abort, AbortTransaction, native read
+field-off
+scan
+exchange native 5A123456 => 00
+exchange iso-apdu 00A4000C021005 => 9000
+exchange iso-apdu 00D600000455555555 => 9000
+exchange native BD05000000000000 => 0055555555000000000000000000000000
+exchange native A7 => 0C
+exchange native BD05000000000000 => 0055555555000000000000000000000000
+
+# staged native WriteData on backup file 5, then a failing ISO UPDATE BINARY (offset past the end), then CommitTransaction
+field-off
+scan
+exchange native 5A123456 => 00
+exchange iso-apdu 00A4000C021006 => 9000
+exchange native 3D05000000040000A6A6A6A6 => 00
+exchange iso-apdu 00D600200466666666 => 6985
+exchange native C7 => 0C
+exchange native BD05000000000000 => 0055555555000000000000000000000000
+exchange native BD06000000000000 => 0033333333000000000000000000000000
+exchange native 6C04 => 005F000000
+
+# staged native WriteData on backup file 5, then a successful ISO READ BINARY, then CommitTransaction
+field-off
+scan
+exchange native 5A123456 => 00
+exchange iso-apdu 00A4000C021006 => 9000
+exchange native 3D05000000040000A7A7A7A7 => 00
+exchange iso-apdu 00B0000004 => 333333339000
+exchange native C7 => 00
+exchange native BD05000000000000 => 00A7A7A7A7000000000000000000000000
+exchange native BD06000000000000 => 0033333333000000000000000000000000
+exchange native 6C04 => 005F000000

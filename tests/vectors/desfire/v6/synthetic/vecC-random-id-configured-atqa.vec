@@ -1,0 +1,20 @@
+# PROVENANCE: Synthetic regression converted from the former unit test
+# test_random_id_uses_single_size_atqa. A configured ATQA is presented as-is
+# even on a random-ID card, whose default would be 0403.
+name: A configured ATQA wins over the random-ID default
+case-id: vecc-random-id-configured-atqa
+origin: synthetic
+feature-version: 6
+source: converted from tests/test_dfc_virtual_picc_core.c#/random-id-uses-single-size-atqa
+requires: ev3
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-random-id: 1
+picc-atqa: 0004
+
+inject-random AABBCC
+scan
+assert activation.uid_len = 4
+assert activation.atqa = 0004
+field-off

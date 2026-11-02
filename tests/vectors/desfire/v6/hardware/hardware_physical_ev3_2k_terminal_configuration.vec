@@ -1,0 +1,60 @@
+# PROVENANCE: measured from the attached genuine DESFire EV3 2K over PC/SC.
+# Random ID and format-disable are one-way PICC settings. FormatPICC was then
+# attempted under the authenticated published all-zero test key and refused,
+# while the synthetic fixture application remained present.
+name: genuine EV3 2K Random ID and format-disable terminal configuration
+case-id: hardware-physical-ev3-2k-terminal-configuration
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+requires: auth-iso
+uid: 04304C4A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+scan
+status 90CA0000071234560FA100E100 => 00
+status 905A00000300000000 => 00
+inject-random E0B49E49BCE491F4
+exchange native-apdu 901A0000010000 => F74E55070731903891AF
+exchange native-apdu 90AF000010FA2C9C8BDF788E7A4923C78084238A3000 => 6240EDDA91B5A8289100
+exchange native-apdu 905C0000090085F59E841AF694A600 => A3FB7C01C0F5B70F9100
+field-off
+
+inject-random A3FE13
+scan
+exchange native-apdu 9060000000 => 0401013300160591AF
+exchange native-apdu 90AF000000 => 0401010300160591AF
+exchange native-apdu 90AF000000 => 00000000000000??????????????9100
+status 905A00000300000000 => 00
+inject-random 934E8CA342F464A7
+exchange native-apdu 901A0000010000 => 422A330754CF3D4A91AF
+exchange native-apdu 90AF000010EDE5C03D1B06AD242E26C17F1C25E72800 => 668DFBFC15F8BEC49100
+exchange native-apdu 905C00000900868CCD4AB2FD71C000 => 0F3C619EA05867AF9100
+field-off
+
+inject-random 93E6E9
+scan
+status 905A00000300000000 => 00
+inject-random C918DD04C5D9A966
+exchange native-apdu 901A0000010000 => B3FBF5DADE9B25EB91AF
+exchange native-apdu 90AF000010B4B0AA9D8833E4A00B218ED017CD9DB900 => 03C1D4E5200F83489100
+status 90FC000000 => 1C
+status 905A00000300000000 => 00
+exchange native-apdu 906A000000 => 1234569100
+field-off
+
+inject-random D94044
+scan
+status 905A00000300000000 => 00
+inject-random 57703B697D128DA7
+exchange native-apdu 901A0000010000 => F38E5D79B2CB53AD91AF
+exchange native-apdu 90AF0000104C01EF212CCB1E5A86857A8A49F0DA8500 => 4DC6FA119AC983C09100
+exchange native-apdu 9051000000 => A99416652E7C3467CFC4755EFFBFD06D9100
+field-off

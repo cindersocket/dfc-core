@@ -1,4 +1,30 @@
-use dfc_core::{Command, Error};
+use dfc_core::{Command, Error, iso_append_record_apdu, parse_iso7816_response};
+
+#[test]
+fn iso_append_record_helpers_preserve_two_byte_status() {
+    for line in include_str!("fixtures/iso7816-helper-vectors.txt")
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        let fields: Vec<&str> = line.split('|').collect();
+        let input = decode_hex(fields[1]);
+        if fields[0] == "append-record" {
+            assert_eq!(
+                iso_append_record_apdu(fields[2].parse().expect("SFI"), &input)
+                    .expect("valid APPEND RECORD"),
+                decode_hex(fields[3])
+            );
+        } else {
+            assert_eq!(fields[0], "parse-response");
+            let (data, status) = parse_iso7816_response(&input).expect("valid response");
+            assert_eq!(data, decode_hex(fields[2]));
+            assert_eq!(
+                status,
+                u16::from_str_radix(fields[3], 16).expect("status word")
+            );
+        }
+    }
+}
 
 fn frame(command: Command) -> Vec<u8> {
     let mut frame = vec![command.instruction];
@@ -39,39 +65,54 @@ fn construct(name: &str, arguments: &str) -> Command {
         "delete-file" => Command::delete_file(number()).expect("valid file"),
         "clear-record-file" => Command::clear_record_file(number()).expect("valid file"),
         "get-value" => Command::get_value(number()).expect("valid file"),
-        "read-data" => {
+        "read-data" | "read-data-iso-chaining" => {
             let fields: Vec<u32> = arguments
                 .split(',')
                 .map(|field| field.parse().expect("numeric field"))
                 .collect();
-            Command::read_data(fields[0] as u8, fields[1], fields[2]).expect("valid range")
+            if name == "read-data-iso-chaining" {
+                Command::read_data_iso_chaining(fields[0] as u8, fields[1], fields[2])
+                    .expect("valid range")
+            } else {
+                Command::read_data(fields[0] as u8, fields[1], fields[2]).expect("valid range")
+            }
         }
-        "write-data" | "write-record" => {
+        "write-data" | "write-data-iso-chaining" | "write-record" | "write-record-iso-chaining" => {
             let fields: Vec<&str> = arguments.split(',').collect();
             let file = fields[0].parse().expect("file number");
             let offset = fields[1].parse().expect("offset");
             let data = decode_hex(fields[2]);
-            if name == "write-data" {
-                Command::write_data(file, offset, &data).expect("valid write")
-            } else {
-                Command::write_record(file, offset, &data).expect("valid write")
+            match name {
+                "write-data" => Command::write_data(file, offset, &data),
+                "write-data-iso-chaining" => Command::write_data_iso_chaining(file, offset, &data),
+                "write-record" => Command::write_record(file, offset, &data),
+                _ => Command::write_record_iso_chaining(file, offset, &data),
             }
+            .expect("valid write")
         }
-        "read-records" => {
+        "read-records" | "read-records-iso-chaining" => {
             let fields: Vec<u32> = arguments
                 .split(',')
                 .map(|field| field.parse().expect("numeric field"))
                 .collect();
-            Command::read_records(fields[0] as u8, fields[1], fields[2]).expect("valid range")
+            if name == "read-records-iso-chaining" {
+                Command::read_records_iso_chaining(fields[0] as u8, fields[1], fields[2])
+                    .expect("valid range")
+            } else {
+                Command::read_records(fields[0] as u8, fields[1], fields[2]).expect("valid range")
+            }
         }
-        "update-record" => {
+        "update-record" | "update-record-iso-chaining" => {
             let fields: Vec<&str> = arguments.split(',').collect();
-            Command::update_record(
-                fields[0].parse().expect("file number"),
-                fields[1].parse().expect("record number"),
-                fields[2].parse().expect("offset"),
-                &decode_hex(fields[3]),
-            )
+            let file = fields[0].parse().expect("file number");
+            let record = fields[1].parse().expect("record number");
+            let offset = fields[2].parse().expect("offset");
+            let data = decode_hex(fields[3]);
+            if name == "update-record-iso-chaining" {
+                Command::update_record_iso_chaining(file, record, offset, &data)
+            } else {
+                Command::update_record(file, record, offset, &data)
+            }
             .expect("valid update")
         }
         "credit" | "debit" | "limited-credit" => {

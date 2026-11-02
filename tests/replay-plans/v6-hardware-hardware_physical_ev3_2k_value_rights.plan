@@ -1,0 +1,334 @@
+plan 1
+source v6-hardware-hardware_physical_ev3_2k_value_rights
+random finite
+credential 6055800106A12580010381020800820704112233445566830100850704010133001605860704010103001605A22780010F810101820103A91A3018800100811000000000000000000000000000000000820100AA00A300
+step field-off
+step scan
+step exchange CA1234560F02 00
+step exchange 5A123456 00
+step exchange CC0400EEEE00000000E80300006400000001 00
+step exchange DC041E000000 00
+step exchange C7 00
+step exchange 6C04 0046000000
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400FEFF 00
+step exchange F504 000200FEFF00000000E80300001E00000001
+step exchange 6C04 9D
+step exchange 0C0405000000 9D
+step exchange DC0405000000 9D
+step exchange 1C0405000000 9D
+step random-inject 333E42BF71779C4A
+step exchange 0A00 AFBDC42E795252CE73
+step exchange AFCEAD373DB80EABF8466CC7444075AB9C 00FB796C9AAFBF71D3
+step exchange 6C04 9D
+step exchange 0C0405000000 9D
+step exchange DC0405000000 9D
+step exchange 1C0405000000 9D
+step exchange 5A123456 00
+step random-inject 696010803E0563DA
+step exchange 0A01 AFBBFBCDC24326D5B3
+step exchange AFCEAD373DB80EABF86A76FC7E0CBB463B 00FB796C9AAFBF71D3
+step exchange 6C04 9D
+step exchange 0C0405000000 9D
+step exchange DC0405000000 9D
+step exchange 1C0405000000 9D
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400FE0F 00
+step exchange F504 000200FE0F00000000E80300001E00000001
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 9D
+step random-inject BD7337543919796E
+step exchange 0A00 AF338B077E8E7E96AA
+step exchange AFCEAD373DB80EABF8B88516D402844A43 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 9D
+step exchange 5A123456 00
+step random-inject CDE0E5DD9DF36957
+step exchange 0A01 AF484CB8ECCEFFD022
+step exchange AFCEAD373DB80EABF85F11CDC6AAC44E3F 00FB796C9AAFBF71D3
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 9D
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400FEF0 00
+step exchange F504 000200FEF000000000E80300001E00000001
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step random-inject 309382C23CBEC23E
+step exchange 0A00 AFD099653F22FC3F12
+step exchange AFCEAD373DB80EABF8C4C80CC90A20443F 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step exchange 5A123456 00
+step random-inject 141343BDC637A3F2
+step exchange 0A01 AF305DFBD8A9970739
+step exchange AFCEAD373DB80EABF883A8D086B0DC6242 00FB796C9AAFBF71D3
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F04000EFF 00
+step exchange F504 0002000EFF00000000E80300001E00000001
+step exchange 6C04 AE
+step exchange 0C0405000000 AE
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step random-inject F71FB2150C0E61BE
+step exchange 0A00 AFDB49845C2D05743A
+step exchange AFCEAD373DB80EABF81378891603E55431 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step exchange 5A123456 00
+step random-inject 7AF83E141B47FF3B
+step exchange 0A01 AF928D9B60A65C4933
+step exchange AFCEAD373DB80EABF8B2214DDD64C5A6B1 00FB796C9AAFBF71D3
+step exchange 6C04 AE
+step exchange 0C0405000000 AE
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400FEEF 00
+step exchange F504 000200FEEF00000000E80300001E00000001
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 9D
+step random-inject 1466BD5FEB56A534
+step exchange 0A00 AFB181A77AF3DA1B09
+step exchange AFCEAD373DB80EABF8BD037789332CA431 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 9D
+step exchange 5A123456 00
+step random-inject 6EF7B3A91CAAA3C9
+step exchange 0A01 AF84D8704E7A539820
+step exchange AFCEAD373DB80EABF860C1B2CAB85F567F 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 9D
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400FEFE 00
+step exchange F504 000200FEFE00000000E80300001E00000001
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step random-inject 9CC1926160453B87
+step exchange 0A00 AFD8D1E159B75D2521
+step exchange AFCEAD373DB80EABF88EF612CEBB88DC48 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step exchange 5A123456 00
+step random-inject C7D4D5B2B1F4DAEE
+step exchange 0A01 AF645C8CBEACA4E983
+step exchange AFCEAD373DB80EABF83E0878B2865BB2C3 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400EEFF 00
+step exchange F504 000200EEFF00000000E80300001E00000001
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step random-inject 7C512A2794657F7E
+step exchange 0A00 AF64AE30257F34AA56
+step exchange AFCEAD373DB80EABF86C40388E4D9975B2 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step exchange 5A123456 00
+step random-inject 99079E0DCD293A1C
+step exchange 0A01 AF0256DB5C89A25A5D
+step exchange AFCEAD373DB80EABF89A0F5331BFC2A382 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400EEEE 00
+step exchange F504 000200EEEE00000000E80300001E00000001
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step random-inject 68DD24094E7641A9
+step exchange 0A00 AFDB0F603A4D63680F
+step exchange AFCEAD373DB80EABF8CFB0F0F076E3C723 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step exchange 5A123456 00
+step random-inject EEFD7232AD44C1FF
+step exchange 0A01 AF420B5C8E8203BEE5
+step exchange AFCEAD373DB80EABF8E74D8B0140EF8341 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400FE1F 00
+step exchange F504 000200FE1F00000000E80300001E00000001
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 9D
+step random-inject 7EE1DF5392068AF5
+step exchange 0A00 AF24E97C1D1B741345
+step exchange AFCEAD373DB80EABF84DF904554B87E1E1 00FB796C9AAFBF71D3
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 9D
+step exchange 5A123456 00
+step random-inject AE127D24D6377172
+step exchange 0A01 AF53C5C95E0E5B46A5
+step exchange AFCEAD373DB80EABF8908A410052CBB190 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 9D
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F0400FEF1 00
+step exchange F504 000200FEF100000000E80300001E00000001
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step random-inject 246BC3D0CDDB8FC6
+step exchange 0A00 AF1FCEE7B111287D57
+step exchange AFCEAD373DB80EABF88F2BFC3753911B92 00FB796C9AAFBF71D3
+step exchange 6C04 AE
+step exchange 0C0405000000 9D
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step exchange 5A123456 00
+step random-inject 6AFF9B9D31B5F38B
+step exchange 0A01 AF9CCE19C030CC1091
+step exchange AFCEAD373DB80EABF809BE86305429C7D9 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 9D
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+step field-off
+step scan
+step exchange 5A123456 00
+step exchange 5F04001EFF 00
+step exchange F504 0002001EFF00000000E80300001E00000001
+step exchange 6C04 AE
+step exchange 0C0405000000 AE
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step random-inject 06AC2FDC4AF8653E
+step exchange 0A00 AFCF9B7D83DA7D7E7A
+step exchange AFCEAD373DB80EABF81CB7F46EE8681CD5 00FB796C9AAFBF71D3
+step exchange 6C04 AE
+step exchange 0C0405000000 AE
+step exchange DC0405000000 AE
+step exchange 1C0405000000 AE
+step exchange 5A123456 00
+step random-inject 5888EA2059F4EB50
+step exchange 0A01 AFDF407DEC68294FDB
+step exchange AFCEAD373DB80EABF86ECE590A1CF14E1D 00FB796C9AAFBF71D3
+step exchange 6C04 0046000000
+step exchange A7 0C
+step exchange 0C0405000000 00
+step exchange A7 00
+step exchange DC0405000000 00
+step exchange A7 00
+step exchange 1C0405000000 00
+step exchange A7 00
+final 6081BE800106A12580010381020800820704112233445566830100850704010133001605860704010103001605A22780010F810101820103A91A3018800100811000000000000000000000000000000000820100AA00A3693067800356341283010F840102850123A63430188001008110000000000000000000000000000000008201003018800101811000000000000000000000000000000000820100A721301F8001048101028201008302FF1EA610800100810203E882014683010184011E

@@ -7,7 +7,7 @@ name: physical EV3 4K, UpdateRecord access and full linear file
 case-id: hardware-physical-ev3-4k-048222f2cf1890-update-record-edges
 origin: physical-card
 source: captured hardware trace
-requires: auth-aes,ev3,record-files
+requires: record-files
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

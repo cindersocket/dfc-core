@@ -1,0 +1,52 @@
+plan 1
+source v4-emulator-multi_app
+random finite
+credential 6043800106A11380010181020800820704707172737475830100A22780010F810101820103A91A3018800100811000000000000000000000000000000000820100AA00A300
+step scan
+step assert credential.dirty 0
+step exchange 90CA000005A1B2C30F0100 9100
+step assert credential.dirty 1
+step assert credential.num_apps 1
+step clear-dirty
+step exchange 90CA000005A1B2C30F0100 91DE
+step assert credential.dirty 0
+step exchange 90CA000005A2B2C30F0100 9100
+step assert credential.dirty 1
+step assert credential.num_apps 2
+step clear-dirty
+step exchange 906A000000 A1B2C3A2B2C39100
+step exchange 905A000003A1B2C300 9100
+step exchange 90CD0000070400EEEE02000000 9100
+step assert credential.dirty 1
+step assert credential.num_files 1
+step assert files[0].app_index 0
+step clear-dirty
+step exchange 905A000003A2B2C300 9100
+step exchange 906F000000 9100
+step exchange 90CD0000070400EEEE03000000 9100
+step assert credential.dirty 1
+step assert credential.num_files 2
+step assert files[1].app_index 1
+step clear-dirty
+step exchange 906F000000 049100
+step exchange 905A000003A1B2C300 9100
+step exchange 906F000000 049100
+step exchange 905A00000300000000 9100
+step random-inject 0001020304050607
+step exchange 900A0000010000 491E890DE9ACE93291AF
+step exchange 90AF000010491E890DE9ACE932E9416AD3B58C583700 B7D1DA7CE0DD986B9100
+step exchange 90DA000003A1B2C300 9100
+step assert credential.dirty 1
+step assert credential.num_apps 1
+step assert credential.num_files 1
+step assert apps[0].aid C3B2A2
+step assert files[0].app_index 0
+step clear-dirty
+step random-inject 0001020304050607
+step exchange 900A0000010000 491E890DE9ACE93291AF
+step exchange 90AF000010491E890DE9ACE932E9416AD3B58C583700 B7D1DA7CE0DD986B9100
+step exchange 90FC000000 9100
+step assert credential.dirty 1
+step assert credential.num_apps 0
+step assert credential.num_files 0
+final 6043800106A11380010181020800820704707172737475830100A22780010F810101820103A91A3018800100811000000000000000000000000000000000820100AA00A300

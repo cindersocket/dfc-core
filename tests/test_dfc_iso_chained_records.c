@@ -12,9 +12,12 @@
 #include <string.h>
 
 enum {
+    ReadDataIso = 0xAD,
+    WriteDataIso = 0x8D,
     ReadRecordsIso = 0xAB,
     WriteRecordIso = 0x8B,
     RecordFile = 0x0A,
+    DataFile = 0x0B,
 };
 
 static const uint8_t Aid[] = {0x01, 0x02, 0x03};
@@ -25,7 +28,10 @@ typedef struct {
     DfcVirtualPiccSession* picc;
     DfcReaderSession reader;
     DfcFile* file;
+    DfcFile* data_file;
 } Fixture;
+
+static void activate_iso_dep(Fixture* fixture);
 
 static void fixture_open(
     Fixture* fixture,
@@ -51,6 +57,12 @@ static void fixture_open(
     fixture->file->state.record.count = record_count;
     munit_assert_true(
         dfc_file_resize(&fixture->credential, fixture->file, record_size * max_records));
+    fixture->data_file = dfc_credential_create_file(&fixture->credential, 0, DataFile);
+    munit_assert_not_null(fixture->data_file);
+    fixture->data_file->type = DFC_FILE_TYPE_STANDARD_DATA;
+    fixture->data_file->comm_settings = DFC_COMM_PLAIN;
+    fixture->data_file->access_rights = 0xEEEE;
+    munit_assert_true(dfc_file_resize(&fixture->credential, fixture->data_file, 300));
     fixture->picc = dfc_virtual_picc_session_alloc(&fixture->credential);
     munit_assert_not_null(fixture->picc);
     DfcVirtualPiccActivation activation;
@@ -208,6 +220,283 @@ static MunitResult test_raw_dispatch_and_errors(const MunitParameter params[], v
     fixture_close(&fixture);
     return MUNIT_OK;
 }
+
+static MunitResult test_data_alias_raw_dispatch(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    select_application_raw(&fixture);
+
+    const uint8_t write[] = {
+        0x90, WriteDataIso, 0, 0, 11, DataFile, 0, 0, 0, 4, 0, 0, 1, 2, 3, 4, 0};
+    uint8_t response[DFC_READER_MAX_RESPONSE];
+    size_t response_len;
+    exchange_apdu(&fixture, write, sizeof(write), response, &response_len);
+    assert_status(response, response_len, DFC_STATUS_OK);
+    const uint8_t expected[] = {1, 2, 3, 4};
+    munit_assert_memory_equal(
+        sizeof(expected), dfc_file_data(&fixture.credential, fixture.data_file), expected);
+
+    const uint8_t read[] = {0x90, ReadDataIso, 0, 0, 7, DataFile, 0, 0, 0, 4, 0, 0, 0};
+    exchange_apdu(&fixture, read, sizeof(read), response, &response_len);
+    assert_status(response, response_len, DFC_STATUS_OK);
+    munit_assert_size(response_len, ==, sizeof(expected) + 2);
+    munit_assert_memory_equal(sizeof(expected), response, expected);
+
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static void assert_native_status(const DfcByteBuf* response, uint8_t status) {
+    munit_assert_size(dfc_bytebuf_get_size_bytes(response), ==, 1);
+    munit_assert_uint8(dfc_bytebuf_get_byte(response, 0), ==, status);
+}
+
+static MunitResult
+    test_native_chain_failure_transitions(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    select_application_raw(&fixture);
+    DfcByteBuf response = {0};
+
+    uint8_t first[55] = {DFC_CMD_WRITE_DATA, DataFile, 0, 0, 0, 80, 0, 0};
+    memset(first + 8, 0x31, sizeof(first) - 8);
+    munit_assert_true(dfc_emulator_handle_command(
+        fixture.picc->emulator, first, sizeof(first), &response, NULL));
+    assert_native_status(&response, DFC_CMD_ADDITIONAL_FRAME);
+    munit_assert_true(fixture.picc->emulator->command_chain_active);
+
+    const uint8_t alternate[] = {WriteDataIso, DataFile, 0, 0, 0, 1, 0, 0, 0xA5};
+    dfc_bytebuf_reset(&response);
+    munit_assert_true(dfc_emulator_handle_command(
+        fixture.picc->emulator, alternate, sizeof(alternate), &response, NULL));
+    assert_native_status(&response, DFC_STATUS_COMMAND_ABORTED);
+    munit_assert_false(fixture.picc->emulator->command_chain_active);
+    munit_assert_null(fixture.picc->emulator->command_chain);
+
+    dfc_bytebuf_reset(&response);
+    munit_assert_true(dfc_emulator_handle_command(
+        fixture.picc->emulator, alternate, sizeof(alternate), &response, NULL));
+    assert_native_status(&response, DFC_STATUS_OK);
+    munit_assert_uint8(dfc_file_data(&fixture.credential, fixture.data_file)[0], ==, 0xA5);
+
+    dfc_bytebuf_reset(&response);
+    munit_assert_true(dfc_emulator_handle_command(
+        fixture.picc->emulator, first, sizeof(first), &response, NULL));
+    assert_native_status(&response, DFC_CMD_ADDITIONAL_FRAME);
+    const uint8_t empty_continuation[] = {DFC_CMD_ADDITIONAL_FRAME};
+    dfc_bytebuf_reset(&response);
+    munit_assert_true(dfc_emulator_handle_command(
+        fixture.picc->emulator, empty_continuation, sizeof(empty_continuation), &response, NULL));
+    assert_native_status(&response, DFC_STATUS_LENGTH_ERROR);
+    munit_assert_false(fixture.picc->emulator->command_chain_active);
+    munit_assert_null(fixture.picc->emulator->command_chain);
+
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_malformed_wrapped_command_retires_native_chain(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    select_application_raw(&fixture);
+    static const uint8_t malformed_instructions[] = {DFC_CMD_ADDITIONAL_FRAME, WriteDataIso};
+    for(size_t index = 0; index < sizeof(malformed_instructions); index++) {
+        DfcByteBuf native_response = {0};
+        const uint8_t staged_record[] = {WriteRecordIso, RecordFile, 0, 0, 0, 4, 0, 0, 1, 2, 3, 4};
+        munit_assert_true(dfc_emulator_handle_command(
+            fixture.picc->emulator, staged_record, sizeof(staged_record), &native_response, NULL));
+        assert_native_status(&native_response, DFC_STATUS_OK);
+        munit_assert_true(fixture.file->transaction_pending);
+        dfc_bytebuf_reset(&native_response);
+        uint8_t first[55] = {DFC_CMD_WRITE_DATA, DataFile, 0, 0, 0, 80, 0, 0};
+        memset(first + 8, 0x41, sizeof(first) - 8);
+        munit_assert_true(dfc_emulator_handle_command(
+            fixture.picc->emulator, first, sizeof(first), &native_response, NULL));
+        assert_native_status(&native_response, DFC_CMD_ADDITIONAL_FRAME);
+        munit_assert_true(fixture.picc->emulator->command_chain_active);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+        fixture.picc->emulator->ev2_session_active = true;
+        fixture.picc->emulator->ev2_authenticated_key_no = 0;
+#endif
+
+        const uint8_t malformed[] = {0x90, malformed_instructions[index], 0, 0, 1};
+        uint8_t response[8];
+        size_t response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                fixture.picc,
+                malformed,
+                sizeof(malformed),
+                response,
+                sizeof(response),
+                &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_memory_equal(2, response, ((uint8_t[]){0x91, DFC_STATUS_LENGTH_ERROR}));
+        munit_assert_false(fixture.picc->emulator->command_chain_active);
+        munit_assert_null(fixture.picc->emulator->command_chain);
+        munit_assert_false(fixture.file->transaction_pending);
+        munit_assert_uint32(fixture.file->state.record.count, ==, 0);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+        munit_assert_false(fixture.picc->emulator->ev2_session_active);
+#endif
+
+        const uint8_t standalone_af[] = {0x90, DFC_CMD_ADDITIONAL_FRAME, 0, 0, 0};
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                fixture.picc,
+                standalone_af,
+                sizeof(standalone_af),
+                response,
+                sizeof(response),
+                &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_memory_equal(
+            2, response, ((uint8_t[]){0x91, DFC_STATUS_ILLEGAL_COMMAND_CODE}));
+    }
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_iso_dep_malformed_continuation_recovers(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    select_application_raw(&fixture);
+    activate_iso_dep(&fixture);
+    uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    size_t response_len = 0;
+
+    const uint8_t first[] = {0x12, 0x90, WriteDataIso, 0, 0, 11, DataFile, 0, 0};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, first, sizeof(first), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(fixture.picc->pending_command_len, ==, sizeof(first) - 1);
+
+    const uint8_t malformed_final[] = {0x03, 0, 4, 0, 0, 1, 2, 3};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc,
+            malformed_final,
+            sizeof(malformed_final),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(fixture.picc->pending_command_len, ==, 0);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_LENGTH_ERROR);
+
+    const uint8_t valid[] = {
+        0x90, WriteDataIso, 0, 0, 11, DataFile, 0, 0, 0, 4, 0, 0, 9, 8, 7, 6, 0};
+    exchange_apdu(&fixture, valid, sizeof(valid), response, &response_len);
+    assert_status(response, response_len, DFC_STATUS_OK);
+    const uint8_t expected[] = {9, 8, 7, 6};
+    munit_assert_memory_equal(
+        sizeof(expected), dfc_file_data(&fixture.credential, fixture.data_file), expected);
+
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_iso_dep_duplicate_request_fragment_is_appended(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    activate_iso_dep(&fixture);
+    const uint8_t first[] = {0x12, DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_APPEND_RECORD, 0, 0};
+    uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, first, sizeof(first), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 1);
+    munit_assert_uint8(response[0], ==, 0xA2);
+    size_t pending_len = fixture.picc->pending_command_len;
+
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, first, sizeof(first), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 1);
+    munit_assert_uint8(response[0], ==, 0xA3);
+    // Genuine silicon appends a repeated fragment as a new one: a chained
+    // write whose repeat is sent twice ends in a length error, not success.
+    munit_assert_size(fixture.picc->pending_command_len, ==, 2 * pending_len);
+
+    const uint8_t malformed_final[] = {0x03, 5, 0xAA};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc,
+            malformed_final,
+            sizeof(malformed_final),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 3);
+    munit_assert_uint8(response[0], ==, 0x02);
+    munit_assert_memory_equal(2, response + 1, ((uint8_t[]){0x67, 0x00}));
+    munit_assert_size(fixture.picc->pending_command_len, ==, 0);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+static MunitResult
+    test_read_alias_response_retry_is_atomic(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    select_application_raw(&fixture);
+    DfcEmulator* emulator = fixture.picc->emulator;
+    emulator->ev2_session_active = true;
+    emulator->ev2_authenticated_key_no = 0;
+    emulator->ev2_command_counter = 7;
+    const uint8_t expected[] = {0x10, 0x20, 0x30, 0x40};
+    memcpy(dfc_file_data(&fixture.credential, fixture.data_file), expected, sizeof(expected));
+    const uint8_t read[] = {0x90, ReadDataIso, 0, 0, 7, DataFile, 0, 0, 0, 4, 0, 0, 0};
+    uint8_t response[DFC_READER_MAX_RESPONSE];
+    size_t response_len = SIZE_MAX;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.picc, read, sizeof(read), response, 1, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(response_len, ==, 0);
+    munit_assert_uint16(emulator->ev2_command_counter, ==, 8);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            fixture.picc, read, sizeof(read), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_uint16(emulator->ev2_command_counter, ==, 8);
+    assert_status(response, response_len, DFC_STATUS_OK);
+    munit_assert_memory_equal(sizeof(expected), response, expected);
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+#endif
 
 static MunitResult test_reader_round_trip_variants(const MunitParameter params[], void* data) {
     (void)params;
@@ -399,6 +688,282 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_pending_response_rejects_new_command(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    uint8_t* file_data = dfc_file_data(&fixture.credential, fixture.data_file);
+    for(size_t index = 0; index < fixture.data_file->data_len; index++)
+        file_data[index] = (uint8_t)index;
+    activate_iso_dep(&fixture);
+
+    uint8_t complete[DFC_READER_MAX_RESPONSE];
+    size_t requests, responses;
+    const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 3, 2, 1, 0};
+    size_t complete_len = exchange_iso_dep_command(
+        &fixture, select, sizeof(select), complete, sizeof(complete), &requests, &responses);
+    assert_status(complete, complete_len, DFC_STATUS_OK);
+
+    const uint8_t read[] = {ReadDataIso, DataFile, 0, 0, 0, 0, 0, 0};
+    uint8_t frame[1 + sizeof(read)];
+    frame[0] = (uint8_t)(0x02 | fixture.picc->expected_pcd_sequence);
+    memcpy(frame + 1, read, sizeof(read));
+    uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, frame, sizeof(frame), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_true((response[0] & 0x10) != 0);
+    uint8_t first_response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    size_t first_response_len = response_len;
+    memcpy(first_response, response, response_len);
+    size_t pending_len = fixture.picc->pending_response_len;
+    size_t pending_offset = fixture.picc->pending_response_offset;
+    uint8_t original = file_data[0];
+
+    uint8_t write[] = {0x02, WriteDataIso, DataFile, 0, 0, 0, 1, 0, 0, 0xA5};
+    write[0] = (uint8_t)(0x02 | fixture.picc->expected_pcd_sequence);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, write, sizeof(write), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_uint8(file_data[0], ==, original);
+    munit_assert_size(fixture.picc->pending_response_len, ==, pending_len);
+    munit_assert_size(fixture.picc->pending_response_offset, ==, pending_offset);
+
+    write[0] = (uint8_t)(0x02 | (fixture.picc->expected_pcd_sequence ^ 1u));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, write, sizeof(write), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_uint8(file_data[0], ==, original);
+    uint8_t retransmit = (uint8_t)(0xA2 | (fixture.picc->picc_sequence ^ 1u));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, &retransmit, 1, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, first_response_len);
+    munit_assert_memory_equal(first_response_len, response, first_response);
+
+    while(fixture.picc->pending_response_len > 0) {
+        uint8_t ack = (uint8_t)(0xA2 | fixture.picc->picc_sequence);
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_frame_exchange(
+                fixture.picc, &ack, 1, response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+    }
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_pending_read_response_blocks_command_classes(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t candidates[][9] = {
+        {DFC_CMD_ADDITIONAL_FRAME},
+        {WriteDataIso, DataFile, 0, 0, 0, 1, 0, 0, 0xA5},
+        {DFC_ISO7816_CLA_STANDARD, DFC_ISO7816_INS_UPDATE_BINARY, 0, 0, 1, 0xA5},
+    };
+    static const size_t candidate_lengths[] = {1, 9, 6};
+
+    for(size_t read_variant = 0; read_variant < 2; read_variant++) {
+        for(size_t candidate_index = 0; candidate_index < 3; candidate_index++) {
+            Fixture fixture;
+            fixture_open(&fixture, 160, 3, 1);
+            uint8_t* data_bytes = dfc_file_data(&fixture.credential, fixture.data_file);
+            memset(data_bytes, 0x3C, fixture.data_file->data_len);
+            memset(dfc_file_data(&fixture.credential, fixture.file), 0x6D, 160);
+            activate_iso_dep(&fixture);
+            uint8_t complete[DFC_READER_MAX_RESPONSE];
+            size_t requests, responses;
+            const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 3, 2, 1, 0};
+            size_t length = exchange_iso_dep_command(
+                &fixture,
+                select,
+                sizeof(select),
+                complete,
+                sizeof(complete),
+                &requests,
+                &responses);
+            assert_status(complete, length, DFC_STATUS_OK);
+            fixture.picc->iso_file_selected = true;
+            fixture.picc->iso_file_index = (size_t)(fixture.data_file - fixture.credential.files);
+
+            const uint8_t data_read[] = {ReadDataIso, DataFile, 0, 0, 0, 0, 0, 0};
+            const uint8_t record_read[] = {ReadRecordsIso, RecordFile, 0, 0, 0, 1, 0, 0};
+            const uint8_t* read = read_variant ? record_read : data_read;
+            uint8_t read_frame[9] = {(uint8_t)(0x02 | fixture.picc->expected_pcd_sequence)};
+            memcpy(read_frame + 1, read, 8);
+            uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+            size_t response_len = 0;
+            munit_assert_int(
+                dfc_virtual_picc_iso_dep_frame_exchange(
+                    fixture.picc,
+                    read_frame,
+                    sizeof(read_frame),
+                    response,
+                    sizeof(response),
+                    &response_len),
+                ==,
+                DfcVirtualPiccStatusOk);
+            munit_assert_true((response[0] & 0x10) != 0);
+            size_t pending_len = fixture.picc->pending_response_len;
+            size_t pending_offset = fixture.picc->pending_response_offset;
+
+            uint8_t candidate_frame[10] = {(uint8_t)(0x02 | fixture.picc->expected_pcd_sequence)};
+            memcpy(
+                candidate_frame + 1,
+                candidates[candidate_index],
+                candidate_lengths[candidate_index]);
+            munit_assert_int(
+                dfc_virtual_picc_iso_dep_frame_exchange(
+                    fixture.picc,
+                    candidate_frame,
+                    1 + candidate_lengths[candidate_index],
+                    response,
+                    sizeof(response),
+                    &response_len),
+                ==,
+                DfcVirtualPiccStatusProtocolError);
+            munit_assert_size(fixture.picc->pending_response_len, ==, pending_len);
+            munit_assert_size(fixture.picc->pending_response_offset, ==, pending_offset);
+            for(size_t byte = 0; byte < fixture.data_file->data_len; byte++)
+                munit_assert_uint8(data_bytes[byte], ==, 0x3C);
+            fixture_close(&fixture);
+        }
+    }
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_deselect_retires_transport_and_session(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 4, 4, 0);
+    activate_iso_dep(&fixture);
+    fixture.picc->emulator->ev2_session_active = true;
+    fixture.picc->emulator->ev2_authenticated_key_no = 0;
+    fixture.picc->emulator->ev2_command_counter = 9;
+
+    const uint8_t get_version[] = {0x02, 0x90, DFC_CMD_GET_VERSION, 0, 0, 0};
+    uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, get_version, sizeof(get_version), response, 1, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_size(fixture.picc->pending_command_len, >, 0);
+    munit_assert_size(fixture.picc->pending_response_len, >, 0);
+
+    const uint8_t deselect[] = {0xC2};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, deselect, sizeof(deselect), response, 0, &response_len),
+        ==,
+        DfcVirtualPiccStatusBufferTooSmall);
+    munit_assert_true(fixture.picc->iso_dep_selected);
+    munit_assert_size(fixture.picc->pending_response_len, >, 0);
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc, deselect, sizeof(deselect), response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_memory_equal(sizeof(deselect), response, deselect);
+    munit_assert_false(fixture.picc->iso_dep_selected);
+    munit_assert_size(fixture.picc->pending_command_len, ==, 0);
+    munit_assert_size(fixture.picc->pending_response_len, ==, 0);
+    munit_assert_false(fixture.picc->emulator->command_chain_active);
+    munit_assert_false(fixture.picc->emulator->ev2_session_active);
+    munit_assert_int(
+        fixture.picc->emulator->selected_application, ==, DfcEmulatorSelectedApplicationPicc);
+
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
+static MunitResult test_large_request_boundaries(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    Fixture fixture;
+    fixture_open(&fixture, 80, 3, 1);
+    activate_iso_dep(&fixture);
+    uint8_t complete[DFC_READER_MAX_RESPONSE];
+    size_t requests, responses;
+    const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 3, 2, 1, 0};
+    size_t length = exchange_iso_dep_command(
+        &fixture, select, sizeof(select), complete, sizeof(complete), &requests, &responses);
+    assert_status(complete, length, DFC_STATUS_OK);
+
+    uint8_t alternate[8 + 180] = {WriteDataIso, DataFile};
+    alternate[5] = 180;
+    for(size_t index = 0; index < 180; index++)
+        alternate[8 + index] = (uint8_t)(index ^ 0x5A);
+    uint8_t single_frame[1 + sizeof(alternate)];
+    single_frame[0] = (uint8_t)(0x02 | fixture.picc->expected_pcd_sequence);
+    memcpy(single_frame + 1, alternate, sizeof(alternate));
+    uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_frame_exchange(
+            fixture.picc,
+            single_frame,
+            sizeof(single_frame),
+            response,
+            sizeof(response),
+            &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
+    munit_assert_memory_equal(
+        180, dfc_file_data(&fixture.credential, fixture.data_file), alternate + 8);
+
+    static const uint8_t canonical[] = {
+        DFC_CMD_WRITE_DATA, DFC_CMD_WRITE_RECORD, DFC_CMD_UPDATE_RECORD};
+    for(size_t variant = 0; variant < sizeof(canonical); variant++) {
+        uint8_t command[11 + 60] = {0};
+        size_t header = canonical[variant] == DFC_CMD_UPDATE_RECORD ? 11 : 8;
+        command[0] = canonical[variant];
+        command[1] = canonical[variant] == DFC_CMD_WRITE_DATA ? DataFile : RecordFile;
+        command[header - 3] = 60;
+        memset(command + header, 0x77, 60);
+        length = exchange_iso_dep_command(
+            &fixture, command, header + 60, complete, sizeof(complete), &requests, &responses);
+        munit_assert_size(length, ==, 1);
+        munit_assert_uint8(complete[0], ==, DFC_STATUS_LENGTH_ERROR);
+    }
+
+    fixture.picc->iso_file_selected = true;
+    fixture.picc->iso_file_index = (size_t)(fixture.data_file - fixture.credential.files);
+    uint8_t update_binary[5 + 180] = {0, DFC_ISO7816_INS_UPDATE_BINARY, 0, 0, 180};
+    memset(update_binary + 5, 0xC3, 180);
+    length = exchange_iso_dep_command(
+        &fixture,
+        update_binary,
+        sizeof(update_binary),
+        complete,
+        sizeof(complete),
+        &requests,
+        &responses);
+    munit_assert_size(length, ==, 2);
+    munit_assert_memory_equal(2, complete, ((uint8_t[]){0x90, 0x00}));
+    for(size_t index = 0; index < 180; index++)
+        munit_assert_uint8(dfc_file_data(&fixture.credential, fixture.data_file)[index], ==, 0xC3);
+
+    fixture_close(&fixture);
+    return MUNIT_OK;
+}
+
 static MunitResult test_full_extent(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -539,11 +1104,47 @@ static MunitResult test_retired_request_retry(const MunitParameter params[], voi
 static MunitTest tests[] = {
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
     {"/retired-request-retry", test_retired_request_retry, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/read-alias-response-retry-atomic",
+     test_read_alias_response_retry_is_atomic,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #endif
     {"/raw-emulator-response", test_raw_emulator_response, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/full-extent", test_full_extent, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/raw-dispatch-and-errors",
      test_raw_dispatch_and_errors,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/data-alias-raw-dispatch",
+     test_data_alias_raw_dispatch,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/native-chain-failure-transitions",
+     test_native_chain_failure_transitions,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/malformed-wrapped-retires-native-chain",
+     test_malformed_wrapped_command_retires_native_chain,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-dep-malformed-continuation-recovers",
+     test_iso_dep_malformed_continuation_recovers,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-dep-duplicate-request-fragment",
+     test_iso_dep_duplicate_request_fragment_is_appended,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
@@ -556,6 +1157,30 @@ static MunitTest tests[] = {
      NULL},
     {"/iso-dep-transport-continuations",
      test_iso_dep_transport_continuations,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/pending-response-rejects-new-command",
+     test_pending_response_rejects_new_command,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/pending-read-response-blocks-command-classes",
+     test_pending_read_response_blocks_command_classes,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/deselect-retires-transport-and-session",
+     test_deselect_retires_transport_and_session,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/large-request-boundaries",
+     test_large_request_boundaries,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

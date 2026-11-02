@@ -1,0 +1,208 @@
+# PROVENANCE: measured from a factory-fresh genuine DESFire EV3 2K with Proxmark3 on 2026-11-01
+# (random UID; PICC master key at its all-zero default). Same card and batch as
+# hardware_physical_ev3_2k_value_rights.vec.
+# PROVISIONAL BATCH "value-rights-2026-11-01": carries `capture-batch: value-rights-2026-11-01` and
+# `capture-status: provisional`, so it can be thrown away with the rest of the batch if the card
+# proves faulty (see docs/capture-batches.md).
+#
+# What this measures: how a value file in ENCIPHERED mode (communication mode 03) treats Debit and
+# Credit sent plain and sent enciphered, depending on which right authorises the command and which
+# key the session holds. The application has two keys at their zero default. Authentication is
+# real DES (legacy), the card's random recovered from its first answer and replayed with
+# `inject-random`. Enciphered commands use the legacy session key (RndA[0..3]||RndB[0..3], both
+# key halves being equal) and "send mode" DES: amount, CRC16, zero padding.
+# Observed:
+#   * Unauthenticated, a free right makes the command plain and it works plain.
+#   * Authenticated, if the session key matches ANY right that can authorise the command, the
+#     file's mode applies and the command must be enciphered (the plain form answers 7E).
+#   * Authenticated, if the key matches none of them but one of them is free, the command is plain
+#     (the enciphered form answers 7E).
+#   * So the mode follows the right that actually authorised the command, not the Write right.
+name: genuine EV3 2K enciphered value file, Debit and Credit plain versus enciphered by authorising right (provisional batch)
+case-id: hardware-physical-ev3-2k-value-comm-modes
+origin: physical-card
+capture-batch: value-rights-2026-11-01
+capture-status: provisional
+feature-version: 6
+source: physical-card-proxmark3
+requires: auth-d40
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# fixture: application 123456 with two keys and an enciphered value file 4 (one committed Debit of 30 first, in plain mode)
+field-off
+scan
+exchange native CA1234560F02 => 00
+exchange native 5A123456 => 00
+exchange native CC0400EEEE00000000E80300006400000001 => 00
+exchange native DC041E000000 => 00
+exchange native C7 => 00
+exchange native 5F0403EEEE => 00
+exchange native 6C04 => 0046000000
+
+# enciphered value file, control: write key0 only
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0403FEF0 => 00
+exchange native F504 => 000203FEF000000000E80300001E00000001
+exchange native DC0405000000 => AE
+exchange native 5A123456 => 00
+inject-random E3E0563262737D78
+exchange native 0A00 => AF7C6187362B9DB827
+exchange native AFCEAD373DB80EABF8B0F2D07B530496B9 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC046C791797CD535A2A => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => 9D
+exchange native 0C046C791797CD535A2A => 9D
+exchange native 5A123456 => 00
+inject-random C4DEA9E944FAE052
+exchange native 0A01 => AF164168202AC83280
+exchange native AFCEAD373DB80EABF8AF891C7E5DE5C46F => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => AE
+exchange native DC0427BBBFB8E3CA0B7C => AE
+exchange native 0C0405000000 => 9D
+exchange native 0C0427BBBFB8E3CA0B7C => 9D
+
+# enciphered value file, reviewer: read key1, write free, read&write key0
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F04030E1E => 00
+exchange native F504 => 0002030E1E00000000E80300001E00000001
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random 6AEA17FC63C5EAC1
+exchange native 0A00 => AFC6CCE960A7F5155A
+exchange native AFCEAD373DB80EABF826E0DE984C6989E8 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC04CE11DF19B5938281 => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => 7E
+exchange native 0C04CE11DF19B5938281 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random 29B9C63084698BC5
+exchange native 0A01 => AFB7BE132A0B3E9AA3
+exchange native AFCEAD373DB80EABF89CE1D5D04C6691DD => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC04FCAC29CBB98904E3 => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => AE
+exchange native 0C04FCAC29CBB98904E3 => AE
+
+# enciphered value file, read key1, write key0
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0403FE10 => 00
+exchange native F504 => 000203FE1000000000E80300001E00000001
+exchange native DC0405000000 => AE
+exchange native 5A123456 => 00
+inject-random FCBD48B96364821F
+exchange native 0A00 => AFA2BC27195EB30C1E
+exchange native AFCEAD373DB80EABF8A337D347828E8616 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC04AFEB9B4B9B453889 => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => 9D
+exchange native 0C04AFEB9B4B9B453889 => 9D
+exchange native 5A123456 => 00
+inject-random FF971AEA13181F6E
+exchange native 0A01 => AFBDE931D5BD06E8E9
+exchange native AFCEAD373DB80EABF86F1921FC3310C32B => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC0485190BEC1844CA18 => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => 9D
+exchange native 0C0485190BEC1844CA18 => 9D
+
+# enciphered value file, free read, write key0
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0403FEE0 => 00
+exchange native F504 => 000203FEE000000000E80300001E00000001
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random CD826D618B28282E
+exchange native 0A00 => AF3F495BE3B59A5A5C
+exchange native AFCEAD373DB80EABF855CF7F7D797471B5 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC0461B9A543AB7C7270 => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => 9D
+exchange native 0C0461B9A543AB7C7270 => 9D
+exchange native 5A123456 => 00
+inject-random AB8A0F94C4869FFB
+exchange native 0A01 => AF142EADD3DD2E2AC3
+exchange native AFCEAD373DB80EABF87D5C55B18262EC51 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native DC047A9E834A2C800031 => 7E
+exchange native 0C0405000000 => 9D
+exchange native 0C047A9E834A2C800031 => 9D
+
+# enciphered value file, free read, free write, read&write key0
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F04030EEE => 00
+exchange native F504 => 0002030EEE00000000E80300001E00000001
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random B50FCBC4E3D74D59
+exchange native 0A00 => AF5C83518F45D7615C
+exchange native AFCEAD373DB80EABF8D3009F676FE454B1 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC04A473309C973CD948 => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => 7E
+exchange native 0C04A473309C973CD948 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random FF4A85B58C156AAA
+exchange native 0A01 => AF95EBC6948B8D15AB
+exchange native AFCEAD373DB80EABF88A6C17C83F82776F => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native DC0463DC3B8620CF36DC => 7E
+exchange native 0C0405000000 => AE
+exchange native 0C0463DC3B8620CF36DC => AE
+
+# enciphered value file, read&write key0 only
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F04030EFF => 00
+exchange native F504 => 0002030EFF00000000E80300001E00000001
+exchange native DC0405000000 => AE
+exchange native 5A123456 => 00
+inject-random 5255D54D29B44AB8
+exchange native 0A00 => AF5390B39E7E2F6DCD
+exchange native AFCEAD373DB80EABF87616526220DED878 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => 7E
+exchange native DC04D95AE6C01E13AFA3 => 00
+exchange native A7 => 00
+exchange native 0C0405000000 => 7E
+exchange native 0C04D95AE6C01E13AFA3 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random 2942C706BEE126B5
+exchange native 0A01 => AF69861E809B8E2FE4
+exchange native AFCEAD373DB80EABF8804893C68BE63164 => 00FB796C9AAFBF71D3
+exchange native DC0405000000 => AE
+exchange native DC04B108783AD5A999A2 => AE
+exchange native 0C0405000000 => AE
+exchange native 0C04B108783AD5A999A2 => AE

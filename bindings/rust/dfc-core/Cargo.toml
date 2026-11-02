@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "../README.md"
-exclude = ["tests/generated_bindings.rs"]
+exclude = ["tests/generated_bindings.rs", "tests/replay_plans.rs"]
 
 [features]
 default = ["bundled", "role-simulator", "profile-full-ev3"]

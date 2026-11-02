@@ -29,6 +29,50 @@ AUTHENTICATE_ISO = 0x1A
 AUTHENTICATE_AES = 0xAA
 
 
+def build_iso_append_record_apdu(short_file_id: int, data: bytes) -> bytes:
+    """Build a standard ISO/IEC 7816 APPEND RECORD command APDU.
+
+    Args:
+        short_file_id: Zero for the current file, or an SFI from 1 through 30.
+        data: Non-empty record data to append.
+
+    Returns:
+        The complete short- or extended-length command APDU.
+
+    Raises:
+        ValueError: If the SFI or record-data length is invalid.
+    """
+
+    payload = bytes(data)
+    if not 0 <= short_file_id <= 0x1E:
+        raise ValueError("short file identifier is out of range")
+    if not payload or len(payload) > 0xFFFF:
+        raise ValueError("record data length is out of range")
+    p2 = short_file_id << 3
+    if len(payload) <= 0xFF:
+        return bytes((0x00, 0xE2, 0x00, p2, len(payload))) + payload
+    return bytes((0x00, 0xE2, 0x00, p2, 0x00)) + len(payload).to_bytes(2, "big") + payload
+
+
+def parse_iso7816_response(response: bytes) -> tuple[bytes, int]:
+    """Return response data and the unsigned two-byte ISO status word.
+
+    Args:
+        response: Complete response APDU including SW1 and SW2.
+
+    Returns:
+        Response data and its unsigned status word.
+
+    Raises:
+        ValueError: If the response does not contain SW1 and SW2.
+    """
+
+    value = bytes(response)
+    if len(value) < 2:
+        raise ValueError("ISO response must include SW1 and SW2")
+    return value[:-2], int.from_bytes(value[-2:], "big")
+
+
 def _closed_enum(value: int, enum_type: type[Framing | CommunicationMode], name: str) -> int:
     """Validate a closed wire-domain value without changing binding error behavior."""
     narrowed = N.unsigned(value, 8, name)
@@ -349,13 +393,16 @@ class Command:
         return cls.file_operation(0x6C, file_number)
 
     @classmethod
-    def read_data(cls, file_number: int, offset: int, length: int) -> Command:
+    def read_data(
+        cls, file_number: int, offset: int, length: int, *, iso_chaining: bool = False
+    ) -> Command:
         """Build ReadData with unsigned 24-bit offset and length fields.
 
         Args:
             file_number: File number from 0 through 31.
             offset: Unsigned 24-bit byte offset.
             length: Unsigned 24-bit requested byte count; zero means to end.
+            iso_chaining: Select the ISO-DEP chained instruction variant.
 
         Returns:
             The unframed native command with little-endian numeric fields.
@@ -368,7 +415,7 @@ class Command:
         if not 0 <= offset < 1 << 24 or not 0 <= length < 1 << 24:
             raise ValueError("read-data field is out of range")
         return cls(
-            0xBD,
+            0xAD if iso_chaining else 0xBD,
             bytes((file_number,)) + offset.to_bytes(3, "little") + length.to_bytes(3, "little"),
         )
 
@@ -390,13 +437,16 @@ class Command:
         )
 
     @classmethod
-    def write_data(cls, file_number: int, offset: int, data: bytes) -> Command:
+    def write_data(
+        cls, file_number: int, offset: int, data: bytes, *, iso_chaining: bool = False
+    ) -> Command:
         """Build WriteData.
 
         Args:
             file_number: File number from 0 through 31.
             offset: Unsigned 24-bit byte offset.
             data: Payload copied into the command.
+            iso_chaining: Select the ISO-DEP chained instruction variant.
 
         Returns:
             The unframed native command.
@@ -405,16 +455,26 @@ class Command:
             ValueError: If a field is out of range or the payload exceeds one frame.
         """
 
-        return cls._range_with_data(0x3D, file_number, offset, bytes(data))
+        return cls._range_with_data(
+            0x8D if iso_chaining else 0x3D, file_number, offset, bytes(data)
+        )
 
     @classmethod
-    def read_records(cls, file_number: int, record_number: int, count: int) -> Command:
+    def read_records(
+        cls,
+        file_number: int,
+        record_number: int,
+        count: int,
+        *,
+        iso_chaining: bool = False,
+    ) -> Command:
         """Build ReadRecords.
 
         Args:
             file_number: File number from 0 through 31.
             record_number: Unsigned 24-bit first record number.
             count: Unsigned 24-bit record count; zero means all remaining records.
+            iso_chaining: Select the ISO-DEP chained instruction variant.
 
         Returns:
             The unframed native command.
@@ -424,16 +484,19 @@ class Command:
         """
 
         command = cls.read_data(file_number, record_number, count)
-        return cls(0xBB, command.data)
+        return cls(0xAB if iso_chaining else 0xBB, command.data)
 
     @classmethod
-    def write_record(cls, file_number: int, offset: int, data: bytes) -> Command:
+    def write_record(
+        cls, file_number: int, offset: int, data: bytes, *, iso_chaining: bool = False
+    ) -> Command:
         """Build WriteRecord.
 
         Args:
             file_number: File number from 0 through 31.
             offset: Unsigned 24-bit byte offset within the record.
             data: Payload copied into the command.
+            iso_chaining: Select the ISO-DEP chained instruction variant.
 
         Returns:
             The unframed native command.
@@ -442,11 +505,19 @@ class Command:
             ValueError: If a field is out of range or the payload exceeds one frame.
         """
 
-        return cls._range_with_data(0x3B, file_number, offset, bytes(data))
+        return cls._range_with_data(
+            0x8B if iso_chaining else 0x3B, file_number, offset, bytes(data)
+        )
 
     @classmethod
     def update_record(
-        cls, file_number: int, record_number: int, offset: int, data: bytes
+        cls,
+        file_number: int,
+        record_number: int,
+        offset: int,
+        data: bytes,
+        *,
+        iso_chaining: bool = False,
     ) -> Command:
         """Build UpdateRecord.
 
@@ -455,6 +526,7 @@ class Command:
             record_number: Unsigned 24-bit record number.
             offset: Unsigned 24-bit byte offset within the record.
             data: Payload copied into the command.
+            iso_chaining: Select the ISO-DEP chained instruction variant.
 
         Returns:
             The unframed native command.
@@ -467,8 +539,9 @@ class Command:
             raise ValueError("record number is out of range")
         if len(data) > MAX_UPDATE_DATA:
             raise ValueError("command data does not fit one native frame")
-        tail = cls._range_with_data(0xDB, file_number, offset, bytes(data)).data
-        return cls(0xDB, tail[:1] + record_number.to_bytes(3, "little") + tail[1:])
+        instruction = 0xBA if iso_chaining else 0xDB
+        tail = cls._range_with_data(instruction, file_number, offset, bytes(data)).data
+        return cls(instruction, tail[:1] + record_number.to_bytes(3, "little") + tail[1:])
 
     @classmethod
     def _value_operation(cls, instruction: int, file_number: int, amount: int) -> Command:

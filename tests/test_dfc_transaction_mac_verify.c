@@ -98,6 +98,40 @@ static MunitResult
 }
 
 static MunitResult
+    test_iso_chaining_opcodes_are_preserved(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const uint8_t commands[] = {
+        DFC_CMD_READ_DATA_ISO,
+        DFC_CMD_WRITE_DATA_ISO,
+        DFC_CMD_READ_RECORDS_ISO,
+        DFC_CMD_WRITE_RECORD_ISO,
+    };
+    for(size_t index = 0; index < sizeof(commands); index++) {
+        uint8_t input[32] = {0};
+        DfcTransactionMacVerifier verifier;
+        init_captured(&verifier, input, sizeof(input));
+        const uint8_t payload = 0xA5;
+        bool writes = commands[index] == DFC_CMD_WRITE_DATA_ISO ||
+                      commands[index] == DFC_CMD_WRITE_RECORD_ISO;
+        munit_assert_int(
+            dfc_transaction_mac_add_data(
+                &verifier,
+                commands[index],
+                1,
+                0,
+                writes ? 1 : 0,
+                writes ? &payload : NULL,
+                writes ? 1 : 0),
+            ==,
+            DfcTransactionMacOk);
+        munit_assert_uint8(input[0], ==, commands[index]);
+        dfc_transaction_mac_verifier_clear(&verifier);
+    }
+    return MUNIT_OK;
+}
+
+static MunitResult
     test_errors_are_atomic_and_clear_wipes(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -324,6 +358,12 @@ static MunitTest tests[] = {
     {"/captured-credit", test_captured_credit_receipt, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/structured-input",
      test_structured_inputs_are_canonical,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/iso-chaining-opcodes",
+     test_iso_chaining_opcodes_are_preserved,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

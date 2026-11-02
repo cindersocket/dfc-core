@@ -1,0 +1,39 @@
+# CreateStdDataFile, CreateBackupDataFile and CreateValueFile must refuse access
+# rights that name a key the application does not have. The application here has
+# one key, so key 3 does not exist (only free 0xE and denied 0xF are allowed
+# beyond key 0).
+#
+# NOT MEASURED on a genuine card: this follows ChangeFileSettings, which already
+# refuses the same thing, and a credential holding such a file is refused when
+# it is loaded, so the card and a restored credential must agree.
+
+name: create file rejects unknown key references
+case-id: create-file-rejects-unknown-key-references
+origin: synthetic
+requires: backup-files,record-files
+source: tests/vectors/desfire/v6/synthetic/create-file-rejects-unknown-key-references.vec
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+# Application 010203 with one key, selected.
+status   90CA0000050102030F0100 => 00
+status   905A00000301020300 => 00
+# Std data file: key 3 named as the read right (wire bytes 00 3E).
+status   90CD0000070100003E04000000 => 9E
+# Backup data file: key 3 named as the change right.
+status   90CD0000070100EE3E04000000 => 9E
+status   90CB0000070200EEE304000000 => 9E
+# Value file: key 3 named as the read&write right. The starting value (0F) is inside
+# its limits (0A..14), so the refusal can only be about the rights.
+status   90CC0000110200EE3E0A000000140000000F0000000000 => 9E
+# Linear record file: key 3 named as the write right.
+status   90C100000A0300EE3E10000003000000 => 9E
+# The same files with free rights are created (controls: they prove the 9E above
+# came from the rights and from nothing else).
+status   90CD0000070100EEEE04000000 => 00
+status   90CC0000110200EEEE0A000000140000000F0000000000 => 00
+status   90C100000A0300EEEE10000003000000 => 00

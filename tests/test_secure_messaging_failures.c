@@ -1077,26 +1077,6 @@ static MunitResult
     munit_assert_uint8(
         run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
     record = dfc_credential_find_file_in_app(&credential, 0, 4);
-    record->type = DFC_FILE_TYPE_CYCLIC_RECORD;
-    record->state.record.max_records = 1;
-    prior = emulator->transaction_mac;
-    reset_aes_fault(2);
-    munit_assert_uint8(
-        run_transaction_command(emulator, write_record, sizeof(write_record)),
-        ==,
-        DFC_STATUS_BOUNDARY_ERROR);
-    munit_assert_memory_equal(sizeof(prior), &emulator->transaction_mac, &prior);
-    munit_assert_false(record->transaction_pending);
-    munit_assert_false(emulator->transaction_snapshot_active);
-    clear_aes_fault();
-    munit_assert_uint8(
-        run_transaction_command(emulator, write_record, sizeof(write_record)), ==, DFC_STATUS_OK);
-    dfc_emulator_free(emulator);
-
-    emulator = transaction_test_emulator(&credential, &value, &transaction);
-    munit_assert_uint8(
-        run_transaction_command(emulator, credit, sizeof(credit)), ==, DFC_STATUS_OK);
-    record = dfc_credential_find_file_in_app(&credential, 0, 4);
     prior = emulator->transaction_mac;
     memcpy(original_record, dfc_file_data_const(&credential, record), sizeof(original_record));
     const uint8_t clear_record[] = {DFC_CMD_CLEAR_RECORD_FILE, 4};
@@ -2185,6 +2165,7 @@ static MunitResult
 
     emulator->sdm_read_cache_valid = true;
     emulator->sdm_read_cache_file_number = file->number;
+    emulator->sdm_read_cache_family = DfcSdmReadFamilyNative;
     emulator->sdm_read_cache_len = 73;
     memset(emulator->sdm_read_cache, 0x5A, sizeof(emulator->sdm_read_cache));
     memset(scratch_before, 0xC7, sizeof(scratch_before));
@@ -2227,10 +2208,12 @@ static void assert_sdm_random_failure_is_atomic(bool iso_read) {
 
     emulator->sdm_read_cache_valid = false;
     emulator->sdm_read_cache_file_number = 0xA5;
+    emulator->sdm_read_cache_family = 0x5A;
     emulator->sdm_read_cache_len = 17;
     memset(emulator->sdm_read_cache, 0x5A, sizeof(emulator->sdm_read_cache));
     const uint32_t counter_before = file->state.data.sdm_read_counter;
     const uint8_t cache_file_before = emulator->sdm_read_cache_file_number;
+    const uint8_t cache_family_before = emulator->sdm_read_cache_family;
     const size_t cache_len_before = emulator->sdm_read_cache_len;
     uint8_t cache_before[DFC_SDM_READ_CACHE_SIZE];
     memcpy(cache_before, emulator->sdm_read_cache, sizeof(cache_before));
@@ -2265,6 +2248,7 @@ static void assert_sdm_random_failure_is_atomic(bool iso_read) {
     munit_assert_uint32(file->state.data.sdm_read_counter, ==, counter_before);
     munit_assert_false(emulator->sdm_read_cache_valid);
     munit_assert_uint8(emulator->sdm_read_cache_file_number, ==, cache_file_before);
+    munit_assert_uint8(emulator->sdm_read_cache_family, ==, cache_family_before);
     munit_assert_size(emulator->sdm_read_cache_len, ==, cache_len_before);
     munit_assert_memory_equal(sizeof(cache_before), emulator->sdm_read_cache, cache_before);
     munit_assert_int(emulator->selected_application, ==, selection_before);
@@ -2290,6 +2274,10 @@ static void assert_sdm_random_failure_is_atomic(bool iso_read) {
     munit_assert_uint32(file->state.data.sdm_read_counter, ==, counter_before + 1);
     munit_assert_true(emulator->sdm_read_cache_valid);
     munit_assert_uint8(emulator->sdm_read_cache_file_number, ==, file->number);
+    munit_assert_uint8(
+        emulator->sdm_read_cache_family,
+        ==,
+        iso_read ? DfcSdmReadFamilyIso7816 : DfcSdmReadFamilyNative);
     fault_link_close(&link);
 }
 

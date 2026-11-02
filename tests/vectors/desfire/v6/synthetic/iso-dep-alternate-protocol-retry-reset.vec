@@ -1,0 +1,42 @@
+# PROVENANCE: Synthetic raw ISO-DEP regression for alternate command transport state.
+name: alternate ISO-DEP wrong-sequence retry and field reset
+case-id: iso-dep-alternate-protocol-retry-reset
+origin: synthetic
+feature-version: 6
+source: generated alternate ISO-DEP transport regression
+requires: record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+
+scan
+exchange native-apdu 90CA00000E4F49D30F22E110D276000085010000 => 9100
+exchange native-apdu 905A0000034F49D300 => 9100
+exchange native CD0114E100E0EE100000 => 00
+exchange native C10300EEEE080000030000 => 00
+
+# Fragment an alternate WriteData APDU. The card never checks the reader's block
+# number, so a repeated first I-block is a new fragment: the APDU is longer than
+# its Lc, the final block ends in a native length error, and nothing is written
+# (measured on genuine EV3 silicon).
+frame-exchange E080 => 0565810280
+frame-exchange 12908D00000B010000 => A2
+frame-exchange 12908D00000B010000 => A3
+frame-exchange 0300040000DEADBEEF00 => 02917E
+assert files[0].data = 00000000000000000000000000000000
+
+# Field loss retires an unfinished alternate WriteRecord request. After a new
+# activation the record file is still untouched and accepts a normal command.
+# The duplicate above advanced the card's block number past the reader's.
+frame-exchange 12908B00000F030000 => A3
+field-off
+assert files[1].data = 000000000000000000000000000000000000000000000000
+scan
+exchange native-apdu 905A0000034F49D300 => 9100
+exchange native-apdu 903B00000F03000000080000111213141516171800 => 9100
+exchange native-apdu 90C7000000 => 9100
+exchange native-apdu 90BB0000070300000001000000 => 11121314151617189100
+field-off

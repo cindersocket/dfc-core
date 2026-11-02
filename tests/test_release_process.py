@@ -217,6 +217,7 @@ class ReleaseProcessTests(unittest.TestCase):
             "v6-auth-commands.dfcb": ROOT / "examples/credentials/v6-auth-commands.dfcb",
             "command-constructor-vectors.txt": ROOT / "tests/command-constructor-vectors.txt",
             "command-constructor-boundaries.txt": ROOT / "tests/command-constructor-boundaries.txt",
+            "iso7816-helper-vectors.txt": ROOT / "tests/iso7816-helper-vectors.txt",
         }
         for name, canonical in fixtures.items():
             with self.subTest(fixture=name):
@@ -230,7 +231,11 @@ class ReleaseProcessTests(unittest.TestCase):
         self.assertNotIn("../../../../tests/", sources)
 
         manifest = (ROOT / "bindings/rust/dfc-core/Cargo.toml").read_text(encoding="utf-8")
-        self.assertIn('exclude = ["tests/generated_bindings.rs"]', manifest)
+        # Both tests read files outside the package (the generated bindings, the committed
+        # replay plans), so neither may ship in the published crate.
+        self.assertIn(
+            'exclude = ["tests/generated_bindings.rs", "tests/replay_plans.rs"]', manifest
+        )
 
 
 if __name__ == "__main__":

@@ -8,4 +8,4 @@ cd "$root"
 # munit is vendored; generated bindings and unrelated languages live elsewhere.
 find src ffi port bindings/jni tests -type f \( -name '*.c' -o -name '*.h' \) \
     ! -path 'tests/munit/*' -print0 \
-    | xargs -0 uvx --from clang-format==21.1.7 clang-format --dry-run --Werror
+    | xargs -0 uvx --from clang-format==22.1.8 clang-format --dry-run --Werror

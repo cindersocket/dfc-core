@@ -1,0 +1,26 @@
+# Converted from tests/test_dfc_ev1_conformance.c test /file-number-out-of-range (now removed): the literal
+# APDUs and statuses the unit test asserted are replayed here byte for byte,
+# and the engine's answers are the ones the test required. File number 0x20 is a parameter error for record, value and transaction MAC files too (the standard data file case is ev1_file-number-out-of-range.vec); once file 1 exists, creating it again as another family is a duplicate, except a transaction MAC file whose creation is a parameter error.
+
+name: vecB ev1: file number 0x20 across file families
+case-id: vecb-ev1-file-number-out-of-range-families
+origin: synthetic
+requires: transaction-mac
+source: tests/test_dfc_ev1_conformance.c /file-number-out-of-range
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050102030F0100 => 00
+status   905A00000301020300 => 00
+status   90C100000A2000EEEE01000002000000 => 9E
+status   90CC0000112000EEEE0000000000000000000000000000 => 9E
+status   90CE0000162000EEEF02000000000000000000000000000000000000 => 9E
+status   90CD0000070100EEEE01000000 => 00
+status   90C100000A0100EEEE01000002000000 => DE
+status   90CC0000110100EEEE0000000000000000000000000000 => DE
+status   90CE0000160100EEEF02000000000000000000000000000000000000 => 9E
+assert   credential.num_files = 1

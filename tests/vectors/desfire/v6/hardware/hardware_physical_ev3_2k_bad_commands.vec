@@ -1,0 +1,322 @@
+# PROVENANCE: measured from a second genuine DESFire EV3 2K with Proxmark3 (random UID).
+# The card presents a 4-byte random ID, so replay uses a fixed 7-byte UID; no
+# frame under test depends on it. FormatPICC is permanently disabled on this card.
+# Frames were built as raw wire bytes. Each section is independent: it selects the
+# application and, where state matters, sets that state first. The card is nearly
+# out of memory, so creation attempts answer 0E and FreeMem reports zero; those
+# describe this card's fill level rather than the emulator's and are recorded in
+# the comments of the sections they appear in.
+name: genuine EV3 2K native and ISO bad commands and bad parameters
+case-id: hardware-physical-ev3-2k-bad-commands
+origin: physical-card
+feature-version: 6
+source: physical-card-proxmark3
+requires: record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-format-disabled: 1
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+
+# Equivalent freely provisioned replay fixture: application 123456 with ISO file
+# ids, standard file 1 (16 bytes) and linear record files 2 and 3
+# (four 4-byte records). Access is free, so no authentication is replayed.
+scan
+status 905A00000300000000 => 00
+status 90CA0000071234560F2100E100 => 00
+status 905A00000312345600 => 00
+status 90CD00000901011000EEEE10000000 => 00
+status 90C100000C02021000EEEE04000004000000 => 00
+status 90C100000C03031000EEEE04000004000000 => 00
+status 908D00001701000000100000A0A1A2A3A4A5A6A7A8A9AAABACADAEAF00 => 00
+
+# N1 GetFileSettings: valid, absent, reserved range, out of range
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390F50000010100 => 030000EEEE1000009100
+frame-exchange 0290F50000010900 => 0291F0
+frame-exchange 0390F50000011F00 => 0391F0
+frame-exchange 0290F50000012000 => 02919E
+frame-exchange 0390F5000001FF00 => 03919E
+
+# N1b GetFileSettings parameter lengths: none, two bytes
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390F5000000 => 03917E
+frame-exchange 0290F5000002010200 => 02917E
+
+# N4 WriteData: valid, beyond end, at end, record file, absent file, zero length, bad file range
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03903D00001701000000100000A0A1A2A3A4A5A6A7A8A9AAABACADAEAF00 => 039100
+frame-exchange 02903D000009010F0000020000A0A100 => 0291BE
+frame-exchange 03903D00000801100000010000A000 => 0391BE
+frame-exchange 02903D00000B02000000040000A0A1A2A300 => 02919D
+frame-exchange 03903D00000809000000010000A000 => 0391F0
+frame-exchange 02903D0000070100000000000000 => 02919E
+frame-exchange 03903D00000820000000010000A000 => 03919E
+
+# N6 WriteRecord and ClearRecordFile: std file, absent, too long, clear std file, clear absent
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03903B00000B01000000040000A0A1A2A300 => 03919D
+frame-exchange 02903B00000B09000000040000A0A1A2A300 => 0291F0
+frame-exchange 03903B00000C02000000050000A0A1A2A3A400 => 0391BE
+frame-exchange 0290EB0000010100 => 02919D
+frame-exchange 0390EB0000010900 => 0391F0
+frame-exchange 0290EB0000012000 => 02919E
+
+# N7 CommitTransaction / AbortTransaction: idle, with a stray byte
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390C7000000 => 03910C
+frame-exchange 0290A7000000 => 02910C
+frame-exchange 0390C70000010000 => 03910C
+frame-exchange 0290A70000010000 => 02917E
+
+# N8 value commands on a data file and an absent file
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03906C0000010100 => 03919D
+frame-exchange 02906C0000010900 => 0291F0
+frame-exchange 03900C000005010100000000 => 03919D
+frame-exchange 0290DC000005010100000000 => 02919D
+frame-exchange 03901C000005010100000000 => 03919D
+frame-exchange 02906C000000 => 02917E
+
+# A1 SelectApplication: absent, short parameter, long parameter, no parameter
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03905A00000365432100 => 0391A0
+frame-exchange 02905A000002123400 => 02917E
+frame-exchange 03905A0000041234560000 => 03917E
+frame-exchange 02905A000000 => 02917E
+
+# A2 Key read commands: version of key 0, absent key 0E, reserved 3F, no parameter, extra byte; key settings with a stray byte
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390640000010000 => 03009100
+frame-exchange 0290640000010E00 => 029140
+frame-exchange 0390640000013F00 => 039140
+frame-exchange 029064000000 => 02917E
+frame-exchange 039064000002000000 => 03917E
+frame-exchange 029045000000 => 020F019100
+frame-exchange 0390450000010000 => 03917E
+
+# A3 Directory commands inside the application: ISO ids, file ids, DF names, free memory, application ids
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 039061000000 => 030110021003109100
+frame-exchange 02906F000000 => 020102039100
+frame-exchange 03906D000000 => 03919D
+# The next exchange is FreeMem. The card answered 00 00 00 (no memory left) because it was
+# full. The emulator reports its own pool, so the three free-memory bytes are matched
+# loosely (`??`); every other byte, and every exchange after it, is as captured.
+frame-exchange 02906E000000 => 02??????9100
+frame-exchange 03906A000000 => 03919D
+
+# A4 Directory commands at PICC level with a stray byte
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03905A00000300000000 => 039100
+frame-exchange 02906A0000010000 => 02917E
+frame-exchange 03906E0000010000 => 03917E
+frame-exchange 02906D0000010000 => 02917E
+
+# A5 PICC level: application management without authentication (all refused or length errors)
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 03905A00000300000000 => 039100
+frame-exchange 0290DA00000365432100 => 0291AE
+frame-exchange 0390DA00000312345600 => 0391AE
+# The next exchange is CreateApplication on the full card. The card answered 91 0E (out of
+# memory); a replay has memory, so the emulator succeeds. The status byte is matched
+# loosely (`??`), which means this one exchange does NOT pin the card's answer, and the
+# frames after it are exactly as captured.
+frame-exchange 0290CA0000056543210F2100 => 0291??
+frame-exchange 0390CA0000051234560F2100 => 0391DE
+frame-exchange 0290CA00000312345600 => 02917E
+frame-exchange 0390CA0000066543210F0F2100 => 03917E
+frame-exchange 0290FC000000 => 02911C
+frame-exchange 0390FC0000010000 => 03917E
+
+# A6 Create file errors inside the application: duplicate number, number out of range, zero size, bad communication mode, duplicate ISO id
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390CD00000901011000EEEE10000000 => 0391DE
+frame-exchange 0290CD00000920091000EEEE10000000 => 02919E
+frame-exchange 0390CD00000905051000EEEE00000000 => 03919E
+# The next exchange is CreateStdDataFile with communication mode 02 on the full card. The
+# card answered 91 0E (out of memory), before it looked at the mode. The status byte is
+# matched loosely (`??`), so this exchange does NOT pin the card's answer; the frames
+# after it are exactly as captured.
+frame-exchange 0290CD00000905051002EEEE10000000 => 0291??
+frame-exchange 0390CD00000905011000EEEE10000000 => 0391DE
+frame-exchange 0290CD00000605051000EEEE00 => 02917E
+frame-exchange 0390CD00000A05051000EEEE1000000000 => 03917E
+
+# A7 Delete file errors: absent, out of range, no parameter
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390DF0000010900 => 0391F0
+frame-exchange 0290DF0000012000 => 02919E
+frame-exchange 0390DF000000 => 03917E
+frame-exchange 0290DF000002010200 => 02917E
+
+# I1 Other CLA families and unsupported ISO instructions
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 038060000000 => 031C
+frame-exchange 02A060000000 => 021C
+frame-exchange 030C60000000 => 037E
+frame-exchange 02FF60000000 => 021C
+frame-exchange 0300CA000000 => 036D00
+frame-exchange 0200CB000000 => 026D00
+frame-exchange 0300CA006600 => 036D00
+frame-exchange 020044000000 => 026D00
+frame-exchange 0300B1000000 => 036D00
+frame-exchange 0200D0000000 => 026D00
+frame-exchange 0300E0000000 => 036D00
+frame-exchange 0200E4000000 => 026D00
+
+# I2 ISO SELECT by file id: P2 00 and 0C are accepted, 04 and 08 are 6A86; P1 00 with an
+# EF id is 6A82, P1 03 without data is 6A87, P1 08 is 6A86, an absent name is 6A82.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300A4020C021001 => 039000
+frame-exchange 0200A40200021001 => 029000
+frame-exchange 0300A40204021001 => 036A86
+frame-exchange 0200A40208021001 => 026A86
+frame-exchange 0300A4020002 => 036A87
+frame-exchange 0200A4000C023F00 => 029000
+frame-exchange 0300A4040C06AAAAAAAAAAAA => 036A82
+frame-exchange 0200A4010C021001 => 026A82
+frame-exchange 0300A4030C021001 => 036A87
+frame-exchange 0200A4080C021001 => 026A86
+frame-exchange 0300A4000C021001 => 036A82
+
+# I3 ISO READ BINARY P1/P2 forms on file 1: 15-bit offset, SFI form with offset, Le variants
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0300A4020C021001 => 039000
+frame-exchange 0200B0000800 => 02A8A9AAABACADAEAF9000
+frame-exchange 0300B0008000 => 036985
+frame-exchange 0200B0810800 => 02A8A9AAABACADAEAF9000
+frame-exchange 0300B0810F01 => 03AF9000
+frame-exchange 0200B0810F02 => 02AF9000
+frame-exchange 0300B0811000 => 036985
+frame-exchange 0200B0000001 => 02A09000
+frame-exchange 0300B0000000 => 03A0A1A2A3A4A5A6A7A8A9AAABACADAEAF9000
+
+# N5r ReadRecords with explicit setup (file 2 holds D1..)
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010200 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 03903B00000B02000000040000D1D2D3D400 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0390BB0000070200000000000000 => 03D1D2D3D49100
+frame-exchange 0290BB0000070201000000000000 => 0291BE
+frame-exchange 0390BB0000070200000001000000 => 03D1D2D3D49100
+frame-exchange 0290BB0000070200000002000000 => 0291BE
+frame-exchange 0390BB0000070202000000000000 => 0391BE
+
+# I4 ISO APPEND RECORD errors (file 2 cleared first): short data, one byte accepted, no data, absent SFI, P1 set
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010200 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4020C021002 => 039000
+frame-exchange 0200E2000004A1A2A3 => 026700
+frame-exchange 0300E200000100 => 039000
+frame-exchange 0200E20000 => 026700
+frame-exchange 0300E2004804A1A2A3A4 => 036A82
+frame-exchange 0200E2010004A1A2A3A4 => 026A86
+frame-exchange 0300B2010400 => 03000000009000
+frame-exchange 0200B2020400 => 026985
+
+# N2 ReadData: boundary errors BE, absent file F0, record file 9D, file numbers above 1F are 9E
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390BD0000070100000010000000 => 03A0A1A2A3A4A5A6A7A8A9AAABACADAEAF9100
+frame-exchange 0290BD0000070110000001000000 => 0291BE
+frame-exchange 0390BD0000070120000001000000 => 0391BE
+frame-exchange 0290BD0000070100000011000000 => 0291BE
+frame-exchange 0390BD0000070900000010000000 => 0391F0
+frame-exchange 0290BD0000070200000004000000 => 02919D
+frame-exchange 0390BD0000072000000010000000 => 03919E
+frame-exchange 0290BD0000077F00000001000000 => 02919E
+frame-exchange 0390BD000007FF00000001000000 => 03919E
+frame-exchange 0290BD0000040100000000 => 02917E
+frame-exchange 0390BD000008010000001000000000 => 03917E
+
+# U1 UpdateRecord on a linear record file with room and on a full one. Measured: with
+# room, record 0 updates; once all four records are written, UpdateRecord answers 91 BE
+# (boundary error), and a fifth WriteRecord is refused the same way. Each CommitTransaction
+# after a refusal answers 0C because nothing is pending.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 03903B00000B03000000040000A1A2A3A400 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0390BA00000E03000000000000040000B1B2B3B400 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0390BB0000070300000000000000 => 03B1B2B3B49100
+frame-exchange 02903B00000B03000000040000C1C2C3C400 => 029100
+frame-exchange 0390C7000000 => 039100
+frame-exchange 02903B00000B03000000040000D1D2D3D400 => 029100
+frame-exchange 0390C7000000 => 039100
+frame-exchange 02903B00000B03000000040000E1E2E3E400 => 029100
+frame-exchange 0390C7000000 => 039100
+frame-exchange 0290BA00000E03010000000000040000F1F2F3F400 => 0291BE
+frame-exchange 0390C7000000 => 03910C
+frame-exchange 0290BB0000070300000000000000 => 02B1B2B3B4C1C2C3C4D1D2D3D4E1E2E3E49100
+frame-exchange 03903B00000B030000000400009999999900 => 0391BE
+frame-exchange 0290C7000000 => 02910C

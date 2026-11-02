@@ -45,8 +45,8 @@
     },
     {
       "path": "v4/emulator/ev1_authenticate-wrong-algorithm.vec",
-      "sha256": "d4bb56256d24cef30d3d14c593d8122819bba958bf28524e69f681fa9063ed9c",
-      "size": 935,
+      "sha256": "4d6370c02f39bdd9de9276d29f34ca307cec1a76bb72a9aff4a5122fa0ebd33d",
+      "size": 916,
       "role": "emulator-vector",
       "metadata": {
         "name": "ev1 conformance: authenticate-wrong-algorithm",
@@ -451,8 +451,8 @@
     },
     {
       "path": "v4/emulator/ev3_record-order-update-clear.vec",
-      "sha256": "0280a4962e766e76a4ddfde56ac370007a876d27226f58612eb5b70005468040",
-      "size": 1631,
+      "sha256": "2be8ba5509a310780de50a307b87500631740ddf9c2e33bb2e91188c5239848e",
+      "size": 1627,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV3 record files expose newest-first ordering and transactional update and clear",
@@ -465,8 +465,8 @@
     },
     {
       "path": "v4/emulator/hardware_ev2_4k_directory_issue1.vec",
-      "sha256": "e04873ab7697b8d1f13557eb5bf1295777201419229c5658d9354e47e0ef04bf",
-      "size": 725,
+      "sha256": "f98a715623de758bc48d7052bc41211a166305055ed8e69eb8d7a6c0aba2720b",
+      "size": 711,
       "role": "emulator-vector",
       "metadata": {
         "name": "captured EV2 application directory and file settings",
@@ -843,8 +843,8 @@
     },
     {
       "path": "v4/emulator/hardware_genuine_ev3_4k_identity.vec",
-      "sha256": "f3a1c6245cd362175258572fcb382e06c8e41e2cb0b459f926cdc739dda339ab",
-      "size": 847,
+      "sha256": "b1deecac967737e2f20c7b20f3b376b34025016c334568efded1e709cb55cacf",
+      "size": 843,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 identity, version chain, and copyable static signature",
@@ -927,8 +927,8 @@
     },
     {
       "path": "v4/emulator/lifecycle.vec",
-      "sha256": "ce7dcdbf98c01733ddd6b2993b50370d282e3a080d7eac1fc38974db285f7d80",
-      "size": 2782,
+      "sha256": "e6bbff758f216aacc02530c1e504d9126a3807b85b2f34b5710a2dd167c51bf4",
+      "size": 2922,
       "role": "emulator-vector",
       "metadata": {
         "name": "application and file lifecycle",
@@ -1025,8 +1025,8 @@
     },
     {
       "path": "v4/emulator/modeled_ev3_sdm_random_id_plain_uid.vec",
-      "sha256": "690338241bd89942bb91f7fc7a26be72cc49f8dc0bf0be453e5416c69851ceff",
-      "size": 607,
+      "sha256": "9278b785d8ee477514045b9b5dad50d885c259077a24295d553c6e64c7eaa2d2",
+      "size": 754,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV3 Random ID plain UID mirror",
@@ -1039,8 +1039,8 @@
     },
     {
       "path": "v4/emulator/modeled_ev3_sdm_ten_byte_encrypted_uid.vec",
-      "sha256": "9113da53fe74c4eff41df3d983c05cbd42560feedd087f9a33b1e99bd0558fc5",
-      "size": 937,
+      "sha256": "0a9e3edc87a9a7339477a8b2508cd04d71cab0e8c6ad829ded7cde419be017a1",
+      "size": 1084,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV3 ten-byte UID encrypted PICC data",
@@ -1206,6 +1206,20 @@
       }
     },
     {
+      "path": "v4/emulator/prfX-ev1-delete-file-free-create-delete-change-never.vec",
+      "sha256": "49de04e3063dc7107e58e235913c6f6187fe9967b106d1269c3b60c977b59dcd",
+      "size": 1213,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "prfX ev1: DeleteFile under free create/delete ignores ChangeAccess never",
+        "case-id": "prfx-ev1-delete-file-free-create-delete-change-never",
+        "source": "tests/test_dfc_ev1_conformance.c /delete-file-free-create-delete",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 8
+      }
+    },
+    {
       "path": "v4/emulator/probe_blank_card.vec",
       "sha256": "6e988712420f04577fab51386f0bb8ccde4c26ede2edc1af9dc13397b4699bae",
       "size": 932,
@@ -1221,7 +1235,7 @@
     },
     {
       "path": "v4/emulator/probe_reader_sequence.vec",
-      "sha256": "59f92296ed2b0818199a68a3389a6fb378d80563b9b9543a27197029fe4f46f4",
+      "sha256": "de87d96692b7911ce7f6fcb117032d2c4320a4d10981c37178994011e47ad846",
       "size": 1707,
       "role": "emulator-vector",
       "metadata": {
@@ -1249,8 +1263,8 @@
     },
     {
       "path": "v4/emulator/value_comm_limited_options.vec",
-      "sha256": "894af8b420db7c34fa365661410b739eee85295e3f2566c39ef38daf159a3eef",
-      "size": 2081,
+      "sha256": "d6fab1c95dace69763057f0faf199bc685fc7f0f4d228ed65f490e4eec4bda18",
+      "size": 2336,
       "role": "emulator-vector",
       "metadata": {
         "name": "value file comm settings and LimitedCredit",
@@ -1315,6 +1329,188 @@
         "origin": "synthetic",
         "replayable": true,
         "steps": 32
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-create-file-beyond-capacity-2k.vec",
+      "sha256": "033038343992ee2016aa823a9dcbc24f46ba638bfb8920c0d9ac3a798a029bbe",
+      "size": 1140,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: 2 KiB card capacity limits",
+        "case-id": "vecb-ev1-create-file-beyond-capacity-2k",
+        "source": "tests/test_dfc_ev1_conformance.c /create-file-beyond-capacity",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 8
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-create-file-full-application.vec",
+      "sha256": "0e90466615fea5a6dbdd1074219d413c1e1aa21c430cd1fd51919f912fce3bda",
+      "size": 2488,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: create-file-full-application",
+        "case-id": "vecb-ev1-create-file-full-application",
+        "source": "tests/test_dfc_ev1_conformance.c /create-file-count-matrix",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 41
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-create-file-full-pool.vec",
+      "sha256": "255fdd7f2189943db804811a370afee0d424a36072395d20726dc3f2a7e2640b",
+      "size": 2446,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: create-file-full-pool",
+        "case-id": "vecb-ev1-create-file-full-pool",
+        "source": "tests/test_dfc_ev1_conformance.c /create-file-count-matrix",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 41
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-file-number-out-of-range-families.vec",
+      "sha256": "6a6c8d249f95c42facdb269c5dd798ae2b77e695647ecadb9950528e4a446128",
+      "size": 1377,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: file number 0x20 across file families",
+        "case-id": "vecb-ev1-file-number-out-of-range-families",
+        "source": "tests/test_dfc_ev1_conformance.c /file-number-out-of-range",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 11
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-get-iso-file-ids-ev3-frame-limit.vec",
+      "sha256": "be6b0b453568525425224631f6d1a99f4ddd65bd7b9130d43db391c1efc836f7",
+      "size": 2597,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: EV3 GetISOFileIDs frame limit",
+        "case-id": "vecb-ev1-get-iso-file-ids-ev3-frame-limit",
+        "source": "tests/test_dfc_ev1_conformance.c /get-iso-file-ids-chains-when-many",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 37
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-get-version-extra-data.vec",
+      "sha256": "ad7b64bd704701d1d9c3026f855ef5d0f426478ee40133780e42d6ca6fe5338d",
+      "size": 761,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: GetVersion rejects extra data",
+        "case-id": "vecb-ev1-get-version-extra-data",
+        "source": "tests/test_dfc_ev1_conformance.c /get-version-rejects-extra-data",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 4
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-native-write-data-chaining.vec",
+      "sha256": "0326cceadab9f7df1576cfc6a29efb46cc770f0cbe6ced9896a4487f3ee4614d",
+      "size": 1546,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: native WriteData chaining",
+        "case-id": "vecb-ev1-native-write-data-chaining",
+        "source": "tests/test_dfc_ev1_conformance.c /native-write-data-chaining",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 10
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-record-iso-file-id-collision.vec",
+      "sha256": "917bd00bf00b58f404baff3bfadaf837777dc5128a45dc580744718fae62379a",
+      "size": 853,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: record file ISO FID collision",
+        "case-id": "vecb-ev1-record-iso-file-id-collision",
+        "source": "tests/test_dfc_ev1_conformance.c /record-iso-file-id-collision",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 6
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-ev1-record-transaction-visibility.vec",
+      "sha256": "2625d7df7af99e84cb1536567b1dcdc11f36ea3d37eed51098079f97365387fd",
+      "size": 1277,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ev1: record write and clear visibility",
+        "case-id": "vecb-ev1-record-transaction-visibility",
+        "source": "tests/test_dfc_ev1_conformance.c /record-transaction-visibility",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 13
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-iso-read-binary-short-eof-ev1.vec",
+      "sha256": "e47382189584884f54d6399722e98b8cdf3e702e80cbfdef2023f7d8f1cfbff7",
+      "size": 1579,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ISO READ BINARY end of file on EV1",
+        "case-id": "vecb-iso-read-binary-short-eof-ev1",
+        "source": "tests/test_dfc_iso_file_access.c#/ev1-read-binary-reports-short-eof",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 11
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-iso-read-binary-short-eof-ev2.vec",
+      "sha256": "f5fa1af8c6d0a211c88d3695c9c0af2e9ef093f9736e80b85309e3ae44d993f3",
+      "size": 1579,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ISO READ BINARY end of file on EV2",
+        "case-id": "vecb-iso-read-binary-short-eof-ev2",
+        "source": "tests/test_dfc_iso_file_access.c#/ev1-read-binary-reports-short-eof",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 11
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-iso-read-binary-short-eof-ev3.vec",
+      "sha256": "8754ed3d5b89bc07a3789490033e88fac0b3b050ea16bb81dfa6dd8f0f859322",
+      "size": 1579,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB ISO READ BINARY end of file on EV3",
+        "case-id": "vecb-iso-read-binary-short-eof-ev3",
+        "source": "tests/test_dfc_iso_file_access.c#/ev1-read-binary-reports-short-eof",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 11
+      }
+    },
+    {
+      "path": "v4/emulator/vecb-mutation-aes-change-key-oversized.vec",
+      "sha256": "cd17fed3857fc097fca32386bbf5d98e46054fb0e433ceba20bbb6fb6c29528c",
+      "size": 1504,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "vecB AES ChangeKey oversized body",
+        "case-id": "vecb-mutation-aes-change-key-oversized",
+        "source": "tests/test_dfc_virtual_picc_mutation_vectors.c#/aes-change-key-integrity-error-preserves-key",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 8
       }
     },
     {
@@ -1473,8 +1669,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_048222f2cf1890_authenticated_app_directory.vec",
-      "sha256": "d8c81e35a34868bd697fbbf0096a4e8c48db5e5e015e523f897a8d6dc395c3c3",
-      "size": 2899,
+      "sha256": "7425fffbdd35e8f59f7a1f2cff3c589cb4edd92be7577d591731a725878121dd",
+      "size": 2895,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 4K, authenticated application directory",
@@ -1487,8 +1683,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_048222f2cf1890_authenticated_file_ids.vec",
-      "sha256": "a87095a73047ac361966fb5408ee4b35733beb7f4ba9fe92f54dd9664c114c76",
-      "size": 2911,
+      "sha256": "f7f5cd699e9936290daaec05b267eb43e6f0b58eb8c03e5a79680e1c460924e0",
+      "size": 2907,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 4K, authenticated ISO file IDs",
@@ -1501,8 +1697,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_048222f2cf1890_update_record_edges.vec",
-      "sha256": "ad7b5d6af9fc8185e2bed34612534f5b69e72c539c4a1ada289e188575167246",
-      "size": 1894,
+      "sha256": "a82158943c60a9ece738be99789a63ff25625c6f9261c2161eb9b257f004fc7e",
+      "size": 1881,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 4K, UpdateRecord access and full linear file",
@@ -1515,8 +1711,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_3k3des_comm_modes.vec",
-      "sha256": "af2380e95536f790380bbfe9d8c7750d69e1ef8c1b5762fe657f221a7a1413be",
-      "size": 5651,
+      "sha256": "b27f9e5af651fa19e2801c587faba07bc57f601c86bf88df65780b346287ebd4",
+      "size": 5647,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, ISO 3K3DES session read and write in every comm mode",
@@ -1529,8 +1725,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_3k3des_handshakes.vec",
-      "sha256": "4e16cde3eb5b834663a41e5e1dfcdf9b64e0d52bba1443d3666304c238ed7a9e",
-      "size": 3368,
+      "sha256": "e23fc5d739238616e5b4176742c66a4437652bcafc0af5284c5f0b9d0f76b2b5",
+      "size": 3355,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, ISO authentication and ChangeKey on a 3K3DES key",
@@ -1543,8 +1739,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_access_rights.vec",
-      "sha256": "a98b3ceee54188866483928ce098b32ee4b0392ba57bb69037430a89ef0bc25b",
-      "size": 4803,
+      "sha256": "cc85b9bc4ce94995e497ee1fd7a616dfe5f3dc1538f6b3018646c5c0b45c270c",
+      "size": 4799,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, asymmetric access rights under authentication",
@@ -1557,8 +1753,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_aes_comm_modes.vec",
-      "sha256": "eee63dd1445fe58097e13004bb91bd23a112be7986715c2bf17a701959001faf",
-      "size": 5372,
+      "sha256": "ae3a4e85f62e146c18ee24052a7125cba660df2d87bf4cb20c37e2075956c8b5",
+      "size": 5368,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, AES session read and write in every comm mode",
@@ -1571,8 +1767,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_chaining.vec",
-      "sha256": "6b69ccc7391d4dc09d6f224283d293f8fa7f8bf297491dbad01d176c68cfff4d",
-      "size": 3512,
+      "sha256": "211c899e38bad6f5454314f0891e00a64f2c2897e0c1d61d5d293cbc6488f62f",
+      "size": 3508,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, chained read under an AES session",
@@ -1585,8 +1781,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_d40_comm_modes.vec",
-      "sha256": "b0496dcc8e71b3bafb4db7b090405da4c6fff63520f1e8a41d9c845f8c62cf2c",
-      "size": 4095,
+      "sha256": "c61004a794f31d818800aeb343ac7eec049aaea1b64290b5efb6b5e5b0a3f84b",
+      "size": 4081,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, D40 session read and write in every comm mode",
@@ -1599,8 +1795,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_free_create.vec",
-      "sha256": "a0882d31414cd910c81dd1663670239144c1c81e582ce384feef1bb39aef7cea",
-      "size": 3588,
+      "sha256": "f6b15171328446b4a8b050ac0d0bf2835cea0956fa355cdcc306ff31ecf58b13",
+      "size": 3574,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, application-level free file creation",
@@ -1613,8 +1809,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_free_memory.vec",
-      "sha256": "4c19b7f2197d07f429620d5a1e03a841b0df23f93ec873453fce99d24a8777fc",
-      "size": 5730,
+      "sha256": "1c25bc19c205978754b87257131acb68251fe1e89f4c4318237856f697d131e9",
+      "size": 5716,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, free memory as applications and files come and go",
@@ -1627,8 +1823,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_handshakes.vec",
-      "sha256": "1f593a2f0eb866881ee4dbb7d255dd7e23a9a7d2bfe7ccf762e1eff2f37128b8",
-      "size": 4209,
+      "sha256": "c49e380ebb74005f755e73fdc443995612538f9696af0dc1fe0948f592f80dc5",
+      "size": 4196,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, the three authentication handshakes",
@@ -1641,8 +1837,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_identity.vec",
-      "sha256": "bb1fc1b9231dc7cc3771c92056a0889086251670c070d9eb5a7f871c3b77f1ab",
-      "size": 2421,
+      "sha256": "74832742826dc087a7ba7e830b9f5f38174c5b5b382501672dca0813bb476066",
+      "size": 2407,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, read-only surface after FormatPICC",
@@ -1655,8 +1851,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_iso_comm_modes.vec",
-      "sha256": "f71e8a3133c55c78caa41942ec138e9b06971361c7ac341fc8bd5311a203833f",
-      "size": 5046,
+      "sha256": "815be0ab7b1f6d4d759dabf9c238e42ecffd15baf61a49b54946f62216bc5dde",
+      "size": 5042,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, ISO 2K3DES session read and write in every comm mode",
@@ -1669,8 +1865,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_long_data.vec",
-      "sha256": "beff72e3269178f06c35b87fc750cbfeec9a5247f8753f6776fe902393073c83",
-      "size": 17688,
+      "sha256": "1934bf3eec1e95165945b5fc89b6e6d56e4a375df3ea5313077911e6e1fe3157",
+      "size": 17684,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, writes sent in frames and whole-file reads that chain, under an AES session",
@@ -1683,8 +1879,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_long_data_d40.vec",
-      "sha256": "4589eedc852e63807716938329231d19c59bf615b52c3bde5ad3b1b38f3bc0ac",
-      "size": 17136,
+      "sha256": "cc178a3ff71f4fd8f2e87e406c74202caf01defe614214e1254e02aacfc216cd",
+      "size": 17122,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, writes sent in frames and whole-file reads that chain, under a D40 session",
@@ -1697,8 +1893,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_long_data_iso.vec",
-      "sha256": "15998b0925207a36280091d17bb9fff9837dbe811742e13ee63d8721081aef7c",
-      "size": 17355,
+      "sha256": "05956ea8395625e0143fba3d04c5250a96f03f072b99d6560e0ed16dceea3e26",
+      "size": 17351,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, writes sent in frames and whole-file reads that chain, under an ISO 2K3DES session",
@@ -1711,8 +1907,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_records.vec",
-      "sha256": "5e9f3180aa1ef2adb008c4f972febc55f38f52758ada3fce760bc6dd084f4bdf",
-      "size": 11493,
+      "sha256": "69db4bdc90c0ae456d2fc5193a4b8279b91c1f2954045d4f042d1a7a7f3bd8fb",
+      "size": 11480,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, linear and cyclic record files under an AES session",
@@ -1725,8 +1921,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_records_d40.vec",
-      "sha256": "7d3d9242a07e00d91ba37945ff70c0a057946d76ac9460014762d65be77ce9b7",
-      "size": 9911,
+      "sha256": "8f26e08829d4f02a7188c6aefbbd0f30c78eff4b497d4c73a50b967ec89e81e4",
+      "size": 9907,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, linear and cyclic record files under a D40 session",
@@ -1739,8 +1935,8 @@
     },
     {
       "path": "v4/hardware/hardware_physical_ev3_4k_records_iso.vec",
-      "sha256": "a616b0e90f69da6569eacc2689e2447d13c431649d1774938578519a260d380e",
-      "size": 10952,
+      "sha256": "74bfcdc518ecad4e928c1b78b00ae609e349402ae157efbeb70ecf6f1ee7a6b5",
+      "size": 10939,
       "role": "emulator-vector",
       "metadata": {
         "name": "genuine EV3 4K, linear and cyclic record files under an ISO 2K3DES session",
@@ -1878,6 +2074,174 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev3_2k_authenticated_rights.vec",
+      "sha256": "c3ce8515865afc1fe08313b828e94596e8169efb730f155650d987d90afaa036",
+      "size": 3803,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K authenticated access against restricted file rights",
+        "case-id": "hardware-physical-ev3-2k-authenticated-rights",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 64
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_bad_commands.vec",
+      "sha256": "39d8b84d6bda8e43a332bc1b32ac85bddd8d6d23f54ef1283e1228979aab2765",
+      "size": 13518,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K native and ISO bad commands and bad parameters",
+        "case-id": "hardware-physical-ev3-2k-bad-commands",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 238
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_create_comm_bytes.vec",
+      "sha256": "d10888d33de734e4bbb10af1a0ac1beb9664bd38e352ad9abd49275d9b77cf51",
+      "size": 3986,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K file creation with unusual communication bytes (provisional batch)",
+        "case-id": "hardware-physical-ev3-2k-create-comm-bytes",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 50
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_iso_chained_commands.vec",
+      "sha256": "ba91f82d86826f1cd51bb314240ae827b4a6a4e60506c5e1ec83ffd0306fadfd",
+      "size": 5284,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K native ISO-chained commands and ISO Append Record",
+        "case-id": "hardware-physical-ev3-2k-iso-chained-commands",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 38
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_iso_dep_block_numbering.vec",
+      "sha256": "3664e9d1203eea5c166b471d66e8393db7d9511c7509c3e60518ba295bfe14ad",
+      "size": 8428,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K ISO-DEP block numbering and framing states",
+        "case-id": "hardware-physical-ev3-2k-iso-dep-block-numbering",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 164
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_iso_dep_request_chaining.vec",
+      "sha256": "8712b8e9f15a16c4310e41f95e84d1376dae1f6fb98a8b29e10f5e395aef970f",
+      "size": 4511,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K ISO-DEP request chaining boundaries",
+        "case-id": "hardware-physical-ev3-2k-iso-dep-request-chaining",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 40
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_iso_file_negatives.vec",
+      "sha256": "dd7b5fd506bd4c7ae6b71504b5d4f71b5972ba67eeb369f2611906cbefae98c0",
+      "size": 9958,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K ISO file access negative and weird states",
+        "case-id": "hardware-physical-ev3-2k-iso-file-negatives",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 194
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_iso_update_binary_transaction.vec",
+      "sha256": "bb5d6d764ffc029db695b96ace726fe102491371c56ef3801a91b1106d79cffc",
+      "size": 5618,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K ISO UPDATE BINARY and READ BINARY against an open native transaction (provisional batch)",
+        "case-id": "hardware-physical-ev3-2k-iso-update-binary-transaction",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 72
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_iso_write_transaction.vec",
+      "sha256": "ac1455aa0421c9fd9f1ab6d3d5bdd1960b2e4c8818019cdee58ec3057f7e4bc3",
+      "size": 7299,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K ISO commands versus a staged native transaction (provisional batch)",
+        "case-id": "hardware-physical-ev3-2k-iso-write-transaction",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 106
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_terminal_configuration.vec",
+      "sha256": "289242669ff9b8b16ae9bb6e2a736adf7103c3c8b4b69483523462f7732fd3c0",
+      "size": 2250,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K Random ID and format-disable terminal configuration",
+        "case-id": "hardware-physical-ev3-2k-terminal-configuration",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 37
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_value_comm_modes.vec",
+      "sha256": "14b3d2c1c90c058c96a18875e0d2b2210cb46da66e7a92999f949dbce9286b90",
+      "size": 8273,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K enciphered value file, Debit and Credit plain versus enciphered by authorising right (provisional batch)",
+        "case-id": "hardware-physical-ev3-2k-value-comm-modes",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 157
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_value_rights.vec",
+      "sha256": "6c7a8f96c09fb364deb55c8198c17587fb823b388cc0a0d641b2d457df594e11",
+      "size": 14217,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K value-file rights for GetValue, Credit, Debit and LimitedCredit (provisional batch)",
+        "case-id": "hardware-physical-ev3-2k-value-rights",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 329
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_4k_dam-auth-disabled.vec",
       "sha256": "28d049b9bbadc7b2d9f4c5a4bd96bfaae528def348264a8c4e97b6c6003775e3",
       "size": 598,
@@ -1893,8 +2257,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_ev2_first_nonfirst.vec",
-      "sha256": "2502c612c0697237fb5bdcd72666dde4b532bbc4bb54793f913acfa379075f74",
-      "size": 1083,
+      "sha256": "d8f58609127b462a3c31d63c1b51fb5408b83724e1390af265460ea3d2dc8be7",
+      "size": 1079,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 AES application EV2 First and NonFirst",
@@ -1907,8 +2271,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-2tdea.vec",
-      "sha256": "8128fc6a30232c582172acf5761dc215a26a7d5ea4d16531b228941f523974b1",
-      "size": 860,
+      "sha256": "c322941ca000b254d54fe29a5466ac0bc6c5fa7103c4adc222eb232dcb70cb05",
+      "size": 856,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication app-2tdea",
@@ -1921,8 +2285,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-3tdea.vec",
-      "sha256": "70a92ea144f5e65135f1fc496955a84393fc3b847c1d3a71f0578ad384a2c11c",
-      "size": 988,
+      "sha256": "bd6799249c67a8da8a42a58382b58cab0620900480ee24884dca9d2fdb58b2a0",
+      "size": 984,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication app-3tdea",
@@ -1935,8 +2299,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-aes.vec",
-      "sha256": "ed693f22593a9f858b28dba3d5d5d9005f10b36fd11178ba191addece2c8523c",
-      "size": 984,
+      "sha256": "0fda1abd784fa603095912e8e64cd012fefddb38843a2e51c5cd8ce077980a1e",
+      "size": 980,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication app-aes",
@@ -1949,8 +2313,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-length.vec",
-      "sha256": "6794a8483ef8232dd3f20bcd15214f7988177a9793d4e76e807233383c10a29a",
-      "size": 492,
+      "sha256": "2046b5a92b3ddfbb70b64a22c28e8c7cc9eaedac9ec569097e230d79582db1b6",
+      "size": 488,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication challenge-wrong-length",
@@ -1963,8 +2327,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_challenge-wrong-p1.vec",
-      "sha256": "6076a200366039f2e17c8e4013e7d2dc52492ac4e35744688f774095f758eb4c",
-      "size": 484,
+      "sha256": "a0b1f640df990605b8f239a62feceaf4a88f331045d0f5eb1ce40e89f6415b1e",
+      "size": 480,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication challenge-wrong-p1",
@@ -1977,8 +2341,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-without-challenge.vec",
-      "sha256": "daef3ef766d06fbd7973a2ef21ab8403f7813d4d177a9425d623ef6df275ae19",
-      "size": 532,
+      "sha256": "6a9637021777cb29683aee5c5d10ddbd6815422afdae2d0a785136c9aa78d62b",
+      "size": 505,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication external-without-challenge",
@@ -1991,8 +2355,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-algorithm.vec",
-      "sha256": "78f01c11f3402f0818187eb541caf9b2ed1d636ae5ddef3743eb6d2c9754c32e",
-      "size": 644,
+      "sha256": "db30753d534d417499831736cf692a1473ac1891b765ecf06b03e134d95951f9",
+      "size": 640,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication external-wrong-algorithm",
@@ -2005,8 +2369,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-cryptogram.vec",
-      "sha256": "7de4d0340f8c698c65d6c26aa854d14d83ce06651fca038cc1b92c03de9aaaf9",
-      "size": 614,
+      "sha256": "533414841b1b8ed2d830b777b06a526b3e1138ba27906ba21e8dedf66a346c4b",
+      "size": 610,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication external-wrong-cryptogram",
@@ -2019,8 +2383,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_external-wrong-key-reference.vec",
-      "sha256": "3bf82e300bddb7474d68a0bab4d71b958959556bcc028e0a7ae328486168c381",
-      "size": 588,
+      "sha256": "f6936a5f6fc6d542946dc7faa8e81271a18c23f881cf82222e28489212158066",
+      "size": 584,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication external-wrong-key-reference",
@@ -2033,8 +2397,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_internal-without-external.vec",
-      "sha256": "51a33b4d856e798b4621c517ec5758468bdba8a75f658b521a7c3280fe3e2fdf",
-      "size": 516,
+      "sha256": "8204ed05683c6d18f92efd1478af6384da21405eba42cf5879b42c17749d6f7d",
+      "size": 489,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication internal-without-external",
@@ -2047,8 +2411,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_iso_auth_picc-2tdea.vec",
-      "sha256": "1655f457522e1cbe603053524a4b08f66c06e5994bc43b80ae9851526356e5d4",
-      "size": 762,
+      "sha256": "78f1eb1f2daa30d86f7f9930e5da1834b27fcb4089a9daf699e121f0372b0d89",
+      "size": 758,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 ISO 7816 authentication picc-2tdea",
@@ -2061,8 +2425,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_originality-aes.vec",
-      "sha256": "c9f5ca58ff2b392c7ad0cd78321829a7919d3cf2abc4893854fa6ff97010b8ab",
-      "size": 742,
+      "sha256": "40fc44f46b6f633fed786e4ad9dfbde3e606d6f6564c2c8bbd38a69cbb0b9b3d",
+      "size": 1200,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 special authentication originality-aes",
@@ -2075,8 +2439,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_originality-ev2-first.vec",
-      "sha256": "e7b526680b040c591137f6dbf6e027d85788ba2179b2f0ddedaa7b2dd162bb6a",
-      "size": 747,
+      "sha256": "8cbf185263f8fc91dfdeb05b3443375029cc3c4c8768e6e80eaf4edb22e03c86",
+      "size": 1205,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 special authentication originality-ev2-first",
@@ -2089,8 +2453,8 @@
     },
     {
       "path": "v6/hardware/hardware_physical_ev3_4k_originality-ev2-nonfirst-without-first.vec",
-      "sha256": "5e7ae8d6fecb93697dc83688053b8ff5ab4543965f26a1167de785e25b4695a8",
-      "size": 779,
+      "sha256": "68e060eb0a8142e6fda7510e1a5ff76a887ded9e01ded000216c206429ea9989",
+      "size": 1237,
       "role": "emulator-vector",
       "metadata": {
         "name": "physical EV3 special authentication originality-ev2-nonfirst-without-first",
@@ -2159,8 +2523,8 @@
     },
     {
       "path": "v6/synthetic/binding-picc-response-capacity-retry.vec",
-      "sha256": "ff770ab43152dd7ff655bfe0b5c6200096e2f93511387e8cb48882f4a97a1d4d",
-      "size": 2655,
+      "sha256": "c98417c800361d2c93be1f2f8d60b42637896202c21ead57c3e38c0323cf2934",
+      "size": 2641,
       "role": "emulator-vector",
       "metadata": {
         "name": "ISO reads cross the binding response-buffer boundary",
@@ -2211,6 +2575,20 @@
         "origin": "synthetic",
         "replayable": true,
         "steps": 9
+      }
+    },
+    {
+      "path": "v6/synthetic/create-file-rejects-unknown-key-references.vec",
+      "sha256": "9ba52653911cc63f00071bb431c285d96a7c64f1edd52d9ca29e115854784616",
+      "size": 1801,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "create file rejects unknown key references",
+        "case-id": "create-file-rejects-unknown-key-references",
+        "source": "tests/vectors/desfire/v6/synthetic/create-file-rejects-unknown-key-references.vec",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 11
       }
     },
     {
@@ -2285,7 +2663,7 @@
     },
     {
       "path": "v6/synthetic/ev1-terminal-error-families.vec",
-      "sha256": "0995b11e3bb47b023c78de8e8dde1262efd27af450858c1a758c63759501730a",
+      "sha256": "932b85a74970208103cc6a360770b4b0de721dd28575041904be31dca15477a0",
       "size": 3749,
       "role": "emulator-vector",
       "metadata": {
@@ -2299,8 +2677,8 @@
     },
     {
       "path": "v6/synthetic/ev2-full-command-error-rolls-back.vec",
-      "sha256": "820cb318148a0c016ade2b76ea4b9f616e3ef35930c27b29c7bd627ccfa532cf",
-      "size": 1905,
+      "sha256": "473780410f8f799d9d238bad864f7d6f83758d39afdb965ab74a9f68acd6a399",
+      "size": 1901,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV2 full-command error retires session and rolls back transaction",
@@ -2313,8 +2691,8 @@
     },
     {
       "path": "v6/synthetic/finite-random-reset.vec",
-      "sha256": "408e112e33d17b3fc32873d875d8dad8f81d31be5f13aabdb4befc314060042d",
-      "size": 703,
+      "sha256": "89394240e08c0ed70563e8507a1ba8cfdfcafaf57d14ae81354945726cdb33c9",
+      "size": 699,
       "role": "emulator-vector",
       "metadata": {
         "name": "finite random source resets unread replay bytes",
@@ -2327,8 +2705,8 @@
     },
     {
       "path": "v6/synthetic/format-application-boundaries.vec",
-      "sha256": "b962914144084ac19458bea7dde66c4d61cfeec427ba7934b3859d3538cbe61a",
-      "size": 2257,
+      "sha256": "6250eaac9be0fcebcce5371e2b2d5223077ab38e7818563e8a8258fb70751dfe",
+      "size": 2238,
       "role": "emulator-vector",
       "metadata": {
         "name": "format application boundaries",
@@ -2383,8 +2761,8 @@
     },
     {
       "path": "v6/synthetic/get-card-uid-ev2-full.vec",
-      "sha256": "8178f8d43b04449e2ffd8beb612ccd76f2815f195c1c79e17db20a05c60b2a0d",
-      "size": 1371,
+      "sha256": "adddc812201a93f1230053b7bbdc863487984dd262cf9fc0432053360f1f0b37",
+      "size": 1367,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV2 GetCardUID uses Full response protection",
@@ -2425,8 +2803,8 @@
     },
     {
       "path": "v6/synthetic/get-file-settings-limited-credit-limit.vec",
-      "sha256": "6b1e02c9a15a987957a96737461298ec97a4decc0cbbba2822f51f6494dc7760",
-      "size": 1689,
+      "sha256": "8b955c1196ecf3230c8b085a61e9f4a59b8dd6ed2910a174dbba23227a2a43ff",
+      "size": 1675,
       "role": "emulator-vector",
       "metadata": {
         "name": "GetFileSettings reports the committed LimitedCredit limit",
@@ -2438,9 +2816,23 @@
       }
     },
     {
+      "path": "v6/synthetic/iso-chained-family-transitions.vec",
+      "sha256": "85a1795a1bdfcfdc311083fc920e9da5a960201c3dbb067658b046392be99b7f",
+      "size": 2023,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "canonical and ISO-chained command family transitions",
+        "case-id": "iso-chained-family-transitions",
+        "source": "generated alternate command family regression",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 25
+      }
+    },
+    {
       "path": "v6/synthetic/iso-command-aborts-native-chain.vec",
-      "sha256": "26b8e2f3ac81d8a2426653a3502dbf1a71bab282cff0d0ccfd41f9305dcd56f3",
-      "size": 491,
+      "sha256": "83526caebe776962aec6be5abe79b3e10502880647fe0bb2b1cbbbce5d7e7d92",
+      "size": 477,
       "role": "emulator-vector",
       "metadata": {
         "name": "standard ISO command aborts native response chaining",
@@ -2452,9 +2844,37 @@
       }
     },
     {
+      "path": "v6/synthetic/iso-dep-alternate-protocol-retry-reset.vec",
+      "sha256": "5dfce615f964ecbe14ee0038adc67b99bbd81e7a12d610dd9bf28e4f0586a564",
+      "size": 1745,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "alternate ISO-DEP wrong-sequence retry and field reset",
+        "case-id": "iso-dep-alternate-protocol-retry-reset",
+        "source": "generated alternate ISO-DEP transport regression",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 19
+      }
+    },
+    {
+      "path": "v6/synthetic/iso-dep-card-block-number-toggle.vec",
+      "sha256": "cdcc34dff982ac2c275c0eff71274e701e2f2dc3d84fbb932a176fa01dd451f7",
+      "size": 3001,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "ISO-DEP card block number toggles on every transmitted block",
+        "case-id": "iso-dep-card-block-number-toggle",
+        "source": "genuine EV3 PM3 trace distilled regression",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 23
+      }
+    },
+    {
       "path": "v6/synthetic/iso-update-binary-publishes-transaction.vec",
-      "sha256": "5aed72e12447ed72075c419411016fa81677bc0cbaf84e17c7f1430673d1bd59",
-      "size": 1653,
+      "sha256": "9ef67dff2ef837d7e3287956b145b8b144b5672032c2479f206e4ae7d8a3cc85",
+      "size": 1636,
       "role": "emulator-vector",
       "metadata": {
         "name": "successful ISO UPDATE BINARY publishes the active transaction",
@@ -2467,8 +2887,8 @@
     },
     {
       "path": "v6/synthetic/limited-credit-transaction-semantics.vec",
-      "sha256": "1ff8d6fc9a0112198a64a9f64c4b636424fe3b1367d924458564d1d239696020",
-      "size": 4769,
+      "sha256": "aebae592bcacc898ac28dcb127c3a0602a744755d2577c0f5151fe716a787758",
+      "size": 4755,
       "role": "emulator-vector",
       "metadata": {
         "name": "LimitedCredit transaction semantics",
@@ -2508,6 +2928,20 @@
       }
     },
     {
+      "path": "v6/synthetic/prfy-limited-credit-debit-accumulates.vec",
+      "sha256": "df0d405024a10f2cf0d248141c4b7f7dfaab4336c6c9df955d11f6b1d806a714",
+      "size": 2103,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "LimitedCredit allowance accumulates across debits",
+        "case-id": "prfy-limited-credit-debit-accumulates",
+        "source": "tests/test_dfc_virtual_picc_value_vectors.c#/limited-credit-transaction-state",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 19
+      }
+    },
+    {
       "path": "v6/synthetic/protected-change-key-settings-ev1.vec",
       "sha256": "a73f884bb7ee6e54a4e68b15980615f52104acb68a4b48042071c5894b2243fd",
       "size": 2836,
@@ -2523,8 +2957,8 @@
     },
     {
       "path": "v6/synthetic/protected-change-key-settings-ev2.vec",
-      "sha256": "93940430e2530e48201c6a239303e1af1d6e172bec1c48cbffec9db01dc23cf8",
-      "size": 3052,
+      "sha256": "6c3c5aad2c4f0ec1bbd9f38326c76aaa208a30211295d1b71fe307c68ef2bc5f",
+      "size": 3048,
       "role": "emulator-vector",
       "metadata": {
         "name": "EV2 ChangeKeySettings requires valid full protection",
@@ -2537,8 +2971,8 @@
     },
     {
       "path": "v6/synthetic/random-failure-preserves-activation.vec",
-      "sha256": "adb2cb9b5960000c3b5a35556e6b3c00495c4a36cf355c199db1e4f14ea80a28",
-      "size": 504,
+      "sha256": "cab11228aaec42648478f184b28b4b410831b9e5809057b5a291e79b3875a897",
+      "size": 490,
       "role": "emulator-vector",
       "metadata": {
         "name": "random failure preserves queued activation bytes",
@@ -2551,8 +2985,8 @@
     },
     {
       "path": "v6/synthetic/random-failure-preserves-ev1-ev2-first.vec",
-      "sha256": "377d0144bab36dd2f54d45aaaccd3a7c6b9d019ad659df722f35d2d19dab5999",
-      "size": 1342,
+      "sha256": "3eb4841969bd56c403095fc6e746d337b1ff51a16e7527891753a16f9245b579",
+      "size": 1325,
       "role": "emulator-vector",
       "metadata": {
         "name": "random failure preserves EV1 state before EV2 First",
@@ -2579,8 +3013,8 @@
     },
     {
       "path": "v6/synthetic/read-data-file-type-matrix.vec",
-      "sha256": "d5096590eb40a9703415f56e912a21d07cf337f4449b755ae945b9cecd8e1768",
-      "size": 3157,
+      "sha256": "2602ecb6b74fb37a92fdf155e445491e7b52f5f19aed005cc2a771c3029ef127",
+      "size": 3127,
       "role": "emulator-vector",
       "metadata": {
         "name": "ReadData accepts only byte-oriented file types",
@@ -2593,8 +3027,8 @@
     },
     {
       "path": "v6/synthetic/rejected-ev2-authentication-retires-session.vec",
-      "sha256": "76c63fb57bf1a15b8e888a0ba7d883fe32e358e2ac55d3c350a445a23ae9d298",
-      "size": 1007,
+      "sha256": "c1b3dafb2e5c1d602bc7a2e7cefc0cf20258d416b9f2aa9843d6cba4f175514c",
+      "size": 1003,
       "role": "emulator-vector",
       "metadata": {
         "name": "rejected EV2 authentication retires the active session",
@@ -2607,8 +3041,8 @@
     },
     {
       "path": "v6/synthetic/rejected-internal-auth-aborts-handshake.vec",
-      "sha256": "e059473ba5bd60475d8c561893caba1c85f0eca68bdd236debcc0953eb68ea98",
-      "size": 967,
+      "sha256": "655e8f97b3e53cdf383feb41c618388c40a0158ff668e13da0db0d3a3e5ba4b7",
+      "size": 963,
       "role": "emulator-vector",
       "metadata": {
         "name": "rejected INTERNAL AUTHENTICATE aborts the handshake",
@@ -2621,8 +3055,8 @@
     },
     {
       "path": "v6/synthetic/rejected-native-authentication-retires-session.vec",
-      "sha256": "a6871a03a6b84ebddb9f78272fac4ca5b7d2a4e407b861d856c8be4d595dbb08",
-      "size": 1200,
+      "sha256": "95dd2c82682675c93d473ca53589d9866795ceca82d15851dd845074a0bebd5f",
+      "size": 1196,
       "role": "emulator-vector",
       "metadata": {
         "name": "rejected native authentication retires the active session",
@@ -2635,8 +3069,8 @@
     },
     {
       "path": "v6/synthetic/replay-random-exhaustion.vec",
-      "sha256": "2f25409151c3bfff0bcf0bf24a0593863f144d0017e440d7341e74a3fb574774",
-      "size": 709,
+      "sha256": "48d503c0a5a9dc82c241c9ebdb7bb0bfba0c2ecbd583c1306d20816b51a93c81",
+      "size": 705,
       "role": "emulator-vector",
       "metadata": {
         "name": "replay random exhaustion is non-consuming and non-sticky",
@@ -2645,6 +3079,20 @@
         "origin": "synthetic",
         "replayable": true,
         "steps": 7
+      }
+    },
+    {
+      "path": "v6/synthetic/sdm-read-family-command-boundaries.vec",
+      "sha256": "e7c6af6b4bcbaafb0d6ecbb852f69d6e39f30eadc8fef3024d9906f93e8080ad",
+      "size": 2855,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "SDM read families and logical command boundaries",
+        "case-id": "ev3-sdm-read-family-command-boundaries",
+        "source": "derived from hardware-genuine-ev3-sdm-picc-native-iso setup and SDM continuation captures",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 35
       }
     },
     {
@@ -2677,8 +3125,8 @@
     },
     {
       "path": "v6/synthetic/transaction-mac-lifecycle-retires-transaction.vec",
-      "sha256": "24acdb9c8ff4b89fe63862c1260dc86ac4038adbab0c58aa3b9b16cd35983733",
-      "size": 1919,
+      "sha256": "a15691eb83dd416692e0f9a7ab97d7426a53544487d693ed69122786024d7ce4",
+      "size": 1889,
       "role": "emulator-vector",
       "metadata": {
         "name": "Transaction-MAC file creation and deletion retire pending transactions",
@@ -2691,8 +3139,8 @@
     },
     {
       "path": "v6/synthetic/transaction-rollback-preserves-standard-write.vec",
-      "sha256": "50a1b64ab19b7c53b1b0ca41f63473b522f506a8000465b25902eac10aa79352",
-      "size": 1941,
+      "sha256": "81cb4506730823b76112d1775abd6be523b2e321adc8e72bed92a3015e008854",
+      "size": 1924,
       "role": "emulator-vector",
       "metadata": {
         "name": "abort keeps a successful StandardData write and rolls back BackupData",
@@ -2705,8 +3153,8 @@
     },
     {
       "path": "v6/synthetic/transaction-snapshot-create-rebases.vec",
-      "sha256": "1c75757804aabece9db703a847b44b8eb71337309fcc9dabd0a9c0d11e0b9982",
-      "size": 1729,
+      "sha256": "0c918480a320cea473f05736fc4787c35ec9bbe1198a731fb53617490cb491ac",
+      "size": 1712,
       "role": "emulator-vector",
       "metadata": {
         "name": "creating transactional files keeps the active snapshot coherent",
@@ -2719,8 +3167,8 @@
     },
     {
       "path": "v6/synthetic/transaction-snapshot-delete-commit.vec",
-      "sha256": "dc6f4d81d73bc7fd6f83acaebe218086a620ccbbe892073f780eb2273386c617",
-      "size": 1545,
+      "sha256": "673899a270c8cc57ac1716fbf9d7e87d8283379370ef28d1f25b186e5bac7972",
+      "size": 1528,
       "role": "emulator-vector",
       "metadata": {
         "name": "deleting a lower file keeps remaining transaction state aligned on commit",
@@ -2733,8 +3181,8 @@
     },
     {
       "path": "v6/synthetic/transaction-snapshot-delete-rebases.vec",
-      "sha256": "f54eb8cb6ee564cd6d77cab99cb4c19ec401e7f5dbec30046b0096df140c8463",
-      "size": 1087,
+      "sha256": "d1bea388c1695af2c2e92f65a9f624de3c3f2de08addb2d00287f5e9be35444b",
+      "size": 1083,
       "role": "emulator-vector",
       "metadata": {
         "name": "deleting a lower file keeps the pending backup snapshot aligned",
@@ -2743,6 +3191,90 @@
         "origin": "synthetic",
         "replayable": true,
         "steps": 12
+      }
+    },
+    {
+      "path": "v6/synthetic/vecC-chained-immediate-write-survives-abort.vec",
+      "sha256": "2ab00d781a620a2d1e94976291ae24f244258a5f8959b431c23ff396ca255867",
+      "size": 1741,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "A chained StandardData write survives AbortTransaction",
+        "case-id": "vecc-chained-immediate-write-survives-abort",
+        "source": "converted from tests/test_dfc_transaction_snapshot.c#/chained-immediate-write",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 13
+      }
+    },
+    {
+      "path": "v6/synthetic/vecC-iso-dep-frame-cycle-repeats.vec",
+      "sha256": "99a3f9f494b7a7e9038a8b22710911ace35852f60ff1401ec621ef813aab20a5",
+      "size": 1552,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "A raw ISO-DEP reader cycle repeats after field-off",
+        "case-id": "vecc-iso-dep-frame-cycle-repeats",
+        "source": "converted from tests/test_dfc_virtual_picc_core.c#/reader-frame-cycle-repeats-after-field-off",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 23
+      }
+    },
+    {
+      "path": "v6/synthetic/vecC-iso-dep-negotiated-cid.vec",
+      "sha256": "a279bc5c49fee80324ecd52df742296b9115585c308c475642cb21d19bf10642",
+      "size": 782,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "ISO-DEP enforces the negotiated CID and echoes it",
+        "case-id": "vecc-iso-dep-negotiated-cid",
+        "source": "converted from tests/test_dfc_virtual_picc_core.c#/iso-dep-enforces-and-echoes-cid",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 6
+      }
+    },
+    {
+      "path": "v6/synthetic/vecC-random-id-activation-atqa.vec",
+      "sha256": "1ee9c7356fae8022b9a365e9781484d8aa3ce27a5b82b7777d36cb20f1ec24ce",
+      "size": 643,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "Random ID activation advertises a single-size ATQA",
+        "case-id": "vecc-random-id-activation-atqa",
+        "source": "converted from tests/test_dfc_virtual_picc_core.c#/random-id-uses-single-size-atqa",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 5
+      }
+    },
+    {
+      "path": "v6/synthetic/vecC-random-id-configured-atqa.vec",
+      "sha256": "72e83f9bf12a0cb1f17dd80f6f298a2b9c37501cdf93cada62a0d98b6e00f650",
+      "size": 634,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "A configured ATQA wins over the random-ID default",
+        "case-id": "vecc-random-id-configured-atqa",
+        "source": "converted from tests/test_dfc_virtual_picc_core.c#/random-id-uses-single-size-atqa",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 5
+      }
+    },
+    {
+      "path": "v6/synthetic/vecC-select-missing-application-returns-to-picc.vec",
+      "sha256": "30f492493cf09e51c8a96ab45e59d0cddfde05bf0de9b2081590b13c678c27b0",
+      "size": 1055,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "Selecting a missing application returns to the PICC level",
+        "case-id": "vecc-select-missing-application-returns-to-picc",
+        "source": "converted from tests/test_dfc_virtual_picc_core.c#/unknown-native-aid-returns-to-picc-level",
+        "origin": "synthetic",
+        "replayable": true,
+        "steps": 9
       }
     }
   ]

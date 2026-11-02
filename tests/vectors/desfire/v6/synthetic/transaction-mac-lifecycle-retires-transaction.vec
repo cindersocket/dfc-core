@@ -4,7 +4,7 @@ case-id: transaction-mac-file-lifecycle-retires-pending-transaction
 origin: synthetic
 feature-version: 6
 source: generated Transaction-MAC lifecycle regression
-requires: ev3,backup-files,record-files,transaction-mac
+requires: transaction-mac
 uid: 04112233445566
 picc-generation: EV3
 picc-storage: 4096

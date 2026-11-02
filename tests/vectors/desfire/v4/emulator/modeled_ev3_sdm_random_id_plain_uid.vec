@@ -10,6 +10,8 @@ picc-storage: 4096
 picc-random-id: 1
 exchange native-apdu 90CA000005A1A1A10F8100 => 9100
 exchange native-apdu 905A000003A1A1A100 => 9100
-exchange native-apdu 90CD0000070140EEEE0E000000 => 9100
+# SDM is switched on by the ChangeFileSettings below: a genuine EV3 refuses to create a standard
+# data file with the SDM flag and no ISO file id.
+exchange native-apdu 90CD0000070100EEEE0E000000 => 9100
 exchange native-apdu 905F00000A0140EEEE81FFEF00000000 => 9100
 exchange native-apdu 90BD000007010000000E000000 => 30303030303030303030303030309100

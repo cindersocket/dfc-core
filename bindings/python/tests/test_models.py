@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from dfc_core import Card, Command, _native, fixed_time_equal
+from dfc_core import (
+    Card,
+    Command,
+    _native,
+    build_iso_append_record_apdu,
+    fixed_time_equal,
+    parse_iso7816_response,
+)
 
 
 def test_model_is_frozen() -> None:
@@ -19,6 +26,24 @@ def test_command_validation_and_encoding() -> None:
     assert Command.read_data(2, 0x1234, 7).data == bytes.fromhex("02341200070000")
     with pytest.raises(ValueError):
         Command.select_application(b"short")
+
+
+def test_iso_append_record_helpers() -> None:
+    vectors = Path(__file__).parents[3] / "tests" / "iso7816-helper-vectors.txt"
+    for line in vectors.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        operation, input_hex, auxiliary, expected = line.split("|")
+        if operation == "append-record":
+            assert build_iso_append_record_apdu(
+                int(auxiliary), bytes.fromhex(input_hex)
+            ) == bytes.fromhex(expected)
+        else:
+            assert operation == "parse-response"
+            assert parse_iso7816_response(bytes.fromhex(input_hex)) == (
+                bytes.fromhex(auxiliary),
+                int(expected, 16),
+            )
 
 
 def test_command_constructors_match_shared_vectors() -> None:
@@ -41,20 +66,45 @@ def test_command_constructors_match_shared_vectors() -> None:
         "clear-record-file": lambda args: Command.clear_record_file(int(args)),
         "get-value": lambda args: Command.get_value(int(args)),
         "read-data": lambda args: Command.read_data(*(int(value) for value in args.split(","))),
+        "read-data-iso-chaining": lambda args: Command.read_data(
+            *(int(value) for value in args.split(",")), iso_chaining=True
+        ),
         "write-data": lambda args: Command.write_data(
             int(args.split(",")[0]), int(args.split(",")[1]), bytes.fromhex(args.split(",")[2])
+        ),
+        "write-data-iso-chaining": lambda args: Command.write_data(
+            int(args.split(",")[0]),
+            int(args.split(",")[1]),
+            bytes.fromhex(args.split(",")[2]),
+            iso_chaining=True,
         ),
         "read-records": lambda args: Command.read_records(
             *(int(value) for value in args.split(","))
         ),
+        "read-records-iso-chaining": lambda args: Command.read_records(
+            *(int(value) for value in args.split(",")), iso_chaining=True
+        ),
         "write-record": lambda args: Command.write_record(
             int(args.split(",")[0]), int(args.split(",")[1]), bytes.fromhex(args.split(",")[2])
+        ),
+        "write-record-iso-chaining": lambda args: Command.write_record(
+            int(args.split(",")[0]),
+            int(args.split(",")[1]),
+            bytes.fromhex(args.split(",")[2]),
+            iso_chaining=True,
         ),
         "update-record": lambda args: Command.update_record(
             int(args.split(",")[0]),
             int(args.split(",")[1]),
             int(args.split(",")[2]),
             bytes.fromhex(args.split(",")[3]),
+        ),
+        "update-record-iso-chaining": lambda args: Command.update_record(
+            int(args.split(",")[0]),
+            int(args.split(",")[1]),
+            int(args.split(",")[2]),
+            bytes.fromhex(args.split(",")[3]),
+            iso_chaining=True,
         ),
         "credit": lambda args: Command.credit(*(int(value) for value in args.split(","))),
         "debit": lambda args: Command.debit(*(int(value) for value in args.split(","))),

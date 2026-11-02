@@ -38,10 +38,13 @@ status   901C0000050F0100000000 => BE
 status   90CC0000111000EEEE00000000640000000A0000000300 => 00
 status   901C000005100100000000 => BE
 status   900C0000050F0100000000 => 00
-status   90C70000010000 => 7E
-exchange native-apdu 906C0000010F00 => 0A0000009100
+# A commit option byte of 00 is accepted (measured: hardware_physical_ev3_2k_bad_commands.vec).
+status   90C70000010000 => 00
+# The commit above now takes effect (option 00 is valid), so the credit is applied.
+exchange native-apdu 906C0000010F00 => 0B0000009100
 status   90C7000000 => 0C
 status   900C0000050F0100000000 => 00
 status   90A70000010000 => 7E
-exchange native-apdu 906C0000010F00 => 0A0000009100
+# The earlier commit already applied one credit, so the value stays at 0B.
+exchange native-apdu 906C0000010F00 => 0B0000009100
 status   90C7000000 => 0C

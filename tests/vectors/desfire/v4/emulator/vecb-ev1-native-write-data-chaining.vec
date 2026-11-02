@@ -1,0 +1,24 @@
+# Converted from tests/test_dfc_ev1_conformance.c test /native-write-data-chaining (now removed): the literal
+# APDUs and statuses the unit test asserted are replayed here byte for byte,
+# and the engine's answers are the ones the test required. A 100-octet WriteData is sent as a 59-octet first frame answered AF and a 48-octet AdditionalFrame; the whole file then holds the data. A first frame whose Lc exceeds 59 is a length error.
+
+name: vecB ev1: native WriteData chaining
+case-id: vecb-ev1-native-write-data-chaining
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /native-write-data-chaining
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050102030F0100 => 00
+status   905A00000301020300 => 00
+status   90CD0000070100EEEE64000000 => 00
+status   905A00000301020300 => 00
+status   903D00003B010000006400000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333400 => AF
+status   90AF00003035363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636400 => 00
+assert   files[0].data_len = 100
+assert   files[0].data = 0102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F6061626364
+status   903D00003C01000000350000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 => 7E

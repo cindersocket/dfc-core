@@ -96,6 +96,11 @@ place the library under `runtimes/<RID>/native`; local builds copy it beside the
 test or example assembly. The assembly verifies the complete generated native
 layout fingerprint before constructing a handle.
 
+
+## Conformance vectors
+
+The DESFire conformance vectors replay through this binding's virtual card: `dotnet test bindings/dotnet/tests/Dfc.Tests/Dfc.Tests.csproj --filter FullyQualifiedName~ReplayPlanTests`. It reports how many vectors it replayed and skipped. See [Replay plans](../../docs/conformance-vector-format.md#replay-plans).
+
 ## Secret lifetime
 
 Ordinary card snapshots exclude session keys. `DiagnosticSnapshot()` returns a

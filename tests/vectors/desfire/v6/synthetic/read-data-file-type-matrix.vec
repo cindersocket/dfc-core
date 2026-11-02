@@ -6,7 +6,7 @@ origin: synthetic
 feature-version: 6
 source: tests/test_dfc_virtual_picc_secure.c#/read-data-type-errors-retire-ev1-session
 issues: https://github.com/cindersocket/dfc-core/issues/129
-requires: ev3,backup-files,record-files,transaction-mac
+requires: transaction-mac
 uid: 04112233445566
 picc-generation: EV3
 picc-storage: 4096

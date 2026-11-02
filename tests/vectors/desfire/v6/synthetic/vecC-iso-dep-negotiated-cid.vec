@@ -1,0 +1,20 @@
+# PROVENANCE: Synthetic regression converted from the former unit test
+# test_iso_dep_enforces_and_echoes_cid. RATS negotiates CID 3. A frame that
+# omits the CID, or carries a different one, is not answered; a chained
+# I-block that carries the negotiated CID is acknowledged with an R(ACK) that
+# echoes it.
+name: ISO-DEP enforces the negotiated CID and echoes it
+case-id: vecc-iso-dep-negotiated-cid
+origin: synthetic
+feature-version: 6
+source: converted from tests/test_dfc_virtual_picc_core.c#/iso-dep-enforces-and-echoes-cid
+requires: ev3
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+scan
+frame-exchange E083 => 0565810280
+expect-error protocol-error frame-exchange 0290
+expect-error protocol-error frame-exchange 0A0290
+frame-exchange 1A0390 => AA03
+field-off

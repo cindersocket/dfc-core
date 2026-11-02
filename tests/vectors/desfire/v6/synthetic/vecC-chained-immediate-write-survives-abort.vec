@@ -1,0 +1,31 @@
+# PROVENANCE: Synthetic regression converted from the former unit test
+# test_chained_immediate_write_survives_abort. A StandardData write is
+# immediate even when it arrives as a two-frame chained command while a
+# BackupData transaction is open, so AbortTransaction rolls back the backup file
+# and keeps all 100 bytes of the standard file.
+name: A chained StandardData write survives AbortTransaction
+case-id: vecc-chained-immediate-write-survives-abort
+origin: synthetic
+feature-version: 6
+source: converted from tests/test_dfc_transaction_snapshot.c#/chained-immediate-write
+requires: ev3,backup-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-key-len: 16
+picc-auth-mode: AES
+scan
+exchange native-apdu 90CA0000050102030F8100 => 9100
+exchange native-apdu 905A00000301020300 => 9100
+exchange native-apdu 90CD0000070100EEEE64000000 => 9100
+exchange native-apdu 90CB0000070200EEEE04000000 => 9100
+exchange native-apdu 903D00000B02000000040000B1B2B3B400 => 9100
+exchange native-apdu 903D00003B010000006400000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333400 => 91AF
+exchange native-apdu 90AF00003035363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636400 => 9100
+exchange native-apdu 90A7000000 => 9100
+exchange native-apdu 90BD0000070100000064000000 => 0102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A91AF
+exchange native-apdu 90AF000000 => 3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F60616263649100
+exchange native-apdu 90BD0000070200000004000000 => 000000009100
+field-off

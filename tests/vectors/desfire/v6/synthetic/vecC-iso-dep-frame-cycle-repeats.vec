@@ -1,0 +1,41 @@
+# PROVENANCE: Synthetic regression converted from the former unit test
+# test_reader_frame_cycle_repeats_after_field_off. A full reader cycle over raw
+# ISO-DEP frames (RATS, ISO select, native select, GetFileSettings, ReadData,
+# native select of the PICC, DESELECT with CID) behaves identically on a second
+# activation after the field drops.
+name: A raw ISO-DEP reader cycle repeats after field-off
+case-id: vecc-iso-dep-frame-cycle-repeats
+origin: synthetic
+feature-version: 6
+source: converted from tests/test_dfc_virtual_picc_core.c#/reader-frame-cycle-repeats-after-field-off
+requires: ev3
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+scan
+exchange native-apdu 90CA0000054F49D30F8100 => 9100
+exchange native-apdu 905A0000034F49D300 => 9100
+exchange native-apdu 90CD0000070F00EEEE03000000 => 9100
+field-off
+
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 0200A4040007D2760000850100 => 029000
+frame-exchange 03905A0000034F49D300 => 039100
+frame-exchange 0290F50000010F00 => 020000EEEE0300009100
+frame-exchange 0390BD0000070F00000000000000 => 030000009100
+frame-exchange 02905A00000300000000 => 029100
+frame-exchange CA00 => CA00
+field-off
+
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 0200A4040007D2760000850100 => 029000
+frame-exchange 03905A0000034F49D300 => 039100
+frame-exchange 0290F50000010F00 => 020000EEEE0300009100
+frame-exchange 0390BD0000070F00000000000000 => 030000009100
+frame-exchange 02905A00000300000000 => 029100
+frame-exchange CA00 => CA00
+field-off

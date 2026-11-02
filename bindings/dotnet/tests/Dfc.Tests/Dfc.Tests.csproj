@@ -15,8 +15,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dfc\Dfc.csproj" />
     <None Include="..\..\..\..\tests\command-constructor-vectors.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\..\tests\iso7816-helper-vectors.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\..\tests\command-constructor-boundaries.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\..\tests\authentication-boundaries.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\..\tests\replay-plans\*.plan" CopyToOutputDirectory="PreserveNewest" Link="replay-plans\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- The native library from the CMake build, next to the test assembly. -->

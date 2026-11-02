@@ -1,0 +1,32 @@
+# ISO READ BINARY on a 3-octet standard data file with free read access,
+# against an EV3. The cases are the five (P1P2, Le) pairs of the unit test
+# /ev1-read-binary-reports-short-eof, in order: a read longer than the file, one
+# that starts inside it and runs past its end, one that starts at the end of the
+# file, one that ends exactly at the end, and Le 0.
+# An EV1 reports a read that runs past the end as 6282 with the octets it has.
+# An EV3 refuses a read that starts at the very end with 6985 and an empty body
+# (measured on a genuine EV3). EV2 behaves like EV1 for the octets but never reports 6282.
+#
+# Converted from tests/test_dfc_iso_file_access.c test /ev1-read-binary-reports-short-eof (now removed).
+# The unit test poked the file and the current-file selection into the engine;
+# here the file is created and selected over the wire, with the same octet
+# count, ISO file ID 0x1001 and free access rights.
+name: vecB ISO READ BINARY end of file on EV3
+case-id: vecb-iso-read-binary-short-eof-ev3
+origin: synthetic
+source: tests/test_dfc_iso_file_access.c#/ev1-read-binary-reports-short-eof
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+status   90CA0000050102030F2100 => 00
+status   905A00000301020300 => 00
+status   90CD00000901011000EEEE03000000 => 00
+status   903D00000A01000000030000A1A2A300 => 00
+exchange iso-apdu 00A4000C021001 => 9000
+exchange iso-apdu 00B0000008 => A1A2A39000
+exchange iso-apdu 00B0000204 => A39000
+exchange iso-apdu 00B0000301 => 6985
+exchange iso-apdu 00B0000201 => A39000
+exchange iso-apdu 00B0000200 => A39000

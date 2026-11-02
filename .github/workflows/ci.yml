@@ -7,10 +7,26 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Never cancel a run on master: a later push would otherwise skip the
+  # provenance check of the earlier one. Pull requests are checked cumulatively,
+  # so cancelling superseded PR runs is safe.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Run both crypto backends, plain and under sanitizers.
 jobs:
+  vector-provenance:
+    name: Physical-card vectors stay untouched
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Reject edits to genuine captures in a pull request
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-physical-vectors-append-only.py "origin/${{ github.base_ref }}"
+      - name: Reject edits to genuine captures in a push
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: python3 scripts/check-physical-vectors-append-only.py "${{ github.event.before }}"
   format-docs:
     name: Formatting and documentation
     runs-on: ubuntu-24.04
@@ -37,6 +53,14 @@ jobs:
         run: python3 tests/check_desfire_vectors.py
       - name: Test DESFire vector grammar
         run: python3 tests/test_check_desfire_vectors.py
+      - name: Check ISO-DEP block numbers in every vector
+        run: python3 tests/check_iso_dep_block_numbers.py
+      - name: Test the block-number checker
+        run: python3 tests/test_check_iso_dep_block_numbers.py
+      - name: Test the staging and ownership lint
+        run: python3 tests/test_check_virtual_picc_staging.py
+      - name: Test the physical-vector append-only gate
+        run: python3 tests/test_check_physical_vectors.py
       - name: Test stack-usage checker
         run: python3 tests/test_check_stack_usage.py
       - name: Test CI unit workflow policy
@@ -239,13 +263,16 @@ jobs:
   native:
     name: Native library (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
+    env:
+      # The macOS libraries load on macOS 11 and later, whatever the runner image is.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     strategy:
       fail-fast: false
       matrix:
         include:
           - { rid: linux-x64, os: ubuntu-24.04, file: build/libdfc.so, test: true }
           - { rid: linux-arm64, os: ubuntu-24.04-arm, file: build/libdfc.so, test: true }
-          - { rid: osx-arm64, os: macos-14, file: build/libdfc.dylib, test: true }
+          - { rid: osx-arm64, os: macos-15, file: build/libdfc.dylib, test: true }
           - { rid: osx-x64, os: macos-15-intel, file: build/libdfc.dylib, test: true }
           - { rid: win-x64, os: windows-2022, file: build/Release/libdfc.dll, test: true }
           - { rid: win-arm64, os: windows-2022, file: build/Release/libdfc.dll, test: false, arch: "-A ARM64" }
@@ -311,7 +338,7 @@ jobs:
       matrix:
         include:
           - { rid: linux-x64, os: ubuntu-24.04 }
-          - { rid: osx-arm64, os: macos-14 }
+          - { rid: osx-arm64, os: macos-15 }
           - { rid: win-x64, os: windows-2022 }
     steps:
       - uses: actions/checkout@v7
@@ -326,6 +353,12 @@ jobs:
         shell: bash
         run: mkdir -p build && cp runtimes/${{ matrix.rid }}/native/* build/
       - run: dotnet test bindings/dotnet/Dfc.sln -c Release
+      - name: Print the conformance vector replay counts
+        shell: bash
+        run: |
+          dotnet test bindings/dotnet/tests/Dfc.Tests/Dfc.Tests.csproj -c Release --no-build \
+            --filter FullyQualifiedName~ReplayPlanTests \
+            --logger "console;verbosity=detailed"
       - uses: actions/download-artifact@v8
         if: matrix.rid == 'linux-x64'
         with:
@@ -379,6 +412,7 @@ jobs:
             tests/java/DfcAuthenticationBoundaryTest.java \
             tests/java/DfcNativeLoaderTest.java \
             tests/java/DfcAdvancedApiTest.java \
+            tests/java/DfcReplayPlanTest.java \
             examples/java/DfcTransceiveExample.java
           java -cp build-jni/java com.cindersocket.dfc.DfcCommandRangeTest
           java -cp build-jni/java com.cindersocket.dfc.DfcAuthenticationBoundaryTest
@@ -393,6 +427,8 @@ jobs:
           java -Djava.library.path=build-jni -cp build-jni/java \
             com.cindersocket.dfc.DfcJniNarrowingTest examples/credentials/v6-minimal.dfc
           java -Djava.library.path=build-jni -cp build-jni/java DfcAdvancedApiTest
+          java -Djava.library.path=build-jni -cp build-jni/java DfcReplayPlanTest \
+            tests/replay-plans
           java -cp build-jni/java com.cindersocket.dfc.DfcLayoutCompatibilityTest
           java -Djava.library.path=build-jni-mismatch -cp build-jni/java \
             com.cindersocket.dfc.DfcLayoutCompatibilityTest native
@@ -465,6 +501,9 @@ jobs:
           DFC_MISMATCH_LIBRARY_PATH="$PWD/mismatch/libdfc.so" DFC_LIBRARY_PATH= \
             uv run --python 3.12 --isolated --with "$wheel" --with pytest \
             pytest bindings/python/tests
+          # The same file runs above; this repeat prints the replayed/skipped counts.
+          DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" --with pytest \
+            pytest bindings/python/tests/test_replay_plans.py -s
           DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
             python examples/python/virtual_card.py
           DFC_LIBRARY_PATH= uv run --python 3.12 --isolated --with "$wheel" \
@@ -499,6 +538,8 @@ jobs:
       - name: Test hosted bindings and transceive example
         run: |
           cargo test --workspace
+          # The workspace run covers it; this repeat prints the replayed/skipped counts.
+          cargo test -p dfc-core --test replay_plans -- --nocapture
           cargo clippy --workspace --all-targets -- -D warnings
           cargo rustdoc -p dfc-core --lib -- -D warnings
           cargo rustdoc -p dfc-core --lib --no-default-features \

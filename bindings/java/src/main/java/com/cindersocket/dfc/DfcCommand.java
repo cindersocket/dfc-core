@@ -32,10 +32,15 @@ public record DfcCommand(int instruction, byte[] data) {
   private static final int GET_VALUE = 0x6c;
   private static final int SELECT_APPLICATION = 0x5a;
   private static final int READ_DATA = 0xbd;
+  private static final int READ_DATA_ISO_CHAINING = 0xad;
   private static final int WRITE_DATA = 0x3d;
+  private static final int WRITE_DATA_ISO_CHAINING = 0x8d;
   private static final int READ_RECORDS = 0xbb;
+  private static final int READ_RECORDS_ISO_CHAINING = 0xab;
   private static final int WRITE_RECORD = 0x3b;
+  private static final int WRITE_RECORD_ISO_CHAINING = 0x8b;
   private static final int UPDATE_RECORD = 0xdb;
+  private static final int UPDATE_RECORD_ISO_CHAINING = 0xba;
   private static final int CREDIT = 0x0c;
   private static final int DEBIT = 0xdc;
   private static final int LIMITED_CREDIT = 0x1c;
@@ -245,6 +250,19 @@ public record DfcCommand(int instruction, byte[] data) {
     return new DfcCommand(READ_DATA, fileRange(fileNumber, offset, length));
   }
   /**
+   * Creates ReadData with the ISO-DEP chained instruction.
+   *
+   * @param fileNumber file number from 0 through 31
+   * @param offset unsigned 24-bit byte offset
+   * @param length unsigned 24-bit byte count
+   * @param isoChaining whether to select the ISO-DEP chained instruction
+   * @return a ReadData command
+   */
+  public static DfcCommand readData(int fileNumber, int offset, int length, boolean isoChaining) {
+    return new DfcCommand(
+        isoChaining ? READ_DATA_ISO_CHAINING : READ_DATA, fileRange(fileNumber, offset, length));
+  }
+  /**
    * Creates WriteData.
    *
    * @param fileNumber file number from 0 through 31
@@ -258,6 +276,20 @@ public record DfcCommand(int instruction, byte[] data) {
     return writeRange(WRITE_DATA, fileNumber, offset, value);
   }
   /**
+   * Creates WriteData with an optional ISO-DEP chained instruction.
+   *
+   * @param fileNumber file number from 0 through 31
+   * @param offset unsigned 24-bit byte offset
+   * @param value bytes to write; copied into the command
+   * @param isoChaining whether to select the ISO-DEP chained instruction
+   * @return a WriteData command
+   */
+  public static DfcCommand writeData(
+      int fileNumber, int offset, byte[] value, boolean isoChaining) {
+    return writeRange(
+        isoChaining ? WRITE_DATA_ISO_CHAINING : WRITE_DATA, fileNumber, offset, value);
+  }
+  /**
    * Creates ReadRecords.
    *
    * @param fileNumber file number from 0 through 31
@@ -268,6 +300,20 @@ public record DfcCommand(int instruction, byte[] data) {
    */
   public static DfcCommand readRecords(int fileNumber, int firstRecord, int count) {
     return new DfcCommand(READ_RECORDS, fileRange(fileNumber, firstRecord, count));
+  }
+  /**
+   * Creates ReadRecords with an optional ISO-DEP chained instruction.
+   *
+   * @param fileNumber file number from 0 through 31
+   * @param firstRecord unsigned 24-bit first record number
+   * @param count unsigned 24-bit record count
+   * @param isoChaining whether to select the ISO-DEP chained instruction
+   * @return a ReadRecords command
+   */
+  public static DfcCommand readRecords(
+      int fileNumber, int firstRecord, int count, boolean isoChaining) {
+    return new DfcCommand(isoChaining ? READ_RECORDS_ISO_CHAINING : READ_RECORDS,
+        fileRange(fileNumber, firstRecord, count));
   }
   /**
    * Creates WriteRecord.
@@ -283,6 +329,20 @@ public record DfcCommand(int instruction, byte[] data) {
     return writeRange(WRITE_RECORD, fileNumber, offset, value);
   }
   /**
+   * Creates WriteRecord with an optional ISO-DEP chained instruction.
+   *
+   * @param fileNumber file number from 0 through 31
+   * @param offset unsigned 24-bit byte offset within the record
+   * @param value bytes to write; copied into the command
+   * @param isoChaining whether to select the ISO-DEP chained instruction
+   * @return a WriteRecord command
+   */
+  public static DfcCommand writeRecord(
+      int fileNumber, int offset, byte[] value, boolean isoChaining) {
+    return writeRange(
+        isoChaining ? WRITE_RECORD_ISO_CHAINING : WRITE_RECORD, fileNumber, offset, value);
+  }
+  /**
    * Creates UpdateRecord.
    *
    * @param fileNumber file number from 0 through 31
@@ -296,16 +356,31 @@ public record DfcCommand(int instruction, byte[] data) {
    */
   public static DfcCommand updateRecord(
       int fileNumber, int recordNumber, int offset, byte[] value) {
+    return updateRecord(fileNumber, recordNumber, offset, value, false);
+  }
+  /**
+   * Creates UpdateRecord with an optional ISO-DEP chained instruction.
+   *
+   * @param fileNumber file number from 0 through 31
+   * @param recordNumber unsigned 24-bit record number
+   * @param offset unsigned 24-bit byte offset within the record
+   * @param value bytes to write; copied into the command
+   * @param isoChaining whether to select the ISO-DEP chained instruction
+   * @return an UpdateRecord command
+   */
+  public static DfcCommand updateRecord(
+      int fileNumber, int recordNumber, int offset, byte[] value, boolean isoChaining) {
     if ((recordNumber & ~0xffffff) != 0)
       throw new IllegalArgumentException("recordNumber");
     if (Objects.requireNonNull(value, "value").length > MAX_COMMAND_DATA - UPDATE_HEADER_LENGTH)
       throw new IllegalArgumentException("value exceeds one native frame");
-    byte[] tail = writeRange(UPDATE_RECORD, fileNumber, offset, value).data();
+    int instruction = isoChaining ? UPDATE_RECORD_ISO_CHAINING : UPDATE_RECORD;
+    byte[] tail = writeRange(instruction, fileNumber, offset, value).data();
     byte[] data = new byte[tail.length + 3];
     data[0] = tail[0];
     put24(data, 1, recordNumber);
     System.arraycopy(tail, 1, data, 4, tail.length - 1);
-    return new DfcCommand(UPDATE_RECORD, data);
+    return new DfcCommand(instruction, data);
   }
   /**
    * Creates Credit.

@@ -41,7 +41,7 @@ from .models import (
     Transport,
 )
 from .picc import VirtualPicc
-from .reader import Command, Reader
+from .reader import Command, Reader, build_iso_append_record_apdu, parse_iso7816_response
 from .responses import (
     Access,
     AccessKind,
@@ -176,6 +176,7 @@ __all__ = [
     "Version",
     "VersionPart",
     "VirtualPicc",
+    "build_iso_append_record_apdu",
     "capabilities",
     "decode_application_ids",
     "decode_file_ids",
@@ -185,6 +186,7 @@ __all__ = [
     "decode_version",
     "diversify_key",
     "fixed_time_equal",
+    "parse_iso7816_response",
     "random_bytes",
     "verify_sdm",
 ]

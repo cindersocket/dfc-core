@@ -1,0 +1,29 @@
+# An AES-authenticated ChangeKey whose body is longer than the largest legal
+# command (64 payload octets plus the key number) is a length error and leaves
+# the stored key untouched.
+#
+# Converted from tests/test_dfc_virtual_picc_mutation_vectors.c test
+# /aes-change-key-integrity-error-preserves-key (now removed). Its first half,
+# the tampered cryptogram that answers 1E, is mutation_aes_change_key_integrity_error.vec;
+# this is the second half, which re-authenticates and sends the oversized body.
+# The authentication exchanges are the ones recorded in that vector (same
+# application, key and pinned RndB).
+name: vecB AES ChangeKey oversized body
+case-id: vecb-mutation-aes-change-key-oversized
+origin: synthetic
+requires: auth-aes
+source: tests/test_dfc_virtual_picc_mutation_vectors.c#/aes-change-key-integrity-error-preserves-key
+uid: 04334455667788
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-key-len: 16
+
+scan
+status   90CA0000051122330F8100 => 00
+status   905A00000311223300 => 00
+inject-random 000102030405060708090A0B0C0D0E0F
+exchange native-apdu 90AA0000010000 => 7ACA0FD9BCD6EC7C9F97466616E6A28291AF
+exchange native-apdu 90AF000020ECC9B00FDB4E6B30E0A7FCF1C08A892CA8F292369D4982D894F48C546C1F476700 => 220F6B51DD0CF762D6C7D2FC66BD72689100
+status   90C400004100A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A5A500 => 7E
+assert   apps[0].keys[0] = 00000000000000000000000000000000

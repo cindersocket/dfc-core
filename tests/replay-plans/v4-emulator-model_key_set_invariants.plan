@@ -1,0 +1,3 @@
+plan 1
+source v4-emulator-model_key_set_invariants
+skip set-model edits the credential model in place and no binding can

@@ -26,7 +26,7 @@ name: genuine EV3 4K, writes sent in frames and whole-file reads that chain, und
 case-id: hardware-physical-ev3-4k-long-data-iso
 origin: physical-card
 source: captured hardware trace
-requires: auth-iso,ev3
+requires: auth-iso
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

@@ -34,7 +34,6 @@ name: genuine EV3 4K, free memory as applications and files come and go
 case-id: hardware-physical-ev3-4k-free-memory
 origin: physical-card
 source: captured hardware trace
-requires: ev3
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01
