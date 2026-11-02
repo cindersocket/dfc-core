@@ -138,6 +138,10 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    # Version branches select a compiler, including the declared minimum.
+    # Review action/runtime updates separately from compiler-version changes.
+    ignore:
+      - dependency-name: dtolnay/rust-toolchain
     schedule:
       interval: weekly
       day: monday

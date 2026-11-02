@@ -4,6 +4,7 @@
 #include "dfc_emulator_commands_i.h"
 #include "dfc_crypto_internal.h"
 #include "des_cmac.h"
+#include "dfc_response.h"
 
 static const uint8_t SessionKey[16] = {
     0x10,
@@ -218,6 +219,18 @@ static MunitResult test_iso_binary_access_family(const MunitParameter params[], 
         munit_assert_size(response_len, ==, 2);
         munit_assert_memory_equal(2, response, ((uint8_t[]){0x90, 0x00}));
         munit_assert_uint8(dfc_file_data(&candidate, &candidate.files[0])[0], ==, 0xA5);
+        const uint8_t get_settings[] = {
+            0x90, DFC_CMD_GET_FILE_SETTINGS, 0, 0, 1, candidate.files[0].number, 0};
+        exchange(
+            plain, get_settings, sizeof(get_settings), response, sizeof(response), &response_len);
+        munit_assert_size(
+            response_len, ==, plain_modes[mode] == DFC_FILE_OPTION_ADDITIONAL_RIGHTS ? 10 : 9);
+        DfcResponseFileSettings decoded;
+        munit_assert_int(
+            dfc_response_decode_file_settings(response, response_len - 2, &decoded),
+            ==,
+            DfcResponseDecodeOk);
+        munit_assert_uint8(decoded.communication_mode, ==, DFC_COMM_PLAIN);
         dfc_virtual_picc_session_free(plain);
     }
 

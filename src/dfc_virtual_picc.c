@@ -1463,7 +1463,7 @@ static DfcVirtualPiccStatus handle_iso_append_record(
 #endif
     if(standard_iso_files_blocked_by_transaction_mac(session->credential, file->app_index))
         return write_iso_conditions_not_satisfied(response, response_capacity, response_len);
-    if((file->comm_settings & 0x01u) != DFC_COMM_PLAIN ||
+    if((file->comm_settings & DFC_COMM_MAC) != DFC_COMM_PLAIN ||
        !dfc_emulator_file_access_allowed(session->emulator, file, DfcFileAccessWrite)) {
         return write_iso_security_status(response, response_capacity, response_len);
     }
@@ -1982,7 +1982,7 @@ static DfcVirtualPiccStatus handle_iso_file_command(
     if(command[1] == DFC_ISO7816_INS_UPDATE_BINARY && command_len >= 5 &&
        (file->type == DFC_FILE_TYPE_STANDARD_DATA || file->type == DFC_FILE_TYPE_BACKUP_DATA)) {
         if(!dfc_emulator_file_access_allowed(session->emulator, file, DfcFileAccessWrite) ||
-           (file->comm_settings & 0x01u) != DFC_COMM_PLAIN) {
+           (file->comm_settings & DFC_COMM_MAC) != DFC_COMM_PLAIN) {
             return write_iso_security_status(response, response_capacity, response_len);
         }
         size_t offset = iso_file_offset(command);
