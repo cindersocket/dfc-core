@@ -117,7 +117,7 @@ int32_t dfc_ffi_response_decode_file_settings(
         dfc_ffi_write_i32_le(out + 14, decoded.settings.value.lower_limit);
         dfc_ffi_write_i32_le(out + 18, decoded.settings.value.upper_limit);
         dfc_ffi_write_i32_le(out + 22, decoded.settings.value.limited_credit_value);
-        out[26] = decoded.settings.value.limited_credit_enabled;
+        out[26] = decoded.settings.value.limited_credit_options;
     } else {
         dfc_ffi_write_u32_le(out + 14, decoded.settings.records.record_size);
         dfc_ffi_write_u32_le(out + 18, decoded.settings.records.max_records);

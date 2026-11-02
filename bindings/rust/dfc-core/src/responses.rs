@@ -221,6 +221,8 @@ pub enum FileSettingsKind {
         upper_limit: i32,
         /// Maximum limited-credit amount.
         limited_credit_value: i32,
+        /// Raw limited-credit option bits.
+        limited_credit_options: u8,
         /// Whether limited credit is enabled.
         limited_credit_enabled: bool,
     },
@@ -284,7 +286,8 @@ pub fn decode_file_settings(response: &[u8]) -> Result<FileSettings, DecodeError
             lower_limit: i32_at(&bytes, 14),
             upper_limit: i32_at(&bytes, 18),
             limited_credit_value: i32_at(&bytes, 22),
-            limited_credit_enabled: bytes[26] != 0,
+            limited_credit_options: bytes[26],
+            limited_credit_enabled: bytes[26] & 0x01 != 0,
         },
         _ => FileSettingsKind::Records {
             record_size: u32_at(&bytes, 14),

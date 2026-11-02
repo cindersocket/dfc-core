@@ -109,7 +109,7 @@ static bool emulate_cbc(
             memcpy(iv, last_input, block_size);
         }
     }
-    memset(last_input, 0, sizeof(last_input));
+    dfc_secure_wipe(last_input, sizeof(last_input));
     return true;
 }
 

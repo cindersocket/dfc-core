@@ -70,14 +70,15 @@ public sealed class AdvancedApiTests
             Assert.That(standard.Access.Read.KeyNumber, Is.EqualTo(1));
         });
         var value = DfcResponseDecoders.DecodeFileSettings(
-            Convert.FromHexString("0200EEEE9CFFFFFF640000000B00000001")).Value;
+            Convert.FromHexString("0200EEEE9CFFFFFF640000000B00000002")).Value;
         Assert.Multiple(() =>
         {
             Assert.That(value.Type, Is.EqualTo(DfcFileType.Value));
             Assert.That(value.CommunicationMode, Is.EqualTo(DfcCommunicationMode.Plain));
             Assert.That(value.LowerLimit, Is.EqualTo(-100));
             Assert.That(value.UpperLimit, Is.EqualTo(100));
-            Assert.That(value.LimitedCreditEnabled, Is.True);
+            Assert.That(value.LimitedCreditOptions, Is.EqualTo(2));
+            Assert.That(value.LimitedCreditEnabled, Is.False);
         });
         var records = DfcResponseDecoders.DecodeFileSettings(
             Convert.FromHexString("0301EF12200000100000070000")).Value;

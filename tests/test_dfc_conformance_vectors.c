@@ -908,7 +908,7 @@ static bool assert_path(
 
     if(split_indexed(path, "apps", &i, &field)) {
         if(i >= c->num_apps) {
-            fail(st, "assert %s: only %zu applications", path, c->num_apps);
+            fail(st, "assert %s: only %zu applications", path, (size_t)c->num_apps);
             return false;
         }
         DfcApplication* a = &c->apps[i];
@@ -929,7 +929,7 @@ static bool assert_path(
             return cmp_num(st, path, (unsigned long)a->iso_aid_len, want);
         if(split_index_leaf(field, "keys", &k)) {
             if(k >= a->num_keys) {
-                fail(st, "assert %s: only %zu keys", path, a->num_keys);
+                fail(st, "assert %s: only %zu keys", path, (size_t)a->num_keys);
                 return false;
             }
             const uint8_t* key = dfc_credential_key_const(c, a, k);
@@ -941,7 +941,7 @@ static bool assert_path(
         }
         if(split_index_leaf(field, "key_versions", &k)) {
             if(k >= a->num_keys) {
-                fail(st, "assert %s: only %zu keys", path, a->num_keys);
+                fail(st, "assert %s: only %zu keys", path, (size_t)a->num_keys);
                 return false;
             }
             return cmp_num(st, path, a->key_versions[k], want);
@@ -957,7 +957,7 @@ static bool assert_path(
 
     if(split_indexed(path, "files", &i, &field)) {
         if(i >= c->num_files) {
-            fail(st, "assert %s: only %zu files", path, c->num_files);
+            fail(st, "assert %s: only %zu files", path, (size_t)c->num_files);
             return false;
         }
         DfcFile* fl = &c->files[i];
