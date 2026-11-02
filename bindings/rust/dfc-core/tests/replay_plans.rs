@@ -299,4 +299,15 @@ fn vector_replay_plans_match_the_c_engine() {
         "{}",
         failures[..failures.len().min(20)].join("\n")
     );
+    // Exactly these plans are skipped (the plan files carry the reason), and every other plan
+    // is replayed: a regression that skips more would otherwise pass.
+    let expected_skips: Vec<&str> = vec![
+        "v4-emulator-model_key_set_invariants",
+        "v4-emulator-model_sdm_encrypted_range_overflow",
+        "v4-emulator-vecb-ev1-create-file-full-pool",
+    ];
+    let mut actual_skips: Vec<String> = skipped.values().flatten().cloned().collect();
+    actual_skips.sort();
+    assert_eq!(actual_skips, expected_skips);
+    assert_eq!(replayed, paths.len() - expected_skips.len());
 }

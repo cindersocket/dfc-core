@@ -263,6 +263,9 @@ jobs:
   native:
     name: Native library (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
+    env:
+      # The macOS libraries load on macOS 11 and later, whatever the runner image is.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     strategy:
       fail-fast: false
       matrix:

@@ -205,4 +205,12 @@ def test_vector_replay_plans_match_the_c_engine(capsys: pytest.CaptureFixture[st
         for reason, names in skipped.items():
             print(f"  skipped {len(names)}: {reason}: {', '.join(names)}")
     assert not failures, "\n".join(failures[:20])
-    assert replayed > 0
+    # Exactly these plans are skipped (the plan files carry the reason), and every other plan
+    # is replayed: a regression that skips more would otherwise pass.
+    expected_skips = {
+        "v4-emulator-model_key_set_invariants",
+        "v4-emulator-model_sdm_encrypted_range_overflow",
+        "v4-emulator-vecb-ev1-create-file-full-pool",
+    }
+    assert {name for names in skipped.values() for name in names} == expected_skips
+    assert replayed == len(plans) - len(expected_skips)

@@ -255,5 +255,15 @@ public final class DfcReplayPlanTest {
       failures.stream().limit(20).forEach(System.err::println);
       throw new AssertionError(failures.size() + " replay failures");
     }
+    // Exactly these plans are skipped (the plan files carry the reason), and every other plan
+    // is replayed: a regression that skips more would otherwise pass.
+    List<String> expectedSkips = List.of("v4-emulator-model_key_set_invariants",
+        "v4-emulator-model_sdm_encrypted_range_overflow",
+        "v4-emulator-vecb-ev1-create-file-full-pool");
+    List<String> actualSkips = skipped.values().stream().flatMap(List::stream).sorted().toList();
+    if (!actualSkips.equals(expectedSkips))
+      throw new AssertionError("unexpected skips: " + actualSkips);
+    if (replayed != paths.size() - expectedSkips.size())
+      throw new AssertionError("replayed " + replayed + " of " + paths.size() + " plans");
   }
 }

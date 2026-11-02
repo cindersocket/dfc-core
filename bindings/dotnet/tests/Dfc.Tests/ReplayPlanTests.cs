@@ -58,6 +58,12 @@ public sealed class ReplayPlanTests
         }
 
         Assert.That(failures, Is.Empty, () => string.Join('\n', failures.Take(20)));
+
+        // Exactly these plans are skipped (the plan files carry the reason), and every other plan
+        // is replayed: a regression that skips more would otherwise pass.
+        string[] expectedSkips = ["v4-emulator-model_key_set_invariants", "v4-emulator-model_sdm_encrypted_range_overflow", "v4-emulator-vecb-ev1-create-file-full-pool"];
+        Assert.That(skipped.Values.SelectMany(names => names).Order(StringComparer.Ordinal), Is.EqualTo(expectedSkips));
+        Assert.That(replayed, Is.EqualTo(plans.Count - expectedSkips.Length));
     }
 
     private static (List<string> Failures, int Checked, int Unchecked) Replay(Plan plan)

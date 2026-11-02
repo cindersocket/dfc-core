@@ -83,6 +83,9 @@ jobs:
           - { rid: win-x64, classifier: windows-x86_64, os: windows-2022, lib: Release/libdfc.dll, jni: Release/dfc_jni.dll, arch: -A x64 }
           - { rid: win-arm64, classifier: windows-aarch64, os: windows-2022, lib: Release/libdfc.dll, jni: Release/dfc_jni.dll, arch: -A ARM64 }
     runs-on: ${{ matrix.os }}
+    env:
+      # The macOS libraries load on macOS 11 and later, whatever the runner image is.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
