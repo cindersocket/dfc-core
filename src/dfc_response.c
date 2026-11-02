@@ -166,9 +166,11 @@ DfcResponseDecodeStatus dfc_response_decode_file_settings(
     }
     // SDM-enabled responses append fields whose presence depends on the SDM
     // options. Do not publish an incomplete typed result for that layout.
-    if((response[1] & (uint8_t)~DFC_COMM_MODE_MASK) != 0) return DfcResponseDecodeUnsupported;
+    if((response[1] & (uint8_t)~(DFC_COMM_MODE_MASK | 0x80u)) != 0)
+        return DfcResponseDecodeUnsupported;
     if(response_len != required_len) return DfcResponseDecodeMalformed;
     uint8_t communication_mode = response[1] & DFC_COMM_MODE_MASK;
+    if(communication_mode == 0x02u) communication_mode = DFC_COMM_PLAIN;
     if(communication_mode != DFC_COMM_PLAIN && communication_mode != DFC_COMM_MAC &&
        communication_mode != DFC_COMM_ENCIPHERED)
         return DfcResponseDecodeUnsupported;

@@ -208,6 +208,19 @@ static MunitResult test_iso_binary_access_family(const MunitParameter params[], 
     uint8_t response[32];
     size_t response_len;
 
+    const uint8_t plain_modes[] = {0x00, 0x02, 0x80};
+    for(size_t mode = 0; mode < sizeof(plain_modes); mode++) {
+        DfcCredential candidate;
+        DfcVirtualPiccSession* plain = prepare_session(&candidate, DFC_FILE_TYPE_STANDARD_DATA);
+        candidate.files[0].comm_settings = plain_modes[mode];
+        candidate.files[0].access_rights = ACCESS_FREE;
+        exchange(plain, update, sizeof(update), response, sizeof(response), &response_len);
+        munit_assert_size(response_len, ==, 2);
+        munit_assert_memory_equal(2, response, ((uint8_t[]){0x90, 0x00}));
+        munit_assert_uint8(dfc_file_data(&candidate, &candidate.files[0])[0], ==, 0xA5);
+        dfc_virtual_picc_session_free(plain);
+    }
+
     DfcCredential credential;
     DfcVirtualPiccSession* session = prepare_session(&credential, DFC_FILE_TYPE_STANDARD_DATA);
     uint8_t* data = dfc_file_data(&credential, &credential.files[0]);
@@ -297,6 +310,7 @@ static MunitResult test_iso_append_record(const MunitParameter params[], void* u
     DfcVirtualPiccSession* session = prepare_session(&credential, DFC_FILE_TYPE_LINEAR_RECORD);
     DfcFile* file = &credential.files[0];
     file->access_rights = ACCESS_FREE;
+    file->comm_settings = 0x02;
     file->state.record.size = 3;
     file->state.record.max_records = 3;
     file->state.record.count = 0;

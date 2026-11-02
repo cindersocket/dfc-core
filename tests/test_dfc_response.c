@@ -113,6 +113,22 @@ static MunitResult test_file_settings_variants(const MunitParameter params[], vo
     munit_assert_uint8(settings.type, ==, DFC_FILE_TYPE_STANDARD_DATA);
     munit_assert_uint8(settings.communication_mode, ==, DFC_COMM_MAC);
     munit_assert_uint32(settings.settings.data.size, ==, 54);
+    uint8_t alternate_standard[sizeof(standard)];
+    memcpy(alternate_standard, standard, sizeof(standard));
+    alternate_standard[1] = 0x02;
+    munit_assert_int(
+        dfc_response_decode_file_settings(
+            alternate_standard, sizeof(alternate_standard), &settings),
+        ==,
+        DfcResponseDecodeOk);
+    munit_assert_uint8(settings.communication_mode, ==, DFC_COMM_PLAIN);
+    alternate_standard[1] = 0x80;
+    munit_assert_int(
+        dfc_response_decode_file_settings(
+            alternate_standard, sizeof(alternate_standard), &settings),
+        ==,
+        DfcResponseDecodeOk);
+    munit_assert_uint8(settings.communication_mode, ==, DFC_COMM_PLAIN);
     assert_access(&settings.access.read, DfcResponseAccessKey, 1);
     assert_access(&settings.access.write, DfcResponseAccessKey, 2);
     assert_access(&settings.access.read_write, DfcResponseAccessKey, 3);
@@ -318,7 +334,7 @@ static MunitResult test_malformed_inputs_clear_outputs(const MunitParameter para
         dfc_response_decode_file_settings(unknown_type, sizeof(unknown_type), &settings),
         ==,
         DfcResponseDecodeUnsupported);
-    const uint8_t unknown_mode[] = {0x00, 0x02, 0xEE, 0xEE, 1, 0, 0};
+    const uint8_t unknown_mode[] = {0x00, 0x04, 0xEE, 0xEE, 1, 0, 0};
     munit_assert_int(
         dfc_response_decode_file_settings(unknown_mode, sizeof(unknown_mode), &settings),
         ==,
