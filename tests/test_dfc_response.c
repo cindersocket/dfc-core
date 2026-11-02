@@ -113,6 +113,42 @@ static MunitResult test_file_settings_variants(const MunitParameter params[], vo
     munit_assert_uint8(settings.type, ==, DFC_FILE_TYPE_STANDARD_DATA);
     munit_assert_uint8(settings.communication_mode, ==, DFC_COMM_MAC);
     munit_assert_uint32(settings.settings.data.size, ==, 54);
+    uint8_t alternate_standard[sizeof(standard)];
+    memcpy(alternate_standard, standard, sizeof(standard));
+    alternate_standard[1] = 0x02;
+    munit_assert_int(
+        dfc_response_decode_file_settings(
+            alternate_standard, sizeof(alternate_standard), &settings),
+        ==,
+        DfcResponseDecodeOk);
+    munit_assert_uint8(settings.communication_mode, ==, DFC_COMM_PLAIN);
+    uint8_t additional_standard[sizeof(standard) + 1] = {0};
+    // Genuine EV3 F50D response, without the leading native status byte:
+    // hardware_physical_ev3_2k_create_comm_bytes.vec.
+    memcpy(
+        additional_standard,
+        ((uint8_t[]){0, 0x80, 0xEE, 0xEE, 0x10, 0, 0, 0}),
+        sizeof(additional_standard));
+    munit_assert_int(
+        dfc_response_decode_file_settings(
+            additional_standard, sizeof(additional_standard), &settings),
+        ==,
+        DfcResponseDecodeOk);
+    munit_assert_uint8(settings.communication_mode, ==, DFC_COMM_PLAIN);
+    munit_assert_int(
+        dfc_response_decode_file_settings(additional_standard, sizeof(standard), &settings),
+        ==,
+        DfcResponseDecodeMalformed);
+    additional_standard[sizeof(standard)] = 1;
+    munit_assert_int(
+        dfc_response_decode_file_settings(
+            additional_standard, sizeof(additional_standard), &settings),
+        ==,
+        DfcResponseDecodeUnsupported);
+    munit_assert_int(
+        dfc_response_decode_file_settings(standard, sizeof(standard), &settings),
+        ==,
+        DfcResponseDecodeOk);
     assert_access(&settings.access.read, DfcResponseAccessKey, 1);
     assert_access(&settings.access.write, DfcResponseAccessKey, 2);
     assert_access(&settings.access.read_write, DfcResponseAccessKey, 3);
@@ -318,7 +354,7 @@ static MunitResult test_malformed_inputs_clear_outputs(const MunitParameter para
         dfc_response_decode_file_settings(unknown_type, sizeof(unknown_type), &settings),
         ==,
         DfcResponseDecodeUnsupported);
-    const uint8_t unknown_mode[] = {0x00, 0x02, 0xEE, 0xEE, 1, 0, 0};
+    const uint8_t unknown_mode[] = {0x00, 0x04, 0xEE, 0xEE, 1, 0, 0};
     munit_assert_int(
         dfc_response_decode_file_settings(unknown_mode, sizeof(unknown_mode), &settings),
         ==,
@@ -388,7 +424,106 @@ static MunitResult test_malformed_inputs_clear_outputs(const MunitParameter para
     return MUNIT_OK;
 }
 
+static MunitResult test_captured_file_option_layouts(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    // F50D through F514, without the leading native status byte, from
+    // hardware_physical_ev3_2k_create_comm_bytes.vec.
+    const struct {
+        size_t length;
+        uint8_t bytes[18];
+    } captures[] = {
+        {.length = 8, .bytes = {0x00, 0x80, 0xEE, 0xEE, 0x10, 0x00, 0x00, 0x00}},
+        {.length = 8, .bytes = {0x01, 0x80, 0xEE, 0xEE, 0x10, 0x00, 0x00, 0x00}},
+        {.length = 14,
+         .bytes =
+             {0x03, 0x80, 0xEE, 0xEE, 0x04, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+        {.length = 18,
+         .bytes =
+             {0x02,
+              0x80,
+              0xEE,
+              0xEE,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0xE8,
+              0x03,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0x00}},
+        {.length = 7, .bytes = {0x00, 0x02, 0xEE, 0xEE, 0x10, 0x00, 0x00}},
+        {.length = 7, .bytes = {0x01, 0x02, 0xEE, 0xEE, 0x10, 0x00, 0x00}},
+        {.length = 13,
+         .bytes = {0x03, 0x02, 0xEE, 0xEE, 0x04, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00}},
+        {.length = 17,
+         .bytes =
+             {0x02,
+              0x02,
+              0xEE,
+              0xEE,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0xE8,
+              0x03,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0x00,
+              0x00}},
+    };
+    for(size_t index = 0; index < sizeof(captures) / sizeof(captures[0]); index++) {
+        DfcResponseFileSettings settings;
+        munit_assert_int(
+            dfc_response_decode_file_settings(
+                captures[index].bytes, captures[index].length, &settings),
+            ==,
+            DfcResponseDecodeOk);
+        munit_assert_uint8(settings.type, ==, captures[index].bytes[0]);
+        munit_assert_uint8(settings.communication_mode, ==, DFC_COMM_PLAIN);
+        if(settings.type <= DFC_FILE_TYPE_BACKUP_DATA)
+            munit_assert_uint32(settings.settings.data.size, ==, 16);
+        else if(settings.type == DFC_FILE_TYPE_VALUE) {
+            munit_assert_int32(settings.settings.value.lower_limit, ==, 0);
+            munit_assert_int32(settings.settings.value.upper_limit, ==, 1000);
+        } else {
+            munit_assert_uint32(settings.settings.records.record_size, ==, 4);
+            munit_assert_uint32(settings.settings.records.max_records, ==, 2);
+        }
+        if(index < 4) {
+            munit_assert_int(
+                dfc_response_decode_file_settings(
+                    captures[index].bytes, captures[index].length - 1, &settings),
+                ==,
+                DfcResponseDecodeMalformed);
+            uint8_t trailing[19] = {0};
+            memcpy(trailing, captures[index].bytes, captures[index].length);
+            munit_assert_int(
+                dfc_response_decode_file_settings(trailing, captures[index].length + 1, &settings),
+                ==,
+                DfcResponseDecodeMalformed);
+        }
+    }
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
+    {"/captured-file-options",
+     test_captured_file_option_layouts,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/version-payload", test_version_payload, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/directory-decoders", test_directory_decoders, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/file-settings-variants",
