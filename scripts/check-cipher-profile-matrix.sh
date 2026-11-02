@@ -27,8 +27,8 @@ build_case() {
     local archive="$build_dir/libdfc_core.a"
     local has_aes=0
     local has_des=0
-    nm -g "$archive" | grep -Eq ' T _?TC_AES_init$' && has_aes=1
-    nm -g "$archive" | grep -Eq ' T _?TC_DES_init$' && has_des=1
+    nm -g "$archive" | grep -E ' T _?TC_AES_init$' >/dev/null && has_aes=1
+    nm -g "$archive" | grep -E ' T _?TC_DES_init$' >/dev/null && has_des=1
     test "$has_aes" -eq "$expect_aes"
     test "$has_des" -eq "$expect_des"
 }
@@ -50,5 +50,5 @@ cmake -S "$repo_root" -B "$full_build" \
     -DDFC_TINY_CRYPTO_DIR="$tiny_dir" -DDFC_BUILD_SHARED=OFF -DDFC_BUILD_TESTS=ON >/dev/null
 cmake --build "$full_build" --parallel >/dev/null
 ctest --test-dir "$full_build" --output-on-failure
-nm -g "$full_build/libdfc_core.a" | grep -Eq ' T _?TC_AES_init$'
-nm -g "$full_build/libdfc_core.a" | grep -Eq ' T _?TC_DES_init$'
+nm -g "$full_build/libdfc_core.a" | grep -E ' T _?TC_AES_init$' >/dev/null
+nm -g "$full_build/libdfc_core.a" | grep -E ' T _?TC_DES_init$' >/dev/null

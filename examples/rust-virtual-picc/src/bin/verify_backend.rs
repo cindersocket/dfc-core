@@ -43,10 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     )
     .map_err(|error| format!("SDM: {error:?}"))?;
-    println!(
-        "verified SDM UID={:02X?}, counter={:?}",
-        sdm.uid, sdm.read_counter
-    );
+    println!("verified SDM, counter={:?}", sdm.read_counter);
 
     // The example does not submit a reader ID, so disable that optional policy
     // in its private credential copy before starting the virtual card.

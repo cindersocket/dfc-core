@@ -185,11 +185,11 @@ public final class DfcAdvancedApiTest {
             && standard.communicationMode() == DfcReader.Communication.MAC && standard.size() == 54
             && standard.access().read().keyNumber() == 1,
         "standard file settings mismatch");
-    var value = DfcResponses.decodeFileSettings(hex("0200EEEE9CFFFFFF640000000B00000001"));
+    var value = DfcResponses.decodeFileSettings(hex("0200EEEE9CFFFFFF640000000B00000002"));
     require(value.type() == DfcResponses.FileType.VALUE
             && value.communicationMode() == DfcReader.Communication.PLAIN
             && value.lowerLimit() == -100 && value.upperLimit() == 100
-            && value.limitedCreditEnabled(),
+            && value.limitedCreditOptions() == 2 && !value.limitedCreditEnabled(),
         "value file settings mismatch");
     var records = DfcResponses.decodeFileSettings(hex("0301EF12200000100000070000"));
     require(records.type() == DfcResponses.FileType.LINEAR_RECORD
