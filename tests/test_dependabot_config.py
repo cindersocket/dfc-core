@@ -42,6 +42,23 @@ def scalar(value: str) -> object:
     return value
 
 
+def sequence(lines: list[str], index: int, indent: int) -> tuple[list[dict[str, object]], int]:
+    result: list[dict[str, object]] = []
+    while index < len(lines):
+        line = lines[index]
+        current_indent = len(line) - len(line.lstrip(" "))
+        if current_indent < indent:
+            break
+        if current_indent != indent or not line.lstrip().startswith("- "):
+            raise AssertionError(f"invalid list entry at line {index + 1}")
+        key, separator, value = line.strip()[2:].partition(":")
+        if not separator or not key or not value.strip():
+            raise AssertionError(f"invalid list entry at line {index + 1}")
+        result.append({key: scalar(value.strip())})
+        index += 1
+    return result, index
+
+
 def mapping(lines: list[str], index: int, indent: int) -> tuple[dict[str, object], int]:
     result: dict[str, object] = {}
     while index < len(lines):
@@ -58,7 +75,10 @@ def mapping(lines: list[str], index: int, indent: int) -> tuple[dict[str, object
         if value.strip():
             result[key] = scalar(value.strip())
         else:
-            child, index = mapping(lines, index, indent + 2)
+            if index < len(lines) and lines[index].startswith(" " * (indent + 2) + "- "):
+                child, index = sequence(lines, index, indent + 2)
+            else:
+                child, index = mapping(lines, index, indent + 2)
             if not child:
                 raise AssertionError(f"empty mapping for {key}")
             result[key] = child
@@ -180,7 +200,10 @@ class DependabotConfigTests(unittest.TestCase):
         }
         for update in updates:
             self.assertIsInstance(update, dict)
-            self.assertEqual(set(update), required)
+            expected = required | ({"ignore"} if update["package-ecosystem"] == "github-actions" else set())
+            self.assertEqual(set(update), expected)
+            if "ignore" in expected:
+                self.assertEqual(update["ignore"], [{"dependency-name": "dtolnay/rust-toolchain"}])
             identities.append((str(update["package-ecosystem"]), str(update["directory"])))
             self.assertEqual(
                 update["schedule"],
