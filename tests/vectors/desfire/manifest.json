@@ -492,6 +492,34 @@
       }
     },
     {
+      "path": "v4/emulator/hardware_genuine_ev1_2k_configuration.vec",
+      "sha256": "598ba4eb3df9dcb18e93c69761d4ac657b32ce870b85e8e2f1cf4c747be20940",
+      "size": 928,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "physical EV1 2K protected PICC configuration",
+        "case-id": "hardware-genuine-ev1-2k-configuration",
+        "source": "Proxmark3 RF capture, physical EV1 2K",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 5
+      }
+    },
+    {
+      "path": "v4/emulator/hardware_genuine_ev1_2k_transactions.vec",
+      "sha256": "4f7e40b23f305b35fa0ca7afe6a0c31827303403e226c8f4b56e5dfd998aa97b",
+      "size": 2833,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "physical EV1 2K data and transaction visibility",
+        "case-id": "hardware-genuine-ev1-2k-transactions",
+        "source": "Proxmark3 RF capture, physical EV1 2K",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 48
+      }
+    },
+    {
       "path": "v4/emulator/hardware_genuine_ev1_4k_access_rights.vec",
       "sha256": "6d2863ad923b2e46abbda4178667053036f2dd2f69af4de6869661742d9eee11",
       "size": 4776,
@@ -1514,6 +1542,20 @@
       }
     },
     {
+      "path": "v4/hardware/hardware_genuine_ev1_2k_cyclic_capacity.vec",
+      "sha256": "d5fee22b49b0fcb3bfb57202dd541a78028942cd554e4a2c1cdc7f83e7d6b409",
+      "size": 1301,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "physical EV1 2K cyclic record count after three appends",
+        "case-id": "hardware-genuine-ev1-2k-cyclic-capacity",
+        "source": "Proxmark3 RF capture, physical EV1 2K",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 15
+      }
+    },
+    {
       "path": "v4/hardware/hardware_genuine_ev3_4k_3k3des_handshakes.vec",
       "sha256": "5338f39dd2a0a4367c029df14a4b53fe763a424e4cd239870232c3c7b3a8c5da",
       "size": 3379,
@@ -2043,6 +2085,20 @@
         "origin": "synthetic",
         "replayable": true,
         "steps": 2
+      }
+    },
+    {
+      "path": "v5/emulator/hardware_genuine_ev1_2k_directory.vec",
+      "sha256": "28d85e336b894ddd01bd426cca51a56ac32d78faaaef270ac6158f0dcc9d4238",
+      "size": 2528,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "physical EV1 2K directory and five file types",
+        "case-id": "hardware-genuine-ev1-2k-directory",
+        "source": "Proxmark3 RF capture, physical EV1 2K",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 33
       }
     },
     {

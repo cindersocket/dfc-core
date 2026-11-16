@@ -360,6 +360,12 @@ void dfc_emulator_command_get_file_ids(DfcEmulator* emulator, DfcByteBuf* tx_buf
 void dfc_emulator_command_get_iso_file_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
     if(!dfc_emulator_command_require_directory_access(emulator, tx_buffer)) return;
 
+    DfcApplication* app = emulator_current_app(emulator);
+    if(!app || (app->key_settings_2 & DFC_KS2_ISO_FILE_IDS) == 0) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_FILE_NOT_FOUND);
+        return;
+    }
+
     DfcCredential* credential = emulator->credential;
     uint8_t fids[DFC_MAX_FILES * 2];
     size_t fids_len = 0;
