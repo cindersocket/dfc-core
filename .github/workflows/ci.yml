@@ -335,6 +335,7 @@ jobs:
   dotnet:
     name: .NET (${{ matrix.rid }})
     needs: [native, mismatch-native]
+    if: ${{ always() && !cancelled() }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
