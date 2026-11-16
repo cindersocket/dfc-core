@@ -138,6 +138,8 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    ignore:
+      - dependency-name: dtolnay/rust-toolchain
     schedule:
       interval: weekly
       day: monday
