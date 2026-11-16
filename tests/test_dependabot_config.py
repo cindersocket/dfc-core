@@ -200,7 +200,9 @@ class DependabotConfigTests(unittest.TestCase):
         }
         for update in updates:
             self.assertIsInstance(update, dict)
-            expected = required | ({"ignore"} if update["package-ecosystem"] == "github-actions" else set())
+            expected = required | (
+                {"ignore"} if update["package-ecosystem"] == "github-actions" else set()
+            )
             self.assertEqual(set(update), expected)
             if "ignore" in expected:
                 self.assertEqual(update["ignore"], [{"dependency-name": "dtolnay/rust-toolchain"}])
