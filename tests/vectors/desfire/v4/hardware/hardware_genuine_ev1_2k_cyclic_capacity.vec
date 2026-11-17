@@ -1,0 +1,31 @@
+# Physical EV1 2K observation made over RF with a Proxmark3 after FormatPICC.
+# This card advertises three records and reports two after three committed
+# appends. The capture checks the count and read order at each step.
+name: physical EV1 2K cyclic record count after three appends
+case-id: hardware-genuine-ev1-2k-cyclic-capacity
+origin: physical-card
+source: Proxmark3 RF capture, physical EV1 2K
+requires: ev1,record-files
+uid: 043793CA677680
+picc-generation: EV1
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status 90CA000005F1C0010F0200 => 00
+status 905A000003F1C00100 => 00
+status 90C000000A0500E0EE08000003000000 => 00
+exchange native-apdu 90F50000010500 => 0400E0EE0800000300000000009100
+status 903B00000F05000000080000111111111111111100 => 00
+status 90C7000000 => 00
+exchange native-apdu 90F50000010500 => 0400E0EE0800000300000100009100
+status 903B00000F05000000080000222222222222222200 => 00
+status 90C7000000 => 00
+exchange native-apdu 90F50000010500 => 0400E0EE0800000300000200009100
+status 903B00000F05000000080000333333333333333300 => 00
+status 90C7000000 => 00
+exchange native-apdu 90F50000010500 => 0400E0EE0800000300000200009100
+exchange native-apdu 90BB0000070500000000000000 => 222222222222222233333333333333339100
