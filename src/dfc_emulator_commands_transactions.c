@@ -336,7 +336,7 @@ void dfc_emulator_command_value_delta(
         if(comm == DFC_COMM_MAC && dfc_secure_messaging_ev1_transmits_command_mac(cmd)) {
             size_t clear_len = dfc_secure_messaging_verify_ev1_transmitted_command_mac(
                 emulator->secure_messaging, cmd, body, body_len);
-            if(clear_len == SIZE_MAX || clear_len < 5) {
+            if(clear_len == SIZE_MAX || clear_len != 5) {
                 dfc_emulator_reset_session(emulator);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
                 return;
@@ -363,7 +363,7 @@ void dfc_emulator_command_value_delta(
                 body_len - 1,
                 clear,
                 sizeof(clear));
-            if(clear_len < 4) {
+            if(clear_len != 4) {
                 dfc_emulator_reset_session(emulator);
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
                 return;
@@ -376,7 +376,7 @@ void dfc_emulator_command_value_delta(
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
                 return;
             }
-            if(body_len < 5) {
+            if(body_len != 5) {
                 dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
                 return;
             }

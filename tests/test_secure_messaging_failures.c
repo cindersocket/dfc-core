@@ -957,6 +957,25 @@ static MunitResult
     const uint8_t credit[] = {DFC_CMD_CREDIT, 1, 7, 0, 0, 0};
 
     DfcEmulator* emulator = transaction_test_emulator(&credential, &value, &transaction);
+    uint8_t session_key_for_length[DFC_AES_KEY_LENGTH] = {0};
+    uint8_t iv_for_length[DFC_AES_KEY_LENGTH] = {0};
+    emulator->secure_messaging = dfc_secure_messaging_alloc(
+        DFC_CMD_AUTHENTICATE_AES,
+        session_key_for_length,
+        sizeof(session_key_for_length),
+        iv_for_length);
+    munit_assert_not_null(emulator->secure_messaging);
+    emulator->auth_cipher = DFC_CMD_AUTHENTICATE_AES;
+    emulator->auth_key_no = 0;
+    const uint8_t overlong_credit[] = {DFC_CMD_CREDIT, 1, 7, 0, 0, 0, 0xAA};
+    munit_assert_uint8(
+        run_transaction_command(emulator, overlong_credit, sizeof(overlong_credit)),
+        ==,
+        DFC_STATUS_LENGTH_ERROR);
+    munit_assert_int32(value->state.value.current, ==, 100);
+    munit_assert_false(value->state.value.pending);
+    dfc_emulator_free(emulator);
+    emulator = transaction_test_emulator(&credential, &value, &transaction);
     DfcTransactionMacAccumulator empty = emulator->transaction_mac;
     reset_aes_fault(1);
     munit_assert_uint8(
