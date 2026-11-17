@@ -383,7 +383,11 @@ bool dfc_transaction_mac_accumulator_add_zero_data(
     uint8_t padded_header[DFC_AES_KEY_LENGTH] = {0};
     memcpy(padded_header, entry.header, entry.header_length);
     size_t padded_data_length;
-    if(!padded_length(data_length, &padded_data_length)) return false;
+    if(!padded_length(data_length, &padded_data_length)) {
+        dfc_secure_wipe(&entry, sizeof(entry));
+        dfc_secure_wipe(padded_header, sizeof(padded_header));
+        return false;
+    }
     DfcCryptoSegment segment = {.data = padded_header, .length = sizeof(padded_header)};
     bool ok = accumulator_add_segments_and_zeroes(accumulator, &segment, 1, padded_data_length);
     dfc_secure_wipe(&entry, sizeof(entry));

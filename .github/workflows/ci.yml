@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
       - uses: astral-sh/setup-uv@v7
@@ -113,7 +113,7 @@ jobs:
         entry_point: [native, android, dotnet, python, java, rust]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
       - uses: actions/setup-java@v6
@@ -346,7 +346,7 @@ jobs:
           - { rid: win-x64, os: windows-2022 }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
       - uses: actions/download-artifact@v8
@@ -568,7 +568,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@cfcaf53ba4c621917ec7f78a66bff7a8848ddad4 # 1.85.0
         with:
           targets: thumbv7em-none-eabihf
       - uses: carlosperate/arm-none-eabi-gcc-action@49f4db4520f840e77ab1e99b24cfac2c540a21b1 # v1
@@ -590,7 +590,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: "10.0.x"
       - uses: actions/download-artifact@v8
