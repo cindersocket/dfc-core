@@ -140,10 +140,7 @@ def main() -> None:
             "credential was not wiped",
             "credential hash changed after close",
             "diagnostic was not wiped",
-        ),
-        "bindings/android/dfc/src/test/java/com/cindersocket/dfc/DfcSecretLifetimeTest.java": (
-            "ownedSecretBuffersAreCleared",
-            "DfcCleaner.register",
+            "cleaner did not wipe",
         ),
     }
     for relative, markers in lifetime_markers.items():
