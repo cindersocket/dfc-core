@@ -273,7 +273,7 @@ jobs:
         include:
           - { rid: linux-x64, os: ubuntu-24.04, file: build/libdfc.so, test: true }
           - { rid: linux-arm64, os: ubuntu-24.04-arm, file: build/libdfc.so, test: true }
-          - { rid: osx-arm64, os: macos-15, file: build/libdfc.dylib, test: true }
+          - { rid: osx-arm64, os: macos-26, file: build/libdfc.dylib, test: true }
           - { rid: osx-x64, os: macos-15-intel, file: build/libdfc.dylib, test: true }
           - { rid: win-x64, os: windows-2022, file: build/Release/libdfc.dll, test: true }
           - { rid: win-arm64, os: windows-2022, file: build/Release/libdfc.dll, test: false, arch: "-A ARM64" }
@@ -340,7 +340,7 @@ jobs:
       matrix:
         include:
           - { rid: linux-x64, os: ubuntu-24.04 }
-          - { rid: osx-arm64, os: macos-15 }
+          - { rid: osx-arm64, os: macos-26 }
           - { rid: win-x64, os: windows-2022 }
     steps:
       - uses: actions/checkout@v7
