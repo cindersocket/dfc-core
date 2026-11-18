@@ -302,6 +302,35 @@ jobs:
         with:
           name: native-${{ matrix.rid }}
           path: runtimes
+      # Run both ARM64 suites on the same runner to avoid a second macOS queue.
+      - uses: actions/setup-dotnet@v6.1.0
+        if: matrix.rid == 'osx-arm64'
+        with:
+          dotnet-version: "10.0.x"
+      - name: Test .NET on macOS ARM64
+        if: matrix.rid == 'osx-arm64'
+        run: dotnet test bindings/dotnet/Dfc.sln -c Release
+      - name: Print macOS ARM64 conformance vector replay counts
+        if: matrix.rid == 'osx-arm64'
+        shell: bash
+        run: |
+          dotnet test bindings/dotnet/tests/Dfc.Tests/Dfc.Tests.csproj -c Release --no-build \
+            --filter FullyQualifiedName~ReplayPlanTests \
+            --logger "console;verbosity=detailed"
+      - name: Run the .NET transceive example on macOS ARM64
+        if: matrix.rid == 'osx-arm64'
+        run: dotnet run --project examples/dotnet/Dfc.TransceiveExample.csproj -c Release -- examples/credentials/v6-minimal.dfcb
+
+  dotnet-macos-arm64:
+    name: .NET (osx-arm64)
+    needs: native
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the native matrix that runs the macOS ARM64 .NET suite
+        env:
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: test "$NATIVE_RESULT" = success
 
   mismatch-native:
     name: Mismatched native layout fixture
@@ -340,7 +369,6 @@ jobs:
       matrix:
         include:
           - { rid: linux-x64, os: ubuntu-24.04 }
-          - { rid: osx-arm64, os: macos-26 }
           - { rid: win-x64, os: windows-2022 }
     steps:
       - uses: actions/checkout@v7
