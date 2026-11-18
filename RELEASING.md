@@ -96,6 +96,7 @@ Required CI jobs (exact IDs):
 - `embedded-footprint`
 - `unit`
 - `native`
+- `dotnet-macos-arm64`
 - `mismatch-native`
 - `dotnet`
 - `java`
