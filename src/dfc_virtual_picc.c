@@ -1525,11 +1525,51 @@ static DfcVirtualPiccStatus handle_native_exchange(
     const uint8_t integrity_error[] = {DFC_STATUS_INTEGRITY_ERROR};
     const uint8_t* tx_data = integrity_error;
     size_t tx_len = sizeof(integrity_error);
+    uint8_t* clear_heap = NULL;
+    bool reassembled = false;
     release_iso_response(session);
     session->pending_response_len = 0;
     session->pending_response_offset = 0;
     session->pending_response_prefix_len = 0;
-    if(command_len > clear_capacity && command[0] == DFC_CMD_WRITE_RECORD_ISO &&
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    // Join a reader->card native ADDITIONAL_FRAME command chain (a large
+    // enciphered WriteData/WriteRecord/UpdateRecord under an EV2 session) before
+    // the envelope verifies its MAC and decrypts over the whole secured command.
+    {
+        DfcByteBuf* chain_tx = session->emulator->tx_buffer;
+        if(chain_tx) {
+            dfc_bytebuf_reset(chain_tx);
+            const uint8_t* joined = NULL;
+            size_t joined_len = 0;
+            DfcEv2RxChainResult rc = dfc_emulator_ev2_reassemble_command_chain(
+                session->emulator, command, command_len, chain_tx, &joined, &joined_len);
+            if(rc == DfcEv2RxChainPending || rc == DfcEv2RxChainError) {
+                const uint8_t* cd = dfc_bytebuf_get_data(chain_tx);
+                size_t cl = dfc_bytebuf_get_size_bytes(chain_tx);
+                status = (iso_wrapped ? dfc_wrap_native_response_as_iso7816(
+                                            cd, cl, 0, response, response_capacity, response_len) :
+                                        write_response(cd, cl, response, response_capacity, response_len)) ?
+                             DfcVirtualPiccStatusOk :
+                             DfcVirtualPiccStatusBufferTooSmall;
+                goto cleanup;
+            }
+            if(rc == DfcEv2RxChainComplete) {
+                command = joined;
+                command_len = joined_len;
+                clear_heap =
+                    dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocCommandChain);
+                if(!clear_heap) {
+                    dfc_emulator_discard_command_chain(session->emulator);
+                    goto cleanup;
+                }
+                clear_command = clear_heap;
+                clear_capacity = DFC_EMULATOR_CHAIN_BUFFER_SIZE;
+                reassembled = true;
+            }
+        }
+    }
+#endif
+    if(!reassembled && command_len > clear_capacity && command[0] == DFC_CMD_WRITE_RECORD_ISO &&
        !session->emulator->command_chain_active && command_len <= DFC_EMULATOR_CHAIN_BUFFER_SIZE) {
         if(!session->emulator->command_chain)
             session->emulator->command_chain =
@@ -1542,6 +1582,15 @@ static DfcVirtualPiccStatus handle_native_exchange(
     }
     DfcEv2CommandSecurity security = dfc_ev2_prepare_command(
         session->emulator, command, command_len, clear_command, clear_capacity, &clear_command_len);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(reassembled) {
+        // The raw secured command has been consumed into clear_command. Free the
+        // chain buffer and suppress a second chain-begin on the now-decrypted
+        // command, exactly as the hardware listener path does.
+        dfc_emulator_discard_command_chain(session->emulator);
+        session->emulator->command_chain_expected = SIZE_MAX;
+    }
+#endif
     bool invalid_command = security == DfcEv2CommandInvalid;
     if(invalid_command) {
         dfc_emulator_reset_session(session->emulator);
@@ -1551,6 +1600,7 @@ static DfcVirtualPiccStatus handle_native_exchange(
         dfc_bytebuf_reset(tx);
         bool handled = dfc_emulator_handle_transport_command(
             session->emulator, clear_command, clear_command_len, tx);
+        if(reassembled) session->emulator->command_chain_expected = 0;
         DFC_UNUSED(handled);
 
         tx_data = dfc_bytebuf_get_data(tx);
@@ -1587,6 +1637,15 @@ static DfcVirtualPiccStatus handle_native_exchange(
     protect_ev2_response = protect_ev2_response && session->emulator->ev2_session_active &&
                            !session->emulator->ev2_response_plain &&
                            !dfc_random_failure_is_retryable();
+    if(protect_ev2_response && !staged_iso_response &&
+       dfc_emulator_ev2_reseal_native_chain(
+           session->emulator, clear_command, clear_command_len, tx)) {
+        // A natively-chained read answer was sealed as a whole and re-split; `tx`
+        // now holds the sealed first frame and pending_chain the sealed remainder.
+        tx_data = tx->data;
+        tx_len = tx->size_bytes;
+        protect_ev2_response = false;
+    }
 #endif
     if(protect_ev2_response) {
         // The emulator response buffer already owns the clear response. Protect
@@ -1659,6 +1718,11 @@ cleanup:
     if(status != DfcVirtualPiccStatusOk && status != DfcVirtualPiccStatusBufferTooSmall)
         release_iso_response(session);
     dfc_secure_wipe(command_scratch, command_scratch_capacity);
+    if(clear_heap) {
+        dfc_secure_wipe(clear_heap, DFC_EMULATOR_CHAIN_BUFFER_SIZE);
+        dfc_platform_free(clear_heap);
+    }
+    if(reassembled) session->emulator->command_chain_expected = 0;
     if(!session->emulator->command_chain_active && session->emulator->command_chain)
         dfc_emulator_discard_command_chain(session->emulator);
     if(tx) {

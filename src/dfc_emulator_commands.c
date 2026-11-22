@@ -4,6 +4,18 @@
 #include "dfc_ev2.h"
 #include "dfc_ev2_crypto.h"
 
+// Debug-only: dump the decrypted EV2 command / native status to the Flipper CLI
+// log. DFC_PORT_LOG() is stubbed to a no-op in the portable core; under the
+// APDU-debug flag we route through furi directly so secured-envelope decisions
+// are visible on hardware. Host tests never define DFC_DEBUG_APDU, so furi.h is
+// not pulled into the portable build.
+#ifndef DFC_DEBUG_APDU
+#define DFC_DEBUG_APDU 0
+#endif
+#if DFC_DEBUG_APDU
+#include <furi.h>
+#endif
+
 #if DFC_ENABLE_EMULATOR
 
 #define TAG                          DFC_EMULATOR_TAG
@@ -555,6 +567,93 @@ static void handle_pending_chain_continuation(DfcEmulator* emulator, DfcByteBuf*
         dfc_emulator_command_clear_pending_chain(emulator);
     }
 }
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+bool dfc_emulator_ev2_reseal_native_chain(
+    DfcEmulator* emulator,
+    const uint8_t* clear_command,
+    size_t clear_command_len,
+    DfcByteBuf* native) {
+    // emit_payload split the PLAINTEXT read answer across the first native frame
+    // (in `native`) and pending_chain, which is correct for EV1/legacy (those
+    // secure the whole answer before splitting) but wrong for an EV2 session:
+    // there the per-command envelope would seal only the first frame and the
+    // ADDITIONAL_FRAME continuations would carry plaintext, so the reader's
+    // decrypt/MAC over the reassembled answer fails with an integrity error
+    // (seen re-reading a live multi-application-enrolled badge). Reassemble the whole answer,
+    // seal it once with the EV2 session keys, then re-split the CIPHERTEXT so the
+    // continuations serve secured octets verbatim. Returns true when it resealed
+    // (the caller appends `native` without re-protecting), false when there is no
+    // native chain pending (the caller seals the single frame as before).
+    if(emulator->pending_chain_frame == DFC_ISO_DEP_RESPONSE_PENDING) return false;
+    if(emulator->pending_chain_zero) return false;
+    if(emulator->pending_chain_offset >= emulator->pending_chain_len) return false;
+
+    const uint8_t* first = dfc_bytebuf_get_data(native);
+    size_t first_len = dfc_bytebuf_get_size_bytes(native);
+    if(first_len == 0) return false;
+    uint8_t status = first[0];
+    if(status != DFC_CMD_ADDITIONAL_FRAME && status != DFC_STATUS_OK) return false;
+    size_t first_data = first_len - 1;
+    size_t tail = emulator->pending_chain_len - emulator->pending_chain_offset;
+
+    // Reassemble [status][first-frame data][pending_chain tail] in place inside
+    // pending_chain: shift the tail to make room for the status + first-frame data.
+    size_t head = 1 + first_data;
+    if(head + tail > sizeof(emulator->pending_chain)) return false;
+    memmove(
+        emulator->pending_chain + head,
+        emulator->pending_chain + emulator->pending_chain_offset,
+        tail);
+    emulator->pending_chain[0] = DFC_STATUS_OK;
+    memcpy(emulator->pending_chain + 1, first + 1, first_data);
+    size_t clear_len = head + tail;
+
+    // Seal the whole answer once. protect_response supports full aliasing of the
+    // clear and secured buffers (the virtual PICC relies on the same in-place
+    // protection for its ISO-DEP staged responses).
+    size_t secured_len = 0;
+    if(!dfc_ev2_protect_response(
+           emulator,
+           clear_command,
+           clear_command_len,
+           emulator->pending_chain,
+           clear_len,
+           emulator->pending_chain,
+           sizeof(emulator->pending_chain),
+           &secured_len) ||
+       secured_len == 0) {
+        // protect_response wiped its staging and ended the session.
+        dfc_emulator_command_clear_pending_chain(emulator);
+        dfc_bytebuf_reset(native);
+        dfc_bytebuf_append_byte(native, DFC_STATUS_INTEGRITY_ERROR);
+        return true;
+    }
+
+    // pending_chain now holds [status][ciphertext || MAC]. Native-AF-chain the
+    // secured octets after the status byte: the first frame carries the whole-
+    // answer status plus the first frame-worth, the continuations serve the rest.
+    size_t frame = DFC_EV3_MAX_RESPONSE_PAYLOAD;
+    size_t payload_len = secured_len - 1;
+    dfc_bytebuf_reset(native);
+    if(payload_len <= frame) {
+        dfc_emulator_command_append_status_payload(
+            native, DFC_STATUS_OK, emulator->pending_chain + 1, payload_len);
+        dfc_emulator_command_clear_pending_chain(emulator);
+        return true;
+    }
+    dfc_emulator_command_append_status_payload(
+        native, DFC_CMD_ADDITIONAL_FRAME, emulator->pending_chain + 1, frame);
+    emulator->pending_chain_offset = 1 + frame;
+    emulator->pending_chain_len = secured_len;
+    emulator->pending_chain_frame = frame;
+    emulator->pending_chain_last = frame;
+    emulator->pending_chain_zero = false;
+    emulator->pending_chain_chunk_index = 0;
+    emulator->pending_chain_chunk_count = 0;
+    return true;
+}
+#endif
 
 // The next GetDFNames record, one application per frame: AID, little-endian
 // ISO file ID and DF name, for each application with an ISO file ID.
@@ -1147,6 +1246,79 @@ static size_t chained_write_expected_len(
     return 1 + header_len + wire_len;
 }
 
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+DfcEv2RxChainResult dfc_emulator_ev2_reassemble_command_chain(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer,
+    const uint8_t** out_command,
+    size_t* out_command_len) {
+    *out_command = buffer;
+    *out_command_len = buffer_len;
+    // Only a live EV2 session uses this reader->card chaining; the EV1/legacy and
+    // plain paths chain inside dispatch_native_command on the already-clear bytes.
+    if(!emulator->ev2_session_active || buffer_len == 0) return DfcEv2RxChainNone;
+
+    if(emulator->command_chain_active) {
+        // Continuation: must carry more secured octets in an ADDITIONAL_FRAME.
+        // Anything else aborts the chain and ends the session so the partial
+        // secured command cannot be completed or replayed within it.
+        if(buffer[0] != DFC_CMD_ADDITIONAL_FRAME) {
+            dfc_emulator_discard_command_chain(emulator);
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return DfcEv2RxChainError;
+        }
+        size_t continuation_len = buffer_len - 1;
+        size_t remaining = emulator->command_chain_expected - emulator->command_chain_len;
+        if(continuation_len == 0 || continuation_len > remaining) {
+            dfc_emulator_discard_command_chain(emulator);
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return DfcEv2RxChainError;
+        }
+        memcpy(emulator->command_chain + emulator->command_chain_len, buffer + 1, continuation_len);
+        emulator->command_chain_len += continuation_len;
+        if(emulator->command_chain_len < emulator->command_chain_expected) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
+            return DfcEv2RxChainPending;
+        }
+        // The whole secured command is joined. Keep the buffer allocated for the
+        // envelope; the caller discards it once it has been verified + decrypted.
+        emulator->command_chain_active = false;
+        *out_command = emulator->command_chain;
+        *out_command_len = emulator->command_chain_len;
+        return DfcEv2RxChainComplete;
+    }
+
+    // Possible first frame of a chained secured write. Non-chainable commands and
+    // commands whose whole secured payload already fits in this frame fall through
+    // to the normal single-frame envelope path.
+    if(chained_write_header_len(buffer[0]) == 0) return DfcEv2RxChainNone;
+    size_t expected = chained_write_expected_len(emulator, buffer[0], buffer, buffer_len);
+    if(expected == SIZE_MAX || expected == 0 || buffer_len >= expected) return DfcEv2RxChainNone;
+    if(expected > DFC_EMULATOR_CHAIN_BUFFER_SIZE) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+        return DfcEv2RxChainError;
+    }
+    if(!emulator->command_chain) {
+        emulator->command_chain =
+            dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocCommandChain);
+        if(!emulator->command_chain) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+            return DfcEv2RxChainError;
+        }
+    }
+    memcpy(emulator->command_chain, buffer, buffer_len);
+    emulator->command_chain_len = buffer_len;
+    emulator->command_chain_expected = expected;
+    emulator->command_chain_active = true;
+    dfc_bytebuf_append_byte(tx_buffer, DFC_CMD_ADDITIONAL_FRAME);
+    return DfcEv2RxChainPending;
+}
+#endif
+
 static bool begin_or_reject_command_chain(
     DfcEmulator* emulator,
     const uint8_t* buffer,
@@ -1445,5 +1617,185 @@ bool dfc_emulator_handle_transport_command(
         emulator->pending_chain_last = 0;
     return handled;
 }
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// Applies the EV2 secure-messaging envelope around the native dispatch for the
+// on-device (Flipper) transport, mirroring what dfc_virtual_picc.c does for the
+// host/FFI PICC: verify + decrypt the command, run it, then MAC/encrypt the
+// response. Stock 2.0.0 wires this envelope ONLY for the FFI virtual PICC, so
+// the listener path has no EV2 protection at all without this; the listener
+// must call this entry point instead of dfc_emulator_handle_command.
+bool dfc_emulator_handle_command_secured(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer,
+    void* context) {
+    DFC_UNUSED(context);
+    // The clear command normally fits the stock 256-byte frame, but a reassembled
+    // native command chain (a large enciphered WriteData/WriteRecord/UpdateRecord)
+    // decrypts to more than that, so the chained path decrypts into a heap buffer.
+    uint8_t clear_stack[DFC_BYTEBUF_MAX];
+    uint8_t* clear_command = clear_stack;
+    size_t clear_capacity = sizeof(clear_stack);
+    uint8_t* clear_heap = NULL;
+    size_t clear_command_len = 0;
+    DfcByteBuf* native = NULL;
+    const uint8_t* native_data = NULL;
+    size_t native_len = 0;
+    bool protect = false;
+    bool handled = true;
+    bool reassembled = false;
+
+    // Join a reader->card native ADDITIONAL_FRAME command chain before the EV2
+    // envelope verifies its MAC and decrypts, because both span the whole secured
+    // command. Returns the single frame unchanged when nothing is chained.
+    const uint8_t* secured = buffer;
+    size_t secured_len = buffer_len;
+    {
+        const uint8_t* joined = NULL;
+        size_t joined_len = 0;
+        DfcEv2RxChainResult rc = dfc_emulator_ev2_reassemble_command_chain(
+            emulator, buffer, buffer_len, tx_buffer, &joined, &joined_len);
+        if(rc == DfcEv2RxChainPending || rc == DfcEv2RxChainError) return true;
+        if(rc == DfcEv2RxChainComplete) {
+            secured = joined;
+            secured_len = joined_len;
+            reassembled = true;
+            clear_heap = dfc_platform_alloc(DFC_EMULATOR_CHAIN_BUFFER_SIZE, DfcAllocCommandChain);
+            if(!clear_heap) {
+                dfc_emulator_discard_command_chain(emulator);
+                dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+                return true;
+            }
+            clear_command = clear_heap;
+            clear_capacity = DFC_EMULATOR_CHAIN_BUFFER_SIZE;
+        }
+    }
+
+    DfcEv2CommandSecurity security = dfc_ev2_prepare_command(
+        emulator, secured, secured_len, clear_command, clear_capacity, &clear_command_len);
+
+    if(reassembled) {
+        // The raw secured command has been consumed into clear_command. Free the
+        // chain buffer and suppress a second chain-begin on the now-decrypted
+        // (shorter) command, exactly as dispatch_native_command does when it
+        // reassembles a plaintext/EV1 chain (see command_chain_expected = SIZE_MAX).
+        dfc_emulator_discard_command_chain(emulator);
+        emulator->command_chain_expected = SIZE_MAX;
+    }
+
+    if(security == DfcEv2CommandInvalid) {
+        // Command MAC mismatch or malformed secured frame -> integrity error and
+        // the session is torn down so the frame cannot be replayed in it.
+        // NOTE: never reset tx_buffer here. The Flipper listener has already
+        // placed the ISO-DEP PCB prefix in tx_buffer and will wrap the response
+        // with prefix_len=offset; resetting it drops that prefix and shifts the
+        // status/first data byte in dfc_wrap_native_response_as_iso7816. Append
+        // only, exactly like the stock dfc_emulator_handle_command path.
+        dfc_emulator_reset_session(emulator);
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        goto cleanup;
+    }
+
+#if DFC_DEBUG_APDU
+    {
+        char dbg[3 * 40 + 1];
+        size_t dn = clear_command_len < 40 ? clear_command_len : 40;
+        size_t dp = 0;
+        for(size_t i = 0; i < dn; i++)
+            dp += (size_t)snprintf(dbg + dp, sizeof(dbg) - dp, "%02X ", clear_command[i]);
+        dbg[dp] = '\0';
+        FURI_LOG_I(
+            TAG,
+            "SECIN sec=%d sel=%d clr[%u] %s",
+            (int)security,
+            (int)emulator->selected_application,
+            (unsigned)clear_command_len,
+            dbg);
+    }
+#endif
+
+    native = dfc_bytebuf_alloc(DFC_BYTEBUF_MAX);
+    if(!native) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        goto cleanup;
+    }
+    handled =
+        dfc_emulator_handle_transport_command(emulator, clear_command, clear_command_len, native);
+    // The reassembled command has been dispatched; restore the resting chain gate.
+    if(reassembled) emulator->command_chain_expected = 0;
+    native_data = dfc_bytebuf_get_data(native);
+    native_len = dfc_bytebuf_get_size_bytes(native);
+
+#if DFC_DEBUG_APDU
+    FURI_LOG_I(
+        TAG,
+        "SECOUT st=%02X nlen=%u act=%d",
+        (unsigned)(native_len ? native_data[0] : 0),
+        (unsigned)native_len,
+        (int)emulator->ev2_session_active);
+#endif
+
+    if(native_len == 0) {
+        goto cleanup;
+    }
+
+    // A plain-but-counted command (e.g. GetCardUID / GetKeyVersion read under an
+    // EV2 session) advances the command counter on success without a protected
+    // response; a failure ends the session. Matches the virtual PICC.
+    if(security == DfcEv2CommandPlainCounted && !emulator->command_chain_active &&
+       emulator->ev2_session_active) {
+        if(native_data[0] == DFC_STATUS_OK)
+            emulator->ev2_command_counter++;
+        else
+            dfc_emulator_reset_session(emulator);
+    }
+
+    // Append the response AFTER whatever prefix the listener already staged in
+    // tx_buffer. Protect into a separate buffer first, then append the sealed
+    // bytes, so the prefix (and the native status position the ISO wrapper
+    // relies on) is preserved. This mirrors the known-good pre-2.0.0 build.
+    protect = (security == DfcEv2CommandSecured || security == DfcEv2CommandFull) &&
+              emulator->ev2_session_active && !emulator->ev2_response_plain;
+    if(protect &&
+       dfc_emulator_ev2_reseal_native_chain(emulator, clear_command, clear_command_len, native)) {
+        // A chained read answer was sealed as a whole and re-split; the first frame
+        // is now in `native` and the continuations are sealed in pending_chain.
+        dfc_bytebuf_append_bytes(
+            tx_buffer, dfc_bytebuf_get_data(native), dfc_bytebuf_get_size_bytes(native));
+        goto cleanup;
+    }
+    if(protect) {
+        uint8_t secured_response[DFC_BYTEBUF_MAX];
+        size_t secured_response_len = 0;
+        if(dfc_ev2_protect_response(
+               emulator,
+               clear_command,
+               clear_command_len,
+               native_data,
+               native_len,
+               secured_response,
+               sizeof(secured_response),
+               &secured_response_len)) {
+            dfc_bytebuf_append_bytes(tx_buffer, secured_response, secured_response_len);
+        } else {
+            // protect_response wiped its staging and terminated the session.
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        }
+    } else {
+        dfc_bytebuf_append_bytes(tx_buffer, native_data, native_len);
+    }
+
+cleanup:
+    if(native) dfc_bytebuf_free(native);
+    if(clear_heap) {
+        dfc_secure_wipe(clear_heap, DFC_EMULATOR_CHAIN_BUFFER_SIZE);
+        dfc_platform_free(clear_heap);
+    }
+    if(reassembled) emulator->command_chain_expected = 0;
+    return handled;
+}
+#endif // DFC_ENABLE_EV2_SECURE_MESSAGING
 
 #endif // DFC_ENABLE_EMULATOR

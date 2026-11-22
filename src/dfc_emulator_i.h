@@ -185,3 +185,49 @@ bool dfc_emulator_handle_transport_command(
     const uint8_t* buffer,
     size_t buffer_len,
     DfcByteBuf* tx_buffer);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// Reseal a natively-chained read answer under the EV2 session: emit_payload split
+// the plaintext across `native` (first frame) + pending_chain, but an EV2 session
+// must seal the whole answer once. Reassembles, seals, and re-chains the
+// ciphertext so the ADDITIONAL_FRAME continuations serve sealed octets verbatim.
+// Returns true when it resealed (the caller appends `native` as-is and does not
+// protect again), false when there is no native chain pending.
+bool dfc_emulator_ev2_reseal_native_chain(
+    DfcEmulator* emulator,
+    const uint8_t* clear_command,
+    size_t clear_command_len,
+    DfcByteBuf* native);
+
+// Result of reassembling a reader->card native command chain under an EV2
+// session (see dfc_emulator_ev2_reassemble_command_chain).
+typedef enum {
+    // Not a chained secured command: process `buffer` unchanged.
+    DfcEv2RxChainNone,
+    // More frames are expected; an ADDITIONAL_FRAME status was appended to the
+    // caller's tx buffer and the caller must return now.
+    DfcEv2RxChainPending,
+    // The whole secured command was reassembled; *out_command/*out_command_len
+    // point at emulator->command_chain for the envelope to verify and decrypt.
+    DfcEv2RxChainComplete,
+    // The chain was rejected; an error status was appended and the caller must
+    // return now.
+    DfcEv2RxChainError,
+} DfcEv2RxChainResult;
+
+// Join a reader->card native ADDITIONAL_FRAME command chain for a large
+// enciphered WriteData/WriteRecord/UpdateRecord sent under an EV2 session (as a
+// live multi-application terminal does). The EV2 envelope verifies the command MAC and
+// decrypts over the WHOLE secured command, so the frames must be reassembled
+// before dfc_ev2_prepare_command runs. On DfcEv2RxChainComplete the caller must,
+// after preparing the command, discard the chain buffer and suppress a second
+// chain-begin on the now-decrypted command (command_chain_expected = SIZE_MAX),
+// exactly as dispatch_native_command does for the plaintext path.
+DfcEv2RxChainResult dfc_emulator_ev2_reassemble_command_chain(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer,
+    const uint8_t** out_command,
+    size_t* out_command_len);
+#endif

@@ -264,4 +264,17 @@ bool dfc_emulator_handle_command(
     DfcByteBuf* tx_buffer,
     void* context);
 
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// Same as dfc_emulator_handle_command, but applies the EV2 secure-messaging
+// envelope (command verify/decrypt + response MAC/encrypt) around the dispatch
+// for the on-device transport. The listener must use this so EV2/EV3 secure
+// sessions work; stock 2.0.0 applies the envelope only in the FFI virtual PICC.
+bool dfc_emulator_handle_command_secured(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer,
+    void* context);
+#endif
+
 #endif // DFC_ENABLE_EMULATOR
