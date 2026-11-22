@@ -13,10 +13,27 @@ static const uint8_t DfcVirtualPiccProtocol[] = {0x02, 0x02};
 // used by cards that do not carry explicit activation overrides.
 // anything recording what a credential presents records the same, so a stored
 // record and the card a reader meets cannot describe different cards.
-// Keep the EV1 timing, frame size, CID support and historical byte, but omit
-// TA(1): this transport supports 106 kbit/s only and must not invite PPS to a
-// rate its tag modulation cannot enter. DESFire permits a configured ATS.
+//
+// ATS bit rate advertisement (TA1):
+// An operational multi-application reader REJECTS a card whose ATS advertises
+// 106 kbit/s only -- it DESELECTs right after the ATS when TA1 is absent/0x00.
+// A genuine DESFire chip advertises TA1=0x77 (212/424/848) and the reader then
+// runs the full session; sniffing a genuine blank written from a credential
+// showed that reader completing SelectApplication + AuthenticateEV2First +
+// ReadData entirely at 106 kbit/s, with NO PPS to a higher rate. So advertise
+// TA1=0x77 to clear the reader's gate while the tag modulation stays 106 kbit/s
+// (all this transport can do). Keep EV1 FWI/SFGI (TB1=0x81), CID (TC1=0x02) and
+// the historical byte (0x80); TL/T0 grow by one for the added TA1.
+// Fallback: if a given reader instead PPSes to a rate the tag cannot enter on
+// seeing TA1, build with DFC_PICC_ATS_ADVERTISE_TA1=0 for the old 106-only ATS.
+#ifndef DFC_PICC_ATS_ADVERTISE_TA1
+#define DFC_PICC_ATS_ADVERTISE_TA1 1
+#endif
+#if DFC_PICC_ATS_ADVERTISE_TA1
+static const uint8_t DfcVirtualPiccAts[] = {0x06, 0x75, 0x77, 0x81, 0x02, 0x80};
+#else
 static const uint8_t DfcVirtualPiccAts[] = {0x05, 0x65, 0x81, 0x02, 0x80};
+#endif
 static const uint8_t DfcVirtualPiccAtqa[] = {0x44, 0x03};
 static const uint8_t DfcVirtualPiccRandomIdAtqa[] = {0x04, 0x03};
 static const uint8_t DfcVirtualPiccRfDetail[] = {0x01, 0x51, 0x57};
