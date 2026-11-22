@@ -100,7 +100,10 @@ void dfc_emulator_command_proximity_check(
     emulator->proximity_transcript_len += round_len;
     emulator->proximity_offset += round_len;
 
-    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_SPECIAL_SUCCESS);
+    // The ProximityCheck round response is the RndR chunk ONLY, with no status
+    // byte (unlike PreparePC/VerifyPC which lead with 0x90). A genuine card sends
+    // just RndR; prepending 0x90 here made the reader read the wrong RndR and the
+    // VerifyPC MAC never matched. [verified against a working card]
     dfc_bytebuf_append_bytes(tx_buffer, response, round_len);
 }
 
@@ -123,9 +126,18 @@ void dfc_emulator_command_verify_proximity_check(
         return;
     }
 
+    // Proximity Check MAC key. "use session key" reader mode MACs the PC with the
+    // EV2 session MAC key (SesAuthMACKey); "use proximity check key" mode uses the
+    // VC Proximity Key. Verified against a working card: the MAC is
+    // CMAC_odd(key, 0xFD || OPT || PubRespTime || Bitrate || (RndR||RndC per round)).
+    const uint8_t* pc_key = emulator->credential->picc_proximity_key;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(emulator->ev2_session_active) pc_key = emulator->ev2_session_mac_key;
+#endif
+
     uint8_t expected[DFC_WIRE_MAC_LENGTH] = {0};
     if(!proximity_wire_mac(
-           emulator->credential->picc_proximity_key,
+           pc_key,
            DFC_CMD_VERIFY_PROXIMITY_CHECK,
            emulator,
            expected)) {
@@ -139,7 +151,7 @@ void dfc_emulator_command_verify_proximity_check(
 
     uint8_t response[DFC_WIRE_MAC_LENGTH] = {0};
     if(!proximity_wire_mac(
-           emulator->credential->picc_proximity_key,
+           pc_key,
            DFC_STATUS_SPECIAL_SUCCESS,
            emulator,
            response)) {

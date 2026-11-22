@@ -1537,6 +1537,17 @@ bool dfc_emulator_handle_command(
                                   command == DFC_CMD_AUTHENTICATE_EV2_FIRST ||
                                   command == DFC_CMD_AUTHENTICATE_EV2_NON_FIRST;
 #endif
+#if DFC_ENABLE_PROXIMITY_CHECK
+        // Proximity Check round/verify responses are RndR / MAC, not a DESFire
+        // status byte. Without this, finalize_native_command reads a non-success
+        // "status" and clears the active authentication, destroying the EV2
+        // session the VerifyPC MAC depends on. Treat PC commands like an auth
+        // exchange so the session survives all the way to VerifyPC.
+        authentication_exchange = authentication_exchange ||
+                                  command == DFC_CMD_PREPARE_PROXIMITY_CHECK ||
+                                  command == DFC_CMD_PROXIMITY_CHECK ||
+                                  command == DFC_CMD_VERIFY_PROXIMITY_CHECK;
+#endif
         if(command == DFC_CMD_ADDITIONAL_FRAME) {
             authentication_exchange = emulator->awaiting_step2;
             preserve_auth_transaction = emulator->awaiting_step2 &&
