@@ -1344,6 +1344,369 @@ static MunitResult test_long_plain_read(const MunitParameter params[], void* dat
     return MUNIT_OK;
 }
 
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// An enciphered file read whose response exceeds one native frame must carry the
+// EV2-encrypted payload across every ADDITIONAL_FRAME continuation. The whole
+// answer is enciphered + MAC'd once, then the ciphertext is chained; if the
+// continuation frames fall back to plaintext the reader's MAC/decrypt fails with
+// an integrity error (observed re-reading a live multi-application-enrolled badge).
+static void assert_ev2_chained_read(
+    Link* link,
+    uint8_t number,
+    uint8_t comm,
+    uint32_t offset,
+    uint32_t length) {
+    DfcCommand command;
+    DfcReaderExchange ex;
+    munit_assert_int(dfc_command_read_data(&command, number, offset, length), ==, DfcCommandOk);
+    DfcReaderStatus st = link_send(link, &command, comm, &ex);
+    if(st != DfcReaderOk)
+        munit_logf(
+            MUNIT_LOG_WARNING,
+            "chained EV2 read (file %02X comm %02X len %u): %s, status %02X",
+            number,
+            comm,
+            (unsigned)length,
+            dfc_reader_status_name(st),
+            dfc_reader_result_status(&ex));
+    munit_assert_int(st, ==, DfcReaderOk);
+    // The session survives a successful read, so a second read can follow.
+    munit_assert_true(dfc_reader_session_is_authenticated(&link->session));
+    size_t got = 0;
+    const uint8_t* clear = dfc_reader_result_data(&ex, &got);
+    munit_assert_size(got, ==, length);
+    assert_file_bytes(clear, got, number, offset);
+}
+
+static MunitResult test_ev2_enciphered_chained_read(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    // An enciphered file whose read spans many native frames, a MAC file whose
+    // read also chains, and a couple of smaller/offset reads for good measure.
+    add_data_file(&link.credential, 0, 7, DFC_COMM_ENCIPHERED, 300);
+    add_data_file(&link.credential, 0, 8, DFC_COMM_MAC, 200);
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+    // Full (enciphered): 300 bytes -> padded ciphertext + MAC across ~6 frames.
+    assert_ev2_chained_read(&link, 7, DFC_COMM_ENCIPHERED, 0, 300);
+    // Same file, an offset read that still chains.
+    assert_ev2_chained_read(&link, 7, DFC_COMM_ENCIPHERED, 16, 200);
+    // Exactly at and just over one native frame boundary.
+    assert_ev2_chained_read(&link, 7, DFC_COMM_ENCIPHERED, 0, 58);
+    assert_ev2_chained_read(&link, 7, DFC_COMM_ENCIPHERED, 0, 59);
+    // MAC-only file, long enough to chain: the whole answer is MAC'd once.
+    assert_ev2_chained_read(&link, 8, DFC_COMM_MAC, 0, 200);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+// The standard ChangeKey (0xC4), not the key-set ChangeKeyEV2 (0xC6), issued
+// under an EV2 session to change a key other than the authenticated one. This is
+// the app-key personalisation step a live multi-application terminal runs after creating an
+// application. The 0xC4 handler guarded on native (legacy) authentication, which
+// an EV2 session does not hold, so it answered AUTHENTICATION_ERROR before the
+// enciphered cryptogram was ever processed. The existing /ev2-change-key test
+// exercises only the 0xC6 handler, so it never covered this path.
+static MunitResult test_ev2_standard_change_other_key(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+    // Build the cryptogram to change app key 1 (currently AES_KEY_1) while
+    // authenticated with key 0: (newKey XOR oldKey) || version || CRC32(newKey).
+    static const uint8_t new_key[DFC_AES_KEY_LENGTH] = {
+        0x5A, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01};
+    uint8_t cryptogram[DFC_AES_KEY_LENGTH + 1 + 4];
+    size_t crypto_len = 0;
+    for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++)
+        cryptogram[crypto_len++] = (uint8_t)(new_key[i] ^ AES_KEY_1[i]);
+    cryptogram[crypto_len++] = 0x34; // new key version
+    dfc_write_uint32_le(cryptogram + crypto_len, dfc_crc32(new_key, DFC_AES_KEY_LENGTH));
+    crypto_len += 4;
+
+    // The repo reader only drives 0xC6 (key-set ChangeKeyEV2) under EV2, so build
+    // the standard 0xC4 frame exactly as a live terminal does: encrypt the
+    // cryptogram with the session ENC key, then MAC the (key number || ciphertext)
+    // with the session MAC key over the current command counter and TI.
+    uint8_t encrypted[48];
+    size_t encrypted_len = 0;
+    munit_assert_true(dfc_ev2_encrypt_data(
+        link.session.ev2_encryption_key,
+        DfcEv2DirectionCommand,
+        link.session.ev2_command_counter,
+        link.session.ev2_transaction_identifier,
+        cryptogram,
+        crypto_len,
+        encrypted,
+        sizeof(encrypted),
+        &encrypted_len));
+
+    uint8_t secured_data[1 + sizeof(encrypted)];
+    secured_data[0] = 0x01; // key number
+    memcpy(secured_data + 1, encrypted, encrypted_len);
+    size_t secured_data_len = 1 + encrypted_len;
+
+    uint8_t mac[DFC_WIRE_MAC_LENGTH];
+    munit_assert_true(dfc_ev2_mac(
+        link.session.ev2_mac_key,
+        DFC_CMD_CHANGE_KEY,
+        link.session.ev2_command_counter,
+        link.session.ev2_transaction_identifier,
+        secured_data,
+        secured_data_len,
+        NULL,
+        0,
+        mac));
+
+    // ISO 7816 wrap: 90 C4 00 00 Lc [key number || ciphertext || MAC] 00.
+    uint8_t apdu[DFC_COMMAND_MAX_APDU];
+    size_t apdu_len = 0;
+    apdu[apdu_len++] = 0x90;
+    apdu[apdu_len++] = DFC_CMD_CHANGE_KEY;
+    apdu[apdu_len++] = 0x00;
+    apdu[apdu_len++] = 0x00;
+    apdu[apdu_len++] = (uint8_t)(secured_data_len + sizeof(mac));
+    memcpy(apdu + apdu_len, secured_data, secured_data_len);
+    apdu_len += secured_data_len;
+    memcpy(apdu + apdu_len, mac, sizeof(mac));
+    apdu_len += sizeof(mac);
+    apdu[apdu_len++] = 0x00;
+
+    uint8_t response[64];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, apdu, apdu_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    // Before the guard fix this answered AUTHENTICATION_ERROR (0xAE) because the
+    // 0xC4 handler required a legacy native session; now it runs the EV2 ChangeKey
+    // and succeeds.
+    munit_assert_size(response_len, >=, 2);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
+    // Changing a key other than the authenticated one keeps the EV2 session alive.
+    munit_assert_true(link.picc->emulator->ev2_session_active);
+    // The new key really took: the stored app key 1 now equals new_key.
+    const uint8_t* stored = dfc_credential_key_const(&link.credential, &link.credential.apps[0], 1);
+    munit_assert_not_null(stored);
+    munit_assert_memory_equal(DFC_AES_KEY_LENGTH, stored, new_key);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+// A large enciphered WriteData that a live multi-application terminal sends as a reader->card
+// native ADDITIONAL_FRAME command chain: the first frame carries the plaintext
+// command header plus the first slice of ciphertext, each AF frame carries more,
+// and only the final frame carries the command MAC. The EV2 envelope must join
+// every frame before it verifies the MAC and decrypts over the WHOLE secured
+// command; otherwise the first (truncated) frame fails the command MAC with
+// INTEGRITY_ERROR and the write is lost. That is exactly why re-reading a
+// freshly enrolled badge returned wrong values: the terminal created the data
+// files but every chained write that filled them was rejected 91 1E, leaving the
+// files at their initial (zero) contents. Before the reassembly fix this test's
+// first frame answered 91 1E instead of 91 AF.
+static MunitResult test_ev2_chained_enciphered_write(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    const uint8_t file_chained = 9;
+    add_data_file(&link.credential, 0, file_chained, DFC_COMM_ENCIPHERED, 250);
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+    // A recognisable payload distinct from the file's initial contents so the
+    // read-back proves the chained write actually landed.
+    uint8_t payload[200];
+    for(size_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(0xC3 ^ (i * 7));
+
+    // Encrypt under the session ENC key, then MAC over (file header || ciphertext),
+    // exactly as a terminal builds a CommMode.FULL WriteData.
+    uint8_t ciphertext[256];
+    size_t ciphertext_len = 0;
+    munit_assert_true(dfc_ev2_encrypt_data(
+        link.session.ev2_encryption_key,
+        DfcEv2DirectionCommand,
+        link.session.ev2_command_counter,
+        link.session.ev2_transaction_identifier,
+        payload,
+        sizeof(payload),
+        ciphertext,
+        sizeof(ciphertext),
+        &ciphertext_len));
+
+    uint8_t secured_data[7 + sizeof(ciphertext)];
+    size_t secured_data_len = 0;
+    secured_data[secured_data_len++] = file_chained; // file number
+    secured_data[secured_data_len++] = 0x00; // offset LE (3)
+    secured_data[secured_data_len++] = 0x00;
+    secured_data[secured_data_len++] = 0x00;
+    secured_data[secured_data_len++] = (uint8_t)(sizeof(payload) & 0xFF); // length LE (3)
+    secured_data[secured_data_len++] = (uint8_t)((sizeof(payload) >> 8) & 0xFF);
+    secured_data[secured_data_len++] = 0x00;
+    memcpy(secured_data + secured_data_len, ciphertext, ciphertext_len);
+    secured_data_len += ciphertext_len;
+
+    uint8_t mac[DFC_WIRE_MAC_LENGTH];
+    munit_assert_true(dfc_ev2_mac(
+        link.session.ev2_mac_key,
+        DFC_CMD_WRITE_DATA,
+        link.session.ev2_command_counter,
+        link.session.ev2_transaction_identifier,
+        secured_data,
+        secured_data_len,
+        NULL,
+        0,
+        mac));
+
+    // The native command is 3D || secured_data || MAC. Its body (everything after
+    // the 3D) is what the chain carries; split it into 40-byte slices so several
+    // ADDITIONAL_FRAME frames are required.
+    uint8_t body[sizeof(secured_data) + sizeof(mac)];
+    size_t body_len = 0;
+    memcpy(body, secured_data, secured_data_len);
+    body_len = secured_data_len;
+    memcpy(body + body_len, mac, sizeof(mac));
+    body_len += sizeof(mac);
+
+    const size_t slice = 40;
+    size_t sent = 0;
+    bool first = true;
+    size_t frames = 0;
+    while(sent < body_len) {
+        size_t chunk = body_len - sent < slice ? body_len - sent : slice;
+        bool last = (sent + chunk) >= body_len;
+        // ISO 7816 wrap: 90 <ins> 00 00 Lc <native payload> 00, ins = 3D then AF.
+        uint8_t apdu[64];
+        size_t apdu_len = 0;
+        apdu[apdu_len++] = 0x90;
+        apdu[apdu_len++] = first ? DFC_CMD_WRITE_DATA : DFC_CMD_ADDITIONAL_FRAME;
+        apdu[apdu_len++] = 0x00;
+        apdu[apdu_len++] = 0x00;
+        apdu[apdu_len++] = (uint8_t)chunk;
+        memcpy(apdu + apdu_len, body + sent, chunk);
+        apdu_len += chunk;
+        apdu[apdu_len++] = 0x00;
+
+        uint8_t response[64];
+        size_t response_len = 0;
+        munit_assert_int(
+            dfc_virtual_picc_iso_dep_exchange(
+                link.picc, apdu, apdu_len, response, sizeof(response), &response_len),
+            ==,
+            DfcVirtualPiccStatusOk);
+        munit_assert_size(response_len, >=, 2);
+        munit_assert_uint8(response[response_len - 2], ==, 0x91);
+        if(last)
+            // Final frame: the whole secured command verifies, the write runs and
+            // returns OK (plain or under the EV2 response MAC - either ends 91 00).
+            munit_assert_uint8(response[response_len - 1], ==, DFC_STATUS_OK);
+        else
+            // Intermediate frames: the card asks for more.
+            munit_assert_uint8(response[response_len - 1], ==, DFC_CMD_ADDITIONAL_FRAME);
+        sent += chunk;
+        first = false;
+        frames++;
+    }
+    // The payload really did span several frames.
+    munit_assert_size(frames, >, 1);
+
+    // The session survives a data write, and the file now holds exactly what was
+    // sent - proof every frame was joined and decrypted as one command.
+    munit_assert_true(link.picc->emulator->ev2_session_active);
+    DfcFile* file = dfc_credential_find_file_in_app(&link.credential, 0, file_chained);
+    munit_assert_not_null(file);
+    const uint8_t* stored = dfc_file_data(&link.credential, file);
+    munit_assert_not_null(stored);
+    munit_assert_memory_equal(sizeof(payload), stored, payload);
+
+    // REGRESSION GUARD: a secured command sent AFTER the chained write must still
+    // verify. On a live multi-application enrollment the ChangeKey right after the big chained
+    // WriteData failed with 91 1E, which only happens if the chained-write path
+    // leaves the EV2 session state (command counter / TI / keys) inconsistent with
+    // the reader. The emulator advanced its counter to 1 for the chained write, so
+    // the follow-up is built at counter 1 - exactly what a real reader uses next.
+    munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 1);
+    link.session.ev2_command_counter = 1;
+
+    // Mirror the live multi-application sequence that fails on hardware: the big chained
+    // WriteData is immediately followed by a standard ChangeKey (0xC4) of the
+    // authenticated key, built at counter 1. On hardware this C4 returns 91 1E
+    // (command MAC mismatch) and tears down the session. If the emulator's
+    // chained-write path leaves EV2 state consistent, the C4's MAC must verify
+    // here (no integrity error) using the exact same MAC convention the reader
+    // and emulator share.
+    munit_assert_uint16(link.picc->emulator->ev2_command_counter, ==, 1);
+    link.session.ev2_command_counter = 1;
+
+    uint8_t newkey[16];
+    for(size_t i = 0; i < sizeof(newkey); i++) newkey[i] = (uint8_t)(0x10 + i);
+    uint8_t ck_ct[32];
+    size_t ck_ct_len = 0;
+    munit_assert_true(dfc_ev2_encrypt_data(
+        link.session.ev2_encryption_key,
+        DfcEv2DirectionCommand,
+        link.session.ev2_command_counter,
+        link.session.ev2_transaction_identifier,
+        newkey,
+        sizeof(newkey),
+        ck_ct,
+        sizeof(ck_ct),
+        &ck_ct_len));
+    uint8_t ck_sd[1 + sizeof(ck_ct)];
+    size_t ck_sd_len = 0;
+    ck_sd[ck_sd_len++] = 0x00; // key number 0 (the authenticated key)
+    memcpy(ck_sd + ck_sd_len, ck_ct, ck_ct_len);
+    ck_sd_len += ck_ct_len;
+    uint8_t ck_mac[DFC_WIRE_MAC_LENGTH];
+    munit_assert_true(dfc_ev2_mac(
+        link.session.ev2_mac_key,
+        DFC_CMD_CHANGE_KEY,
+        link.session.ev2_command_counter,
+        link.session.ev2_transaction_identifier,
+        ck_sd,
+        ck_sd_len,
+        NULL,
+        0,
+        ck_mac));
+    uint8_t ck_apdu[6 + sizeof(ck_sd) + sizeof(ck_mac)];
+    size_t ck_apdu_len = 0;
+    ck_apdu[ck_apdu_len++] = 0x90;
+    ck_apdu[ck_apdu_len++] = DFC_CMD_CHANGE_KEY;
+    ck_apdu[ck_apdu_len++] = 0x00;
+    ck_apdu[ck_apdu_len++] = 0x00;
+    ck_apdu[ck_apdu_len++] = (uint8_t)(ck_sd_len + sizeof(ck_mac));
+    memcpy(ck_apdu + ck_apdu_len, ck_sd, ck_sd_len);
+    ck_apdu_len += ck_sd_len;
+    memcpy(ck_apdu + ck_apdu_len, ck_mac, sizeof(ck_mac));
+    ck_apdu_len += sizeof(ck_mac);
+    ck_apdu[ck_apdu_len++] = 0x00;
+
+    uint8_t ck_resp[64];
+    size_t ck_resp_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc, ck_apdu, ck_apdu_len, ck_resp, sizeof(ck_resp), &ck_resp_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(ck_resp_len, >=, 2);
+    munit_assert_uint8(ck_resp[ck_resp_len - 2], ==, 0x91);
+    // The specific hardware failure is an INTEGRITY_ERROR on the C4's command MAC.
+    munit_assert_uint8(ck_resp[ck_resp_len - 1], !=, DFC_STATUS_INTEGRITY_ERROR);
+
+    link_close(&link);
+    return MUNIT_OK;
+}
+#endif
+
 static MunitResult test_streamed_secure_write(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -4417,6 +4780,26 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/long-plain-read", test_long_plain_read, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    {"/ev2-enciphered-chained-read",
+     test_ev2_enciphered_chained_read,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev2-standard-change-other-key",
+     test_ev2_standard_change_other_key,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev2-chained-enciphered-write",
+     test_ev2_chained_enciphered_write,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+#endif
     {"/streamed-secure-write", test_streamed_secure_write, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/streamed-secure-record",
      test_streamed_secure_record,

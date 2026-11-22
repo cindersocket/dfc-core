@@ -99,6 +99,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_se
 	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
 	test_dfc_response \
 	test_dfc_ev2_command_metadata \
+	test_dfc_emulator_secured_envelope \
 	test_dfc_sdm_verify \
 	test_dfc_iso_file_access \
 	test_dfc_ev1_response_policy \
