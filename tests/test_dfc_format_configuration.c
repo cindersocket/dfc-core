@@ -445,9 +445,127 @@ static MunitResult test_authenticated_disable(const MunitParameter params[], voi
     return MUNIT_OK;
 }
 
+// --- SetConfiguration option 0x04: Secure Messaging Configuration -----------
+// Reproduces the live multi-application enrollment step in the host closed loop: authenticate
+// the PICC master over EV2, then issue SetConfiguration option 0x04 with the
+// captured payload 00 03 (reserved byte, then disable D40 + EV1). This is the
+// frame that aborted enrollment on hardware before the handler existed.
+
+static void open_authenticated_picc_ev2(Link* link) {
+    link_open(link, DfcGenerationEv3, DfcReaderFramingNative);
+    link->credential.picc_key_settings_1 = 0x0F;
+    link->credential.picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    link->credential.picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
+    link->credential.picc_has_auth_commands = true;
+    link->credential.picc_auth_commands =
+        dfc_credential_default_auth_commands(
+            link->credential.picc_key_settings_2, DfcGenerationEv3) |
+        DFC_AUTH_COMMAND_EV2_FIRST | DFC_AUTH_COMMAND_EV2_NON_FIRST | DFC_AUTH_COMMAND_ISO7816;
+    munit_assert_true(dfc_credential_keys_resize(&link->credential, NULL, 1, sizeof(AES_KEY_0)));
+    memcpy(dfc_credential_key(&link->credential, NULL, 0), AES_KEY_0, sizeof(AES_KEY_0));
+    munit_assert_int(authenticate_ev2(link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+    munit_assert_true(link->session.selected_application_is_picc);
+}
+
+static uint8_t send_configuration_option(
+    Link* link,
+    uint8_t option,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t comm_mode) {
+    DfcCommand command;
+    DfcReaderExchange exchange;
+    munit_assert_int(
+        dfc_command_set_configuration(&command, option, data, data_len), ==, DfcCommandOk);
+    DfcReaderStatus status = link_send(link, &command, comm_mode, &exchange);
+    if(status == DfcReaderOk) return DFC_STATUS_OK;
+    munit_assert_int(status, ==, DfcReaderCardError);
+    return dfc_reader_result_status(&exchange);
+}
+
+static MunitResult
+    test_secure_messaging_configuration_ev2(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    Link link;
+    open_authenticated_picc_ev2(&link);
+    dfc_credential_clear_dirty(&link.credential);
+
+    static const uint8_t data[] = {0x00, 0x03}; // reserved 00, disable D40 + EV1
+    munit_assert_uint8(
+        send_configuration_option(&link, 0x04, data, sizeof(data), DFC_COMM_ENCIPHERED),
+        ==,
+        DFC_STATUS_OK);
+    munit_assert_true(link.credential.picc_has_sm_disable);
+    munit_assert_uint8(
+        link.credential.picc_sm_disable, ==, DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1);
+    munit_assert_true(link.credential.dirty);
+    // The EV2 session must survive so the enrollment can continue.
+    munit_assert_true(dfc_reader_session_is_authenticated(&link.session));
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static MunitResult test_secure_messaging_configuration_single_byte(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    Link link;
+    open_authenticated_picc_ev2(&link);
+    dfc_credential_clear_dirty(&link.credential);
+
+    // A bare 1-byte mask is also accepted (the mask is the final byte).
+    static const uint8_t data[] = {DFC_SM_DISABLE_EV2_CHAINED_WRITE};
+    munit_assert_uint8(
+        send_configuration_option(&link, 0x04, data, sizeof(data), DFC_COMM_ENCIPHERED),
+        ==,
+        DFC_STATUS_OK);
+    munit_assert_uint8(link.credential.picc_sm_disable, ==, DFC_SM_DISABLE_EV2_CHAINED_WRITE);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static MunitResult test_secure_messaging_configuration_rejects_invalid(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    Link link;
+    open_authenticated_picc_ev2(&link);
+    DfcCredential before = link.credential;
+    // A bit outside the valid D40/EV1/EV2-chained-write mask must be rejected.
+    static const uint8_t bad[] = {0x00, 0x40};
+    munit_assert_uint8(
+        send_configuration_option(&link, 0x04, bad, sizeof(bad), DFC_COMM_ENCIPHERED),
+        ==,
+        DFC_STATUS_PARAMETER_ERROR);
+    expect_credential_unchanged(&before, &link.credential);
+    link_close(&link);
+    return MUNIT_OK;
+}
+
 static MunitTest tests[] = {
     {"/disabled-round-trips", test_disabled_round_trips, NULL, NULL, 0, NULL},
     {"/authenticated-disable", test_authenticated_disable, NULL, NULL, 0, NULL},
+    {"/secure-messaging-configuration-ev2",
+     test_secure_messaging_configuration_ev2,
+     NULL,
+     NULL,
+     0,
+     NULL},
+    {"/secure-messaging-configuration-single-byte",
+     test_secure_messaging_configuration_single_byte,
+     NULL,
+     NULL,
+     0,
+     NULL},
+    {"/secure-messaging-configuration-rejects-invalid",
+     test_secure_messaging_configuration_rejects_invalid,
+     NULL,
+     NULL,
+     0,
+     NULL},
     {"/supported-authentication-families",
      test_supported_authentication_families,
      NULL,
