@@ -394,6 +394,105 @@ static void dfc_emulator_command_change_key_ev1(
     }
 }
 
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// Standard ChangeKey (0xC4) inside an EV2 (AuthenticateEV2First) session. The
+// command metadata does not decrypt 0xC4, so the cryptogram arrives enciphered
+// with the EV2 session key (IV from the transaction identifier and command
+// counter) and ISO 0x80 padded; unlike the EV1 variant it carries NO CRC over
+// the Cmd||KeyNo header (the command MAC already protects it). Format verified
+// against Proxmark3 (DesfireChangeKey DACEV2): different key = (newKey XOR
+// oldKey) || version || CRC32(newKey); same key = newKey || version. [ported #7]
+static void handle_change_key_ev2_standard(
+    DfcEmulator* emulator,
+    const uint8_t* apdu,
+    size_t apdu_len,
+    DfcByteBuf* tx_buffer) {
+    uint8_t key_no = apdu[1] & 0x3F;
+    if(key_no >= emulator_num_keys(emulator)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
+        return;
+    }
+    // can_change_key() reads emulator->auth_key_no, which the legacy path keeps
+    // but an EV2 session tracks in ev2_authenticated_key_no instead; mirror it
+    // across the check so the access condition is correct for any auth key.
+    uint8_t saved_auth_key_no = emulator->auth_key_no;
+    emulator->auth_key_no = emulator->ev2_authenticated_key_no;
+    bool allowed = can_change_key(emulator, key_no);
+    emulator->auth_key_no = saved_auth_key_no;
+    if(!allowed) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+        return;
+    }
+
+    const uint8_t* encrypted = apdu + 2;
+    size_t encrypted_len = apdu_len - 2;
+    uint8_t clear[48];
+    if(encrypted_len == 0 || (encrypted_len % DFC_AES_KEY_LENGTH) != 0 ||
+       encrypted_len > sizeof(clear)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+        return;
+    }
+    size_t clear_len = 0;
+    if(!dfc_ev2_decrypt_data(
+           emulator->ev2_session_encryption_key,
+           DfcEv2DirectionCommand,
+           emulator->ev2_command_counter,
+           emulator->ev2_transaction_identifier,
+           encrypted,
+           encrypted_len,
+           clear,
+           &clear_len,
+           false)) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        return;
+    }
+
+    size_t key_len = DFC_AES_KEY_LENGTH;
+    bool different = key_no != emulator->ev2_authenticated_key_no;
+    size_t expected_len = key_len + DFC_CHANGE_KEY_EV2_VERSION_LENGTH + (different ? 4 : 0);
+    if(clear_len != expected_len) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+        return;
+    }
+
+    uint8_t new_version = clear[key_len];
+    uint8_t new_key[DFC_MAX_KEY_LEN];
+    uint8_t* old_key = emulator_key(emulator, key_no);
+    if(!old_key) {
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
+        return;
+    }
+    if(different) {
+        for(size_t i = 0; i < key_len; i++) {
+            new_key[i] = clear[i] ^ old_key[i];
+        }
+        size_t crc_offset = key_len + DFC_CHANGE_KEY_EV2_VERSION_LENGTH;
+        uint32_t expected_new_crc = crc32_dfc(new_key, key_len);
+        uint32_t actual_new_crc =
+            (uint32_t)clear[crc_offset] | ((uint32_t)clear[crc_offset + 1] << 8) |
+            ((uint32_t)clear[crc_offset + 2] << 16) | ((uint32_t)clear[crc_offset + 3] << 24);
+        if(expected_new_crc != actual_new_crc) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return;
+        }
+    } else {
+        memcpy(new_key, clear, key_len);
+    }
+
+    memcpy(old_key, new_key, key_len);
+    *emulator_key_version(emulator, key_no) = new_version;
+    dfc_credential_mark_dirty(emulator->credential);
+
+    dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    if(!different) {
+        // Changing the authenticated key terminates the session; plain response.
+        dfc_emulator_reset_session(emulator);
+        emulator->ev2_response_plain = true;
+    }
+    // A different key keeps the session; the envelope MACs the response.
+}
+#endif // DFC_ENABLE_EV2_SECURE_MESSAGING
+
 void dfc_emulator_command_change_key(
     DfcEmulator* emulator,
     const uint8_t* apdu,
@@ -403,7 +502,18 @@ void dfc_emulator_command_change_key(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
-    if(!dfc_emulator_native_authentication_active(emulator)) {
+    bool auth_active = dfc_emulator_native_authentication_active(emulator);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    // An EV2 session authenticates through ev2_session_active, not the legacy
+    // native secure-messaging state (which AuthenticateEV2First clears). ChangeKey
+    // of another key under an EV2 session (the app-personalisation step a terminal
+    // runs after creating an application) must pass this guard to reach the EV2
+    // branch below; without this it is rejected with AUTHENTICATION_ERROR before
+    // the enciphered cryptogram is ever processed. Confirmed on a live multi-application
+    // enrollment (the C4 01 app-key change) and in the host closed-loop test.
+    auth_active = auth_active || emulator->ev2_session_active;
+#endif
+    if(!auth_active) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
@@ -413,6 +523,14 @@ void dfc_emulator_command_change_key(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    // Under an EV2 session the cryptogram is enciphered with the EV2 session key,
+    // not the legacy/EV1 secure_messaging state (NULL here). [ported #7]
+    if(emulator->ev2_session_active) {
+        handle_change_key_ev2_standard(emulator, apdu, apdu_len, tx_buffer);
+        return;
+    }
+#endif
     if(!can_change_key(emulator, key_no)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
