@@ -1061,6 +1061,106 @@ void dfc_emulator_command_set_configuration(
 #endif
         return;
     }
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    // Option 0x02: set the user ATS (what the card answers to RATS). The multi-application
+    // enrollment terminal writes this. Under an EV2 session the envelope decrypts
+    // the data, so unwrap here mirrors option 0x00. The payload is the ATS (a
+    // TL-prefixed answer-to-select) possibly followed by a CRC32; store exactly
+    // the TL-length bytes so picc_ats stays self-consistent. [ported #5 — exact
+    // trailing-CRC framing to confirm against a live capture.]
+    if(option == 0x02) {
+        if(!dfc_emulator_command_is_authenticated_as_master(emulator)) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+            return;
+        }
+        if(emulator->selected_application != DfcEmulatorSelectedApplicationPicc) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+        uint8_t clear[32] = {0};
+        const uint8_t* ats_data = NULL;
+        size_t scratch_len = 0;
+        size_t clear_len = dfc_emulator_command_unwrap_write_payload(
+            emulator, buffer, buffer_len, 1, DFC_COMM_ENCIPHERED, clear, sizeof(clear), &ats_data,
+            &scratch_len);
+        if(clear_len == SIZE_MAX) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return;
+        }
+        if(clear_len >= 1) {
+            size_t ats_len = ats_data[0]; // DESFire ATS length byte includes itself
+            if(ats_len >= 1 && ats_len <= clear_len && ats_len <= DFC_PICC_ATS_MAX) {
+                memcpy(emulator->credential->picc_ats, ats_data, ats_len);
+                emulator->credential->picc_ats_len = (uint8_t)ats_len;
+                dfc_credential_mark_dirty(emulator->credential);
+            }
+        }
+        dfc_secure_wipe(clear, sizeof(clear));
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+        return;
+    }
+    // Option 0x04: Secure Messaging Configuration (NXP Cmd.SetConfiguration,
+    // supported from DESFire EV2). The multi-application enrollment terminal issues this under
+    // an EV2 session, once the card is personalised to EV2/AES, to disable the
+    // legacy D40/EV1 secure-messaging families. The decrypted payload observed on
+    // a live multi-application reader is `00 03` = reserved lead byte then the disable bitmask
+    // (bit0 D40, bit1 EV1, bit2 EV2 chained write; 0x03 = disable D40 + EV1). It
+    // is stored in picc_sm_disable, which already gates
+    // dfc_emulator_accepts_auth_cipher and round-trips through both codecs; the
+    // valid-bit mask mirrors dfc_der.c's PICC SM-disable validation. Without this
+    // case the option falls through to PARAMETER_ERROR and finalize_native_command
+    // tears down the EV2 session, aborting enrollment. Verified against a live
+    // capture (clr[4] 5C 04 00 03) and reproduced in the host closed-loop test.
+    if(option == 0x04) {
+        if(!dfc_emulator_command_is_authenticated_as_master(emulator)) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+            return;
+        }
+        if(emulator->selected_application != DfcEmulatorSelectedApplicationPicc) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+        uint8_t clear[32] = {0};
+        const uint8_t* sm_data = NULL;
+        size_t scratch_len = 0;
+        size_t clear_len = dfc_emulator_command_unwrap_write_payload(
+            emulator, buffer, buffer_len, 1, DFC_COMM_ENCIPHERED, clear, sizeof(clear), &sm_data,
+            &scratch_len);
+        if(clear_len == SIZE_MAX) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_emulator_reset_session(emulator);
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+            return;
+        }
+        if(clear_len < 1 || clear_len > 2) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
+            return;
+        }
+        // 1-byte payload: the mask itself. 2-byte payload: a reserved lead byte
+        // (0x00 in every observed capture) followed by the disable mask.
+        uint8_t reserved = clear_len == 2 ? sm_data[0] : 0x00;
+        uint8_t mask = sm_data[clear_len - 1];
+        const uint8_t valid_mask =
+            DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1 | DFC_SM_DISABLE_EV2_CHAINED_WRITE;
+        if(reserved != 0x00 || (mask & (uint8_t)~valid_mask) != 0) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
+        if(!emulator->credential->picc_has_sm_disable ||
+           emulator->credential->picc_sm_disable != mask) {
+            emulator->credential->picc_sm_disable = mask;
+            emulator->credential->picc_has_sm_disable = true;
+            dfc_credential_mark_dirty(emulator->credential);
+        }
+        dfc_secure_wipe(clear, sizeof(clear));
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+        return;
+    }
+#endif
 #if DFC_ENABLE_TRANSACTION_TIMER
     if(option != DFC_CONFIGURATION_APPLICATION_CAPABILITIES) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
