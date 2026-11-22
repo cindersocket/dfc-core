@@ -546,6 +546,45 @@ void dfc_emulator_command_change_key(
     } else {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
     }
+
+    // PICC master-key crypto-type migration (e.g. DES -> AES). The key-number
+    // byte's top bits carry the new type (0x80 AES / 0x40 3K3DES); the key bytes
+    // are stored by the dispatch above, but the stored type and the accepted auth
+    // commands must follow or a later AuthenticateAES/EV2First is rejected. Scoped
+    // to the PICC master key, unchanged key length. [ported #3 + save-#8]
+    if(!emulator_current_app(emulator) && key_no == 0 &&
+       dfc_bytebuf_get_size_bytes(tx_buffer) >= 1 &&
+       dfc_bytebuf_get_byte(tx_buffer, 0) == DFC_STATUS_OK) {
+        DfcCredential* credential = emulator->credential;
+        uint8_t requested_type = apdu[1] & DFC_KEY_TYPE_MASK;
+        uint8_t new_ks2 =
+            (uint8_t)((credential->picc_key_settings_2 & ~DFC_KEY_TYPE_MASK) | requested_type);
+        if(new_ks2 != credential->picc_key_settings_2 &&
+           dfc_credential_key_length(new_ks2) == credential->picc_key_len) {
+            credential->picc_key_settings_2 = new_ks2;
+            credential->picc_has_auth_commands = true;
+            credential->picc_auth_commands = dfc_credential_default_auth_commands(
+                new_ks2, credential->card.generation);
+            // A preferred auth command recorded for the previous key type is no
+            // longer in the possible set once the type changes, which the DER/
+            // text model validator rejects (preferred must be a single bit inside
+            // the command set) and which breaks saving. Drop a now-incompatible
+            // preference. [save bug #8 root cause]
+            if(credential->picc_has_preferred_auth_command &&
+               (credential->picc_preferred_auth_command & credential->picc_auth_commands) == 0) {
+                credential->picc_has_preferred_auth_command = false;
+                credential->picc_preferred_auth_command = 0;
+            }
+            if(requested_type == DFC_KEY_TYPE_AES) {
+                credential->picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
+            } else if(requested_type == 0x40) {
+                credential->picc_auth_command = DFC_CMD_AUTHENTICATE_ISO;
+            } else {
+                credential->picc_auth_command = DFC_CMD_AUTHENTICATE_LEGACY;
+            }
+            dfc_credential_mark_dirty(credential);
+        }
+    }
 }
 
 void dfc_emulator_command_change_key_settings(
