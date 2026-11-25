@@ -1062,12 +1062,9 @@ void dfc_emulator_command_set_configuration(
         return;
     }
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
-    // Option 0x02: set the user ATS (what the card answers to RATS). The multi-application
-    // enrollment terminal writes this. Under an EV2 session the envelope decrypts
-    // the data, so unwrap here mirrors option 0x00. The payload is the ATS (a
-    // TL-prefixed answer-to-select) possibly followed by a CRC32; store exactly
-    // the TL-length bytes so picc_ats stays self-consistent. [ported #5 — exact
-    // trailing-CRC framing to confirm against a live capture.]
+    // Option 0x02: set the user ATS (what the card answers to RATS). The EV1 card
+    // capture hardware_physical_ev1_8k_user_ats_boundaries.vec accepts nonempty
+    // values through 20 bytes without validating the internal length byte.
     if(option == 0x02) {
         if(!dfc_emulator_command_is_authenticated_as_master(emulator)) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
@@ -1089,13 +1086,16 @@ void dfc_emulator_command_set_configuration(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
-        if(clear_len >= 1) {
-            size_t ats_len = ats_data[0]; // DESFire ATS length byte includes itself
-            if(ats_len >= 1 && ats_len <= clear_len && ats_len <= DFC_PICC_ATS_MAX) {
-                memcpy(emulator->credential->picc_ats, ats_data, ats_len);
-                emulator->credential->picc_ats_len = (uint8_t)ats_len;
-                dfc_credential_mark_dirty(emulator->credential);
-            }
+        if(clear_len == 0 || clear_len > DFC_PICC_ATS_MAX || ats_data[0] == 0) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
+        size_t ats_len = ats_data[0]; // DESFire ATS length byte includes itself
+        if(ats_len <= clear_len) {
+            memcpy(emulator->credential->picc_ats, ats_data, ats_len);
+            emulator->credential->picc_ats_len = (uint8_t)ats_len;
+            dfc_credential_mark_dirty(emulator->credential);
         }
         dfc_secure_wipe(clear, sizeof(clear));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);

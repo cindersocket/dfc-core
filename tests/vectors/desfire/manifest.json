@@ -1878,6 +1878,20 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev1_8k_user_ats_boundaries.vec",
+      "sha256": "15000030f138538c418378ffac28ada12acfb9e9d464967ab4bfa71b30c2c4f3",
+      "size": 3873,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "physical EV1 8K user ATS boundary behavior",
+        "case-id": "hardware-physical-ev1-8k-user-ats-boundaries",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 46
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_4k_dam-auth-disabled.vec",
       "sha256": "28d049b9bbadc7b2d9f4c5a4bd96bfaae528def348264a8c4e97b6c6003775e3",
       "size": 598,

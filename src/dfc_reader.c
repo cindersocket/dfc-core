@@ -1069,22 +1069,26 @@ static DfcReaderStatus prepare_wrapped_file_write(
     head[0] = command->ins;
     memcpy(head + 1, command->data, header_len);
     memcpy(ex->frame, command->data, header_len);
-    size_t wrapped_len = comm_mode == DFC_COMM_MAC ? dfc_secure_messaging_wrap_d40_command_mac(
-                                                         &session->sm,
-                                                         body,
-                                                         body_len,
-                                                         ex->frame + header_len,
-                                                         sizeof(ex->frame) - header_len) :
-                                                     dfc_secure_messaging_wrap(
-                                                         &session->sm,
-                                                         DFC_COMM_ENCIPHERED,
-                                                         head,
-                                                         header_len + 1,
-                                                         body,
-                                                         body_len,
-                                                         ex->frame + header_len,
-                                                         sizeof(ex->frame) - header_len);
-    if(wrapped_len == 0 || wrapped_len != wire_len) {
+    bool length_marker = command->ins == DFC_CMD_SET_CONFIGURATION && command->data_len > 0 &&
+                         command->data[0] == 0x02;
+    size_t wrapped_len = comm_mode == DFC_COMM_MAC ?
+                             dfc_secure_messaging_wrap_d40_command_mac(
+                                 &session->sm,
+                                 body,
+                                 body_len,
+                                 ex->frame + header_len,
+                                 sizeof(ex->frame) - header_len) :
+                             (length_marker ? dfc_secure_messaging_wrap_with_length_marker :
+                                              dfc_secure_messaging_wrap)(
+                                 &session->sm,
+                                 DFC_COMM_ENCIPHERED,
+                                 head,
+                                 header_len + 1,
+                                 body,
+                                 body_len,
+                                 ex->frame + header_len,
+                                 sizeof(ex->frame) - header_len);
+    if(wrapped_len == 0 || (!length_marker && wrapped_len != wire_len)) {
         return fail_prepared_command(ex, DfcReaderIntegrityError);
     }
     ex->frame_len = header_len + wrapped_len;

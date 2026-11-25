@@ -730,7 +730,7 @@ bool dfc_secure_messaging_unwrap_d40_response_mac(
 }
 
 // PCD -> PICC direction for plain and enciphered command payloads.
-size_t dfc_secure_messaging_wrap(
+static size_t wrap_command(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,
     const uint8_t* header,
@@ -738,7 +738,8 @@ size_t dfc_secure_messaging_wrap(
     const uint8_t* plain,
     size_t plain_len,
     uint8_t* out,
-    size_t out_capacity) {
+    size_t out_capacity,
+    bool length_marker) {
     if(!session_is_valid(sm) || (header_len && !header) || (plain_len && !plain)) return 0;
     if(comm_mode == DFC_COMM_PLAIN) {
         if(!output_fits(out, out_capacity, plain_len)) return 0;
@@ -750,7 +751,33 @@ size_t dfc_secure_messaging_wrap(
 
     if(comm_mode != DFC_COMM_ENCIPHERED) return 0;
     return enciphered_encode(
-        sm, header, header_len, plain, plain_len, NULL, 0, false, out, out_capacity);
+        sm, header, header_len, plain, plain_len, NULL, 0, length_marker, out, out_capacity);
+}
+
+size_t dfc_secure_messaging_wrap(
+    DfcSecureMessaging* sm,
+    uint8_t comm_mode,
+    const uint8_t* header,
+    size_t header_len,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t* out,
+    size_t out_capacity) {
+    return wrap_command(
+        sm, comm_mode, header, header_len, plain, plain_len, out, out_capacity, false);
+}
+
+size_t dfc_secure_messaging_wrap_with_length_marker(
+    DfcSecureMessaging* sm,
+    uint8_t comm_mode,
+    const uint8_t* header,
+    size_t header_len,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t* out,
+    size_t out_capacity) {
+    return wrap_command(
+        sm, comm_mode, header, header_len, plain, plain_len, out, out_capacity, true);
 }
 
 // PICC -> PCD direction for plain and enciphered response payloads.
@@ -820,6 +847,36 @@ size_t dfc_secure_messaging_generate_response(
 
 // PCD -> PICC direction (emulator verifying an incoming command): mirrors
 // dfc_secure_messaging_wrap, so `header` has the same meaning there.
+bool dfc_secure_messaging_verify_command_with_length(
+    DfcSecureMessaging* sm,
+    uint8_t comm_mode,
+    const uint8_t* header,
+    size_t header_len,
+    const uint8_t* wrapped,
+    size_t wrapped_len,
+    uint8_t* out,
+    size_t out_capacity,
+    size_t* out_len) {
+    if(out_len) *out_len = 0;
+    if(!session_is_valid(sm) || !out_len || (header_len && !header) || (wrapped_len && !wrapped))
+        return false;
+    if(comm_mode == DFC_COMM_PLAIN) {
+        if(!output_fits(out, out_capacity, wrapped_len)) return false;
+        if(wrapped_len) memmove(out, wrapped, wrapped_len);
+        *out_len = wrapped_len;
+        return true;
+    }
+
+    if(comm_mode == DFC_COMM_MAC) return false;
+
+    if(comm_mode != DFC_COMM_ENCIPHERED) return false;
+    size_t clear_len = enciphered_decode(
+        sm, header, header_len, NULL, 0, wrapped, wrapped_len, out, out_capacity);
+    if(clear_len == SIZE_MAX) return false;
+    *out_len = clear_len;
+    return true;
+}
+
 size_t dfc_secure_messaging_verify_command(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,
@@ -829,17 +886,17 @@ size_t dfc_secure_messaging_verify_command(
     size_t wrapped_len,
     uint8_t* out,
     size_t out_capacity) {
-    if(!session_is_valid(sm) || (header_len && !header) || (wrapped_len && !wrapped)) return 0;
-    if(comm_mode == DFC_COMM_PLAIN) {
-        if(!output_fits(out, out_capacity, wrapped_len)) return 0;
-        if(wrapped_len) memmove(out, wrapped, wrapped_len);
-        return wrapped_len;
-    }
-
-    if(comm_mode == DFC_COMM_MAC) return 0;
-
-    if(comm_mode != DFC_COMM_ENCIPHERED) return 0;
-    size_t clear_len = enciphered_decode(
-        sm, header, header_len, NULL, 0, wrapped, wrapped_len, out, out_capacity);
-    return clear_len == SIZE_MAX ? 0 : clear_len;
+    size_t out_len = 0;
+    return dfc_secure_messaging_verify_command_with_length(
+               sm,
+               comm_mode,
+               header,
+               header_len,
+               wrapped,
+               wrapped_len,
+               out,
+               out_capacity,
+               &out_len) ?
+               out_len :
+               0;
 }

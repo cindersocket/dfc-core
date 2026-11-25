@@ -749,16 +749,18 @@ size_t dfc_emulator_command_unwrap_write_payload(
     if(ev1_sm && comm == DFC_COMM_ENCIPHERED) {
         *clear = scratch;
         *scratch_len = DFC_MIN(wrapped_len, scratch_cap);
-        size_t data_len = dfc_secure_messaging_verify_command(
-            emulator->secure_messaging,
-            DFC_COMM_ENCIPHERED,
-            apdu,
-            cmd_header,
-            wrapped,
-            wrapped_len,
-            scratch,
-            scratch_cap);
-        if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
+        size_t data_len = 0;
+        if(!dfc_secure_messaging_verify_command_with_length(
+               emulator->secure_messaging,
+               DFC_COMM_ENCIPHERED,
+               apdu,
+               cmd_header,
+               wrapped,
+               wrapped_len,
+               scratch,
+               scratch_cap,
+               &data_len))
+            return SIZE_MAX;
         return data_len;
     }
     if(ev1_sm) {
@@ -787,16 +789,18 @@ size_t dfc_emulator_command_unwrap_write_payload(
     }
     *clear = scratch;
     *scratch_len = DFC_MIN(wrapped_len, scratch_cap);
-    size_t data_len = dfc_secure_messaging_verify_command(
-        emulator->secure_messaging,
-        DFC_COMM_ENCIPHERED,
-        apdu,
-        cmd_header,
-        wrapped,
-        wrapped_len,
-        scratch,
-        scratch_cap);
-    if(data_len == 0 && wrapped_len > 0) return SIZE_MAX;
+    size_t data_len = 0;
+    if(!dfc_secure_messaging_verify_command_with_length(
+           emulator->secure_messaging,
+           DFC_COMM_ENCIPHERED,
+           apdu,
+           cmd_header,
+           wrapped,
+           wrapped_len,
+           scratch,
+           scratch_cap,
+           &data_len))
+        return SIZE_MAX;
     return data_len;
 }
 

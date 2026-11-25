@@ -2008,6 +2008,43 @@ static MunitResult test_iso_session(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_ev1_user_ats_uses_length_marker(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+    select_app(&link, AID_ISO);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_ISO, 0, TDES_KEY_0, sizeof(TDES_KEY_0)),
+        ==,
+        DfcReaderOk);
+
+    // hardware_physical_ev1_8k_user_ats_boundaries.vec requires the post-CRC
+    // length marker. Four clear bytes make the difference observable: CRC32
+    // fills one block, so the marker requires a second encrypted block.
+    const uint8_t ats[] = {0x04, 0x75, 0x77, 0x81};
+    DfcCommand command;
+    munit_assert_int(
+        dfc_command_set_configuration(&command, 0x02, ats, sizeof(ats)), ==, DfcCommandOk);
+    DfcReaderExchange exchange;
+    DfcReaderOptions options = {.comm_mode = DFC_COMM_ENCIPHERED};
+    munit_assert_int(
+        dfc_reader_exchange_begin(
+            &exchange, &link.session, DfcReaderFramingIso7816, &command, &options),
+        ==,
+        DfcReaderOk);
+    uint8_t apdu[DFC_COMMAND_MAX_APDU];
+    size_t apdu_len = 0;
+    munit_assert_int(
+        dfc_reader_step(&exchange, NULL, 0, apdu, sizeof(apdu), &apdu_len), ==, DfcReaderPending);
+    munit_assert_size(apdu_len, ==, 23);
+    munit_assert_uint8(apdu[4], ==, 17); // option byte plus two encrypted blocks
+
+    link_close(&link);
+    return MUNIT_OK;
+}
+
 #if DFC_ENABLE_ISO7816_AUTH
 static MunitResult test_iso7816_mutual_authentication(const MunitParameter params[], void* data) {
     (void)params;
@@ -4732,6 +4769,12 @@ static MunitTest tests[] = {
      NULL},
     {"/aes-session", test_aes_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/iso-session", test_iso_session, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/ev1-user-ats-length-marker",
+     test_ev1_user_ats_uses_length_marker,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #if DFC_ENABLE_ISO7816_AUTH
     {"/iso7816-mutual-authentication",
      test_iso7816_mutual_authentication,
