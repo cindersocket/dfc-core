@@ -1108,30 +1108,33 @@ static DfcReaderStatus prepare_wrapped_file_write(
     size_t body_len = command->data_len - header_len;
     size_t wire_len =
         dfc_secure_messaging_command_payload_length(&session->sm, false, comm_mode, body_len);
-    if(wire_len == SIZE_MAX || header_len > sizeof(ex->frame) ||
-       wire_len > sizeof(ex->frame) - header_len) {
+    if(wire_len == SIZE_MAX || wire_len > sizeof(ex->frame) - header_len) {
         return DfcReaderInvalid;
     }
     uint8_t head[1 + DFC_READER_MAX_CLEAR_HEADER_LENGTH];
     head[0] = command->ins;
     memcpy(head + 1, command->data, header_len);
     memcpy(ex->frame, command->data, header_len);
-    size_t wrapped_len = comm_mode == DFC_COMM_MAC ? dfc_secure_messaging_wrap_d40_command_mac(
-                                                         &session->sm,
-                                                         body,
-                                                         body_len,
-                                                         ex->frame + header_len,
-                                                         sizeof(ex->frame) - header_len) :
-                                                     dfc_secure_messaging_wrap(
-                                                         &session->sm,
-                                                         DFC_COMM_ENCIPHERED,
-                                                         head,
-                                                         header_len + 1,
-                                                         body,
-                                                         body_len,
-                                                         ex->frame + header_len,
-                                                         sizeof(ex->frame) - header_len);
-    if(wrapped_len == 0 || wrapped_len != wire_len) {
+    bool length_marker = command->ins == DFC_CMD_SET_CONFIGURATION &&
+                         command->data[0] == DFC_CONFIGURATION_USER_ATS;
+    size_t wrapped_len = comm_mode == DFC_COMM_MAC ?
+                             dfc_secure_messaging_wrap_d40_command_mac(
+                                 &session->sm,
+                                 body,
+                                 body_len,
+                                 ex->frame + header_len,
+                                 sizeof(ex->frame) - header_len) :
+                             (length_marker ? dfc_secure_messaging_wrap_with_length_marker :
+                                              dfc_secure_messaging_wrap)(
+                                 &session->sm,
+                                 DFC_COMM_ENCIPHERED,
+                                 head,
+                                 header_len + 1,
+                                 body,
+                                 body_len,
+                                 ex->frame + header_len,
+                                 sizeof(ex->frame) - header_len);
+    if(wrapped_len == 0 || (!length_marker && wrapped_len != wire_len)) {
         return fail_prepared_command(ex, DfcReaderIntegrityError);
     }
     ex->frame_len = header_len + wrapped_len;
@@ -1179,6 +1182,11 @@ static DfcReaderStatus
         if(ex->comm_mode != DFC_COMM_ENCIPHERED) return DfcReaderInvalid;
         return prepare_wrapped_file_write(
             ex, command, DFC_COMM_ENCIPHERED, DfcEv2SetConfigurationHeaderLength);
+    }
+
+    if(ins == DFC_CMD_CHANGE_KEY_SETTINGS) {
+        if(ex->comm_mode != DFC_COMM_ENCIPHERED) return DfcReaderInvalid;
+        return prepare_wrapped_file_write(ex, command, DFC_COMM_ENCIPHERED, 0);
     }
 
     if(ins == DFC_CMD_CHANGE_KEY) {
@@ -1952,7 +1960,7 @@ DfcReaderStatus dfc_reader_change_key_cryptogram(
 
     if(!session_is_ev1(session)) goto cleanup;
     if(aes_key) clear[cursor++] = new_version;
-    uint8_t crc_head[2] = {DFC_CMD_CHANGE_KEY, (uint8_t)(key_no & 0x3F)};
+    uint8_t crc_head[2] = {DFC_CMD_CHANGE_KEY, key_no};
     uint32_t crc = dfc_crc32_extend(0xFFFFFFFFu, crc_head, sizeof(crc_head));
     crc = dfc_crc32_extend(crc, clear, cursor);
     dfc_write_uint32_le(clear + cursor, crc);

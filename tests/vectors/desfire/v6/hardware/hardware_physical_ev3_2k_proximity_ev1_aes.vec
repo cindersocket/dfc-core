@@ -1,0 +1,52 @@
+# PROVENANCE: measured from genuine DESFire EV3 2K UID 044D234A281F90 over PC/SC.
+# The positive trial uses the EV1 AES session-key MAC and preserves the session.
+# The negative trial sends the configured proximity-key MAC, receives an opaque
+# eight-byte response, and observes the card's 0x0B rejection latch.
+name: genuine EV3 2K EV1 AES proximity key selection and rejection latch
+case-id: hardware-physical-ev3-2k-proximity-ev1-aes
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+requires: ev3,auth-aes,proximity-check
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+picc-proximity-key: 00000000000000000000000000000000
+picc-proximity-option: 01
+picc-proximity-published-response-time: 0320
+picc-proximity-bitrate: 00
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+scan
+status 90CA00000582F2D10F8200 => 00
+
+# Correct EV1 AES session-key VerifyPC.
+status 905A00000382F2D100 => 00
+inject-random EC455D245B529B68FAFADAC5C520E10D
+exchange native-apdu 90AA0000010000 => 8FE7A23AD2BCE7A495FD954AB240408C91AF
+exchange native-apdu 90AF0000209CDB36457A6746BA7E110C3233CEB6C372F5D2FD7C6709B0ACE6F7647D195BCB00 => 07A932A3EF55F44E3D6A258008A5D1D79100
+inject-random 435F5A6F5DF33178
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F200000504D0D1D2D300 => 435F5A6F9190
+exchange native-apdu 90F200000504D4D5D6D700 => 5DF331789190
+exchange native-apdu 90FD000008A07D90060B135C0500 => 62CC09ABB363CDFA9190
+exchange native-apdu 9045000000 => 0F825D307632536B8EE99100
+
+# Wrong proximity-key VerifyPC. The card returns opaque data, then latches 0x0B.
+status 905A00000382F2D100 => 00
+inject-random 0674BF12716EBB932EBD00C36014BA6D
+exchange native-apdu 90AA0000010000 => 86CA2E857B3E4ADCDADAC65FEFAD938591AF
+exchange native-apdu 90AF000020F56EB5C5C9EF537D2823877F8670D6F61C1F2D28A3A483021F425205E17A3DEA00 => B39308495411AD0C328B577DCB7BFEE49100
+inject-random 5B7860E82F830679
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F200000504E0E1E2E300 => 5B7860E89190
+exchange native-apdu 90F200000504E4E5E6E700 => 2F8306799190
+inject-random 9A62B3A298E4C33C
+exchange native-apdu 90FD00000844028DAFDA4A3F3C00 => 9A62B3A298E4C33C9190
+exchange native-apdu 9045000000 => 910B
+field-off

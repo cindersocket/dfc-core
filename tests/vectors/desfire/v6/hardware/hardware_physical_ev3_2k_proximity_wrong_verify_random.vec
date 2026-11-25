@@ -1,0 +1,64 @@
+# PROVENANCE: measured from the attached genuine DESFire EV3 2K over PC/SC.
+# Four identical challenge sequences after one authenticated bad VerifyPC
+# produced four distinct eight-byte responses. The intervening protected
+# command exposed the post-failure session state.
+name: genuine EV3 2K wrong VerifyPC responses are fresh and retire EV2
+case-id: hardware-physical-ev3-2k-proximity-wrong-verify-random
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+replayable: true
+requires: ev2-secure-messaging,proximity-check
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-proximity-key: 00000000000000000000000000000000
+picc-proximity-option: 01
+picc-proximity-published-response-time: 0320
+picc-proximity-bitrate: 00
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+scan
+status 90CA00000580F2D10F8200 => 00
+status 905A00000380F2D100 => 00
+inject-random 12E99F069A26EABFC6BA878BA56DD7B268EDCE99
+exchange native-apdu 9071000002000000 => F9ACA96C6335C8870B4B19DE7C194F2491AF
+exchange native-apdu 90AF000020D782FD01CF997557BE1AE7C2644896D27510226E19053E5B32834E2E9DE8099100 => 5CB21F06E8B45D2BE0A835EA51F39384E768DEDB492DED8F1176F91EBE21945F9100
+
+# Trial 1 is authenticated. The deliberately wrong VerifyPC value receives an
+# opaque random response, and the next correctly MACed GetKeySettings is 910B.
+inject-random FE2CF0000901E360
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F2000005040102030400 => FE2CF0009190
+exchange native-apdu 90F2000005040506070800 => 0901E3609190
+inject-random 721FEF3A7D3B3C8D
+exchange native-apdu 90FD000008F20D3B76A55F53B700 => 721FEF3A7D3B3C8D9190
+exchange native-apdu 904500000885C78E7C77B0206F00 => 910B
+
+# The failed state accepts further proximity sequences for privacy. Each
+# identical challenge sequence returns fresh round data and a distinct final
+# opaque value.
+inject-random 0E1338D229BC0556
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F2000005040102030400 => 0E1338D29190
+exchange native-apdu 90F2000005040506070800 => 29BC05569190
+inject-random C83B4E9294704E3C
+exchange native-apdu 90FD000008FC4F8FC025AED06800 => C83B4E9294704E3C9190
+
+inject-random 26625BE3EED31587
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F2000005040102030400 => 26625BE39190
+exchange native-apdu 90F2000005040506070800 => EED315879190
+inject-random 854F48D33936306D
+exchange native-apdu 90FD0000087F3A2B9CF19A2DE900 => 854F48D33936306D9190
+
+inject-random E49EDFABA5AF1431
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F2000005040102030400 => E49EDFAB9190
+exchange native-apdu 90F2000005040506070800 => A5AF14319190
+inject-random B0D29EDB36A2E707
+exchange native-apdu 90FD000008342C414CA328EBDB00 => B0D29EDB36A2E7079190

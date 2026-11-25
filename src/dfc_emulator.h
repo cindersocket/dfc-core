@@ -138,6 +138,8 @@ typedef struct {
     bool ev2_authentication_pending;
     bool ev2_authentication_non_first;
     bool ev2_session_active;
+    bool ev2_retire_after_response;
+    bool ev2_select_picc_after_response;
     uint8_t ev2_authenticated_key_no;
     uint8_t ev2_pending_authenticated_key_no;
     uint8_t ev2_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];
@@ -219,6 +221,11 @@ typedef struct {
     bool delegated_creation_pending;
     uint8_t delegated_creation_header[DFC_DELEGATED_CREATE_MAX_HEADER_LENGTH];
 #endif
+#if DFC_ENABLE_PROXIMITY_CHECK
+    // Keep the activation-scoped failure latch in existing tail padding so
+    // adding it does not move any previously published structure field.
+    bool proximity_failed;
+#endif
 } DfcEmulator;
 
 #if DFC_ENABLE_ISO7816_AUTH
@@ -264,5 +271,22 @@ bool dfc_emulator_handle_command(
     size_t buffer_len,
     DfcByteBuf* tx_buffer,
     void* context);
+
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+// Same as dfc_emulator_handle_command, but applies the EV2 secure-messaging
+// envelope (command verify/decrypt + response MAC/encrypt) around the dispatch
+// for the on-device transport. The listener must use this so EV2/EV3 secure
+// sessions work; stock 2.0.0 applies the envelope only in the FFI virtual PICC.
+bool dfc_emulator_handle_command_secured(
+    DfcEmulator* emulator,
+    const uint8_t* buffer,
+    size_t buffer_len,
+    DfcByteBuf* tx_buffer,
+    void* context);
+bool dfc_emulator_reject_after_proximity_failure(
+    DfcEmulator* emulator,
+    uint8_t command,
+    DfcByteBuf* tx_buffer);
+#endif
 
 #endif // DFC_ENABLE_EMULATOR

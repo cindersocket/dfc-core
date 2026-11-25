@@ -18,6 +18,16 @@ HOST  := ../port/host
 
 CFLAGS  += -std=c11 -Wall -Wextra -I$(CORE) -I$(PORT) -I$(HOST) -Imunit
 
+# Clang source-based coverage. The public coverage entry point builds in an
+# isolated copy, so these instrumented binaries never replace a developer's
+# normal or sanitizer build.
+COVERAGE ?=
+ifneq ($(strip $(COVERAGE)),)
+COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping
+CFLAGS  += $(COVERAGE_FLAGS)
+LDFLAGS += -fprofile-instr-generate
+endif
+
 # A release build compiles assertions out. The suite must pass either way, so
 # no assertion may carry an effect the engine depends on.
 RELEASE ?=
@@ -97,6 +107,7 @@ TESTS := test_dfc_crypto test_cmac test_dfc_an10922 test_dfc_session test_dfc_se
 	test_dfc_command test_dfc_reader test_dfc_iso_chained_records \
 	test_dfc_response \
 	test_dfc_ev2_command_metadata \
+	test_dfc_emulator_secured_envelope \
 	test_dfc_sdm_verify \
 	test_dfc_iso_file_access \
 	test_dfc_ev1_response_policy \
@@ -124,6 +135,12 @@ REDUCED_TESTS := $(REDUCED_PROFILE_TEST) $(REDUCED_READER_TEST) $(REDUCED_FORMAT
 
 TESTS += test_dfc_ev2_capabilities test_dfc_static_signature
 
+# Keep alternate build profiles out of one merged profile. Compiling the same
+# function under different feature macros gives LLVM incompatible mappings.
+COVERAGE_TESTS := $(TESTS) $(FAULT_TEST) $(DES_CHAIN_FAULT_TEST) \
+	$(SECURE_MESSAGING_FAULT_TEST) $(AUTH_BACKEND_FAULT_TEST) \
+	$(EV2_RESPONSE_FAULT_TEST) $(SDM_FAULT_TEST) $(KEY_SET_WIPE_TEST)
+
 # Debugging tools that drive the engine from a workstation.
 TOOLS := dfc_probe_apdu dfc_virtual_picc_host
 
@@ -148,7 +165,7 @@ FUZZ_DIR  ?= ../build-fuzz
 FUZZ_TIME ?= 300
 FUZZ_FLAGS := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1
 
-.PHONY: test test-backends vectors replay-plans check-replay-plans vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile check-cipher-profile-matrix \
+.PHONY: test test-backends coverage coverage-instrumented vectors replay-plans check-replay-plans vector-parser-regressions vector-profiles test-ev2-profile test-auth-profile check-cipher-profile-matrix \
 	profile-builds role-builds ffi-role-builds \
 	codecs-disabled-link check-constant-time-auth check-command-modules check-command-registry check-teardown-wipes check-virtual-picc-staging check-iso-dep-block-numbers check-jni-wipes check-jni-result-buffers check-jni-export-inventory \
 	check-credential-passes \
@@ -353,6 +370,17 @@ test-backends:
 	@$(MAKE) test CRYPTO_BACKEND=mbedtls
 	@$(MAKE) clean
 	@$(MAKE) test CRYPTO_BACKEND=tiny
+
+COVERAGE_DIR ?= ../build-native-coverage
+coverage:
+	$(MAKE) coverage-instrumented COVERAGE=1 CC=clang \
+		COVERAGE_DIR="$(abspath $(COVERAGE_DIR))"
+
+coverage-instrumented: $(COVERAGE_TESTS) $(CONFORMANCE_RUNNER)
+	python3 run_native_coverage.py \
+		--output-dir "$(abspath $(COVERAGE_DIR))" \
+		--runner "$(abspath $(CONFORMANCE_RUNNER))" \
+		$(foreach test,$(COVERAGE_TESTS),--test "$(abspath $(test))")
 
 $(FUZZ_DIR)/fuzz_dfc_codecs: fuzz_dfc_codecs.c $(CORE_SRC) $(HOST_SRC) $(CRYPTO_SRC)
 	mkdir -p $(FUZZ_DIR)

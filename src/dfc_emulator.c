@@ -362,13 +362,22 @@ DfcApplication* dfc_emulator_current_app(DfcEmulator* emulator) {
     return dfc_credential_get_application(emulator->credential, emulator->selected_app_index);
 }
 
+uint8_t dfc_emulator_effective_sm_disable(const DfcEmulator* emulator) {
+    uint8_t disabled =
+        emulator->credential->picc_has_sm_disable ? emulator->credential->picc_sm_disable : 0;
+    if(emulator->selected_application == DfcEmulatorSelectedApplicationApp) {
+        const DfcApplication* app = dfc_credential_get_application_const(
+            emulator->credential, emulator->selected_app_index);
+        if(app && app->has_sm_disable) disabled |= app->sm_disable;
+    }
+    return disabled;
+}
+
 bool dfc_emulator_accepts_auth_cipher(DfcEmulator* emulator, uint8_t cipher) {
     DfcApplication* app = dfc_emulator_current_app(emulator);
     uint8_t commands = app ? dfc_credential_app_auth_commands(emulator->credential, app) :
                              dfc_credential_picc_auth_commands(emulator->credential);
-    uint8_t disabled =
-        emulator->credential->picc_has_sm_disable ? emulator->credential->picc_sm_disable : 0;
-    if(app && app->has_sm_disable) disabled |= app->sm_disable;
+    uint8_t disabled = dfc_emulator_effective_sm_disable(emulator);
     uint8_t bit;
     switch(cipher) {
     case DFC_CMD_AUTHENTICATE_LEGACY:
@@ -675,6 +684,15 @@ void dfc_emulator_reset_activation(DfcEmulator* emulator) {
     emulator->tx_buffer = tx_buffer;
     emulator->secure_messaging = secure_messaging;
     emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
+    if(credential->card.generation == DfcGenerationEv3) {
+        for(size_t i = 0; i < credential->num_apps; i++) {
+            const uint8_t* aid = credential->apps[i].aid;
+            if(aid[0] == 0xEE && aid[1] == 0xE0 && aid[2] == 0x00) {
+                dfc_emulator_select_application(emulator, DfcEmulatorSelectedApplicationApp, i);
+                break;
+            }
+        }
+    }
     if(tx_buffer) {
         dfc_bytebuf_reset(tx_buffer);
     }

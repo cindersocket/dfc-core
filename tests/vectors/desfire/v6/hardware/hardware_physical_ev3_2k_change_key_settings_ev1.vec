@@ -1,0 +1,50 @@
+# PROVENANCE: measured from genuine DESFire EV3 2K UID 044D234A281F90 over PC/SC.
+# Capture journal SHA-256: bb89265292355a48b9373b45c06d457940b17f9dfb79a50d330d4bdf3c3145d6.
+# Temporary applications were restored and deleted after field-cycle readback.
+name: genuine EV3 2K EV1 ChangeKeySettings AES and ISO persistence
+case-id: hardware-physical-ev3-2k-change-key-settings-ev1
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+replayable: false
+requires: ev1,auth-aes,auth-iso
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# AES application 83F2D1: 0F81 -> 0E81, protected success, persisted readback.
+exchange native-apdu 905A00000383F2D100 => 9100
+exchange native-apdu 9045000000 => 0F819100
+exchange native-apdu 90AA0000010000 => D7B4CF8B6EA7BA01B0CE27544D7F5DF491AF
+exchange native-apdu 90AF00002073B29D3BE71F59B98A382DEEC5DC8C61600A509C1608D1A0110309ED12D2018600 => C3B96E6C109B02DA68B9F61C378D897C9100
+exchange native-apdu 905400001080A3DF8BA410D7A536FEC37DC8AAD48900 => CA24200B17882C109100
+exchange native-apdu 905A00000383F2D100 => 9100
+exchange native-apdu 9045000000 => 0E819100
+
+# A corrupted AES-protected request is rejected.
+exchange native-apdu 90AA0000010000 => F5F923304A4891A381269F320CDE87B591AF
+exchange native-apdu 90AF00002004F338E3E4930BC46AF5B1C6E3AD21017D3A8DB69D5EB5B54B96541F06B6D39100 => 760CE3CEACCCABB15376C85946E38C979100
+exchange native-apdu 90540000104F71CA7C7236A6A2672A90B43CD110D100 => 911E
+
+# ISO-authenticated 2K3DES application 84F2D1: 0F01 -> 0E01.
+exchange native-apdu 905A00000384F2D100 => 9100
+exchange native-apdu 9045000000 => 0F019100
+exchange native-apdu 901A0000010000 => AC5DB2563292820491AF
+exchange native-apdu 90AF00001080ECEC95B18FAD09C52392BEE67C749800 => 9FE3EBE84FA1F1489100
+exchange native-apdu 9054000008D964CCD5563E05C500 => A0E08B2F6F0772B49100
+exchange native-apdu 905A00000384F2D100 => 9100
+exchange native-apdu 9045000000 => 0E019100
+
+# A corrupted ISO-protected request is rejected, then the field is cycled.
+exchange native-apdu 901A0000010000 => 9FADD14F6C14F78D91AF
+exchange native-apdu 90AF0000109345D65A73B3CD04A9F90F802657819200 => 032C6555555B6F789100
+exchange native-apdu 90540000089BD7CBBA693DC83400 => 911E
+field-off
+
+# Post-cycle readback retained both changes before the cleanup restored them.
+exchange native-apdu 905A00000383F2D100 => 9100
+exchange native-apdu 9045000000 => 0E819100
+exchange native-apdu 905A00000384F2D100 => 9100
+exchange native-apdu 9045000000 => 0E019100

@@ -1,0 +1,61 @@
+# PROVENANCE: measured from the attached genuine DESFire EV3 2K over PC/SC.
+# A temporary AES application with zero test keys makes EV2 session survival
+# and teardown observable before and after native proximity commands.
+name: genuine EV3 2K proximity behavior during EV2
+case-id: hardware-physical-ev3-2k-proximity-ev2-session
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+requires: ev2-secure-messaging,proximity-check
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-proximity-key: 00000000000000000000000000000000
+picc-proximity-option: 01
+picc-proximity-published-response-time: 0320
+picc-proximity-bitrate: 00
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+scan
+status 90CA00000580F2D10F8200 => 00
+
+# A malformed round returns 910C and also retires the EV2 session.
+status 905A00000380F2D100 => 00
+inject-random 74B9BCF54B837AA311C0DB08CE8FB4FB6CB2221E
+exchange native-apdu 9071000002000000 => 5D9EE3CBE18E1B6949327319D3443FAD91AF
+exchange native-apdu 90AF0000208BF81E410C7DC69B868241BC2B494F01BDA09F34A728CF2D9F3368363CD56EF800 => 0D2C12B840FBA4F4A110F5FF5313AEB5E1BB6C0D2AF66DB8279EC82D320713FF9100
+exchange native-apdu 9045000008082F9C199C2D0CD500 => 0F82438BAC6811F19DA99100
+inject-random 0000000000000000
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F20000010000 => 910C
+exchange native-apdu 9045000008C056D29C6141835600 => 917E
+
+# A correct verification returns 9190 and leaves the EV2 session usable.
+status 905A00000380F2D100 => 00
+inject-random A0354E5FB480EC560DF5EB39167CE15997F3F6AE
+exchange native-apdu 9071000002000000 => BC6E6F37BC208AACF9B2236C364F2A2891AF
+exchange native-apdu 90AF000020D782FD01CF997557BE1AE7C2644896D2640B0C2464728D80460B728580119E8B00 => 642FA3A48B4103B9A86F1919F1ADBA6B8312F5832B7D80F77DCD183CA2E68F129100
+exchange native-apdu 9045000008BFC7E6E9276A0AFB00 => 0F82A33B772D64CA01459100
+inject-random 43CD92ADAA5F4FBE
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F200000504D0D1D2D300 => 43CD92AD9190
+exchange native-apdu 90F200000504D4D5D6D700 => AA5F4FBE9190
+exchange native-apdu 90FD0000086E478614B94F8DE400 => 2A894DA55EC87BE89190
+exchange native-apdu 9045000008185E3B9D364D8CF700 => 0F82E9EB65A91C45D22C9100
+
+# A wrong verification value still returns the card's proximity response.
+status 905A00000380F2D100 => 00
+inject-random 01B3090FD02EF5D6D778D647D828C3F80845DDC5
+exchange native-apdu 9071000002000000 => 1D83AF8DBA0F164DFD6A221DAEB7893691AF
+exchange native-apdu 90AF0000204438583E4CB5797C25F28F8C4324A34C49586B0143EAC63D6DF71803F46F60C500 => 715A93CD7DF0AB3CBE3362A967E059D2E93E6AD2332FF1A964F869BF61AAD5DF9100
+exchange native-apdu 9045000008E957C88D89DDE45F00 => 0F82A85E8780CA20577C9100
+inject-random DB80A4E1C0088B2D
+exchange native-apdu 90F0000000 => 010320009190
+exchange native-apdu 90F200000504E0E1E2E300 => DB80A4E19190
+exchange native-apdu 90F200000504E4E5E6E700 => C0088B2D9190
+inject-random E418D7DAEECB5957
+exchange native-apdu 90FD0000084285F73F3A42DE7500 => E418D7DAEECB59579190

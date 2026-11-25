@@ -1,0 +1,51 @@
+# PROVENANCE: measured from genuine DESFire EV3 2K UID 044D234A281F90 over PC/SC.
+# These are the key-changing excerpts from two destructive, recovered captures.
+# The host regression replays the equivalent transitions with deterministic
+# authentication state; this file preserves the card's exact wire evidence.
+name: genuine EV3 2K PICC master AES 2K3DES and 3K3DES round trips
+case-id: hardware-physical-ev3-2k-picc-key-type-roundtrips
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+replayable: false
+requires: ev2-secure-messaging
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# AES to 2K3DES under EV2 First.
+exchange native-apdu 9045000000 => 0F819100
+exchange native-apdu 90C4000029006E2281702C78C96D57F4BA3F9E607C5ECFE572C824322951EE6061030CAF20311EF341E1F355139F00 => 9100
+exchange native-apdu 90640000010000 => 009100
+field-off
+
+# The card advertises 2K3DES, accepts ISO authentication, then returns to AES.
+exchange native-apdu 9045000000 => 0F019100
+exchange native-apdu 901A0000010000 => A4185CC0C1B39C9B91AF
+exchange native-apdu 90AF000010751A118EAFD9FDDE03E96676C98A8FD500 => B466F6B919101DC29100
+exchange native-apdu 90C4000019807DFBE8F675CDCF2D23B40BDB960ED52764C5BEC11812805600 => 9100
+field-off
+
+# A separate round trip proves that legacy D40 authentication can restore the
+# 2K3DES PICC master to AES. The 0A exchange and C4 cryptogram are the exact
+# card transcript; the card was then reauthenticated as AES-zero.
+exchange native-apdu 9045000000 => 0F019100
+exchange native-apdu 900A0000010000 => 5E76933FF15C071991AF
+exchange native-apdu 90AF0000107181797DF59FA2601415EAEBB3882FC100 => EFB8BB646FA214E59100
+exchange native-apdu 90C4000019801488A86C5C55ABA0804F62EDA9932BF6EA92DA4023A2433200 => 9100
+field-off
+
+# AES to 3K3DES under EV2 First.
+exchange native-apdu 9045000000 => 0F819100
+exchange native-apdu 90C4000029408867CCBF31FF85FC25BE23290B21C496D28B7D7F8A9D17C451CE5D8FBA6E60966AC4B94D328ED92600 => 9100
+exchange native-apdu 90640000010000 => 009100
+field-off
+
+# The card advertises 3K3DES, accepts ISO authentication, then returns to AES.
+exchange native-apdu 9045000000 => 0F419100
+exchange native-apdu 901A0000010000 => 51227E3AAEC3CCB2E70CBE2669C4921291AF
+exchange native-apdu 90AF000020AFE83E7FD56A80B1446CE67FC07DF2AF0D8F5E5E68D65503EDE67BD7C088772600 => 7DC0637E40E5B2D574D556190505574F9100
+exchange native-apdu 90C400001980F10588FD5A876E54A0B1BD593CFAE1D06C3CB914508D7E1A00 => 9100
+field-off

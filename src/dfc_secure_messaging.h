@@ -49,7 +49,6 @@ DfcSecureMessaging* dfc_secure_messaging_alloc(
     const uint8_t* initial_iv);
 
 void dfc_secure_messaging_free(DfcSecureMessaging* sm);
-void dfc_secure_messaging_reset_iv(DfcSecureMessaging* sm);
 bool dfc_secure_messaging_applies_ev1(DfcSecureMessaging* sm, uint8_t cmd);
 // Returns false without advancing the IV when CMAC generation fails.
 bool dfc_secure_messaging_update_ev1_command(
@@ -189,6 +188,15 @@ size_t dfc_secure_messaging_wrap(
     size_t plain_len,
     uint8_t* out,
     size_t out_capacity);
+size_t dfc_secure_messaging_wrap_with_length_marker(
+    DfcSecureMessaging* sm,
+    uint8_t comm_mode,
+    const uint8_t* header,
+    size_t header_len,
+    const uint8_t* plain,
+    size_t plain_len,
+    uint8_t* out,
+    size_t out_capacity);
 
 // Unwraps a plain or enciphered response payload; MAC mode is rejected. The
 // status byte is not included in `wrapped`. Returns true on format success and
@@ -226,6 +234,20 @@ size_t dfc_secure_messaging_generate_response_with_length_marker(
     bool length_unknown);
 
 // Emulator side: unwraps a plain or enciphered command payload.
+// The boolean form distinguishes a valid empty payload from authentication
+// failure. out_len is set to zero on failure.
+bool dfc_secure_messaging_verify_command_with_length(
+    DfcSecureMessaging* sm,
+    uint8_t comm_mode,
+    const uint8_t* header,
+    size_t header_len,
+    const uint8_t* wrapped,
+    size_t wrapped_len,
+    uint8_t* out,
+    size_t out_capacity,
+    size_t* out_len);
+
+// Compatibility form: returns zero for both an empty payload and failure.
 size_t dfc_secure_messaging_verify_command(
     DfcSecureMessaging* sm,
     uint8_t comm_mode,

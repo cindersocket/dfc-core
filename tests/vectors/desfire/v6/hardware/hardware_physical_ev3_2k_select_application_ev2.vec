@@ -1,0 +1,35 @@
+# PROVENANCE: measured from the attached genuine DESFire EV3 2K over PC/SC.
+# Both selections below terminate the old EV2 session. The plain three-byte AID
+# succeeds; appending an EV2 command MAC is a length error.
+name: genuine EV3 2K SelectApplication during EV2
+case-id: hardware-physical-ev3-2k-select-application-ev2
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+requires: ev2-secure-messaging
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+scan
+status 90CA00000580F2D10F8200 => 00
+status 905A00000380F2D100 => 00
+inject-random 86EB1CBEDBC5BE291342FA7A69BECF6444F6FA38
+exchange native-apdu 9071000002000000 => 42E6D0AEF3025BF98D4DFDF341C7341F91AF
+exchange native-apdu 90AF0000200D8C76E3A8F5804D31FA46ADB6C776199BAA1615D01A56C51C732CB2708176CF00 => 6DBBEFF09B6BF7D8AFE9B2AAF903A16AE904032210A19E3DA2F978019E84625E9100
+exchange native-apdu 9045000008BAAC35E0136C4F9800 => 0F82D9C5F0F9EA11C0019100
+exchange native-apdu 905A00000300000000 => 9100
+exchange native-apdu 904500000822C95B5141A48E4F00 => 917E
+
+status 905A00000380F2D100 => 00
+inject-random B9AF2FA967E14734841F6BC90EDE8E4A1E16DCBA
+exchange native-apdu 9071000002000000 => AEEEBEC90BF006813E2784CA1925D41D91AF
+exchange native-apdu 90AF00002064E9CEFE8E1169F9385906F66D22949D483ADEC7CEF3028D6AABAD69D9CB195C00 => 590A41F61AEAD621FDF1FA4AF12D3542BAC088213B7397B285919834621B74D49100
+exchange native-apdu 90450000084BD26BC8FFF9C3EA00 => 0F82F8B05309DF4D3CA19100
+exchange native-apdu 905A00000B00000039C0D8082EE533EE00 => 917E
+exchange native-apdu 904500000871CAB0A9EDB9625300 => 917E

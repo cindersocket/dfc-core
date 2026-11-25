@@ -114,8 +114,10 @@ bool dfc_ev2_verify_chained_command_mac(
     size_t data_len,
     const uint8_t mac[DFC_WIRE_MAC_LENGTH]) {
     uint8_t expected[DFC_WIRE_MAC_LENGTH];
-    if(!command_mac(emulator, instruction, data, data_len, expected)) return false;
-    return dfc_ct_equal(expected, mac, sizeof(expected));
+    bool generated = command_mac(emulator, instruction, data, data_len, expected);
+    bool matches = generated && dfc_ct_equal(expected, mac, sizeof(expected));
+    dfc_secure_wipe(expected, sizeof(expected));
+    return matches;
 }
 
 static bool response_mac(

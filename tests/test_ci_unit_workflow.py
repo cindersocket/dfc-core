@@ -82,6 +82,18 @@ class UnitWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(fuzz)
         self.assertIn("clang libclang-rt-18-dev libmbedtls-dev", fuzz.group("body"))
 
+    def test_native_coverage_job_preserves_all_three_evidence_modes(self) -> None:
+        job = workflow_job("native-coverage")
+
+        self.assertIn("name: Native emulator coverage", job)
+        self.assertIn("timeout-minutes: 30", job)
+        self.assertIn("clang llvm libmbedtls-dev", job)
+        self.assertIn("run: ./scripts/run-native-coverage.sh", job)
+        self.assertIn("if: always()", job)
+        self.assertIn("name: native-emulator-coverage", job)
+        self.assertIn("path: build-native-coverage", job)
+        self.assertIn("if-no-files-found: error", job)
+
     def test_pull_requests_run_once_and_superseded_runs_are_cancelled(self) -> None:
         workflow = workflow_text()
 

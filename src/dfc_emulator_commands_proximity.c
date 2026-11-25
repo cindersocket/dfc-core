@@ -81,7 +81,11 @@ void dfc_emulator_command_proximity_check(
     }
 
     size_t round_len = buffer[1];
-    if(round_len == 0 || round_len > DFC_PROXIMITY_RANDOM_LENGTH || buffer_len != round_len + 2 ||
+    if(round_len == 0) {
+        proximity_abort(emulator, tx_buffer, DFC_STATUS_NO_CHANGES);
+        return;
+    }
+    if(round_len > DFC_PROXIMITY_RANDOM_LENGTH || buffer_len != round_len + 2 ||
        emulator->proximity_offset + round_len > DFC_PROXIMITY_RANDOM_LENGTH ||
        emulator->proximity_transcript_len + round_len * 2 >
            sizeof(emulator->proximity_transcript)) {
@@ -100,6 +104,9 @@ void dfc_emulator_command_proximity_check(
     emulator->proximity_transcript_len += round_len;
     emulator->proximity_offset += round_len;
 
+    // Native response assembly moves this internal status to the wire tail.
+    // Keeping it here produces RndR || 91 90 and prevents RndR's first byte from
+    // being mistaken for a failure status during finalization.
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_SPECIAL_SUCCESS);
     dfc_bytebuf_append_bytes(tx_buffer, response, round_len);
 }
@@ -123,31 +130,38 @@ void dfc_emulator_command_verify_proximity_check(
         return;
     }
 
+    // EV1 AES and EV2 authentication sessions supply their session MAC key.
+    // Other modes retain the configured proximity-key behavior.
+    const uint8_t* pc_key = emulator->credential->picc_proximity_key;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(emulator->ev2_session_active)
+        pc_key = emulator->ev2_session_mac_key;
+    else
+#endif
+        if(dfc_emulator_native_authentication_active(emulator) &&
+           emulator->auth_cipher == DFC_CMD_AUTHENTICATE_AES)
+        pc_key = emulator->secure_messaging->session_key;
+
     uint8_t expected[DFC_WIRE_MAC_LENGTH] = {0};
-    if(!proximity_wire_mac(
-           emulator->credential->picc_proximity_key,
-           DFC_CMD_VERIFY_PROXIMITY_CHECK,
-           emulator,
-           expected)) {
+    if(!proximity_wire_mac(pc_key, DFC_CMD_VERIFY_PROXIMITY_CHECK, emulator, expected)) {
         proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         goto cleanup;
     }
-    if(!dfc_ct_equal(expected, buffer + 1, sizeof(expected))) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
-        goto cleanup;
-    }
+    bool verified = !emulator->proximity_failed &&
+                    dfc_ct_equal(expected, buffer + 1, sizeof(expected));
 
     uint8_t response[DFC_WIRE_MAC_LENGTH] = {0};
-    if(!proximity_wire_mac(
-           emulator->credential->picc_proximity_key,
-           DFC_STATUS_SPECIAL_SUCCESS,
-           emulator,
-           response)) {
-        proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+    bool response_ready =
+        verified ? proximity_wire_mac(pc_key, DFC_STATUS_SPECIAL_SUCCESS, emulator, response) :
+                   dfc_random_fill(response, sizeof(response));
+    if(!response_ready) {
+        if(verified || !dfc_random_failure_is_retryable())
+            proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         goto cleanup_response;
     }
+    if(!verified) emulator->proximity_failed = true;
     emulator->proximity_active = false;
-    emulator->proximity_verified = true;
+    emulator->proximity_verified = verified;
     emulator->proximity_offset = 0;
     emulator->proximity_transcript_len = 0;
     dfc_secure_wipe(emulator->proximity_random, sizeof(emulator->proximity_random));

@@ -342,15 +342,16 @@ static bool dfc_key_set_metadata_slice(
         return false;
     }
     size_t expected = dfc_key_set_metadata_length(app->num_key_sets, app->num_keys);
+    size_t metadata_offset = app->key_set_metadata_offset;
+    size_t metadata_pool_used = credential->key_set_metadata_pool_used;
     if(expected == 0 || app->key_set_metadata_len != expected ||
        app->key_set_metadata_offset == DFC_KEY_SET_METADATA_POOL_NONE ||
-       app->key_set_metadata_offset > DFC_KEY_SET_METADATA_POOL_SIZE ||
-       expected > DFC_KEY_SET_METADATA_POOL_SIZE - app->key_set_metadata_offset ||
-       app->key_set_metadata_offset > credential->key_set_metadata_pool_used ||
-       expected > credential->key_set_metadata_pool_used - app->key_set_metadata_offset) {
+       metadata_offset > DFC_KEY_SET_METADATA_POOL_SIZE ||
+       expected > DFC_KEY_SET_METADATA_POOL_SIZE - metadata_offset ||
+       metadata_offset > metadata_pool_used || expected > metadata_pool_used - metadata_offset) {
         return false;
     }
-    *data = credential->key_set_metadata_pool + app->key_set_metadata_offset;
+    *data = credential->key_set_metadata_pool + metadata_offset;
     return true;
 }
 

@@ -18,6 +18,30 @@ Run every replayable vector with:
 make -C tests vectors
 ```
 
+## Emulator coverage contract
+
+`tests/native_coverage_contract.json` is the checked inventory that connects
+emulator behavior to evidence. Each behavior family names replayable physical
+vectors or deterministic tests. The same file classifies every function that
+unit tests reach beyond the physical replay corpus.
+
+`./scripts/run-native-coverage.sh` rejects missing behavior families, unknown or
+nonreplayable vector references, new unclassified gaps, and stale classifications.
+Coverage minimums are an append-only history: a later entry may raise a floor,
+but cannot lower one. The run writes `ratchet-minimums.json` with the next floors
+rounded down to one decimal place.
+
+Gap categories have narrow meanings:
+
+- `capture-required`: a wire-visible path still needs more replayable card evidence.
+- `capture-derived`: an internal branch inherits evidence from its enclosing exchange.
+- `fault-only`: deterministic injection covers a condition a transcript cannot control.
+- `library-only`: a host-side builder or verifier is outside the card front door.
+- `profile-only`: a compile-time variant is covered by its dedicated build.
+
+Remove a classification when the gap closes. New entries require a concrete
+rationale; dead code is removed instead of classified.
+
 Validate vector structure and the SHA-256 manifest with:
 
 ```sh

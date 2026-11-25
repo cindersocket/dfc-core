@@ -13,21 +13,23 @@
 #include "dfc_crypto.h"
 
 // DESFire native command bytes used by this app
-#define DFC_CMD_AUTHENTICATE_LEGACY          0x0A
-#define DFC_CMD_AUTHENTICATE_ISO             0x1A
-#define DFC_CMD_AUTHENTICATE_AES             0xAA
-#define DFC_CMD_AUTHENTICATE_EV2_FIRST       0x71
-#define DFC_CMD_AUTHENTICATE_EV2_NON_FIRST   0x77
-#define DFC_AUTH_COMMAND_D40                 (1u << 0)
-#define DFC_AUTH_COMMAND_ISO_NATIVE          (1u << 1)
-#define DFC_AUTH_COMMAND_AES                 (1u << 2)
-#define DFC_AUTH_COMMAND_EV2_FIRST           (1u << 3)
-#define DFC_AUTH_COMMAND_EV2_NON_FIRST       (1u << 4)
-#define DFC_AUTH_COMMAND_ISO7816             (1u << 5)
-#define DFC_AUTH_COMMAND_ALL                 ((1u << 6) - 1u)
-#define DFC_SM_DISABLE_D40                   (1u << 0)
-#define DFC_SM_DISABLE_EV1                   (1u << 1)
-#define DFC_SM_DISABLE_EV2_CHAINED_WRITE     (1u << 2)
+#define DFC_CMD_AUTHENTICATE_LEGACY        0x0A
+#define DFC_CMD_AUTHENTICATE_ISO           0x1A
+#define DFC_CMD_AUTHENTICATE_AES           0xAA
+#define DFC_CMD_AUTHENTICATE_EV2_FIRST     0x71
+#define DFC_CMD_AUTHENTICATE_EV2_NON_FIRST 0x77
+#define DFC_AUTH_COMMAND_D40               (1u << 0)
+#define DFC_AUTH_COMMAND_ISO_NATIVE        (1u << 1)
+#define DFC_AUTH_COMMAND_AES               (1u << 2)
+#define DFC_AUTH_COMMAND_EV2_FIRST         (1u << 3)
+#define DFC_AUTH_COMMAND_EV2_NON_FIRST     (1u << 4)
+#define DFC_AUTH_COMMAND_ISO7816           (1u << 5)
+#define DFC_AUTH_COMMAND_ALL               ((1u << 6) - 1u)
+#define DFC_SM_DISABLE_D40                 (1u << 0)
+#define DFC_SM_DISABLE_EV1                 (1u << 1)
+#define DFC_SM_DISABLE_EV2_CHAINED_WRITE   (1u << 2)
+#define DFC_SM_DISABLE_VALID_MASK \
+    (DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1 | DFC_SM_DISABLE_EV2_CHAINED_WRITE)
 #define DFC_CMD_ADDITIONAL_FRAME             0xAF
 #define DFC_CMD_CHANGE_KEY_SETTINGS          0x54
 #define DFC_CMD_GET_VERSION                  0x60
@@ -157,7 +159,8 @@ extern const uint8_t DFC_ISO_AID[7];
 
 #define DFC_STATUS_OK                     0x00
 #define DFC_STATUS_NO_CHANGES             0x0C
-#define DFC_STATUS_PROXIMITY_KEY_DISABLED 0x0B
+#define DFC_STATUS_UNEXPECTED_COMMAND     0x0B
+#define DFC_STATUS_PROXIMITY_KEY_DISABLED DFC_STATUS_UNEXPECTED_COMMAND
 #define DFC_STATUS_OUT_OF_EEPROM          0x0E
 #define DFC_STATUS_ILLEGAL_COMMAND_CODE   0x1C // command code not supported/recognized
 #define DFC_STATUS_INTEGRITY_ERROR        0x1E
@@ -243,11 +246,13 @@ static inline void dfc_write_uint32_le(uint8_t output[4], uint32_t value) {
 #define DFC_ACCESS_DENY 0x0F
 
 // EV1 capacity limits
-#define DFC_EV1_MAX_APPLICATIONS     28
-#define DFC_EV1_MAX_FILES_PER_APP    32
-#define DFC_EV1_MAX_FILE_NUMBER      0x1F
-#define DFC_EV1_MAX_KEYS_PER_APP     14
-#define DFC_MAX_KEY_SETS             16
+#define DFC_EV1_MAX_APPLICATIONS  28
+#define DFC_EV1_MAX_FILES_PER_APP 32
+#define DFC_EV1_MAX_FILE_NUMBER   0x1F
+#define DFC_EV1_MAX_KEYS_PER_APP  14
+#ifndef DFC_MAX_KEY_SETS
+#define DFC_MAX_KEY_SETS 16
+#endif
 #define DFC_ADDITIONAL_KEY_SET_COUNT (DFC_MAX_KEY_SETS - 1)
 #define DFC_EV1_PICC_STORAGE_BYTES   (8 * 1024)
 // Octets one answer frame carries, whether the command came wrapped or native.
@@ -491,6 +496,8 @@ bool dfc_aes_wire_mac(
 #define DFC_EV2_DERIVATION_LENGTH_HIGH              0x00
 #define DFC_EV2_DERIVATION_LENGTH_LOW               0x80
 #define DFC_CONFIGURATION_APPLICATION_CAPABILITIES  0x05
+#define DFC_CONFIGURATION_USER_ATS                  0x02
+#define DFC_CONFIGURATION_SECURE_MESSAGING          0x04
 #define DFC_CONFIGURATION_CARD_OR_APPLICATION       0x00
 #define DFC_CONFIGURATION_DISABLE_FORMAT            0x01
 #define DFC_CONFIGURATION_RANDOM_ID                 0x02

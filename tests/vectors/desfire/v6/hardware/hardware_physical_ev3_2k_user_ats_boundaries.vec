@@ -1,0 +1,51 @@
+# Captured from the attached genuine DESFire EV3 2K over PC/SC. The PICC
+# master key is the all-zero test key. Each authenticated exchange uses reader
+# random A0A1A2A3A4A5A6A7 and injects the card random recovered from the RF
+# response.
+name: physical EV3 2K user ATS boundary behavior
+case-id: hardware-physical-ev3-2k-user-ats-boundaries
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+requires: ev1,auth-iso
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: ISO
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+scan
+
+# The six-byte activation value reported by the reader is accepted.
+exchange native-apdu 905A00000300000000 => 9100
+inject-random D202B5E58A3ACBFB
+exchange native-apdu 901A0000010000 => C4D0D424D743FEE091AF
+exchange native-apdu 90AF000010A1C6ED50D2A98CD26C2301225595B47300 => 413FD5AB354352EB9100
+exchange native-apdu 905C000011029ADF863B0B910B25D7E1AA68F94DA5F600 => 10F3E21743A926B99100
+
+# A structurally valid five-byte alternate is accepted.
+exchange native-apdu 905A00000300000000 => 9100
+inject-random 3E5C63E1B93F4C75
+exchange native-apdu 901A0000010000 => 3FAF630C9F7BDFF091AF
+exchange native-apdu 90AF000010E3C5FDA2261CE97E0FC657A50061F5B200 => 89574CAA37FCB0379100
+exchange native-apdu 905C00001102C1099CA7FD08D3B8ECA4A4216682099400 => 80DAF208C48994509100
+
+# The embedded length must describe all supplied activation bytes.
+exchange native-apdu 905A00000300000000 => 9100
+inject-random 119AB2BE867AE989
+exchange native-apdu 901A0000010000 => 4A6C88070A8C786591AF
+exchange native-apdu 90AF000010B51B6A42E0775B26E98F3D756F39903100 => 0E47069312831E819100
+exchange native-apdu 905C000011025D071EAFDAC02C092762910D3989C79500 => 919E
+
+# FSCI 9 is outside the accepted range, including in a full-size activation value.
+exchange native-apdu 905A00000300000000 => 9100
+inject-random C32F1897790BB615
+exchange native-apdu 901A0000010000 => CED45F66F52921A991AF
+exchange native-apdu 90AF00001088449142DDB4754A90051B467390545900 => 2799825F953CF5429100
+exchange native-apdu 905C00001102A042320894EFCAE99C21D5D03FCCDFE800 => 919E
+

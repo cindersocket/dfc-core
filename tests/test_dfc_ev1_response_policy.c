@@ -35,8 +35,9 @@ static void expect_protected_response(
     munit_assert_size(command_len, >=, 5);
     size_t body_len = command_len == 5 ? 0 : command[4];
     munit_assert_size(command_len, ==, body_len ? body_len + 6 : 5);
-    munit_assert_true(
-        dfc_secure_messaging_update_ev1_command(oracle, command[1], command + 5, body_len));
+    if(dfc_secure_messaging_applies_ev1(oracle, command[1]))
+        munit_assert_true(
+            dfc_secure_messaging_update_ev1_command(oracle, command[1], command + 5, body_len));
 
     uint8_t response[128];
     size_t response_len = 0;
@@ -277,6 +278,33 @@ static DfcSecureMessaging* install_known_ev1_session(DfcVirtualPiccSession* sess
         dfc_secure_messaging_alloc(DFC_CMD_AUTHENTICATE_AES, key, sizeof(key), NULL);
     munit_assert_not_null(oracle);
     return oracle;
+}
+
+static DfcVirtualPiccSession*
+    open_known_ev1_aes_proximity(DfcCredential* credential, DfcSecureMessaging** oracle) {
+    dfc_credential_clear(credential);
+    credential->card.generation = DfcGenerationEv3;
+    credential->uid_len = DFC_DESFIRE_UID_LEN;
+    memcpy(
+        credential->uid,
+        ((const uint8_t[]){0x04, 0x4D, 0x23, 0x4A, 0x28, 0x1F, 0x90}),
+        DFC_DESFIRE_UID_LEN);
+    credential->picc_key_settings_1 = 0x0F;
+    credential->picc_key_settings_2 = DFC_KEY_TYPE_AES | 1;
+    credential->picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
+    credential->picc_has_proximity_key = true;
+    credential->picc_proximity_published_response_time = 0x0102;
+    for(size_t index = 0; index < sizeof(credential->picc_proximity_key); index++)
+        credential->picc_proximity_key[index] = (uint8_t)(0x20 + index);
+    munit_assert_true(dfc_credential_keys_resize(credential, NULL, 1, DFC_AES_KEY_LENGTH));
+
+    DfcVirtualPiccSession* session = dfc_virtual_picc_session_alloc(credential);
+    munit_assert_not_null(session);
+    DfcVirtualPiccActivation activation;
+    munit_assert_int(
+        dfc_virtual_picc_scan_iso14443a(session, &activation), ==, DfcVirtualPiccStatusOk);
+    *oracle = install_known_ev1_session(session);
+    return session;
 }
 
 static MunitResult test_dispatcher_protects_every_ev1_success_response(
@@ -593,7 +621,7 @@ static MunitResult
     (void)user_data;
     DfcCredential credential;
     DfcSecureMessaging* oracle = NULL;
-    DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, true);
+    DfcVirtualPiccSession* session = open_known_ev1_aes_proximity(&credential, &oracle);
 
     const uint8_t prepare[] = {0x90, DFC_CMD_PREPARE_PROXIMITY_CHECK, 0, 0, 0};
     uint8_t published[1 + DFC_PROXIMITY_PUBLISHED_TIME_LENGTH];
@@ -614,8 +642,9 @@ static MunitResult
     memcpy(transcript + sizeof(card_random), proximity + 6, DFC_PROXIMITY_RANDOM_LENGTH);
     uint8_t verify[5 + DFC_WIRE_MAC_LENGTH + 1] = {
         0x90, DFC_CMD_VERIFY_PROXIMITY_CHECK, 0, 0, DFC_WIRE_MAC_LENGTH};
+    // Genuine EV3 044D234A281F90 used its active EV1 AES session key here.
     munit_assert_true(dfc_reader_proximity_check_mac(
-        credential.picc_proximity_key,
+        oracle->session_key,
         false,
         published,
         sizeof(published),
@@ -627,7 +656,7 @@ static MunitResult
         session, oracle, verify, sizeof(verify), response_mac, sizeof(response_mac));
     uint8_t expected_response_mac[DFC_WIRE_MAC_LENGTH];
     munit_assert_true(dfc_reader_proximity_check_mac(
-        credential.picc_proximity_key,
+        oracle->session_key,
         true,
         published,
         sizeof(published),
@@ -635,6 +664,17 @@ static MunitResult
         2 * DFC_PROXIMITY_RANDOM_LENGTH,
         expected_response_mac));
     munit_assert_int(memcmp(response_mac, expected_response_mac, sizeof(response_mac)), ==, 0);
+    uint8_t proximity_key_response_mac[DFC_WIRE_MAC_LENGTH];
+    munit_assert_true(dfc_reader_proximity_check_mac(
+        credential.picc_proximity_key,
+        true,
+        published,
+        sizeof(published),
+        transcript,
+        2 * DFC_PROXIMITY_RANDOM_LENGTH,
+        proximity_key_response_mac));
+    munit_assert_int(
+        memcmp(response_mac, proximity_key_response_mac, sizeof(response_mac)), !=, 0);
 
     const uint8_t get_application_ids[] = {0x90, DFC_CMD_GET_APPLICATION_IDS, 0, 0, 0};
     expect_protected_response(
@@ -656,10 +696,62 @@ static MunitResult
     expect_plain_special_response(
         session, oracle, prepare, sizeof(prepare), published, sizeof(published));
     const uint8_t malformed[] = {0x90, DFC_CMD_PROXIMITY_CHECK, 0, 0, 1, 0, 0};
-    expect_plain_status(session, malformed, sizeof(malformed), DFC_STATUS_LENGTH_ERROR);
+    expect_plain_status(session, malformed, sizeof(malformed), DFC_STATUS_NO_CHANGES);
     const uint8_t get_card_uid[] = {0x90, DFC_CMD_GET_CARD_UID, 0, 0, 0};
     expect_plain_status(
         session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
+    dfc_secure_messaging_free(oracle);
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_wrong_proximity_key_latches_rejection(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    DfcCredential credential;
+    DfcSecureMessaging* oracle = NULL;
+    DfcVirtualPiccSession* session = open_known_ev1_aes_proximity(&credential, &oracle);
+
+    const uint8_t prepare[] = {0x90, DFC_CMD_PREPARE_PROXIMITY_CHECK, 0, 0, 0};
+    uint8_t published[1 + DFC_PROXIMITY_PUBLISHED_TIME_LENGTH];
+    expect_plain_special_response(
+        session, oracle, prepare, sizeof(prepare), published, sizeof(published));
+
+    uint8_t proximity[5 + 1 + DFC_PROXIMITY_RANDOM_LENGTH + 1] = {
+        0x90, DFC_CMD_PROXIMITY_CHECK, 0, 0, 1 + DFC_PROXIMITY_RANDOM_LENGTH};
+    proximity[5] = DFC_PROXIMITY_RANDOM_LENGTH;
+    for(size_t index = 0; index < DFC_PROXIMITY_RANDOM_LENGTH; index++)
+        proximity[6 + index] = (uint8_t)(0xA0 + index);
+    uint8_t card_random[DFC_PROXIMITY_RANDOM_LENGTH];
+    expect_plain_special_response(
+        session, oracle, proximity, sizeof(proximity), card_random, sizeof(card_random));
+
+    uint8_t transcript[DFC_PROXIMITY_TRANSCRIPT_MAX] = {0};
+    memcpy(transcript, card_random, sizeof(card_random));
+    memcpy(transcript + sizeof(card_random), proximity + 6, DFC_PROXIMITY_RANDOM_LENGTH);
+    uint8_t verify[5 + DFC_WIRE_MAC_LENGTH + 1] = {
+        0x90, DFC_CMD_VERIFY_PROXIMITY_CHECK, 0, 0, DFC_WIRE_MAC_LENGTH};
+    munit_assert_true(dfc_reader_proximity_check_mac(
+        credential.picc_proximity_key,
+        false,
+        published,
+        sizeof(published),
+        transcript,
+        2 * DFC_PROXIMITY_RANDOM_LENGTH,
+        verify + 5));
+
+    // Genuine EV3 044D234A281F90 returned an opaque MAC-sized value, then
+    // latched 0x0B for the next command after this wrong-key VerifyPC.
+    uint8_t opaque_response[DFC_WIRE_MAC_LENGTH];
+    expect_plain_special_response(
+        session, oracle, verify, sizeof(verify), opaque_response, sizeof(opaque_response));
+    munit_assert_false(session->emulator->proximity_verified);
+    munit_assert_true(session->emulator->proximity_failed);
+    const uint8_t get_key_settings[] = {0x90, DFC_CMD_GET_KEY_SETTINGS, 0, 0, 0};
+    expect_plain_status(
+        session, get_key_settings, sizeof(get_key_settings), DFC_STATUS_UNEXPECTED_COMMAND);
+
     dfc_secure_messaging_free(oracle);
     dfc_virtual_picc_session_free(session);
     return MUNIT_OK;
@@ -679,27 +771,19 @@ static void expect_plain_status(
     munit_assert_uint8(response[1], ==, status);
 }
 
-static MunitResult test_session_retirement_precedes_response_policy(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_session_retirement_response_policy(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
-    const uint8_t delete_app[] = {0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
     const uint8_t get_card_uid[] = {0x90, DFC_CMD_GET_CARD_UID, 0, 0, 0};
-    const ProtectedCommandCase cases[] = {
-        {"SelectApplication", select, sizeof(select), NULL, 0},
-        {"DeleteApplication", delete_app, sizeof(delete_app), NULL, 0},
-    };
-    for(size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+    {
         DfcCredential credential;
         DfcSecureMessaging* oracle = NULL;
         DfcApplication* app = NULL;
         DfcVirtualPiccSession* session =
             open_authenticated_application(&credential, &oracle, &app);
-        munit_logf(MUNIT_LOG_INFO, "checking %s", cases[index].name);
-        expect_plain_status(
-            session, cases[index].command, cases[index].command_len, DFC_STATUS_OK);
+        expect_plain_status(session, select, sizeof(select), DFC_STATUS_OK);
         expect_plain_status(
             session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
         dfc_secure_messaging_free(oracle);
@@ -707,15 +791,49 @@ static MunitResult test_session_retirement_precedes_response_policy(
         (void)app;
     }
 
-    DfcCredential credential;
-    DfcSecureMessaging* oracle = NULL;
-    DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, false);
-    const uint8_t format_picc[] = {0x90, DFC_CMD_FORMAT_PICC, 0, 0, 0};
-    expect_plain_status(session, format_picc, sizeof(format_picc), DFC_STATUS_OK);
-    expect_plain_status(
-        session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
-    dfc_secure_messaging_free(oracle);
-    dfc_virtual_picc_session_free(session);
+    {
+        DfcCredential credential;
+        DfcSecureMessaging* oracle = NULL;
+        DfcApplication* app = NULL;
+        DfcVirtualPiccSession* session =
+            open_authenticated_application(&credential, &oracle, &app);
+        const uint8_t delete_app[] = {
+            0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
+        expect_plain_status(session, delete_app, sizeof(delete_app), DFC_STATUS_OK);
+        expect_plain_status(
+            session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
+        dfc_secure_messaging_free(oracle);
+        dfc_virtual_picc_session_free(session);
+        (void)app;
+    }
+
+    {
+        DfcCredential credential;
+        DfcSecureMessaging* oracle = NULL;
+        DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, false);
+        const uint8_t aid[] = {0x4F, 0x49, 0xD3};
+        munit_assert_not_null(dfc_credential_create_application_desfire_order(
+            &credential, aid, 0x0F, DFC_KEY_TYPE_DES_2K3DES | 1));
+        const uint8_t delete_app[] = {
+            0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
+        expect_protected_response(session, oracle, delete_app, sizeof(delete_app), NULL, 0);
+        expect_plain_status(
+            session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
+        dfc_secure_messaging_free(oracle);
+        dfc_virtual_picc_session_free(session);
+    }
+
+    {
+        DfcCredential credential;
+        DfcSecureMessaging* oracle = NULL;
+        DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, false);
+        const uint8_t format_picc[] = {0x90, DFC_CMD_FORMAT_PICC, 0, 0, 0};
+        expect_protected_response(session, oracle, format_picc, sizeof(format_picc), NULL, 0);
+        expect_plain_status(
+            session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
+        dfc_secure_messaging_free(oracle);
+        dfc_virtual_picc_session_free(session);
+    }
     return MUNIT_OK;
 }
 
@@ -768,6 +886,12 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
+    {"/wrong-proximity-key-latches-rejection",
+     test_wrong_proximity_key_latches_rejection,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
 #endif
     {"/picc-directory-commands-chain-responses",
      test_picc_directory_commands_chain_responses,
@@ -781,8 +905,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/session-retirement-precedes-response-policy",
-     test_session_retirement_precedes_response_policy,
+    {"/session-retirement-response-policy",
+     test_session_retirement_response_policy,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

@@ -90,7 +90,9 @@ public sealed class FeatureTests
         var result = await reader.ProximityCheckAsync(new byte[16], rounds: 1);
 
         Assert.That(result.IsFailure, Is.True);
-        Assert.That(result.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.CardStatus));
+        // A genuine EV3 returns opaque bytes for a bad VerifyPC. The reader must
+        // reject those bytes as an invalid response MAC.
+        Assert.That(result.Error.Kind, Is.EqualTo(DfcProtocolErrorKind.Integrity));
     }
 
     [Test]

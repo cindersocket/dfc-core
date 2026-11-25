@@ -19,6 +19,10 @@ REGISTRY = {
         "proximity_random",
     ): "test_random_failures_are_atomic",
     (
+        "src/dfc_emulator_commands_proximity.c",
+        "response",
+    ): "test_random_failures_are_atomic",
+    (
         "src/dfc_emulator_commands_auth.c",
         "secrets.random_material",
     ): "test_random_generation_failures_report_memory_error",

@@ -85,6 +85,62 @@ static MunitResult
     return MUNIT_OK;
 }
 
+static MunitResult test_empty_enciphered_command_is_distinct_from_failure(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    const uint8_t header[] = {DFC_CMD_SET_CONFIGURATION, 0x02};
+    uint8_t wrapped[DFC_SM_MAX_SIZE];
+    uint8_t recovered[DFC_SM_MAX_SIZE];
+
+    DfcSecureMessaging* sm_reader = alloc_session(DFC_CMD_AUTHENTICATE_ISO, 16);
+    sm_reader->pcd = true;
+    DfcSecureMessaging* sm_emulator = alloc_session(DFC_CMD_AUTHENTICATE_ISO, 16);
+    size_t wrapped_len = dfc_secure_messaging_wrap(
+        sm_reader, DFC_COMM_ENCIPHERED, header, sizeof(header), NULL, 0, wrapped, sizeof(wrapped));
+    munit_assert_size(wrapped_len, >, 0);
+
+    size_t recovered_len = SIZE_MAX;
+    munit_assert_true(dfc_secure_messaging_verify_command_with_length(
+        sm_emulator,
+        DFC_COMM_ENCIPHERED,
+        header,
+        sizeof(header),
+        wrapped,
+        wrapped_len,
+        recovered,
+        sizeof(recovered),
+        &recovered_len));
+    munit_assert_size(recovered_len, ==, 0);
+    dfc_secure_messaging_free(sm_reader);
+    dfc_secure_messaging_free(sm_emulator);
+
+    sm_reader = alloc_session(DFC_CMD_AUTHENTICATE_ISO, 16);
+    sm_reader->pcd = true;
+    sm_emulator = alloc_session(DFC_CMD_AUTHENTICATE_ISO, 16);
+    wrapped_len = dfc_secure_messaging_wrap(
+        sm_reader, DFC_COMM_ENCIPHERED, header, sizeof(header), NULL, 0, wrapped, sizeof(wrapped));
+    munit_assert_size(wrapped_len, >, 0);
+    wrapped[wrapped_len - 1] ^= 0x01;
+    recovered_len = SIZE_MAX;
+    munit_assert_false(dfc_secure_messaging_verify_command_with_length(
+        sm_emulator,
+        DFC_COMM_ENCIPHERED,
+        header,
+        sizeof(header),
+        wrapped,
+        wrapped_len,
+        recovered,
+        sizeof(recovered),
+        &recovered_len));
+    munit_assert_size(recovered_len, ==, 0);
+
+    dfc_secure_messaging_free(sm_reader);
+    dfc_secure_messaging_free(sm_emulator);
+    return MUNIT_OK;
+}
+
 // Emulator (PICC) side: generate_response() a reply, then unwrap() (the reader side
 // function) should accept it and recover the original plaintext.
 static MunitResult
@@ -1298,6 +1354,12 @@ static MunitTest tests[] = {
     {"/enciphered/legacy", test_enciphered_legacy, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/iso", test_enciphered_iso, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/enciphered/aes", test_enciphered_aes, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/enciphered/empty-command-result",
+     test_empty_enciphered_command_is_distinct_from_failure,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/enciphered/partial-overlap",
      test_enciphered_encode_accepts_partial_overlap,
      NULL,

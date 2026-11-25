@@ -927,9 +927,7 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
        (picc_commands & (DFC_AUTH_COMMAND_EV2_FIRST | DFC_AUTH_COMMAND_EV2_NON_FIRST))) {
         return DfcDerMalformed;
     }
-    if(c->picc_has_sm_disable &&
-       (c->picc_sm_disable &
-        (uint8_t)~(DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1 | DFC_SM_DISABLE_EV2_CHAINED_WRITE))) {
+    if(c->picc_has_sm_disable && (c->picc_sm_disable & (uint8_t)~DFC_SM_DISABLE_VALID_MASK)) {
         return DfcDerMalformed;
     }
 
@@ -986,9 +984,7 @@ DfcModelStatus dfc_credential_validate_model(const DfcCredential* c) {
            (commands & (DFC_AUTH_COMMAND_EV2_FIRST | DFC_AUTH_COMMAND_EV2_NON_FIRST))) {
             return DfcDerMalformed;
         }
-        if(a->has_sm_disable && (a->sm_disable & (uint8_t)~(
-                                                     DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1 |
-                                                     DFC_SM_DISABLE_EV2_CHAINED_WRITE))) {
+        if(a->has_sm_disable && (a->sm_disable & (uint8_t)~DFC_SM_DISABLE_VALID_MASK)) {
             return DfcDerMalformed;
         }
         (void)a;
