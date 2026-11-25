@@ -16,6 +16,9 @@
 /tests/test_dfc_iso_dep_frame_properties.c               @mistial-dev
 /tests/test_makefile_contract.py                         @mistial-dev
 /tests/test_ci_unit_workflow.py                          @mistial-dev
+/tests/run_native_coverage.py                            @mistial-dev
+/tests/test_native_coverage.py                           @mistial-dev
+/tests/native_coverage_contract.json                     @mistial-dev
 /tests/check_desfire_vectors.py                          @mistial-dev
 /tests/vectors/desfire/manifest.json                     @mistial-dev
 /tests/vectors/desfire/vector-vocabulary.json            @mistial-dev

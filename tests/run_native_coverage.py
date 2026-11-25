@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -12,10 +13,189 @@ from pathlib import Path
 from typing import Any
 
 MODES = ("all", "physical", "synthetic-unit")
+CONTRACT_PATH = Path(__file__).with_name("native_coverage_contract.json")
+GAP_CATEGORIES = frozenset(
+    (
+        "capture-required",
+        "capture-derived",
+        "fault-only",
+        "library-only",
+        "profile-only",
+    )
+)
+REQUIRED_BEHAVIOR_FAMILIES = frozenset(
+    (
+        "activation",
+        "authentication",
+        "configuration",
+        "data-files",
+        "delegated-applications",
+        "framing",
+        "iso-dep",
+        "iso7816",
+        "key-sets",
+        "lifecycle",
+        "persistence",
+        "proximity",
+        "record-files",
+        "sdm",
+        "secure-messaging",
+        "static-signature",
+        "transaction-mac",
+        "transaction-timer",
+        "transactions",
+        "value-files",
+        "virtual-card",
+    )
+)
 MINIMUM_PERCENT = {
     "all": {"lines": 90.0, "branches": 78.0, "functions": 97.0},
     "physical": {"lines": 68.0, "branches": 54.0, "functions": 80.0},
 }
+
+
+def load_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def validate_coverage_history(contract: dict[str, Any]) -> dict[str, dict[str, float]]:
+    history = contract.get("coverage_history")
+    if not isinstance(history, list) or not history:
+        raise RuntimeError("coverage contract has no coverage history")
+
+    previous: dict[str, dict[str, float]] | None = None
+    for index, entry in enumerate(history):
+        if not isinstance(entry, dict) or not entry.get("label"):
+            raise RuntimeError(f"coverage history entry {index} has no label")
+        minimums = entry.get("minimum_percent")
+        if not isinstance(minimums, dict):
+            raise TypeError(f"coverage history entry {index} has no minimums")
+        for mode, categories in MINIMUM_PERCENT.items():
+            if mode not in minimums or not isinstance(minimums[mode], dict):
+                raise RuntimeError(f"coverage history entry {index} omits {mode}")
+            for category, original in categories.items():
+                value = minimums[mode].get(category)
+                if not isinstance(value, (int, float)):
+                    raise TypeError(f"coverage history entry {index} omits {mode} {category}")
+                floor = original if previous is None else previous[mode][category]
+                if value < floor:
+                    raise RuntimeError(
+                        f"coverage history lowers {mode} {category}: {value:.1f}% < {floor:.1f}%"
+                    )
+        previous = minimums
+    assert previous is not None
+    return previous
+
+
+def validate_behavior_matrix(contract: dict[str, Any], manifest: Path, repo_root: Path) -> None:
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    vectors = {item["path"]: item["metadata"] for item in payload["files"]}
+    rows = contract.get("behaviors")
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError("coverage contract has no behavior rows")
+
+    identifiers: set[str] = set()
+    families: set[str] = set()
+    for row in rows:
+        identifier = row.get("id")
+        family = row.get("family")
+        description = row.get("description")
+        if not isinstance(identifier, str) or not identifier:
+            raise RuntimeError("behavior row has no id")
+        if identifier in identifiers:
+            raise RuntimeError(f"duplicate behavior id: {identifier}")
+        identifiers.add(identifier)
+        if family not in REQUIRED_BEHAVIOR_FAMILIES:
+            raise RuntimeError(f"{identifier}: unknown behavior family {family!r}")
+        families.add(family)
+        if not isinstance(description, str) or not description.strip():
+            raise RuntimeError(f"{identifier}: missing behavior description")
+
+        evidence = row.get("evidence")
+        if not isinstance(evidence, dict):
+            raise TypeError(f"{identifier}: missing evidence")
+        kind = evidence.get("kind")
+        if kind == "physical":
+            references = evidence.get("vectors")
+            if not isinstance(references, list) or not references:
+                raise RuntimeError(f"{identifier}: no physical vectors")
+            for reference in references:
+                metadata = vectors.get(reference)
+                if metadata is None:
+                    raise RuntimeError(f"{identifier}: unknown vector {reference}")
+                if metadata.get("origin") != "physical-card":
+                    raise RuntimeError(f"{identifier}: {reference} is not physical")
+                if metadata.get("replayable") is not True:
+                    raise RuntimeError(f"{identifier}: {reference} is not replayable")
+        elif kind == "deterministic":
+            references = evidence.get("tests")
+            if not isinstance(references, list) or not references:
+                raise RuntimeError(f"{identifier}: no deterministic tests")
+            for reference in references:
+                path = repo_root / reference
+                if not path.is_file() or not path.is_relative_to(repo_root / "tests"):
+                    raise RuntimeError(f"{identifier}: invalid test path {reference}")
+        else:
+            raise RuntimeError(f"{identifier}: unknown evidence kind {kind!r}")
+
+    missing = sorted(REQUIRED_BEHAVIOR_FAMILIES - families)
+    if missing:
+        raise RuntimeError("behavior matrix omits: " + ", ".join(missing))
+
+
+def validate_gap_classifications(
+    gaps: list[dict[str, Any]], contract: dict[str, Any]
+) -> dict[str, int]:
+    entries = contract.get("gap_classifications")
+    if not isinstance(entries, list):
+        raise TypeError("coverage contract has no gap classifications")
+
+    classified: dict[tuple[str, str], dict[str, Any]] = {}
+    counts = {category: 0 for category in GAP_CATEGORIES}
+    for entry in entries:
+        key = (entry.get("file"), entry.get("function"))
+        if not all(isinstance(value, str) and value for value in key):
+            raise RuntimeError("gap classification has an invalid key")
+        if key in classified:
+            raise RuntimeError(f"duplicate gap classification: {key[0]}:{key[1]}")
+        category = entry.get("category")
+        if category not in GAP_CATEGORIES:
+            raise RuntimeError(f"{key[0]}:{key[1]}: invalid category {category!r}")
+        rationale = entry.get("rationale")
+        if not isinstance(rationale, str) or not rationale.strip():
+            raise RuntimeError(f"{key[0]}:{key[1]}: missing rationale")
+        classified[key] = entry
+        counts[category] += 1
+
+    actual = {(item["file"], item["function"]) for item in gaps}
+    expected = set(classified)
+    unclassified = sorted(actual - expected)
+    stale = sorted(expected - actual)
+    failures = []
+    if unclassified:
+        failures.append(
+            "unclassified: " + ", ".join(f"{file}:{function}" for file, function in unclassified)
+        )
+    if stale:
+        failures.append("stale: " + ", ".join(f"{file}:{function}" for file, function in stale))
+    if failures:
+        raise RuntimeError("capture-gap contract mismatch; " + "; ".join(failures))
+    return counts
+
+
+def ratcheted_minimums(
+    configured: dict[str, dict[str, float]], metrics: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, float]]:
+    return {
+        mode: {
+            category: max(
+                configured[mode][category],
+                math.floor(metrics[mode][category]["percent"] * 10) / 10,
+            )
+            for category in categories
+        }
+        for mode, categories in MINIMUM_PERCENT.items()
+    }
 
 
 def arguments() -> argparse.Namespace:
@@ -221,8 +401,7 @@ def function_regions(
             (
                 (index, Path(candidate))
                 for index, candidate in enumerate(filenames)
-                if Path(candidate).name in source_names
-                and Path(candidate).parent.name == "src"
+                if Path(candidate).name in source_names and Path(candidate).parent.name == "src"
             ),
             None,
         )
@@ -260,9 +439,7 @@ def capture_gaps_from_payloads(
     physical_functions = function_regions(physical_payload, names)
     gaps = []
     for key, function in all_functions.items():
-        physical = physical_functions.get(
-            key, {"count": 0, "regions": {}, "branches": {}}
-        )
+        physical = physical_functions.get(key, {"count": 0, "regions": {}, "branches": {}})
         region_delta = sum(
             1
             for location, count in function["regions"].items()
@@ -298,9 +475,7 @@ def capture_gaps_from_payloads(
 
 
 def capture_gaps(output_root: Path, sources: list[Path]) -> list[dict[str, Any]]:
-    all_payload = json.loads(
-        (output_root / "all" / "coverage.json").read_text(encoding="utf-8")
-    )
+    all_payload = json.loads((output_root / "all" / "coverage.json").read_text(encoding="utf-8"))
     physical_payload = json.loads(
         (output_root / "physical" / "coverage.json").read_text(encoding="utf-8")
     )
@@ -309,9 +484,13 @@ def capture_gaps(output_root: Path, sources: list[Path]) -> list[dict[str, Any]]
     )
 
 
-def enforce_minimums(metrics: dict[str, dict[str, Any]]) -> None:
+def enforce_minimums(
+    metrics: dict[str, dict[str, Any]],
+    minimums: dict[str, dict[str, float]] | None = None,
+) -> None:
+    minimums = minimums or MINIMUM_PERCENT
     failures = []
-    for mode, categories in MINIMUM_PERCENT.items():
+    for mode, categories in minimums.items():
         for category, minimum in categories.items():
             actual = metrics[mode][category]["percent"]
             if actual < minimum:
@@ -326,6 +505,9 @@ def main() -> int:
     tests = [path.resolve() for path in args.test]
     repo_root = Path(__file__).resolve().parent.parent
     manifest = repo_root / "tests" / "vectors" / "desfire" / "manifest.json"
+    contract = load_contract()
+    minimums = validate_coverage_history(contract)
+    validate_behavior_matrix(contract, manifest, repo_root)
     sources = coverage_sources(repo_root)
     output_root = args.output_dir.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -351,13 +533,12 @@ def main() -> int:
         for mode in MODES
     }
     gaps = capture_gaps(output_root, sources)
+    classification_counts = validate_gap_classifications(gaps, contract)
     (output_root / "capture-gaps.json").write_text(
         json.dumps(gaps, indent=2) + "\n", encoding="utf-8"
     )
     with (output_root / "capture-gaps.txt").open("w", encoding="utf-8") as stream:
-        stream.write(
-            "Covered by tests but missing replayable physical-vector evidence\n"
-        )
+        stream.write("Covered by tests but missing replayable physical-vector evidence\n")
         stream.write(" fn  branches  regions  location  function\n")
         for item in gaps:
             stream.write(
@@ -375,10 +556,9 @@ def main() -> int:
             name: metrics["all"][name]["covered"] - metrics["physical"][name]["covered"]
             for name in ("lines", "branches", "functions", "regions")
         },
+        "gap_classifications": classification_counts,
     }
-    (output_root / "metrics.json").write_text(
-        json.dumps(totals, indent=2) + "\n", encoding="utf-8"
-    )
+    (output_root / "metrics.json").write_text(json.dumps(totals, indent=2) + "\n", encoding="utf-8")
     for mode in MODES:
         values = metrics[mode]
         print(
@@ -386,10 +566,12 @@ def main() -> int:
             f"branches={values['branches']['percent']:.2f}% "
             f"functions={values['functions']['percent']:.2f}%"
         )
-    print(
-        f"capture queue: {len(gaps)} functions; see {output_root / 'capture-gaps.txt'}"
+    print(f"capture queue: {len(gaps)} functions; see {output_root / 'capture-gaps.txt'}")
+    suggested = ratcheted_minimums(minimums, metrics)
+    (output_root / "ratchet-minimums.json").write_text(
+        json.dumps(suggested, indent=2) + "\n", encoding="utf-8"
     )
-    enforce_minimums(metrics)
+    enforce_minimums(metrics, minimums)
     return 0
 
 

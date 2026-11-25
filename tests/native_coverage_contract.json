@@ -1,0 +1,2461 @@
+{
+  "schema": 1,
+  "coverage_history": [
+    {
+      "label": "pr-280-baseline",
+      "minimum_percent": {
+        "all": {
+          "lines": 90,
+          "branches": 78,
+          "functions": 97
+        },
+        "physical": {
+          "lines": 68,
+          "branches": 54,
+          "functions": 80
+        }
+      }
+    },
+    {
+      "label": "coverage-contract",
+      "minimum_percent": {
+        "all": {
+          "lines": 90.3,
+          "branches": 78.9,
+          "functions": 97.8
+        },
+        "physical": {
+          "lines": 68.6,
+          "branches": 54.9,
+          "functions": 80.8
+        }
+      }
+    },
+    {
+      "label": "lifecycle-capture",
+      "minimum_percent": {
+        "all": {
+          "lines": 90.3,
+          "branches": 78.9,
+          "functions": 97.8
+        },
+        "physical": {
+          "lines": 69.4,
+          "branches": 55.4,
+          "functions": 81.8
+        }
+      }
+    },
+    {
+      "label": "activation-and-extended-iso-regressions",
+      "minimum_percent": {
+        "all": {
+          "lines": 90.3,
+          "branches": 79.0,
+          "functions": 97.8
+        },
+        "physical": {
+          "lines": 69.6,
+          "branches": 55.7,
+          "functions": 81.8
+        }
+      }
+    }
+  ],
+  "behaviors": [
+    {
+      "id": "activation-ats-boundaries",
+      "family": "activation",
+      "description": "Activation data, ATS length boundaries, and field-cycle state.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_2k_user_ats_boundaries.vec"
+        ]
+      }
+    },
+    {
+      "id": "iso-dep-block-sequencing",
+      "family": "iso-dep",
+      "description": "ISO-DEP request chaining, block numbering, retries, and response framing.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_2k_iso_dep_block_numbering.vec",
+          "v6/hardware/hardware_physical_ev3_2k_iso_dep_request_chaining.vec"
+        ]
+      }
+    },
+    {
+      "id": "native-wrapped-iso-dialects",
+      "family": "framing",
+      "description": "Native, wrapped-native, and standard ISO command dialects.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/emulator/hardware_genuine_ev3_4k_wire_dialects.vec"
+        ]
+      }
+    },
+    {
+      "id": "iso-file-access",
+      "family": "iso7816",
+      "description": "Standard ISO file selection and file-command rejection behavior.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_2k_iso_file_negatives.vec"
+        ]
+      }
+    },
+    {
+      "id": "authentication-families",
+      "family": "authentication",
+      "description": "Legacy-compatible, ISO, AES, and EV2 authentication families.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_physical_ev3_4k_d40_comm_modes.vec",
+          "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-aes.vec",
+          "v6/hardware/hardware_physical_ev3_4k_iso_auth_app-3tdea.vec"
+        ]
+      }
+    },
+    {
+      "id": "secure-messaging-ev1-ev2",
+      "family": "secure-messaging",
+      "description": "MACed and enciphered commands, protected responses, and chained EV2 data.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_physical_ev3_4k_aes_comm_modes.vec",
+          "v6/hardware/hardware_physical_ev3_2k_ev2_full_backup_commit_readback.vec"
+        ]
+      }
+    },
+    {
+      "id": "application-file-lifecycle",
+      "family": "lifecycle",
+      "description": "Application and file creation plus observable storage effects.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_physical_ev3_4k_free_create.vec"
+        ]
+      }
+    },
+    {
+      "id": "standard-backup-data",
+      "family": "data-files",
+      "description": "Standard and backup data reads, writes, chaining, and commit readback.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_physical_ev3_4k_long_data.vec",
+          "v6/hardware/hardware_physical_ev3_2k_ev2_full_backup_commit_readback.vec"
+        ]
+      }
+    },
+    {
+      "id": "linear-cyclic-records",
+      "family": "record-files",
+      "description": "Linear and cyclic record writes, reads, ordering, and capacity.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_physical_ev3_4k_records.vec"
+        ]
+      }
+    },
+    {
+      "id": "value-operations",
+      "family": "value-files",
+      "description": "Value-file communication modes, rights, credit, debit, and limited credit.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_2k_value_comm_modes.vec",
+          "v6/hardware/hardware_physical_ev3_2k_value_rights.vec"
+        ]
+      }
+    },
+    {
+      "id": "transaction-commit-abort",
+      "family": "transactions",
+      "description": "Native transactions and standard ISO publication behavior.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/emulator/hardware_genuine_ev3_4k_transactions.vec",
+          "v6/hardware/hardware_physical_ev3_2k_iso_write_transaction.vec"
+        ]
+      }
+    },
+    {
+      "id": "ev2-key-set-change",
+      "family": "key-sets",
+      "description": "EV2 key-set zero and nonzero ChangeKeyEV2 behavior.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_4k_change_key_ev2_set0_different_key.vec",
+          "v6/hardware/hardware_physical_ev3_4k_change_key_ev2_set1_same_key_number.vec"
+        ]
+      }
+    },
+    {
+      "id": "transaction-mac-workflow",
+      "family": "transaction-mac",
+      "description": "Transaction MAC creation, commit output, and reader identification.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_genuine_ev3_4k_transaction_mac_modes.vec",
+          "v4/hardware/hardware_genuine_ev3_4k_transaction_mac_reader_id.vec"
+        ]
+      }
+    },
+    {
+      "id": "sdm-render-and-counter",
+      "family": "sdm",
+      "description": "Secure dynamic messaging rendering, encrypted data, counters, and limits.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_genuine_ev3_4k_sdm_counter.vec",
+          "v4/hardware/hardware_genuine_ev3_sdm_encrypted_file_native_iso.vec"
+        ]
+      }
+    },
+    {
+      "id": "proximity-success-failure",
+      "family": "proximity",
+      "description": "Proximity preparation, verification, wrong-key output, and session effects.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_2k_proximity_ev2_session.vec",
+          "v6/hardware/hardware_physical_ev3_2k_proximity_wrong_verify_random.vec"
+        ]
+      }
+    },
+    {
+      "id": "picc-configuration",
+      "family": "configuration",
+      "description": "Random ID, formatting controls, and configuration command protection.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_2k_terminal_configuration.vec"
+        ]
+      }
+    },
+    {
+      "id": "delegated-application-lifecycle",
+      "family": "delegated-applications",
+      "description": "Delegated application creation, authentication, and lifecycle.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/emulator/hardware_genuine_ev3_4k_delegated-application-lifecycle.vec"
+        ]
+      }
+    },
+    {
+      "id": "virtual-card-selection",
+      "family": "virtual-card",
+      "description": "Authenticated virtual-card selection and configured rejection.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/emulator/hardware_genuine_ev3_4k_virtual_card.vec",
+          "v6/hardware/hardware_physical_ev3_4k_vc-config-disabled.vec"
+        ]
+      }
+    },
+    {
+      "id": "field-cycle-persistence",
+      "family": "persistence",
+      "description": "Key mutation survives a physical field cycle and reauthentication.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v6/hardware/hardware_physical_ev3_4k_plain_app_change_key_ev2_set0.vec"
+        ]
+      }
+    },
+    {
+      "id": "identity-static-signature",
+      "family": "static-signature",
+      "description": "Version chain, identity, and static-signature response surface.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/emulator/hardware_genuine_ev3_4k_identity.vec"
+        ]
+      }
+    },
+    {
+      "id": "transaction-timer",
+      "family": "transaction-timer",
+      "description": "Transaction timer capability and time-dependent command behavior.",
+      "evidence": {
+        "kind": "physical",
+        "vectors": [
+          "v4/hardware/hardware_genuine_ev3_4k_transaction_timer.vec"
+        ]
+      }
+    }
+  ],
+  "gap_classifications": [
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm_verify_ascii",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm.c:config_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm.c:parse_picc_plaintext",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:dfc_emulator_command_change_key_d40",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_add_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_an10922.c",
+      "function": "dfc_an10922_diversify",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_handle_command_secured",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_iso7816.c",
+      "function": "dfc_emulator_handle_iso7816_select",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_credential_keys_resize_total",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_unwrap",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:wrap_command",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_an10922.c",
+      "function": "dfc_an10922.c:diversify_tdea",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_unwrap_ev1_response",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_format_picc",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_delete_application_at",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:append_entry",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_key_set_metadata_slice",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:stage_direct_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:stage_pending_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm.c:buffers_overlap",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_add_record_update",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_command_change_key_settings",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_file_pool_compact_after_release",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_key_set_metadata_compact_after_release",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_verifier_init",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_verify",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_delete_file",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:commit_picc_master_key_type",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_key_pool_compact_after_release",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_iso_file_id_is_reserved",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_sdm_access_rights_are_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_an10922.c",
+      "function": "dfc_an10922_key_length",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm.c:hex_nibble",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_pool_slice_resolve",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_update_ev1_command_full",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_generate_ev1_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_add_value",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:replay_staged_iso_dep_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_key_set_metadata_can_resize",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_credential_key_at",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:entry_record_update",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:entry_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:replay_direct_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_an10922.c",
+      "function": "dfc_an10922.c:diversify_aes128",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc_advance_time",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:change_key_ev2_length_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_init_blank",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_rotate_key_blocks_left",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm.c:decode_hex",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_picc_ats_is_consistent",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:change_key_d40_padding_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:verifier_is_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_verify_ev1_transmitted_command_mac_full",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_file_release",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_key_set_metadata_length",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm.c:valid_hex",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:format_selected_application",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm.c:range_fits",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_authentication_mode_to_string",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_credential_rotate_key_set_metadata",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_key_set_metadata_release",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_key_set_metadata_resize",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:require_picc_authentication",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_verifier_clear",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_add_reader_id",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_find_application",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:clear_direct_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_accumulator_add_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_accumulator_add_record_update",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_accumulator_add_clear_record",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_input_add_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_accumulator_add_zero_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_init_factory",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_pool_free",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_copy_model",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc_reset_protocol",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:key_offset_of",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:set_key_offset",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:set_num_keys",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:set_key_len",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:key_pool_len_of",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:set_key_pool_len",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:pending_command_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_an10922.c",
+      "function": "dfc_an10922.c:an10922_wipe",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_greatest_common_divisor",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_input_add_record_update",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_input_add_value",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_input_add_clear_record",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_input_add_reader_id",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_file_mac_len",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_emit_zero_payload_with_chaining_comm",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_crypto.c",
+      "function": "dfc_crypto_des_ecb",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_add_zero_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:entry_clear_record",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_key_set_metadata_mutable",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_alloc",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_free",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_current_key_settings_2",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_clear_dirty",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_wrap",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_wrap_with_length_marker",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "des_cmac.c",
+      "function": "des_cmac_with_iv",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "des_cmac.c",
+      "function": "des_cmac",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_build_select_application_frame",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_build_read_data_frame",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_build_wrapped_get_version_frame",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "test_dfc_roll_key_set_wipe.c:dfc_application_clear",
+      "category": "profile-only",
+      "rationale": "This compiler or feature-profile symbol is covered by its dedicated profile rather than a card transcript."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_get_primary_application",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_auth.c",
+      "function": "dfc_emulator_commands_auth.c:fail_pending_ev2_authentication",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_auth.c",
+      "function": "dfc_emulator_commands_auth.c:fail_pending_authentication",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_render_sdm_read",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2_crypto.c",
+      "function": "dfc_ev2_wire_mac",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_unwrap_d40_response_mac",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:uint24_is_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:write_uint24_le",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc_anticollision",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:write_iso_security_status",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_command_set_configuration",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_iso_file_command",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_native_exchange_inner",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_abort_transaction_snapshot",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_value_delta",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc_iso_dep_frame_exchange",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_commands_data.c:render_sdm_read_in_place",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:apply_change_file_settings",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:dfc_emulator_command_change_key_ev1",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_commit_reader_id",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_command_get_file_counters",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_apply_ev1_response_secure_messaging",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:handle_change_key_ev2_standard",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_format_picc",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_auth.c",
+      "function": "dfc_emulator_command_authenticate_ev2_start",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_ev2_crypto.c",
+      "function": "dfc_ev2_decrypt_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_file_read_comm",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:pending_response_is_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:virtual_picc_iso_dep_exchange",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_file_resize",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_get_value",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_command_read_data",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_iso_append_record",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_handle_command",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_records.c",
+      "function": "dfc_emulator_command_write_record",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_file_read_length",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:command_can_use_large_iso_dep_storage",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_delete_application",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_add_record_update",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2.c",
+      "function": "dfc_ev2_protect_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "des_cmac.c",
+      "function": "dfc_des_cmac_context_compute",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc_iso_dep_exchange",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_add_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "aes_cmac.c",
+      "function": "dfc_aes_cmac_context_compute",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_change_file_settings",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:enciphered_decode",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:write_iso_file_read_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_iso_internal_authenticate",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_records.c",
+      "function": "dfc_emulator_command_update_record",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_can_mirror_write",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_insert_file",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:accumulator_add_segments_and_zeroes",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_command_change_key_ev2",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_proximity.c",
+      "function": "dfc_emulator_command_verify_proximity_check",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_ev2_crypto.c",
+      "function": "dfc_ev2_mac",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_delete_file",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_create_transaction_mac_file",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_ev2_command.c",
+      "function": "dfc_ev2_command_metadata",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:d40_mac_verify",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:enciphered_encode",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_crypto.c",
+      "function": "dfc_crypto_aes_cbc",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_crypto.c",
+      "function": "dfc_crypto_des_cbc",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_credential_keys_resize_total",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_committed_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_emit_payload_with_chaining_comm",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_verify_command_with_length",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_metadata.c",
+      "function": "dfc_emulator_commands_metadata.c:storage_version_code",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_commit_transaction",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_generate_response_with_length_marker",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_auth.c",
+      "function": "dfc_emulator_command_authenticate_ev2_continuation",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_create_application",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_crypto_des_chain.c",
+      "function": "dfc_crypto_des_chain",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:d40_mac_segments",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:cipher_accepts_key_length",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_key_set_metadata_release",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_const",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_auth.c",
+      "function": "dfc_emulator_command_authenticate_step2",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_command_write_data",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_create_record_file",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_records.c",
+      "function": "dfc_emulator_command_clear_record_file",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2.c",
+      "function": "dfc_ev2_prepare_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:reassemble_pending_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_aes_wire_mac",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_pool_slice_resolve",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_key_pool_compact_after_release",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:write_next_iso_dep_response_block",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_commands_transactions.c:transaction_mac_candidate",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2.c",
+      "function": "dfc_ev2.c:command_file_access",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_create_value_file",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_command_get_key_version",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2_crypto.c",
+      "function": "dfc_ev2_encrypt_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_delete_file",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_add_clear_record",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_auth.c",
+      "function": "dfc_emulator_command_authenticate_step1",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_metadata.c",
+      "function": "dfc_emulator_command_read_signature",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_authentication_mode_from_string",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_wrap_d40_command_mac",
+      "category": "library-only",
+      "rationale": "Host-side builder or verifier is covered deterministically and is not entered by the emulated card front door."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_iso_select",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_uid_length_is_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_desfire_uid_is_detectable",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_auth.c",
+      "function": "dfc_emulator_abort_pending_native_work",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_has_pending_additional_work",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_applies_ev1",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_commands_transactions.c:value_delta_result",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2.c",
+      "function": "dfc_ev2.c:command_file_comm",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2_crypto.c",
+      "function": "dfc_ev2_derive_session_keys",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:virtual_picc_anticollision",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_credential_key_at",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_capture_file",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_unwrap_write_payload",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:handle_create_delegated_application_continuation",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:dispatch_native_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_init",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_advance_time",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_auth_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_require_directory_access",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:build_iso_dep_r_block",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:build_iso_dep_empty_i_block",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_key_set_type_length",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_committed_record_count",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:handle_get_card_uid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_command_change_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_create_std_data_file",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_sdm.c",
+      "function": "dfc_sdm_derive_session_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_dep_initial_response_is_staged",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_dep_response_chain_is_pending",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:release_iso_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_derive_session_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_abort_transaction",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_commands_transactions.c:transaction_mac_calculate",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "aes_cmac.c",
+      "function": "aes_cmac_segments_with_iv",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "des_cmac.c",
+      "function": "dfc_des_cmac_context_init",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "des_cmac.c",
+      "function": "des_cmac_segments_with_iv",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_wrap_native_response_as_iso7816",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_key_set_metadata_slice",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_alloc",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:compute_full_cmac_segments",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_verify_ev1_transmitted_command_mac",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_generate_ev1_response_mac",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_set_set_initialized",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_sets_resize",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:handle_read_records",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_render_sdm_read_status",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_add_value",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_key_type_for_set_type",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_publish_transaction",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_retire_authentication",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:new_file_count_is_available",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_proximity.c",
+      "function": "dfc_emulator_command_prepare_proximity_check",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_snapshot_begin",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_update_ev1_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_accumulator_finalize",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_virtual_card_select",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc_scan_iso14443a",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_get_file_ids",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_can_add_data",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_can_add_record_update",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_transaction_mac_can_add_clear_record",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_auth_abort_on_unexpected_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_iso_external_authenticate",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_file_read_fits",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_transaction_mac_access_rights_are_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_access.c",
+      "function": "dfc_emulator_file_effective_comm_settings",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_ev2_execute_prepared_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:can_change_key_as",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:session_is_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:output_fits",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_command_clear_selected_app_pending_values",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "aes_cmac.c",
+      "function": "aes_cmac.c:aes_cmac_generateSubkeys",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "aes_cmac.c",
+      "function": "dfc_aes_cmac_context_init",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "des_cmac.c",
+      "function": "des_cmac.c:des_cmac_generateSubkeys",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_access_rights_are_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_get_application",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_create_application_desfire_order",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_set_is_initialized",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_file_data_const",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_keys_resize",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_version_in_set_const",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_crypto.c",
+      "function": "dfc_crypto_des_block_init",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_note_persistent_change",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_transaction_snapshot_mirror_write",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:require_selected_application",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_key_references_exist",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:ev2_chained_standard_write_is_disabled",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:mark_key_change_dirty",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:iso_file_id_in_use",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:iso_df_name_in_use",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:transaction_mac_file_has_capacity",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_metadata.c",
+      "function": "dfc_emulator_commands_metadata.c:build_default_version_frame",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:accumulator_push_block",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:write_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:validate_pending_response",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_auth_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_app_auth_commands",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_key_set_metadata_can_resize",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_key_set_metadata_mutable",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_set_version",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_set_type",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_file_pool_free",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator.c:transaction_file_bit_set",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_effective_sm_disable",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_access.c",
+      "function": "dfc_emulator_access.c:file_access_nibbles",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_ev2_reseal_native_chain",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:handle_create_delegated_application",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_commands.c:handle_get_delegated_info",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_ev2_reassemble_command_chain",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_handle_transport_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_free_mem",
+      "category": "fault-only",
+      "rationale": "Deterministic capacity or memory-failure tests cover a condition that a card transcript cannot control reliably."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_get_file_settings",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_command_get_application_ids",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_metadata.c",
+      "function": "dfc_emulator_command_get_version",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_proximity.c",
+      "function": "dfc_emulator_command_proximity_check",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_generate_ev1_response_in_place",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging_verify_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac.c:entry_reader_id",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:picc_ats",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:response_storage",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:discard_pending_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_virtual_card_external_authenticate",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_dep_max_inf_for_fsdi",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:iso_dep_chunk_limit",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:build_iso_dep_i_block",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_common.c:access_nibble_is_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_common.c",
+      "function": "dfc_common.c:dfc_key_is_degenerate_des",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_find_transaction_mac_file",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_find_application_desfire_order",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential.c:dfc_credential_rotate_key_set_metadata",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_keys_release",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_credential.c",
+      "function": "dfc_credential_key_length",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_crypto.c",
+      "function": "dfc_crypto_des_block_clear",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator.c",
+      "function": "dfc_emulator_select_application",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_access.c",
+      "function": "dfc_emulator_is_authenticated_with_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_is_available_authentication_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands.c",
+      "function": "dfc_emulator_command_file_access_refusal_status",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_commands_data.c:sdm_derive_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_data.c",
+      "function": "dfc_emulator_commands_data.c:sdm_read_cache_matches",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_keys.c",
+      "function": "dfc_emulator_commands_keys.c:key_set_change_authorized",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:require_create_delete_access",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:card_file_capacity_bytes",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:has_card_file_capacity",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_lifecycle.c",
+      "function": "dfc_emulator_commands_lifecycle.c:new_file_settings_are_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_emulator_commands_transactions.c",
+      "function": "dfc_emulator_commands_transactions.c:transaction_mac_publish_candidate",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_ev2_crypto.c",
+      "function": "dfc_ev2_derive_iv",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_secure_messaging.c",
+      "function": "dfc_secure_messaging.c:d40_session_is_valid",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_derive_session_key",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_transaction_mac.c",
+      "function": "dfc_transaction_mac_accumulator_add_value",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:handle_iso_authenticate",
+      "category": "capture-required",
+      "rationale": "Wire-visible command or transport path; close its remaining coverage with replayable card exchanges."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:retire_finished_response_storage",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:write_and_remember_iso_dep_response_block",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:abort_transaction_after_failed_iso_data_command",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    },
+    {
+      "file": "dfc_virtual_picc.c",
+      "function": "dfc_virtual_picc.c:finalize_standard_iso_sdm_boundary",
+      "category": "capture-derived",
+      "rationale": "Internal branch inherits physical provenance from its enclosing replayed card command."
+    }
+  ]
+}
+

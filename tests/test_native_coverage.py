@@ -17,6 +17,98 @@ SPEC.loader.exec_module(COVERAGE)
 
 
 class NativeCoverageTests(unittest.TestCase):
+    def test_repository_contract_has_every_behavior_family(self) -> None:
+        contract = COVERAGE.load_contract()
+        minimums = COVERAGE.validate_coverage_history(contract)
+        COVERAGE.validate_behavior_matrix(
+            contract,
+            ROOT / "tests" / "vectors" / "desfire" / "manifest.json",
+            ROOT,
+        )
+
+        self.assertEqual(set(minimums), set(COVERAGE.MINIMUM_PERCENT))
+        self.assertEqual(
+            {row["family"] for row in contract["behaviors"]},
+            COVERAGE.REQUIRED_BEHAVIOR_FAMILIES,
+        )
+
+    def test_coverage_history_cannot_lower_a_floor(self) -> None:
+        contract = {
+            "coverage_history": [
+                {
+                    "label": "baseline",
+                    "minimum_percent": COVERAGE.MINIMUM_PERCENT,
+                },
+                {
+                    "label": "lowered",
+                    "minimum_percent": {
+                        **COVERAGE.MINIMUM_PERCENT,
+                        "physical": {
+                            **COVERAGE.MINIMUM_PERCENT["physical"],
+                            "branches": 53.9,
+                        },
+                    },
+                },
+            ]
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "lowers physical branches"):
+            COVERAGE.validate_coverage_history(contract)
+
+    def test_gap_contract_rejects_unclassified_and_stale_symbols(self) -> None:
+        gap = {
+            "file": "dfc_emulator.c",
+            "function": "visible_gap",
+        }
+        contract = {
+            "gap_classifications": [
+                {
+                    "file": "dfc_emulator.c",
+                    "function": "old_gap",
+                    "category": "capture-derived",
+                    "rationale": "Covered through its enclosing command.",
+                }
+            ]
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "unclassified: .*visible_gap.*stale: .*old_gap"):
+            COVERAGE.validate_gap_classifications([gap], contract)
+
+    def test_gap_contract_counts_only_known_categories(self) -> None:
+        gap = {"file": "dfc_emulator.c", "function": "visible_gap"}
+        entry = {
+            **gap,
+            "category": "capture-required",
+            "rationale": "Wire-visible behavior needs a physical replay.",
+        }
+
+        counts = COVERAGE.validate_gap_classifications([gap], {"gap_classifications": [entry]})
+        self.assertEqual(counts["capture-required"], 1)
+
+        entry["category"] = "ignored"
+        with self.assertRaisesRegex(RuntimeError, "invalid category"):
+            COVERAGE.validate_gap_classifications([gap], {"gap_classifications": [entry]})
+
+    def test_ratcheted_minimums_round_down_without_lowering(self) -> None:
+        metrics = {
+            "all": {
+                "lines": {"percent": 90.39},
+                "branches": {"percent": 79.04},
+                "functions": {"percent": 96.99},
+            },
+            "physical": {
+                "lines": {"percent": 68.69},
+                "branches": {"percent": 55.01},
+                "functions": {"percent": 80.89},
+            },
+        }
+
+        ratcheted = COVERAGE.ratcheted_minimums(COVERAGE.MINIMUM_PERCENT, metrics)
+
+        self.assertEqual(ratcheted["all"]["lines"], 90.3)
+        self.assertEqual(ratcheted["all"]["functions"], 97.0)
+        self.assertEqual(ratcheted["physical"]["branches"], 55.0)
+
     def test_vector_modes_are_disjoint_and_replayable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -158,9 +250,7 @@ class NativeCoverageTests(unittest.TestCase):
         text = (ROOT / "tests" / "Makefile").read_text(encoding="utf-8")
 
         self.assertIn("$(MAKE) coverage-instrumented COVERAGE=1 CC=clang", text)
-        self.assertIn(
-            "coverage-instrumented: $(COVERAGE_TESTS) $(CONFORMANCE_RUNNER)", text
-        )
+        self.assertIn("coverage-instrumented: $(COVERAGE_TESTS) $(CONFORMANCE_RUNNER)", text)
         self.assertIn("$(CONFORMANCE_RUNNER)", text)
         coverage_assignment = text.split("COVERAGE_TESTS :=", 1)[1].split("\n\n", 1)[0]
         self.assertNotIn("REDUCED_TESTS", coverage_assignment)
@@ -178,10 +268,7 @@ class NativeCoverageTests(unittest.TestCase):
 
     def test_coverage_minimums_reject_regressions(self) -> None:
         metrics = {
-            mode: {
-                category: {"percent": minimum}
-                for category, minimum in categories.items()
-            }
+            mode: {category: {"percent": minimum} for category, minimum in categories.items()}
             for mode, categories in COVERAGE.MINIMUM_PERCENT.items()
         }
         COVERAGE.enforce_minimums(metrics)
