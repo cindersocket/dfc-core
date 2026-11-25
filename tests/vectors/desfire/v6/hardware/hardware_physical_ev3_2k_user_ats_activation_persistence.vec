@@ -1,0 +1,47 @@
+# PROVENANCE: measured from genuine DESFire EV3 2K UID 044D234A281F90 over PC/SC.
+# The PICC master key was the all-zero AES test key. The capture journal records
+# every card APDU, reader-control command, RF-field transition, and activation
+# observation. The card was restored to its original six-byte activation value.
+# Journal SHA-256: 30db718a63c3783c93a433a68e4d8e84b98ae87a014078b6ba07347f0047c121
+name: physical EV3 2K user ATS activation persistence
+case-id: hardware-physical-ev3-2k-user-ats-activation-persistence
+origin: physical-card
+feature-version: 6
+source: physical-card-pcsc
+replayable: false
+requires: ev3,auth-aes
+uid: 044D234A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-auth-mode: AES
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# The reader reported the original activation value before mutation.
+exchange native-apdu FFCA000000 => 044D234A281F909000
+exchange native-apdu FFCA010000 => 0675778102809000
+
+# An authenticated option-02 request whose internal length does not consume the
+# supplied activation bytes is rejected. After a complete RF-field cut, the
+# reader still observes the original activation value.
+exchange native-apdu 905C00001102B1146FC843BD80D0B24B55730DD40BCF00 => 919E
+field-off
+exchange native-apdu FFCA000000 => 044D234A281F909000
+exchange native-apdu FFCA010000 => 0675778102809000
+
+# An authenticated structurally valid five-byte alternate is accepted. The
+# reader observes that exact alternate after the card is removed from the RF
+# field and activated again.
+exchange native-apdu 905C0000110282915DF33ACD4B65F794B73361FB9A1D00 => 647E22B338F0550D9100
+field-off
+exchange native-apdu FFCA000000 => 044D234A281F909000
+exchange native-apdu FFCA010000 => 05658102809000
+
+# Restore the original value under a fresh AES authentication. A second full
+# RF-field cut proves the restoration persisted in the activation response.
+exchange native-apdu 905C00001102AF0C604076854EA02327B30E4ED4C92600 => 5844BFCD330E0DD79100
+field-off
+exchange native-apdu FFCA000000 => 044D234A281F909000
+exchange native-apdu FFCA010000 => 0675778102809000

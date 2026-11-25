@@ -2186,6 +2186,20 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev3_2k_change_key_settings_ev1.vec",
+      "sha256": "62f74cf9371a088112ba9d6bb38bc7cd175cdb0e01a3854de1790463d7192105",
+      "size": 2566,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K EV1 ChangeKeySettings AES and ISO persistence",
+        "case-id": "hardware-physical-ev3-2k-change-key-settings-ev1",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": false,
+        "steps": 25
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_2k_create_comm_bytes.vec",
       "sha256": "d10888d33de734e4bbb10af1a0ac1beb9664bd38e352ad9abd49275d9b77cf51",
       "size": 3986,
@@ -2312,6 +2326,48 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev3_2k_picc_key_type_roundtrips.vec",
+      "sha256": "bb181528388112f0409171544ebec5a9f54eb57b8269fa8fc9de45ca06a57f81",
+      "size": 2543,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K PICC master AES 2K3DES and 3K3DES round trips",
+        "case-id": "hardware-physical-ev3-2k-picc-key-type-roundtrips",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": false,
+        "steps": 23
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_plain_auth_starts_during_ev2.vec",
+      "sha256": "b8918e65ba0601b88560a5f4752abeb25f25a43bcde60cc491bbce52d9d69fe5",
+      "size": 3522,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K plain authentication starts terminate active EV2",
+        "case-id": "hardware-physical-ev3-2k-plain-auth-starts-during-ev2",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 38
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_proximity_ev1_aes.vec",
+      "sha256": "52c3903643a3925153c5da39dcda0d4d5c72f12e5044a92a14c668d0c3016436",
+      "size": 2377,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K EV1 AES proximity key selection and rejection latch",
+        "case-id": "hardware-physical-ev3-2k-proximity-ev1-aes",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 24
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_2k_proximity_ev2_session.vec",
       "sha256": "8ab557123c23e5efe415b11d82e69733ace1023d034c947150faf887596a6add",
       "size": 3131,
@@ -2410,6 +2466,20 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev3_2k_user_ats_activation_persistence.vec",
+      "sha256": "98d0c72a34dad05d1f3c27b992acf2286f5b6f9b2cfe1dfe9a18c1846f76feb1",
+      "size": 2181,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "physical EV3 2K user ATS activation persistence",
+        "case-id": "hardware-physical-ev3-2k-user-ats-activation-persistence",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": false,
+        "steps": 14
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_2k_user_ats_boundaries.vec",
       "sha256": "794f6e6614f47f7d0500790908572c0bbd54ac809e61cbaf4ddf75f17f83253a",
       "size": 2235,
@@ -2449,6 +2519,34 @@
         "origin": "physical-card",
         "replayable": true,
         "steps": 329
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_change_key_ev2_set0_different_key.vec",
+      "sha256": "08407aebc117e9e8b77d03186bc50048bab8455ad6800354ccf05e4bddfbfed0",
+      "size": 1491,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 ChangeKeyEV2 key-set-zero different-key response protection",
+        "case-id": "ev2-change-key-ev2-set-zero-different-key",
+        "source": "captured hardware behavior",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 18
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_change_key_ev2_set1_same_key_number.vec",
+      "sha256": "aae75136fbc7eb6740996d11ccad690d43ad2fefd0473f322355d495ca835b54",
+      "size": 2314,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 ChangeKeyEV2 additional-set same-key-number protection",
+        "case-id": "ev2-change-key-ev2-additional-set-same-key-number",
+        "source": "captured hardware behavior",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 28
       }
     },
     {
@@ -2673,6 +2771,20 @@
         "origin": "physical-card",
         "replayable": false,
         "steps": 5
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_plain_app_change_key_ev2_set0.vec",
+      "sha256": "12341f77cb05dde149ee2bd35fa7f884bab2cdcc48f3028f440aab0404e65e42",
+      "size": 1475,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 plain-application ChangeKeyEV2 key-set-zero persistence",
+        "case-id": "ev2-plain-application-change-key-ev2-set-zero",
+        "source": "captured hardware behavior",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 18
       }
     },
     {
@@ -3209,7 +3321,7 @@
     },
     {
       "path": "v6/synthetic/random-failure-preserves-ev1-prepare-pc.vec",
-      "sha256": "9ae97d3595bd8ee098278c979249496d8140d643e74057a743acbaffdb46835d",
+      "sha256": "d7c3d0ab90357ed3405f3ce13bc2c0888ddc8de4ec0c1273b4983d4f7047131b",
       "size": 1387,
       "role": "emulator-vector",
       "metadata": {
