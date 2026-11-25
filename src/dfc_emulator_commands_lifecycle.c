@@ -339,10 +339,19 @@ void dfc_emulator_command_format_picc(
     (void)dfc_emulator_abort_transaction(emulator);
     dfc_credential_format_picc(emulator->credential);
     dfc_credential_mark_dirty(emulator->credential);
-    dfc_emulator_retire_authentication(emulator);
     emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
     emulator->selected_app_index = 0;
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    // Format succeeds inside the authenticated session, so its terminal
+    // response is sealed before the card forgets that session.
+    dfc_emulator_command_apply_ev1_response_secure_messaging(
+        emulator, DFC_CMD_FORMAT_PICC, tx_buffer);
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(emulator->ev2_session_active)
+        emulator->ev2_retire_after_response = true;
+    else
+#endif
+        dfc_emulator_retire_authentication(emulator);
 }
 
 void dfc_emulator_command_get_file_ids(DfcEmulator* emulator, DfcByteBuf* tx_buffer) {
@@ -899,6 +908,9 @@ void dfc_emulator_command_delete_application(
     }
 
     size_t app_index = dfc_credential_application_index(credential, app);
+    bool deleting_selected_app = emulator->selected_application ==
+                                     DfcEmulatorSelectedApplicationApp &&
+                                 emulator->selected_app_index == app_index;
     bool authorized = false;
     if(emulator->selected_application == DfcEmulatorSelectedApplicationPicc) {
         authorized = dfc_emulator_command_is_authenticated_as_master(emulator);
@@ -912,10 +924,22 @@ void dfc_emulator_command_delete_application(
         return;
     }
 
-    dfc_emulator_select_application(emulator, DfcEmulatorSelectedApplicationPicc, 0);
     dfc_credential_delete_application_at(credential, app_index);
     dfc_credential_mark_dirty(credential);
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
+    // A PICC-master delete authenticates success before retiring the session.
+    // Deleting the currently selected application retires its key with the
+    // application and returns the success status without response protection.
+    if(!deleting_selected_app) {
+        dfc_emulator_command_apply_ev1_response_secure_messaging(
+            emulator, DFC_CMD_DELETE_APPLICATION, tx_buffer);
+    }
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(!deleting_selected_app && emulator->ev2_session_active)
+        emulator->ev2_select_picc_after_response = true;
+    else
+#endif
+        dfc_emulator_select_application(emulator, DfcEmulatorSelectedApplicationPicc, 0);
 }
 
 static bool file_iso_id_in_use(const DfcCredential* credential, uint16_t iso_file_id) {

@@ -285,6 +285,42 @@ static MunitResult test_iso_binary_access_family(const MunitParameter params[], 
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_iso_extended_select_and_read_binary(const MunitParameter params[], void* user_data) {
+    (void)params;
+    (void)user_data;
+    DfcCredential credential;
+    DfcVirtualPiccSession* session = prepare_session(&credential, DFC_FILE_TYPE_STANDARD_DATA);
+    DfcFile* file = &credential.files[0];
+    file->access_rights = ACCESS_FREE;
+    session->iso_file_selected = false;
+
+    const uint8_t select[] = {
+        0,
+        DFC_ISO7816_INS_SELECT,
+        DFC_ISO7816_SELECT_CHILD_EF,
+        0,
+        0,
+        0,
+        2,
+        (uint8_t)(file->iso_file_id >> 8),
+        (uint8_t)file->iso_file_id};
+    uint8_t response[32];
+    size_t response_len;
+    exchange(session, select, sizeof(select), response, sizeof(response), &response_len);
+    munit_assert_memory_equal(2, response, ((uint8_t[]){0x90, 0x00}));
+    munit_assert_true(session->iso_file_selected);
+
+    const uint8_t read[] = {0, DFC_ISO7816_INS_READ_BINARY, 0, 0, 0, 0, 3};
+    exchange(session, read, sizeof(read), response, sizeof(response), &response_len);
+    munit_assert_size(response_len, ==, 5);
+    munit_assert_memory_equal(3, response, dfc_file_data(&credential, file));
+    munit_assert_memory_equal(2, response + 3, ((uint8_t[]){0x90, 0x00}));
+
+    dfc_virtual_picc_session_free(session);
+    return MUNIT_OK;
+}
+
 static MunitResult test_iso_record_access_family(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
@@ -1381,6 +1417,12 @@ static MunitTest tests[] = {
 #endif
     {"/binary-access-family",
      test_iso_binary_access_family,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/extended-select-and-read-binary",
+     test_iso_extended_select_and_read_binary,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

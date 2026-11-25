@@ -771,27 +771,19 @@ static void expect_plain_status(
     munit_assert_uint8(response[1], ==, status);
 }
 
-static MunitResult test_session_retirement_precedes_response_policy(
-    const MunitParameter params[],
-    void* user_data) {
+static MunitResult
+    test_session_retirement_response_policy(const MunitParameter params[], void* user_data) {
     (void)params;
     (void)user_data;
     const uint8_t select[] = {0x90, DFC_CMD_SELECT_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
-    const uint8_t delete_app[] = {0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
     const uint8_t get_card_uid[] = {0x90, DFC_CMD_GET_CARD_UID, 0, 0, 0};
-    const ProtectedCommandCase cases[] = {
-        {"SelectApplication", select, sizeof(select), NULL, 0},
-        {"DeleteApplication", delete_app, sizeof(delete_app), NULL, 0},
-    };
-    for(size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+    {
         DfcCredential credential;
         DfcSecureMessaging* oracle = NULL;
         DfcApplication* app = NULL;
         DfcVirtualPiccSession* session =
             open_authenticated_application(&credential, &oracle, &app);
-        munit_logf(MUNIT_LOG_INFO, "checking %s", cases[index].name);
-        expect_plain_status(
-            session, cases[index].command, cases[index].command_len, DFC_STATUS_OK);
+        expect_plain_status(session, select, sizeof(select), DFC_STATUS_OK);
         expect_plain_status(
             session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
         dfc_secure_messaging_free(oracle);
@@ -799,15 +791,49 @@ static MunitResult test_session_retirement_precedes_response_policy(
         (void)app;
     }
 
-    DfcCredential credential;
-    DfcSecureMessaging* oracle = NULL;
-    DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, false);
-    const uint8_t format_picc[] = {0x90, DFC_CMD_FORMAT_PICC, 0, 0, 0};
-    expect_plain_status(session, format_picc, sizeof(format_picc), DFC_STATUS_OK);
-    expect_plain_status(
-        session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
-    dfc_secure_messaging_free(oracle);
-    dfc_virtual_picc_session_free(session);
+    {
+        DfcCredential credential;
+        DfcSecureMessaging* oracle = NULL;
+        DfcApplication* app = NULL;
+        DfcVirtualPiccSession* session =
+            open_authenticated_application(&credential, &oracle, &app);
+        const uint8_t delete_app[] = {
+            0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
+        expect_plain_status(session, delete_app, sizeof(delete_app), DFC_STATUS_OK);
+        expect_plain_status(
+            session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
+        dfc_secure_messaging_free(oracle);
+        dfc_virtual_picc_session_free(session);
+        (void)app;
+    }
+
+    {
+        DfcCredential credential;
+        DfcSecureMessaging* oracle = NULL;
+        DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, false);
+        const uint8_t aid[] = {0x4F, 0x49, 0xD3};
+        munit_assert_not_null(dfc_credential_create_application_desfire_order(
+            &credential, aid, 0x0F, DFC_KEY_TYPE_DES_2K3DES | 1));
+        const uint8_t delete_app[] = {
+            0x90, DFC_CMD_DELETE_APPLICATION, 0, 0, 3, 0x4F, 0x49, 0xD3, 0};
+        expect_protected_response(session, oracle, delete_app, sizeof(delete_app), NULL, 0);
+        expect_plain_status(
+            session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
+        dfc_secure_messaging_free(oracle);
+        dfc_virtual_picc_session_free(session);
+    }
+
+    {
+        DfcCredential credential;
+        DfcSecureMessaging* oracle = NULL;
+        DfcVirtualPiccSession* session = open_authenticated_picc(&credential, &oracle, false);
+        const uint8_t format_picc[] = {0x90, DFC_CMD_FORMAT_PICC, 0, 0, 0};
+        expect_protected_response(session, oracle, format_picc, sizeof(format_picc), NULL, 0);
+        expect_plain_status(
+            session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
+        dfc_secure_messaging_free(oracle);
+        dfc_virtual_picc_session_free(session);
+    }
     return MUNIT_OK;
 }
 
@@ -879,8 +905,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/session-retirement-precedes-response-policy",
-     test_session_retirement_precedes_response_policy,
+    {"/session-retirement-response-policy",
+     test_session_retirement_response_policy,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

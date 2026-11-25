@@ -1566,8 +1566,24 @@ static DfcVirtualPiccStatus handle_iso_select(
             response_capacity,
             response_len);
     }
-    uint8_t lc = (command_len > 4) ? command[4] : 0;
-    const uint8_t* data = (lc > 0 && command_len >= (size_t)(5 + lc)) ? &command[5] : NULL;
+    size_t lc = (command_len > 4) ? command[4] : 0;
+    size_t data_offset = 5;
+    bool extended_length = false;
+    if(command_len >= 7 && command[4] == 0) {
+        extended_length = true;
+        lc = ((size_t)command[5] << 8) | command[6];
+        data_offset = 7;
+    }
+    size_t body_len = command_len >= data_offset ? command_len - data_offset : 0;
+    if(extended_length && body_len != lc && body_len != lc + 2) {
+        return write_status_word(
+            DFC_ISO7816_SW_WRONG_LENGTH_HI,
+            DFC_ISO7816_SW_WRONG_LENGTH_LO,
+            response,
+            response_capacity,
+            response_len);
+    }
+    const uint8_t* data = (lc > 0 && body_len >= lc) ? &command[data_offset] : NULL;
 
     if(p1 == DFC_ISO7816_SELECT_PARENT && lc == 0) {
         session->iso_file_selected = false;
@@ -1743,7 +1759,7 @@ static bool iso_file_read_fits(
 static bool iso_file_read_length(
     const DfcVirtualPiccSession* session,
     uint8_t comm,
-    uint8_t le,
+    size_t le,
     size_t available,
     size_t* data_len,
     bool* short_eof) {
@@ -1913,7 +1929,13 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         uint8_t comm = DFC_COMM_PLAIN;
         if(!iso_file_read_comm(session, file, &comm))
             return write_iso_security_status(response, response_capacity, response_len);
-        if(command_len != 5) {
+        size_t le;
+        if(command_len == 5) {
+            le = command[4];
+        } else if(command_len == 7 && command[4] == 0) {
+            le = ((size_t)command[5] << 8) | command[6];
+            if(le == 0) le = 65536;
+        } else {
             return write_status_word(
                 DFC_ISO7816_SW_WRONG_PARAMETERS_HI,
                 DFC_ISO7816_SW_WRONG_PARAMETERS_LO,
@@ -1939,7 +1961,7 @@ static DfcVirtualPiccStatus handle_iso_file_command(
         size_t requested;
         bool short_eof;
         if(!iso_file_read_length(
-               session, comm, command[4], file->data_len - offset, &requested, &short_eof)) {
+               session, comm, le, file->data_len - offset, &requested, &short_eof)) {
             return write_status_word(
                 DFC_ISO7816_SW_WRONG_LE_HI,
                 DFC_ISO7816_SW_WRONG_LE_LO,

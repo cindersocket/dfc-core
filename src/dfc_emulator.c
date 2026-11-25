@@ -684,6 +684,15 @@ void dfc_emulator_reset_activation(DfcEmulator* emulator) {
     emulator->tx_buffer = tx_buffer;
     emulator->secure_messaging = secure_messaging;
     emulator->selected_application = DfcEmulatorSelectedApplicationPicc;
+    if(credential->card.generation == DfcGenerationEv3) {
+        for(size_t i = 0; i < credential->num_apps; i++) {
+            const uint8_t* aid = credential->apps[i].aid;
+            if(aid[0] == 0xEE && aid[1] == 0xE0 && aid[2] == 0x00) {
+                dfc_emulator_select_application(emulator, DfcEmulatorSelectedApplicationApp, i);
+                break;
+            }
+        }
+    }
     if(tx_buffer) {
         dfc_bytebuf_reset(tx_buffer);
     }

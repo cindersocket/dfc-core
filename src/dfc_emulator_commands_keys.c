@@ -65,9 +65,8 @@ void dfc_emulator_command_get_key_version(
             return;
         }
         uint8_t key_set_selector = apdu[2];
-        if(app->num_key_sets <= 1 &&
-           ((key_set_selector & DFC_KEY_SET_RETRIEVAL_MASK) != 0 ||
-            (key_set_selector & DFC_KEY_SET_NUMBER_MASK) != 0)) {
+        if(app->num_key_sets <= 1 && ((key_set_selector & DFC_KEY_SET_RETRIEVAL_MASK) != 0 ||
+                                      (key_set_selector & DFC_KEY_SET_NUMBER_MASK) != 0)) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
             return;
         }

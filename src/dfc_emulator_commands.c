@@ -1941,6 +1941,16 @@ cleanup:
         dfc_platform_free(clear_heap);
     }
     if(reassembled) emulator->command_chain_expected = 0;
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
+    if(emulator->ev2_select_picc_after_response) {
+        emulator->ev2_select_picc_after_response = false;
+        emulator->ev2_retire_after_response = false;
+        dfc_emulator_select_application(emulator, DfcEmulatorSelectedApplicationPicc, 0);
+    } else if(emulator->ev2_retire_after_response) {
+        emulator->ev2_retire_after_response = false;
+        dfc_emulator_retire_authentication(emulator);
+    }
+#endif
     return handled;
 }
 #endif // DFC_ENABLE_EV2_SECURE_MESSAGING

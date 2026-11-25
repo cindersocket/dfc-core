@@ -138,6 +138,8 @@ typedef struct {
     bool ev2_authentication_pending;
     bool ev2_authentication_non_first;
     bool ev2_session_active;
+    bool ev2_retire_after_response;
+    bool ev2_select_picc_after_response;
     uint8_t ev2_authenticated_key_no;
     uint8_t ev2_pending_authenticated_key_no;
     uint8_t ev2_transaction_identifier[DFC_EV2_TRANSACTION_IDENTIFIER_LENGTH];

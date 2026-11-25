@@ -739,6 +739,27 @@ static MunitResult test_activation_reset_wipes_retained_and_released_storage(
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_ev3_activation_selects_default_application(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    DfcCredential credential;
+    munit_assert_true(dfc_credential_clear(&credential));
+    credential.card.generation = DfcGenerationEv3;
+    const uint8_t wire_aid[] = {0x00, 0xE0, 0xEE};
+    munit_assert_not_null(
+        dfc_credential_create_application_desfire_order(&credential, wire_aid, 0x0F, 0x01));
+
+    DfcEmulator* emulator = dfc_emulator_alloc(&credential);
+    munit_assert_not_null(emulator);
+    dfc_emulator_reset_activation(emulator);
+    munit_assert_int(emulator->selected_application, ==, DfcEmulatorSelectedApplicationApp);
+    munit_assert_size(emulator->selected_app_index, ==, 0);
+
+    dfc_emulator_free(emulator);
+    return MUNIT_OK;
+}
+
 static void
     assert_native_exchange_bytebuf_reused_and_wiped(size_t response_capacity, int expected_status) {
     DfcCredential credential = {0};
@@ -968,6 +989,12 @@ static MunitTest tests[] = {
      NULL},
     {"/activation-reset-wipes-storage",
      test_activation_reset_wipes_retained_and_released_storage,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev3-activation-selects-default-application",
+     test_ev3_activation_selects_default_application,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,
