@@ -8,6 +8,7 @@
 #define DFC_ISO14443_4A_NAD_MASK 0x04
 
 DfcApplication* dfc_emulator_current_app(DfcEmulator* emulator);
+uint8_t dfc_emulator_effective_sm_disable(const DfcEmulator* emulator);
 bool dfc_emulator_accepts_auth_cipher(DfcEmulator* emulator, uint8_t cipher);
 static inline bool dfc_emulator_native_authentication_active(const DfcEmulator* emulator) {
     return emulator->auth_cipher != 0 && emulator->secure_messaging != NULL &&

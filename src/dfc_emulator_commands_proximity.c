@@ -130,30 +130,33 @@ void dfc_emulator_command_verify_proximity_check(
         return;
     }
 
-    // Proximity Check MAC key. "use session key" reader mode MACs the PC with the
-    // EV2 session MAC key (SesAuthMACKey); "use proximity check key" mode uses the
-    // VC Proximity Key. Verified against a working card: the MAC is
-    // CMAC_odd(key, 0xFD || OPT || PubRespTime || Bitrate || (RndR||RndC per round)).
+    // EV1 AES and EV2 authentication sessions supply their session MAC key.
+    // Other modes retain the configured proximity-key behavior.
     const uint8_t* pc_key = emulator->credential->picc_proximity_key;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
-    if(emulator->ev2_session_active) pc_key = emulator->ev2_session_mac_key;
+    if(emulator->ev2_session_active)
+        pc_key = emulator->ev2_session_mac_key;
+    else
 #endif
+        if(dfc_emulator_native_authentication_active(emulator) &&
+           emulator->auth_cipher == DFC_CMD_AUTHENTICATE_AES)
+        pc_key = emulator->secure_messaging->session_key;
 
     uint8_t expected[DFC_WIRE_MAC_LENGTH] = {0};
     if(!proximity_wire_mac(pc_key, DFC_CMD_VERIFY_PROXIMITY_CHECK, emulator, expected)) {
         proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         goto cleanup;
     }
-    bool verified =
-        !emulator->proximity_failed && dfc_ct_equal(expected, buffer + 1, sizeof(expected));
+    bool verified = !emulator->proximity_failed &&
+                    dfc_ct_equal(expected, buffer + 1, sizeof(expected));
 
     uint8_t response[DFC_WIRE_MAC_LENGTH] = {0};
-    bool response_ready = verified ?
-                              proximity_wire_mac(
-                                  pc_key, DFC_STATUS_SPECIAL_SUCCESS, emulator, response) :
-                              dfc_random_fill(response, sizeof(response));
+    bool response_ready =
+        verified ? proximity_wire_mac(pc_key, DFC_STATUS_SPECIAL_SUCCESS, emulator, response) :
+                   dfc_random_fill(response, sizeof(response));
     if(!response_ready) {
-        if(verified) proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
+        if(verified || !dfc_random_failure_is_retryable())
+            proximity_abort(emulator, tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         goto cleanup_response;
     }
     if(!verified) emulator->proximity_failed = true;

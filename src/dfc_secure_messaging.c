@@ -69,17 +69,19 @@ void dfc_secure_messaging_free(DfcSecureMessaging* sm) {
     dfc_platform_free(sm);
 }
 
-void dfc_secure_messaging_reset_iv(DfcSecureMessaging* sm) {
-    DFC_ASSERT(sm);
-    memset(sm->iv, 0, sizeof(sm->iv));
-}
-
 bool dfc_secure_messaging_applies_ev1(DfcSecureMessaging* sm, uint8_t cmd) {
     DFC_ASSERT(sm);
-    return sm->cipher != DFC_CMD_AUTHENTICATE_LEGACY && cmd != DFC_CMD_SELECT_APPLICATION &&
-           cmd != DFC_CMD_AUTHENTICATE_LEGACY && cmd != DFC_CMD_AUTHENTICATE_ISO &&
-           cmd != DFC_CMD_AUTHENTICATE_AES && cmd != DFC_CMD_AUTHENTICATE_EV2_FIRST &&
-           cmd != DFC_CMD_AUTHENTICATE_EV2_NON_FIRST && cmd != DFC_CMD_ADDITIONAL_FRAME;
+    if(sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY || cmd == DFC_CMD_SELECT_APPLICATION ||
+       cmd == DFC_CMD_AUTHENTICATE_LEGACY || cmd == DFC_CMD_AUTHENTICATE_ISO ||
+       cmd == DFC_CMD_AUTHENTICATE_AES || cmd == DFC_CMD_AUTHENTICATE_EV2_FIRST ||
+       cmd == DFC_CMD_AUTHENTICATE_EV2_NON_FIRST || cmd == DFC_CMD_ADDITIONAL_FRAME)
+        return false;
+#if DFC_ENABLE_PROXIMITY_CHECK
+    if(cmd == DFC_CMD_PREPARE_PROXIMITY_CHECK || cmd == DFC_CMD_PROXIMITY_CHECK ||
+       cmd == DFC_CMD_VERIFY_PROXIMITY_CHECK)
+        return false;
+#endif
+    return true;
 }
 
 // Every candidate at or after this boundary has a valid zero or 0x80/zero
@@ -508,7 +510,7 @@ static size_t enciphered_encode(
 
     // The public API permits in-place operation. Compute the checksum before
     // moving a partially overlapping input so it always covers the original bytes.
-    memmove(out, plain, plain_len);
+    if(plain_len) memmove(out, plain, plain_len);
     if(sm->cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
         out[plain_len] = crc & 0xFF;
         out[plain_len + 1] = (crc >> 8) & 0xFF;

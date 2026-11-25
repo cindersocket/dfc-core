@@ -23,6 +23,7 @@ static size_t fail_aes_cbc_operation;
 static bool fail_cbc;
 static bool fail_secure_messaging_alloc;
 static bool fail_random_fill;
+static bool random_failure_can_retry = true;
 static bool random_failure_retryable;
 static size_t random_fill_calls;
 
@@ -161,7 +162,7 @@ bool dfc_crypto_des_ecb(
 bool dfc_random_fill(uint8_t* data, size_t length) {
     random_fill_calls++;
     if(fail_random_fill) {
-        random_failure_retryable = true;
+        random_failure_retryable = random_failure_can_retry;
         return false;
     }
     for(size_t i = 0; i < length; i++)
@@ -1358,6 +1359,48 @@ static MunitResult
     assert_proximity_terminal_wipe(1);
     assert_proximity_terminal_wipe(2);
     assert_proximity_terminal_wipe(0);
+    return MUNIT_OK;
+}
+
+static MunitResult test_bad_verify_random_failure_aborts_when_not_retryable(
+    const MunitParameter params[],
+    void* user_data) {
+    (void)params;
+    (void)user_data;
+    static DfcCredential credential;
+    munit_assert_true(dfc_credential_clear(&credential));
+    credential.card.generation = DfcGenerationEv3;
+    credential.picc_has_proximity_key = true;
+    memset(credential.picc_proximity_key, 0xA5, sizeof(credential.picc_proximity_key));
+    DfcEmulator* emulator = dfc_emulator_alloc(&credential);
+    munit_assert_not_null(emulator);
+
+    uint8_t response[64];
+    const uint8_t prepare[] = {DFC_CMD_PREPARE_PROXIMITY_CHECK};
+    size_t response_len =
+        fault_emulator_command(emulator, prepare, sizeof(prepare), response, true);
+    munit_assert_size(response_len, ==, 4);
+    uint8_t round[2 + DFC_PROXIMITY_RANDOM_LENGTH] = {
+        DFC_CMD_PROXIMITY_CHECK, DFC_PROXIMITY_RANDOM_LENGTH};
+    response_len = fault_emulator_command(emulator, round, sizeof(round), response, true);
+    munit_assert_size(response_len, ==, 1 + DFC_PROXIMITY_RANDOM_LENGTH);
+
+    const uint8_t bad_verify[1 + DFC_WIRE_MAC_LENGTH] = {DFC_CMD_VERIFY_PROXIMITY_CHECK};
+    fail_random_fill = true;
+    random_failure_can_retry = false;
+    response_len =
+        fault_emulator_command(emulator, bad_verify, sizeof(bad_verify), response, true);
+    munit_assert_size(response_len, ==, 1);
+    munit_assert_uint8(response[0], ==, DFC_STATUS_INTEGRITY_ERROR);
+    munit_assert_false(emulator->proximity_active);
+    munit_assert_size(emulator->proximity_offset, ==, 0);
+    munit_assert_size(emulator->proximity_transcript_len, ==, 0);
+    assert_zeroed(emulator->proximity_random, sizeof(emulator->proximity_random));
+    assert_zeroed(emulator->proximity_transcript, sizeof(emulator->proximity_transcript));
+
+    fail_random_fill = false;
+    random_failure_can_retry = true;
+    dfc_emulator_free(emulator);
     return MUNIT_OK;
 }
 #endif
@@ -2727,6 +2770,12 @@ static MunitTest tests[] = {
 #if DFC_ENABLE_PROXIMITY_CHECK
     {"/proximity/terminal-wipe",
      test_proximity_terminal_paths_wipe_state,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/proximity/bad-verify-random-failure-aborts",
+     test_bad_verify_random_failure_aborts_when_not_retryable,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

@@ -5,27 +5,6 @@
 
 #include <string.h>
 
-// Temporary EV2 command-MAC tracing, compiled out by default. Shares the
-// listener's DFC_DEBUG_APDU flag so one fam cdefine turns on the whole picture.
-#ifndef DFC_DEBUG_APDU
-#define DFC_DEBUG_APDU 0
-#endif
-#if DFC_DEBUG_APDU && __has_include(<furi.h>)
-#include <furi.h>
-#define DFC_EV2_TRACE(...) FURI_LOG_I("DfcEmulator", __VA_ARGS__)
-#else
-#define DFC_EV2_TRACE(...) ((void)0)
-#endif
-// Heavy per-command forensic dumps (full WriteData bytes, every ChangeKey, full
-// session keys on MAC fail). Separate flag, default OFF: these add ~1.5 KB of
-// code and dozens of synchronous USB log lines, enough to push a 16-app
-// credential past the Flipper's RAM ceiling at load and to blow the ISO-DEP FWT
-// on chained commands. Turn on ONLY for offline crypto forensics in local sim,
-// never with a live reader or a large credential. Implies DFC_DEBUG_APDU.
-#ifndef DFC_DEBUG_APDU_DUMP
-#define DFC_DEBUG_APDU_DUMP 0
-#endif
-
 #if DFC_ENABLE_EMULATOR
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -135,8 +114,10 @@ bool dfc_ev2_verify_chained_command_mac(
     size_t data_len,
     const uint8_t mac[DFC_WIRE_MAC_LENGTH]) {
     uint8_t expected[DFC_WIRE_MAC_LENGTH];
-    if(!command_mac(emulator, instruction, data, data_len, expected)) return false;
-    return dfc_ct_equal(expected, mac, sizeof(expected));
+    bool generated = command_mac(emulator, instruction, data, data_len, expected);
+    bool matches = generated && dfc_ct_equal(expected, mac, sizeof(expected));
+    dfc_secure_wipe(expected, sizeof(expected));
+    return matches;
 }
 
 static bool response_mac(
@@ -231,145 +212,12 @@ DfcEv2CommandSecurity dfc_ev2_prepare_command(
 
     size_t secured_data_len = command_len - 1 - DFC_WIRE_MAC_LENGTH;
     const uint8_t* secured_data = command + 1;
-    DFC_EV2_TRACE(
-        "MACTRY cmd=%02X ctr=%u ti=%02X%02X%02X%02X clen=%u sdlen=%u mk=%02X%02X%02X%02X ek=%02X%02X%02X%02X",
-        (unsigned)command[0],
-        (unsigned)emulator->ev2_command_counter,
-        emulator->ev2_transaction_identifier[0],
-        emulator->ev2_transaction_identifier[1],
-        emulator->ev2_transaction_identifier[2],
-        emulator->ev2_transaction_identifier[3],
-        (unsigned)command_len,
-        (unsigned)secured_data_len,
-        emulator->ev2_session_mac_key[0],
-        emulator->ev2_session_mac_key[1],
-        emulator->ev2_session_mac_key[2],
-        emulator->ev2_session_mac_key[3],
-        emulator->ev2_session_encryption_key[0],
-        emulator->ev2_session_encryption_key[1],
-        emulator->ev2_session_encryption_key[2],
-        emulator->ev2_session_encryption_key[3]);
-#if DFC_DEBUG_APDU_DUMP
-    /* Dump the full MAC'd bytes of a large (chained) WriteData so its CMAC can be
-     * recomputed offline and tested as the IV of the following command's MAC
-     * (multi-frame IV chaining hypothesis). Chunked to fit the log line. */
-    if(command[0] == 0x3D && secured_data_len > 100) {
-        static const char hexd[] = "0123456789ABCDEF";
-        DFC_EV2_TRACE(
-            "WRDUMP ctr=%u ti=%02X%02X%02X%02X sdlen=%u",
-            (unsigned)emulator->ev2_command_counter,
-            emulator->ev2_transaction_identifier[0],
-            emulator->ev2_transaction_identifier[1],
-            emulator->ev2_transaction_identifier[2],
-            emulator->ev2_transaction_identifier[3],
-            (unsigned)secured_data_len);
-        for(size_t off = 0; off < secured_data_len; off += 32) {
-            char line[2 * 32 + 1];
-            size_t n = (secured_data_len - off) < 32 ? (secured_data_len - off) : 32;
-            for(size_t i = 0; i < n; i++) {
-                line[2 * i] = hexd[secured_data[off + i] >> 4];
-                line[2 * i + 1] = hexd[secured_data[off + i] & 0xF];
-            }
-            line[2 * n] = 0;
-            DFC_EV2_TRACE("WRDUMP +%u %s", (unsigned)off, line);
-        }
-    }
-#endif
     uint8_t expected[DFC_WIRE_MAC_LENGTH] = {0};
     if(!command_mac(emulator, command[0], secured_data, secured_data_len, expected)) {
         dfc_secure_wipe(expected, sizeof(expected));
         return DfcEv2CommandInvalid;
     }
-#if DFC_DEBUG_APDU_DUMP
-    /* Dump EVERY ChangeKey (0xC4) - success or fail - with full key + command, so a
-     * SUCCEEDING C4 (single-frame write before it) and the FAILING C4 (chained write
-     * before it) can be compared offline to isolate the structural difference. */
-    if(command[0] == 0xC4) {
-        static const char hexd[] = "0123456789ABCDEF";
-        char mk[2 * DFC_AES_KEY_LENGTH + 1];
-        for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++) {
-            mk[2 * i] = hexd[emulator->ev2_session_mac_key[i] >> 4];
-            mk[2 * i + 1] = hexd[emulator->ev2_session_mac_key[i] & 0xF];
-        }
-        mk[2 * DFC_AES_KEY_LENGTH] = 0;
-        char cm[2 * 64 + 1];
-        size_t cl = command_len < 64 ? command_len : 64;
-        for(size_t i = 0; i < cl; i++) {
-            cm[2 * i] = hexd[command[i] >> 4];
-            cm[2 * i + 1] = hexd[command[i] & 0xF];
-        }
-        cm[2 * cl] = 0;
-        bool ok = dfc_ct_equal(expected, command + 1 + secured_data_len, sizeof(expected));
-        DFC_EV2_TRACE(
-            "CKDUMP %s ctr=%u ti=%02X%02X%02X%02X sdlen=%u mk=%s cmd=%s",
-            ok ? "OK" : "FAIL",
-            (unsigned)emulator->ev2_command_counter,
-            emulator->ev2_transaction_identifier[0],
-            emulator->ev2_transaction_identifier[1],
-            emulator->ev2_transaction_identifier[2],
-            emulator->ev2_transaction_identifier[3],
-            (unsigned)secured_data_len,
-            mk,
-            cm);
-    }
-#endif
     if(!dfc_ct_equal(expected, command + 1 + secured_data_len, sizeof(expected))) {
-#if DFC_DEBUG_APDU && __has_include(<furi.h>)
-        const uint8_t* got = command + 1 + secured_data_len;
-        DFC_EV2_TRACE(
-            "MACFAIL cmd=%02X ctr=%u ti=%02X%02X%02X%02X sdlen=%u exp=%02X%02X%02X%02X got=%02X%02X%02X%02X",
-            (unsigned)command[0],
-            (unsigned)emulator->ev2_command_counter,
-            emulator->ev2_transaction_identifier[0],
-            emulator->ev2_transaction_identifier[1],
-            emulator->ev2_transaction_identifier[2],
-            emulator->ev2_transaction_identifier[3],
-            (unsigned)secured_data_len,
-            expected[0],
-            expected[1],
-            expected[2],
-            expected[3],
-            got[0],
-            got[1],
-            got[2],
-            got[3]);
-#endif
-#if DFC_DEBUG_APDU_DUMP
-        /* Diagnostic ground-truth dump: log the live session keys, TI, counter and
-         * the full command so the reader's MAC can be reproduced offline by brute
-         * force (counter range, endianness, truncation, framing). These are
-         * EPHEMERAL per-session keys on a test card; strictly behind DFC_DEBUG_APDU. */
-        {
-            static const char hexd[] = "0123456789ABCDEF";
-            char mk[2 * DFC_AES_KEY_LENGTH + 1];
-            char ek[2 * DFC_AES_KEY_LENGTH + 1];
-            for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++) {
-                mk[2 * i] = hexd[emulator->ev2_session_mac_key[i] >> 4];
-                mk[2 * i + 1] = hexd[emulator->ev2_session_mac_key[i] & 0xF];
-                ek[2 * i] = hexd[emulator->ev2_session_encryption_key[i] >> 4];
-                ek[2 * i + 1] = hexd[emulator->ev2_session_encryption_key[i] & 0xF];
-            }
-            mk[2 * DFC_AES_KEY_LENGTH] = 0;
-            ek[2 * DFC_AES_KEY_LENGTH] = 0;
-            char cmd[2 * 64 + 1];
-            size_t clen = command_len < 64 ? command_len : 64;
-            for(size_t i = 0; i < clen; i++) {
-                cmd[2 * i] = hexd[command[i] >> 4];
-                cmd[2 * i + 1] = hexd[command[i] & 0xF];
-            }
-            cmd[2 * clen] = 0;
-            DFC_EV2_TRACE("MACDUMP mk=%s", mk);
-            DFC_EV2_TRACE("MACDUMP ek=%s", ek);
-            DFC_EV2_TRACE(
-                "MACDUMP ti=%02X%02X%02X%02X ctr=%u cmd=%s",
-                emulator->ev2_transaction_identifier[0],
-                emulator->ev2_transaction_identifier[1],
-                emulator->ev2_transaction_identifier[2],
-                emulator->ev2_transaction_identifier[3],
-                (unsigned)emulator->ev2_command_counter,
-                cmd);
-        }
-#endif
         dfc_secure_wipe(expected, sizeof(expected));
         return DfcEv2CommandInvalid;
     }

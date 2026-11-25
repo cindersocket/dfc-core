@@ -49,7 +49,6 @@ DfcSecureMessaging* dfc_secure_messaging_alloc(
     const uint8_t* initial_iv);
 
 void dfc_secure_messaging_free(DfcSecureMessaging* sm);
-void dfc_secure_messaging_reset_iv(DfcSecureMessaging* sm);
 bool dfc_secure_messaging_applies_ev1(DfcSecureMessaging* sm, uint8_t cmd);
 // Returns false without advancing the IV when CMAC generation fails.
 bool dfc_secure_messaging_update_ev1_command(

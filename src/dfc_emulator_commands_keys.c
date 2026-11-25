@@ -60,15 +60,17 @@ void dfc_emulator_command_get_key_version(
 #if DFC_ENABLE_KEY_SETS
     DfcApplication* app = emulator_current_app(emulator);
     if(app && (key_no & DFC_KEY_SET_NUMBER_PRESENT_MASK) != 0) {
-        if(app->num_key_sets <= 1) {
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-            return;
-        }
         if(apdu_len != 3) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return;
         }
         uint8_t key_set_selector = apdu[2];
+        if(app->num_key_sets <= 1 &&
+           ((key_set_selector & DFC_KEY_SET_RETRIEVAL_MASK) != 0 ||
+            (key_set_selector & DFC_KEY_SET_NUMBER_MASK) != 0)) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
         if((key_no & DFC_KEY_SET_SECOND_APPLICATION_MASK) != 0) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
             return;
@@ -145,12 +147,6 @@ static bool can_change_key(DfcEmulator* emulator, uint8_t target_key_no) {
     return can_change_key_as(emulator, target_key_no, emulator->auth_key_no);
 }
 
-static bool is_aes_key_context(DfcEmulator* emulator) {
-    DfcApplication* app = emulator_current_app(emulator);
-    uint8_t ks2 = app ? app->key_settings_2 : emulator->credential->picc_key_settings_2;
-    return (ks2 & DFC_KEY_TYPE_MASK) == DFC_KEY_TYPE_AES;
-}
-
 static bool
     change_key_d40_padding_valid(const uint8_t* clear, size_t content_len, size_t clear_len) {
     if(content_len > clear_len) return false;
@@ -168,13 +164,27 @@ static void mark_key_change_dirty(DfcEmulator* emulator) {
 #endif
 }
 
+static void commit_picc_master_key_type(DfcEmulator* emulator, uint8_t requested_type);
+
 static void dfc_emulator_command_change_key_d40(
     DfcEmulator* emulator,
-    uint8_t key_no,
+    uint8_t encoded_key_no,
     const uint8_t* encrypted,
     size_t encrypted_len,
     DfcByteBuf* tx_buffer) {
+    uint8_t key_no = encoded_key_no & 0x3F;
     size_t key_len = emulator_key_len(emulator);
+    bool picc_master = !emulator_current_app(emulator) && key_no == 0;
+    uint8_t requested_type = encoded_key_no & DFC_KEY_TYPE_MASK;
+    if(picc_master) {
+        if(requested_type == DFC_KEY_TYPE_MASK ||
+           dfc_credential_key_length(
+               (uint8_t)((emulator->credential->picc_key_settings_2 & ~DFC_KEY_TYPE_MASK) |
+                         requested_type)) != key_len) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
+    }
     uint8_t clear[DFC_MAX_KEY_LEN + 8];
     if((encrypted_len % 8) != 0 || encrypted_len < key_len + 2 || encrypted_len > sizeof(clear)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
@@ -261,6 +271,7 @@ static void dfc_emulator_command_change_key_d40(
     dfc_emulator_retire_authentication(emulator);
     memcpy(target, clear, key_len);
     *emulator_key_version(emulator, key_no) = des_key_version(clear);
+    if(picc_master) commit_picc_master_key_type(emulator, requested_type);
     mark_key_change_dirty(emulator);
     dfc_secure_wipe(clear, sizeof(clear));
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
@@ -268,13 +279,35 @@ static void dfc_emulator_command_change_key_d40(
 
 static void dfc_emulator_command_change_key_ev1(
     DfcEmulator* emulator,
-    uint8_t key_no,
+    uint8_t encoded_key_no,
     const uint8_t* encrypted,
     size_t encrypted_len,
     DfcByteBuf* tx_buffer) {
     DfcSecureMessaging* sm = emulator->secure_messaging;
-    size_t key_len = emulator_key_len(emulator);
-    bool aes_key = is_aes_key_context(emulator);
+    uint8_t key_no = encoded_key_no & 0x3F;
+    size_t current_key_len = emulator_key_len(emulator);
+    size_t key_len = current_key_len;
+    DfcApplication* app = emulator_current_app(emulator);
+    uint8_t requested_type =
+        (app ? app->key_settings_2 : emulator->credential->picc_key_settings_2) &
+        DFC_KEY_TYPE_MASK;
+    bool picc_master_type_change = !app && key_no == 0;
+    if(picc_master_type_change) {
+        requested_type = encoded_key_no & DFC_KEY_TYPE_MASK;
+        if(requested_type == DFC_KEY_TYPE_MASK) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
+        uint8_t requested_settings =
+            (uint8_t)((emulator->credential->picc_key_settings_2 & ~DFC_KEY_TYPE_MASK) |
+                      requested_type);
+        key_len = dfc_credential_key_length(requested_settings);
+        if(key_len == 0 || key_len > DFC_MAX_KEY_LEN) {
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
+    }
+    bool aes_key = requested_type == DFC_KEY_TYPE_AES;
     size_t block = sm->cipher == DFC_CMD_AUTHENTICATE_AES ? 16 : 8;
     size_t version_len = aes_key ? 1 : 0;
     bool different = key_no != emulator->auth_key_no;
@@ -320,7 +353,7 @@ static void dfc_emulator_command_change_key_ev1(
 
     uint8_t crc_input[2 + DFC_MAX_KEY_LEN + 1];
     crc_input[0] = DFC_CMD_CHANGE_KEY;
-    crc_input[1] = key_no;
+    crc_input[1] = encoded_key_no;
     memcpy(crc_input + 2, clear, cursor);
     uint32_t expected_crc = crc32_dfc(crc_input, 2 + cursor);
     uint32_t actual_crc = (uint32_t)clear[cursor] | ((uint32_t)clear[cursor + 1] << 8) |
@@ -346,6 +379,14 @@ static void dfc_emulator_command_change_key_ev1(
         return;
     }
     if(different) {
+        if(key_len != current_key_len) {
+            dfc_secure_wipe(new_key, sizeof(new_key));
+            dfc_secure_wipe(crc_input, sizeof(crc_input));
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_secure_wipe(candidate_iv, sizeof(candidate_iv));
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+            return;
+        }
         for(size_t i = 0; i < key_len; i++) {
             new_key[i] = clear[i] ^ old_key[i];
         }
@@ -377,6 +418,26 @@ static void dfc_emulator_command_change_key_ev1(
         }
     }
 
+    if(picc_master_type_change && key_len != current_key_len &&
+       !dfc_credential_keys_resize(
+           emulator->credential, NULL, emulator_num_keys(emulator), key_len)) {
+        dfc_secure_wipe(new_key, sizeof(new_key));
+        dfc_secure_wipe(crc_input, sizeof(crc_input));
+        dfc_secure_wipe(clear, sizeof(clear));
+        dfc_secure_wipe(candidate_iv, sizeof(candidate_iv));
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
+        return;
+    }
+    old_key = emulator_key(emulator, key_no);
+    if(!old_key) {
+        dfc_secure_wipe(new_key, sizeof(new_key));
+        dfc_secure_wipe(crc_input, sizeof(crc_input));
+        dfc_secure_wipe(clear, sizeof(clear));
+        dfc_secure_wipe(candidate_iv, sizeof(candidate_iv));
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_MEMORY_ERROR);
+        return;
+    }
+
     if(different) {
         memcpy(sm->iv, candidate_iv, sizeof(sm->iv));
     } else {
@@ -389,6 +450,7 @@ static void dfc_emulator_command_change_key_ev1(
     } else {
         *emulator_key_version(emulator, key_no) = des_key_version(new_key);
     }
+    if(picc_master_type_change) commit_picc_master_key_type(emulator, requested_type);
     mark_key_change_dirty(emulator);
     dfc_secure_wipe(new_key, sizeof(new_key));
     dfc_secure_wipe(crc_input, sizeof(crc_input));
@@ -400,6 +462,33 @@ static void dfc_emulator_command_change_key_ev1(
         dfc_emulator_command_apply_ev1_response_secure_messaging(
             emulator, DFC_CMD_CHANGE_KEY, tx_buffer);
     }
+}
+
+static void commit_picc_master_key_type(DfcEmulator* emulator, uint8_t requested_type) {
+    DfcCredential* credential = emulator->credential;
+    if((credential->picc_key_settings_2 & DFC_KEY_TYPE_MASK) == requested_type) return;
+    uint8_t new_ks2 =
+        (uint8_t)((credential->picc_key_settings_2 & ~DFC_KEY_TYPE_MASK) | requested_type);
+    credential->picc_key_settings_2 = new_ks2;
+    credential->picc_has_auth_commands = true;
+    credential->picc_auth_commands =
+        dfc_credential_default_auth_commands(new_ks2, credential->card.generation);
+    if(credential->picc_has_preferred_auth_command &&
+       (credential->picc_preferred_auth_command & credential->picc_auth_commands) == 0) {
+        credential->picc_has_preferred_auth_command = false;
+        credential->picc_preferred_auth_command = 0;
+    }
+    credential->picc_auth_command =
+        requested_type == DFC_KEY_TYPE_AES    ? DFC_CMD_AUTHENTICATE_AES :
+        requested_type == DFC_KEY_TYPE_3K3DES ? DFC_CMD_AUTHENTICATE_ISO :
+                                                DFC_CMD_AUTHENTICATE_LEGACY;
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+    credential->picc_has_dam_keys = false;
+    dfc_secure_wipe(credential->picc_dam_auth_key, sizeof(credential->picc_dam_auth_key));
+    dfc_secure_wipe(credential->picc_dam_mac_key, sizeof(credential->picc_dam_mac_key));
+    dfc_secure_wipe(
+        credential->picc_dam_encryption_key, sizeof(credential->picc_dam_encryption_key));
+#endif
 }
 
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
@@ -415,19 +504,13 @@ static void handle_change_key_ev2_standard(
     const uint8_t* apdu,
     size_t apdu_len,
     DfcByteBuf* tx_buffer) {
-    uint8_t key_no = apdu[1] & 0x3F;
+    uint8_t encoded_key_no = apdu[1];
+    uint8_t key_no = encoded_key_no & 0x3F;
     if(key_no >= emulator_num_keys(emulator)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
-    // can_change_key() reads emulator->auth_key_no, which the legacy path keeps
-    // but an EV2 session tracks in ev2_authenticated_key_no instead; mirror it
-    // across the check so the access condition is correct for any auth key.
-    uint8_t saved_auth_key_no = emulator->auth_key_no;
-    emulator->auth_key_no = emulator->ev2_authenticated_key_no;
-    bool allowed = can_change_key(emulator, key_no);
-    emulator->auth_key_no = saved_auth_key_no;
-    if(!allowed) {
+    if(!can_change_key_as(emulator, key_no, emulator->ev2_authenticated_key_no)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
         return;
     }
@@ -455,16 +538,35 @@ static void handle_change_key_ev2_standard(
         return;
     }
 
-    size_t key_len = DFC_AES_KEY_LENGTH;
+    bool picc_master = emulator->selected_application == DfcEmulatorSelectedApplicationPicc &&
+                       key_no == 0;
+    DfcApplication* current_app = emulator_current_app(emulator);
+    uint8_t current_type = current_app ?
+                               current_app->key_settings_2 & DFC_KEY_TYPE_MASK :
+                               emulator->credential->picc_key_settings_2 & DFC_KEY_TYPE_MASK;
+    uint8_t requested_type = picc_master ? encoded_key_no & DFC_KEY_TYPE_MASK : current_type;
+    if(picc_master && requested_type == DFC_KEY_TYPE_MASK) {
+        dfc_secure_wipe(clear, sizeof(clear));
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
+        return;
+    }
+    size_t key_len =
+        picc_master ?
+            dfc_credential_key_length(
+                (uint8_t)((emulator->credential->picc_key_settings_2 & ~DFC_KEY_TYPE_MASK) |
+                          requested_type)) :
+            emulator_key_len(emulator);
+    bool aes_key = requested_type == DFC_KEY_TYPE_AES;
+    size_t version_len = aes_key ? DFC_CHANGE_KEY_EV2_VERSION_LENGTH : 0;
     bool different = key_no != emulator->ev2_authenticated_key_no;
-    size_t expected_len = key_len + DFC_CHANGE_KEY_EV2_VERSION_LENGTH + (different ? 4 : 0);
+    size_t expected_len = key_len + version_len + (different ? 4 : 0);
     if(clear_len != expected_len) {
         dfc_secure_wipe(clear, sizeof(clear));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
 
-    uint8_t new_version = clear[key_len];
+    uint8_t new_version = aes_key ? clear[key_len] : 0;
     uint8_t new_key[DFC_MAX_KEY_LEN] = {0};
     uint8_t* old_key = emulator_key(emulator, key_no);
     if(!old_key) {
@@ -477,7 +579,7 @@ static void handle_change_key_ev2_standard(
         for(size_t i = 0; i < key_len; i++) {
             new_key[i] = clear[i] ^ old_key[i];
         }
-        size_t crc_offset = key_len + DFC_CHANGE_KEY_EV2_VERSION_LENGTH;
+        size_t crc_offset = key_len + version_len;
         uint32_t expected_new_crc = crc32_dfc(new_key, key_len);
         uint32_t actual_new_crc =
             (uint32_t)clear[crc_offset] | ((uint32_t)clear[crc_offset + 1] << 8) |
@@ -492,7 +594,24 @@ static void handle_change_key_ev2_standard(
         memcpy(new_key, clear, key_len);
     }
 
+    if(picc_master &&
+       !dfc_credential_keys_resize(
+           emulator->credential, NULL, emulator->credential->picc_num_keys, key_len)) {
+        dfc_secure_wipe(new_key, sizeof(new_key));
+        dfc_secure_wipe(clear, sizeof(clear));
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
+    old_key = emulator_key(emulator, key_no);
+    if(!old_key) {
+        dfc_secure_wipe(new_key, sizeof(new_key));
+        dfc_secure_wipe(clear, sizeof(clear));
+        dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OUT_OF_EEPROM);
+        return;
+    }
     memcpy(old_key, new_key, key_len);
+    if(picc_master) commit_picc_master_key_type(emulator, requested_type);
+    if(!aes_key) new_version = des_key_version(new_key);
     *emulator_key_version(emulator, key_no) = new_version;
     dfc_credential_mark_dirty(emulator->credential);
     dfc_secure_wipe(new_key, sizeof(new_key));
@@ -555,50 +674,13 @@ void dfc_emulator_command_change_key(
     size_t encrypted_len = apdu_len - 2;
     uint8_t cipher = emulator->secure_messaging->cipher;
     if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) {
-        dfc_emulator_command_change_key_d40(emulator, key_no, encrypted, encrypted_len, tx_buffer);
+        dfc_emulator_command_change_key_d40(
+            emulator, apdu[1], encrypted, encrypted_len, tx_buffer);
     } else if(cipher == DFC_CMD_AUTHENTICATE_ISO || cipher == DFC_CMD_AUTHENTICATE_AES) {
-        dfc_emulator_command_change_key_ev1(emulator, key_no, encrypted, encrypted_len, tx_buffer);
+        dfc_emulator_command_change_key_ev1(
+            emulator, apdu[1], encrypted, encrypted_len, tx_buffer);
     } else {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
-    }
-
-    // PICC master-key crypto-type migration (e.g. DES -> AES). The key-number
-    // byte's top bits carry the new type (0x80 AES / 0x40 3K3DES); the key bytes
-    // are stored by the dispatch above, but the stored type and the accepted auth
-    // commands must follow or a later AuthenticateAES/EV2First is rejected. Scoped
-    // to the PICC master key, unchanged key length. [ported #3 + save-#8]
-    if(!emulator_current_app(emulator) && key_no == 0 &&
-       dfc_bytebuf_get_size_bytes(tx_buffer) >= 1 &&
-       dfc_bytebuf_get_byte(tx_buffer, 0) == DFC_STATUS_OK) {
-        DfcCredential* credential = emulator->credential;
-        uint8_t requested_type = apdu[1] & DFC_KEY_TYPE_MASK;
-        uint8_t new_ks2 =
-            (uint8_t)((credential->picc_key_settings_2 & ~DFC_KEY_TYPE_MASK) | requested_type);
-        if(new_ks2 != credential->picc_key_settings_2 &&
-           dfc_credential_key_length(new_ks2) == credential->picc_key_len) {
-            credential->picc_key_settings_2 = new_ks2;
-            credential->picc_has_auth_commands = true;
-            credential->picc_auth_commands =
-                dfc_credential_default_auth_commands(new_ks2, credential->card.generation);
-            // A preferred auth command recorded for the previous key type is no
-            // longer in the possible set once the type changes, which the DER/
-            // text model validator rejects (preferred must be a single bit inside
-            // the command set) and which breaks saving. Drop a now-incompatible
-            // preference. [save bug #8 root cause]
-            if(credential->picc_has_preferred_auth_command &&
-               (credential->picc_preferred_auth_command & credential->picc_auth_commands) == 0) {
-                credential->picc_has_preferred_auth_command = false;
-                credential->picc_preferred_auth_command = 0;
-            }
-            if(requested_type == DFC_KEY_TYPE_AES) {
-                credential->picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
-            } else if(requested_type == 0x40) {
-                credential->picc_auth_command = DFC_CMD_AUTHENTICATE_ISO;
-            } else {
-                credential->picc_auth_command = DFC_CMD_AUTHENTICATE_LEGACY;
-            }
-            dfc_credential_mark_dirty(credential);
-        }
     }
 }
 
@@ -1086,7 +1168,7 @@ void dfc_emulator_command_set_configuration(
     // Option 0x02: set the user ATS (what the card answers to RATS). The EV1 card
     // capture hardware_physical_ev1_8k_user_ats_boundaries.vec accepts nonempty
     // values through 20 bytes without validating the internal length byte.
-    if(option == 0x02) {
+    if(option == DFC_CONFIGURATION_USER_ATS) {
         if(!dfc_emulator_command_is_authenticated_as_master(emulator)) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
             return;
@@ -1162,7 +1244,7 @@ void dfc_emulator_command_set_configuration(
     // case the option falls through to PARAMETER_ERROR and finalize_native_command
     // tears down the EV2 session, aborting enrollment. Verified against a live
     // capture (clr[4] 5C 04 00 03) and reproduced in the host closed-loop test.
-    if(option == 0x04) {
+    if(option == DFC_CONFIGURATION_SECURE_MESSAGING) {
         if(!dfc_emulator_command_is_authenticated_as_master(emulator)) {
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
             return;
@@ -1193,9 +1275,7 @@ void dfc_emulator_command_set_configuration(
         }
         uint8_t reserved = sm_data[0];
         uint8_t mask = sm_data[1];
-        const uint8_t valid_mask = DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1 |
-                                   DFC_SM_DISABLE_EV2_CHAINED_WRITE;
-        if(reserved != 0x00 || (mask & (uint8_t)~valid_mask) != 0) {
+        if(reserved != 0x00 || (mask & (uint8_t)~DFC_SM_DISABLE_VALID_MASK) != 0) {
             dfc_secure_wipe(clear, sizeof(clear));
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;

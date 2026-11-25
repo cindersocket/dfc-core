@@ -5,6 +5,7 @@
 #include "munit/munit.h"
 
 #include "dfc_credential.h"
+#include "dfc_der.h"
 #include "dfc_emulator_i.h"
 #include "dfc_ev2_crypto.h"
 #include "dfc_port_host.h"
@@ -1593,8 +1594,22 @@ static MunitResult test_ev2_standard_change_other_key(const MunitParameter param
     // Build the cryptogram to change app key 1 (currently AES_KEY_1) while
     // authenticated with key 0: (newKey XOR oldKey) || version || CRC32(newKey).
     static const uint8_t new_key[DFC_AES_KEY_LENGTH] = {
-        0x5A, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01};
+        0x5A,
+        0x11,
+        0x22,
+        0x33,
+        0x44,
+        0x55,
+        0x66,
+        0x77,
+        0x88,
+        0x99,
+        0xAA,
+        0xBB,
+        0xCC,
+        0xDD,
+        0xEE,
+        0x01};
     uint8_t cryptogram[DFC_AES_KEY_LENGTH + 1 + 4];
     size_t crypto_len = 0;
     for(size_t i = 0; i < DFC_AES_KEY_LENGTH; i++)
@@ -1667,7 +1682,8 @@ static MunitResult test_ev2_standard_change_other_key(const MunitParameter param
     // Changing a key other than the authenticated one keeps the EV2 session alive.
     munit_assert_true(link.picc->emulator->ev2_session_active);
     // The new key really took: the stored app key 1 now equals new_key.
-    const uint8_t* stored = dfc_credential_key_const(&link.credential, &link.credential.apps[0], 1);
+    const uint8_t* stored =
+        dfc_credential_key_const(&link.credential, &link.credential.apps[0], 1);
     munit_assert_not_null(stored);
     munit_assert_memory_equal(DFC_AES_KEY_LENGTH, stored, new_key);
     link_close(&link);
@@ -1698,7 +1714,8 @@ static MunitResult test_ev2_chained_enciphered_write(const MunitParameter params
     // A recognisable payload distinct from the file's initial contents so the
     // read-back proves the chained write actually landed.
     uint8_t payload[200];
-    for(size_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(0xC3 ^ (i * 7));
+    for(size_t i = 0; i < sizeof(payload); i++)
+        payload[i] = (uint8_t)(0xC3 ^ (i * 7));
 
     // Encrypt under the session ENC key, then MAC over (file header || ciphertext),
     // exactly as a terminal builds a CommMode.FULL WriteData.
@@ -1820,7 +1837,11 @@ static MunitResult test_ev2_chained_enciphered_write(const MunitParameter params
     link.session.ev2_command_counter = 1;
 
     uint8_t newkey[16];
-    for(size_t i = 0; i < sizeof(newkey); i++) newkey[i] = (uint8_t)(0x10 + i);
+    for(size_t i = 0; i < sizeof(newkey); i++)
+        newkey[i] = (uint8_t)(0x10 + i);
+    uint8_t change_key_data[sizeof(newkey) + 1];
+    memcpy(change_key_data, newkey, sizeof(newkey));
+    change_key_data[sizeof(newkey)] = 0x42;
     uint8_t ck_ct[32];
     size_t ck_ct_len = 0;
     munit_assert_true(dfc_ev2_encrypt_data(
@@ -1828,8 +1849,8 @@ static MunitResult test_ev2_chained_enciphered_write(const MunitParameter params
         DfcEv2DirectionCommand,
         link.session.ev2_command_counter,
         link.session.ev2_transaction_identifier,
-        newkey,
-        sizeof(newkey),
+        change_key_data,
+        sizeof(change_key_data),
         ck_ct,
         sizeof(ck_ct),
         &ck_ct_len));
@@ -1871,17 +1892,19 @@ static MunitResult test_ev2_chained_enciphered_write(const MunitParameter params
         DfcVirtualPiccStatusOk);
     munit_assert_size(ck_resp_len, >=, 2);
     munit_assert_uint8(ck_resp[ck_resp_len - 2], ==, 0x91);
-    // The specific hardware failure is an INTEGRITY_ERROR on the C4's command MAC.
-    munit_assert_uint8(ck_resp[ck_resp_len - 1], !=, DFC_STATUS_INTEGRITY_ERROR);
+    munit_assert_uint8(ck_resp[ck_resp_len - 1], ==, DFC_STATUS_OK);
+    munit_assert_memory_equal(
+        sizeof(newkey),
+        dfc_credential_key_const(&link.credential, &link.credential.apps[0], 0),
+        newkey);
+    munit_assert_uint8(link.credential.apps[0].key_versions[0], ==, 0x42);
 
     link_close(&link);
     return MUNIT_OK;
 }
 
-static uint8_t send_ev2_chained_write_first_frame(
-    Link* link,
-    uint8_t file_number,
-    uint32_t length) {
+static uint8_t
+    send_ev2_chained_write_first_frame(Link* link, uint8_t file_number, uint32_t length) {
     uint8_t apdu[48] = {
         0x90,
         DFC_CMD_WRITE_DATA,
@@ -1910,9 +1933,8 @@ static uint8_t send_ev2_chained_write_first_frame(
     return response[response_len - 1];
 }
 
-static MunitResult test_ev2_chained_standard_write_disable(
-    const MunitParameter params[],
-    void* data) {
+static MunitResult
+    test_ev2_chained_standard_write_disable(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
     static Link link;
@@ -1941,7 +1963,8 @@ static MunitResult test_ev2_chained_standard_write_disable(
     munit_assert_uint8(app->sm_disable, ==, DFC_SM_DISABLE_EV2_CHAINED_WRITE);
     const uint8_t clear_disable_mask[] = {0x00, 0x00};
     munit_assert_int(
-        dfc_command_set_configuration(&config, 0x04, clear_disable_mask, sizeof(clear_disable_mask)),
+        dfc_command_set_configuration(
+            &config, 0x04, clear_disable_mask, sizeof(clear_disable_mask)),
         ==,
         DfcCommandOk);
     munit_assert_int(
@@ -1954,7 +1977,8 @@ static MunitResult test_ev2_chained_standard_write_disable(
     munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
 
     uint8_t short_payload[16];
-    for(size_t i = 0; i < sizeof(short_payload); i++) short_payload[i] = (uint8_t)(0xA0 + i);
+    for(size_t i = 0; i < sizeof(short_payload); i++)
+        short_payload[i] = (uint8_t)(0xA0 + i);
     DfcReaderExchange exchange;
     munit_assert_int(
         dfc_reader_write_data_begin(
@@ -1977,19 +2001,13 @@ static MunitResult test_ev2_chained_standard_write_disable(
     // The setting is deliberately narrow: BackupData and Plain StandardData
     // still start a chain, while a protected StandardData chain is refused.
     munit_assert_uint8(
-        send_ev2_chained_write_first_frame(&link, 10, 200),
-        ==,
-        DFC_CMD_ADDITIONAL_FRAME);
+        send_ev2_chained_write_first_frame(&link, 10, 200), ==, DFC_CMD_ADDITIONAL_FRAME);
     dfc_emulator_discard_command_chain(link.picc->emulator);
     munit_assert_uint8(
-        send_ev2_chained_write_first_frame(&link, 11, 200),
-        ==,
-        DFC_CMD_ADDITIONAL_FRAME);
+        send_ev2_chained_write_first_frame(&link, 11, 200), ==, DFC_CMD_ADDITIONAL_FRAME);
     dfc_emulator_discard_command_chain(link.picc->emulator);
     munit_assert_uint8(
-        send_ev2_chained_write_first_frame(&link, 9, 200),
-        ==,
-        DFC_STATUS_PERMISSION_DENIED);
+        send_ev2_chained_write_first_frame(&link, 9, 200), ==, DFC_STATUS_PERMISSION_DENIED);
     munit_assert_false(link.picc->emulator->command_chain_active);
     munit_assert_false(link.picc->emulator->ev2_session_active);
     link_close(&link);
@@ -2003,9 +2021,7 @@ static MunitResult test_ev2_chained_standard_write_disable(
     select_app(&link, AID_AES);
     munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
     munit_assert_uint8(
-        send_ev2_chained_write_first_frame(&link, 9, 200),
-        ==,
-        DFC_STATUS_PERMISSION_DENIED);
+        send_ev2_chained_write_first_frame(&link, 9, 200), ==, DFC_STATUS_PERMISSION_DENIED);
     munit_assert_false(link.picc->emulator->command_chain_active);
     munit_assert_false(link.picc->emulator->ev2_session_active);
     link_close(&link);
@@ -3388,6 +3404,56 @@ static MunitResult test_change_key(const MunitParameter params[], void* data) {
     return MUNIT_OK;
 }
 
+static MunitResult
+    test_change_key_type_bits_are_authenticated(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv1, DfcReaderFramingIso7816);
+    select_app(&link, AID_ISO);
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_ISO, 0, TDES_KEY_0, 16), ==, DfcReaderOk);
+
+    const uint8_t aes_zero[16] = {0};
+    uint8_t ordinary[48] = {0};
+    uint8_t type_change[48] = {0};
+    size_t ordinary_len = 0;
+    size_t type_change_len = 0;
+    munit_assert_int(
+        dfc_reader_change_key_cryptogram(
+            &link.session,
+            0x00,
+            aes_zero,
+            sizeof(aes_zero),
+            NULL,
+            true,
+            0,
+            ordinary,
+            sizeof(ordinary),
+            &ordinary_len),
+        ==,
+        DfcReaderOk);
+    munit_assert_int(
+        dfc_reader_change_key_cryptogram(
+            &link.session,
+            DFC_KEY_TYPE_AES,
+            aes_zero,
+            sizeof(aes_zero),
+            NULL,
+            true,
+            0,
+            type_change,
+            sizeof(type_change),
+            &type_change_len),
+        ==,
+        DfcReaderOk);
+
+    munit_assert_size(type_change_len, ==, ordinary_len);
+    munit_assert_false(dfc_ct_equal(type_change, ordinary, ordinary_len));
+    link_close(&link);
+    return MUNIT_OK;
+}
+
 static MunitResult test_d40_change_key(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
@@ -3446,8 +3512,7 @@ static void assert_zero_bytes(const uint8_t* bytes, size_t len) {
         munit_assert_uint8(bytes[i], ==, 0);
 }
 
-static void assert_ev2_emulator_session_wiped(const DfcEmulator* emulator) {
-    munit_assert_false(emulator->ev2_response_plain);
+static void assert_ev2_session_secrets_wiped(const DfcEmulator* emulator) {
     munit_assert_false(emulator->ev2_authentication_pending);
     munit_assert_false(emulator->ev2_authentication_non_first);
     munit_assert_false(emulator->ev2_session_active);
@@ -3477,6 +3542,11 @@ static void assert_ev2_emulator_session_wiped(const DfcEmulator* emulator) {
     assert_zero_bytes(
         emulator->ev2_session_encryption_key, sizeof(emulator->ev2_session_encryption_key));
     assert_zero_bytes(emulator->ev2_session_mac_key, sizeof(emulator->ev2_session_mac_key));
+}
+
+static void assert_ev2_emulator_session_wiped(const DfcEmulator* emulator) {
+    munit_assert_false(emulator->ev2_response_plain);
+    assert_ev2_session_secrets_wiped(emulator);
 }
 
 static size_t prepare_ev2_apdu(
@@ -4693,6 +4763,9 @@ static MunitResult test_ev2_change_key(const MunitParameter params[], void* data
     (void)data;
     static Link link;
     link_open(&link, DfcGenerationEv2, DfcReaderFramingIso7816);
+    // Application key encoding follows the selected application's type, not the
+    // unrelated PICC master-key type.
+    link.credential.picc_key_settings_2 = DFC_KEY_TYPE_DES_2K3DES | 0x01;
     DfcApplication* app = dfc_credential_get_application(&link.credential, 0);
     select_app(&link, AID_AES);
     munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
@@ -4771,7 +4844,322 @@ static MunitResult test_ev2_change_key(const MunitParameter params[], void* data
     link_close(&link);
     return MUNIT_OK;
 }
+
+static uint8_t send_picc_master_change_key_ev2(
+    Link* link,
+    uint8_t requested_type,
+    const uint8_t* new_key,
+    size_t new_key_len) {
+    uint8_t clear[DFC_MAX_KEY_LEN + DFC_CHANGE_KEY_EV2_VERSION_LENGTH];
+    memcpy(clear, new_key, new_key_len);
+    size_t clear_len = new_key_len;
+    if(requested_type == DFC_KEY_TYPE_AES) clear[clear_len++] = 0x42;
+
+    uint8_t encrypted[32];
+    size_t encrypted_len = 0;
+    munit_assert_true(dfc_ev2_encrypt_data(
+        link->session.ev2_encryption_key,
+        DfcEv2DirectionCommand,
+        link->session.ev2_command_counter,
+        link->session.ev2_transaction_identifier,
+        clear,
+        clear_len,
+        encrypted,
+        sizeof(encrypted),
+        &encrypted_len));
+
+    uint8_t secured_data[1 + sizeof(encrypted)];
+    secured_data[0] = requested_type;
+    memcpy(secured_data + 1, encrypted, encrypted_len);
+    size_t secured_data_len = 1 + encrypted_len;
+    uint8_t mac[DFC_WIRE_MAC_LENGTH];
+    munit_assert_true(dfc_ev2_mac(
+        link->session.ev2_mac_key,
+        DFC_CMD_CHANGE_KEY,
+        link->session.ev2_command_counter,
+        link->session.ev2_transaction_identifier,
+        secured_data,
+        secured_data_len,
+        NULL,
+        0,
+        mac));
+
+    uint8_t apdu[6 + sizeof(secured_data) + sizeof(mac)];
+    size_t apdu_len = 0;
+    apdu[apdu_len++] = 0x90;
+    apdu[apdu_len++] = DFC_CMD_CHANGE_KEY;
+    apdu[apdu_len++] = 0x00;
+    apdu[apdu_len++] = 0x00;
+    apdu[apdu_len++] = (uint8_t)(secured_data_len + sizeof(mac));
+    memcpy(apdu + apdu_len, secured_data, secured_data_len);
+    apdu_len += secured_data_len;
+    memcpy(apdu + apdu_len, mac, sizeof(mac));
+    apdu_len += sizeof(mac);
+    apdu[apdu_len++] = 0x00;
+
+    uint8_t response[32];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link->picc, apdu, apdu_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, ==, 2);
+    munit_assert_uint8(response[0], ==, 0x91);
+    return response[1];
+}
+
+static MunitResult
+    test_ev2_picc_master_key_type_change(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const struct {
+        uint8_t type;
+        size_t key_len;
+        bool type_changes;
+    } cases[] = {
+        {DFC_KEY_TYPE_DES_2K3DES, 16, true},
+        {DFC_KEY_TYPE_3K3DES, 24, true},
+        {DFC_KEY_TYPE_AES, 16, false},
+    };
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        static Link link;
+        link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+        link.credential.picc_key_settings_2 = DFC_KEY_TYPE_AES | 0x01;
+        link.credential.picc_key_len = DFC_AES_KEY_LENGTH;
+        link.credential.picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
+        link.credential.picc_has_auth_commands = true;
+        link.credential.picc_auth_commands = DFC_AUTH_COMMAND_EV2_FIRST;
+        link.credential.picc_has_preferred_auth_command = true;
+        link.credential.picc_preferred_auth_command = DFC_AUTH_COMMAND_EV2_FIRST;
+        munit_assert_true(
+            dfc_credential_keys_resize(&link.credential, NULL, 1, DFC_AES_KEY_LENGTH));
+        memcpy(dfc_credential_key(&link.credential, NULL, 0), AES_KEY_0, sizeof(AES_KEY_0));
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        link.credential.picc_has_dam_keys = true;
+        memset(link.credential.picc_dam_auth_key, 0xA5, sizeof(link.credential.picc_dam_auth_key));
 #endif
+        munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+        uint8_t new_key[DFC_MAX_KEY_LEN];
+        for(size_t j = 0; j < cases[i].key_len; j++)
+            new_key[j] = (uint8_t)(0x40 + j);
+        munit_assert_uint8(
+            send_picc_master_change_key_ev2(&link, cases[i].type, new_key, cases[i].key_len),
+            ==,
+            DFC_STATUS_OK);
+        munit_assert_uint8(
+            link.credential.picc_key_settings_2 & DFC_KEY_TYPE_MASK, ==, cases[i].type);
+        munit_assert_size(link.credential.picc_key_len, ==, cases[i].key_len);
+        munit_assert_memory_equal(
+            cases[i].key_len, dfc_credential_key_const(&link.credential, NULL, 0), new_key);
+        munit_assert_uint8(
+            link.credential.picc_auth_commands,
+            ==,
+            cases[i].type_changes ?
+                dfc_credential_default_auth_commands(
+                    link.credential.picc_key_settings_2, link.credential.card.generation) :
+                DFC_AUTH_COMMAND_EV2_FIRST);
+        uint8_t expected_auth_command =
+            cases[i].type == DFC_KEY_TYPE_AES    ? DFC_CMD_AUTHENTICATE_AES :
+            cases[i].type == DFC_KEY_TYPE_3K3DES ? DFC_CMD_AUTHENTICATE_ISO :
+                                                   DFC_CMD_AUTHENTICATE_LEGACY;
+        munit_assert_uint8(link.credential.picc_auth_command, ==, expected_auth_command);
+        munit_assert_int(
+            link.credential.picc_has_preferred_auth_command,
+            ==,
+            cases[i].type_changes ? false : true);
+        if(cases[i].type_changes)
+            munit_assert_uint8(link.credential.picc_preferred_auth_command, ==, 0);
+        else
+            munit_assert_uint8(
+                link.credential.picc_preferred_auth_command, ==, DFC_AUTH_COMMAND_EV2_FIRST);
+        DfcCredential persistable;
+        dfc_credential_clear(&persistable);
+        persistable.uid_len = link.credential.uid_len;
+        memcpy(persistable.uid, link.credential.uid, link.credential.uid_len);
+        persistable.card.generation = link.credential.card.generation;
+        persistable.card.storage = 2048;
+        persistable.picc_key_settings_1 = 0x0F;
+        persistable.picc_key_settings_2 = link.credential.picc_key_settings_2;
+        persistable.picc_auth_command = link.credential.picc_auth_command;
+        persistable.picc_has_auth_commands = link.credential.picc_has_auth_commands;
+        persistable.picc_auth_commands = link.credential.picc_auth_commands;
+        persistable.picc_has_preferred_auth_command =
+            link.credential.picc_has_preferred_auth_command;
+        persistable.picc_preferred_auth_command = link.credential.picc_preferred_auth_command;
+        munit_assert_true(
+            dfc_credential_keys_resize(&persistable, NULL, 1, link.credential.picc_key_len));
+        memcpy(
+            dfc_credential_key(&persistable, NULL, 0),
+            dfc_credential_key_const(&link.credential, NULL, 0),
+            link.credential.picc_key_len);
+        munit_assert_int(dfc_credential_validate_model(&persistable), ==, DfcModelOk);
+        size_t encoded_size = 0;
+        munit_assert_int(dfc_der_encoded_size(&persistable, &encoded_size), ==, DfcDerOk);
+        uint8_t* encoded = malloc(encoded_size);
+        munit_assert_not_null(encoded);
+        size_t encoded_len = 0;
+        munit_assert_int(
+            dfc_der_encode(&persistable, encoded, encoded_size, &encoded_len), ==, DfcDerOk);
+        munit_assert_size(encoded_len, ==, encoded_size);
+        free(encoded);
+#if DFC_ENABLE_DELEGATED_APPLICATIONS
+        munit_assert_int(
+            link.credential.picc_has_dam_keys, ==, cases[i].type_changes ? false : true);
+#endif
+        munit_assert_false(link.picc->emulator->ev2_session_active);
+        munit_assert_true(link.picc->emulator->ev2_response_plain);
+        assert_ev2_session_secrets_wiped(link.picc->emulator);
+        dfc_reader_session_clear(&link.session);
+        DfcReaderStatus reauth =
+            cases[i].type_changes ?
+                authenticate(&link, expected_auth_command, 0, new_key, cases[i].key_len) :
+                authenticate_ev2(&link, true, 0, new_key);
+        if(reauth != DfcReaderOk)
+            munit_logf(
+                MUNIT_LOG_WARNING,
+                "type %02X command %02X status %d auth mask %02X",
+                cases[i].type,
+                expected_auth_command,
+                reauth,
+                link.credential.picc_auth_commands);
+        munit_assert_int(reauth, ==, DfcReaderOk);
+        link_close(&link);
+    }
+
+    static Link link;
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    link.credential.picc_key_settings_2 = DFC_KEY_TYPE_AES | 0x01;
+    link.credential.picc_key_len = DFC_AES_KEY_LENGTH;
+    link.credential.picc_auth_command = DFC_CMD_AUTHENTICATE_AES;
+    link.credential.picc_has_auth_commands = true;
+    link.credential.picc_auth_commands = dfc_credential_default_auth_commands(
+        link.credential.picc_key_settings_2, link.credential.card.generation);
+    munit_assert_true(dfc_credential_keys_resize(&link.credential, NULL, 1, DFC_AES_KEY_LENGTH));
+    memcpy(dfc_credential_key(&link.credential, NULL, 0), AES_KEY_0, sizeof(AES_KEY_0));
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+    munit_assert_uint8(
+        send_picc_master_change_key_ev2(&link, DFC_KEY_TYPE_MASK, AES_KEY_1, sizeof(AES_KEY_1)),
+        ==,
+        DFC_STATUS_PARAMETER_ERROR);
+    munit_assert_uint8(
+        link.credential.picc_key_settings_2 & DFC_KEY_TYPE_MASK, ==, DFC_KEY_TYPE_AES);
+    munit_assert_memory_equal(
+        sizeof(AES_KEY_0), dfc_credential_key_const(&link.credential, NULL, 0), AES_KEY_0);
+    link_close(&link);
+    return MUNIT_OK;
+}
+#endif
+
+static MunitResult
+    test_ev1_picc_master_key_type_change(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+    static const struct {
+        uint8_t source_type;
+        size_t source_len;
+        uint8_t auth_command;
+    } cases[] = {
+        {DFC_KEY_TYPE_DES_2K3DES, 16, DFC_CMD_AUTHENTICATE_LEGACY},
+        {DFC_KEY_TYPE_DES_2K3DES, 16, DFC_CMD_AUTHENTICATE_ISO},
+        {DFC_KEY_TYPE_3K3DES, 24, DFC_CMD_AUTHENTICATE_ISO},
+    };
+    static const DfcReaderFraming framings[] = {
+        DfcReaderFramingIso7816,
+        DfcReaderFramingNative,
+    };
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        for(size_t framing = 0; framing < sizeof(framings) / sizeof(framings[0]); framing++) {
+            static Link link;
+            link_open(&link, DfcGenerationEv3, framings[framing]);
+            link.credential.picc_key_settings_2 = cases[i].source_type | 0x01;
+            link.credential.picc_key_len = cases[i].source_len;
+            link.credential.picc_auth_command = cases[i].auth_command;
+            link.credential.picc_has_auth_commands = true;
+            link.credential.picc_auth_commands = dfc_credential_default_auth_commands(
+                link.credential.picc_key_settings_2, link.credential.card.generation);
+            munit_assert_true(
+                dfc_credential_keys_resize(&link.credential, NULL, 1, cases[i].source_len));
+            memset(dfc_credential_key(&link.credential, NULL, 0), 0, cases[i].source_len);
+            const uint8_t source_key[DFC_MAX_KEY_LEN] = {0};
+            munit_assert_int(
+                authenticate(&link, cases[i].auth_command, 0, source_key, cases[i].source_len),
+                ==,
+                DfcReaderOk);
+
+            uint8_t cryptogram[64];
+            size_t cryptogram_len = 0;
+            munit_assert_int(
+                dfc_reader_change_key_cryptogram(
+                    &link.session,
+                    DFC_KEY_TYPE_AES,
+                    AES_KEY_1,
+                    sizeof(AES_KEY_1),
+                    NULL,
+                    true,
+                    0x42,
+                    cryptogram,
+                    sizeof(cryptogram),
+                    &cryptogram_len),
+                ==,
+                DfcReaderOk);
+            DfcCommand command;
+            DfcReaderExchange exchange;
+            munit_assert_int(
+                dfc_command_change_key(&command, DFC_KEY_TYPE_AES, cryptogram, cryptogram_len),
+                ==,
+                DfcCommandOk);
+            munit_assert_int(
+                link_send(&link, &command, DFC_COMM_PLAIN, &exchange), ==, DfcReaderOk);
+            munit_assert_uint8(
+                link.credential.picc_key_settings_2 & DFC_KEY_TYPE_MASK, ==, DFC_KEY_TYPE_AES);
+            munit_assert_size(link.credential.picc_key_len, ==, DFC_AES_KEY_LENGTH);
+            munit_assert_memory_equal(
+                sizeof(AES_KEY_1), dfc_credential_key_const(&link.credential, NULL, 0), AES_KEY_1);
+            munit_assert_false(dfc_reader_session_is_authenticated(&link.session));
+            munit_assert_int(
+                authenticate(&link, DFC_CMD_AUTHENTICATE_AES, 0, AES_KEY_1, sizeof(AES_KEY_1)),
+                ==,
+                DfcReaderOk);
+            link_close(&link);
+        }
+    }
+    return MUNIT_OK;
+}
+
+static MunitResult
+    test_ev1_change_key_settings_is_enciphered(const MunitParameter params[], void* data) {
+    (void)params;
+    (void)data;
+
+    static Link link;
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    link.credential.picc_key_settings_1 = 0x0F;
+    link.credential.picc_key_settings_2 = DFC_KEY_TYPE_DES_2K3DES | 0x01;
+    link.credential.picc_key_len = 16;
+    link.credential.picc_auth_command = DFC_CMD_AUTHENTICATE_ISO;
+    link.credential.picc_has_auth_commands = true;
+    link.credential.picc_auth_commands = dfc_credential_default_auth_commands(
+        link.credential.picc_key_settings_2, link.credential.card.generation);
+    munit_assert_true(dfc_credential_keys_resize(&link.credential, NULL, 1, 16));
+    memset(dfc_credential_key(&link.credential, NULL, 0), 0, 16);
+
+    const uint8_t key[16] = {0};
+    munit_assert_int(
+        authenticate(&link, DFC_CMD_AUTHENTICATE_ISO, 0, key, sizeof(key)), ==, DfcReaderOk);
+
+    DfcCommand command;
+    DfcReaderExchange exchange;
+    const uint8_t settings[] = {0x0E};
+    munit_assert_int(
+        dfc_command_change_key_settings(&command, settings, sizeof(settings)), ==, DfcCommandOk);
+    munit_assert_int(link_send(&link, &command, DFC_COMM_ENCIPHERED, &exchange), ==, DfcReaderOk);
+    munit_assert_uint8(link.credential.picc_key_settings_1, ==, 0x0E);
+
+    link_close(&link);
+    return MUNIT_OK;
+}
 
 #if DFC_ENABLE_PROXIMITY_CHECK
 static MunitResult test_proximity_check(const MunitParameter params[], void* data) {
@@ -5252,6 +5640,24 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/change-key", test_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/change-key-type-bits-are-authenticated",
+     test_change_key_type_bits_are_authenticated,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev1-picc-master-key-type-change",
+     test_ev1_picc_master_key_type_change,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev1-change-key-settings-is-enciphered",
+     test_ev1_change_key_settings_is_enciphered,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/d40-change-key", test_d40_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
     {"/get-card-uid-uses-full-response-protection",
      test_get_card_uid_uses_full_response_protection,
@@ -5310,6 +5716,12 @@ static MunitTest tests[] = {
      MUNIT_TEST_OPTION_NONE,
      NULL},
     {"/ev2-change-key", test_ev2_change_key, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL},
+    {"/ev2-picc-master-key-type-change",
+     test_ev2_picc_master_key_type_change,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
     {"/ev2-change-key-applies-the-per-key-rules",
      test_ev2_change_key_applies_the_per_key_rules,
      NULL,

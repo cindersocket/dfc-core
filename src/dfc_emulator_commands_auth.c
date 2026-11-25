@@ -11,10 +11,7 @@
 #define d40_receive_plain            dfc_emulator_d40_receive_plain
 
 static bool authentication_family_disabled(DfcEmulator* emulator, uint8_t cipher) {
-    DfcApplication* app = dfc_emulator_current_app(emulator);
-    uint8_t disabled =
-        emulator->credential->picc_has_sm_disable ? emulator->credential->picc_sm_disable : 0;
-    if(app && app->has_sm_disable) disabled |= app->sm_disable;
+    uint8_t disabled = dfc_emulator_effective_sm_disable(emulator);
     if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) return (disabled & DFC_SM_DISABLE_D40) != 0;
     if(cipher == DFC_CMD_AUTHENTICATE_ISO || cipher == DFC_CMD_AUTHENTICATE_AES)
         return (disabled & DFC_SM_DISABLE_EV1) != 0;
