@@ -280,7 +280,7 @@ static void dfc_emulator_command_change_key_ev1(
     bool different = key_no != emulator->auth_key_no;
     size_t content = key_len + version_len + 4 + (different ? 4 : 0);
 
-    uint8_t clear[48];
+    uint8_t clear[48] = {0};
     if(encrypted_len < content || encrypted_len > sizeof(clear) || (encrypted_len % block) != 0) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
@@ -434,9 +434,8 @@ static void handle_change_key_ev2_standard(
 
     const uint8_t* encrypted = apdu + 2;
     size_t encrypted_len = apdu_len - 2;
-    uint8_t clear[48];
-    if(encrypted_len == 0 || (encrypted_len % DFC_AES_KEY_LENGTH) != 0 ||
-       encrypted_len > sizeof(clear)) {
+    uint8_t clear[2 * DFC_AES_KEY_LENGTH];
+    if(encrypted_len != sizeof(clear)) {
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
@@ -451,6 +450,7 @@ static void handle_change_key_ev2_standard(
            clear,
            &clear_len,
            false)) {
+        dfc_secure_wipe(clear, sizeof(clear));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
         return;
     }
@@ -459,14 +459,17 @@ static void handle_change_key_ev2_standard(
     bool different = key_no != emulator->ev2_authenticated_key_no;
     size_t expected_len = key_len + DFC_CHANGE_KEY_EV2_VERSION_LENGTH + (different ? 4 : 0);
     if(clear_len != expected_len) {
+        dfc_secure_wipe(clear, sizeof(clear));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
         return;
     }
 
     uint8_t new_version = clear[key_len];
-    uint8_t new_key[DFC_MAX_KEY_LEN];
+    uint8_t new_key[DFC_MAX_KEY_LEN] = {0};
     uint8_t* old_key = emulator_key(emulator, key_no);
     if(!old_key) {
+        dfc_secure_wipe(new_key, sizeof(new_key));
+        dfc_secure_wipe(clear, sizeof(clear));
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_NO_SUCH_KEY);
         return;
     }
@@ -480,6 +483,8 @@ static void handle_change_key_ev2_standard(
             (uint32_t)clear[crc_offset] | ((uint32_t)clear[crc_offset + 1] << 8) |
             ((uint32_t)clear[crc_offset + 2] << 16) | ((uint32_t)clear[crc_offset + 3] << 24);
         if(expected_new_crc != actual_new_crc) {
+            dfc_secure_wipe(new_key, sizeof(new_key));
+            dfc_secure_wipe(clear, sizeof(clear));
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
@@ -490,6 +495,8 @@ static void handle_change_key_ev2_standard(
     memcpy(old_key, new_key, key_len);
     *emulator_key_version(emulator, key_no) = new_version;
     dfc_credential_mark_dirty(emulator->credential);
+    dfc_secure_wipe(new_key, sizeof(new_key));
+    dfc_secure_wipe(clear, sizeof(clear));
 
     dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
     if(!different) {
@@ -571,8 +578,8 @@ void dfc_emulator_command_change_key(
            dfc_credential_key_length(new_ks2) == credential->picc_key_len) {
             credential->picc_key_settings_2 = new_ks2;
             credential->picc_has_auth_commands = true;
-            credential->picc_auth_commands = dfc_credential_default_auth_commands(
-                new_ks2, credential->card.generation);
+            credential->picc_auth_commands =
+                dfc_credential_default_auth_commands(new_ks2, credential->card.generation);
             // A preferred auth command recorded for the previous key type is no
             // longer in the possible set once the type changes, which the DER/
             // text model validator rejects (preferred must be a single bit inside
@@ -1076,7 +1083,6 @@ void dfc_emulator_command_set_configuration(
 #endif
         return;
     }
-#if DFC_ENABLE_EV2_SECURE_MESSAGING
     // Option 0x02: set the user ATS (what the card answers to RATS). The EV1 card
     // capture hardware_physical_ev1_8k_user_ats_boundaries.vec accepts nonempty
     // values through 20 bytes without validating the internal length byte.
@@ -1093,7 +1099,14 @@ void dfc_emulator_command_set_configuration(
         const uint8_t* ats_data = NULL;
         size_t scratch_len = 0;
         size_t clear_len = dfc_emulator_command_unwrap_write_payload(
-            emulator, buffer, buffer_len, 1, DFC_COMM_ENCIPHERED, clear, sizeof(clear), &ats_data,
+            emulator,
+            buffer,
+            buffer_len,
+            1,
+            DFC_COMM_ENCIPHERED,
+            clear,
+            sizeof(clear),
+            &ats_data,
             &scratch_len);
         if(clear_len == SIZE_MAX) {
             dfc_secure_wipe(clear, sizeof(clear));
@@ -1101,7 +1114,27 @@ void dfc_emulator_command_set_configuration(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
-        if(clear_len == 0 || clear_len > DFC_PICC_ATS_MAX || ats_data[0] == 0) {
+        if(clear_len == 0) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_bytebuf_append_byte(
+                tx_buffer,
+                emulator->credential->card.generation == DfcGenerationEv1 ?
+                    DFC_STATUS_PARAMETER_ERROR :
+                    DFC_STATUS_LENGTH_ERROR);
+            return;
+        }
+        if(clear_len > DFC_PICC_ATS_MAX) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_bytebuf_append_byte(
+                tx_buffer,
+                emulator->credential->card.generation == DfcGenerationEv1 ?
+                    DFC_STATUS_PARAMETER_ERROR :
+                    DFC_STATUS_LENGTH_ERROR);
+            return;
+        }
+        if((emulator->credential->card.generation == DfcGenerationEv1 && ats_data[0] == 0) ||
+           (emulator->credential->card.generation != DfcGenerationEv1 &&
+            (clear_len < 2 || ats_data[0] != clear_len || (ats_data[1] & 0x0F) > 8))) {
             dfc_secure_wipe(clear, sizeof(clear));
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;
@@ -1116,6 +1149,7 @@ void dfc_emulator_command_set_configuration(
         dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_OK);
         return;
     }
+#if DFC_ENABLE_EV2_SECURE_MESSAGING
     // Option 0x04: Secure Messaging Configuration (NXP Cmd.SetConfiguration,
     // supported from DESFire EV2). The multi-application enrollment terminal issues this under
     // an EV2 session, once the card is personalised to EV2/AES, to disable the
@@ -1133,15 +1167,18 @@ void dfc_emulator_command_set_configuration(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
             return;
         }
-        if(emulator->selected_application != DfcEmulatorSelectedApplicationPicc) {
-            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
-            return;
-        }
         uint8_t clear[32] = {0};
         const uint8_t* sm_data = NULL;
         size_t scratch_len = 0;
         size_t clear_len = dfc_emulator_command_unwrap_write_payload(
-            emulator, buffer, buffer_len, 1, DFC_COMM_ENCIPHERED, clear, sizeof(clear), &sm_data,
+            emulator,
+            buffer,
+            buffer_len,
+            1,
+            DFC_COMM_ENCIPHERED,
+            clear,
+            sizeof(clear),
+            &sm_data,
             &scratch_len);
         if(clear_len == SIZE_MAX) {
             dfc_secure_wipe(clear, sizeof(clear));
@@ -1149,26 +1186,44 @@ void dfc_emulator_command_set_configuration(
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_INTEGRITY_ERROR);
             return;
         }
-        if(clear_len < 1 || clear_len > 2) {
+        if(clear_len != 2) {
             dfc_secure_wipe(clear, sizeof(clear));
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_LENGTH_ERROR);
             return;
         }
-        // 1-byte payload: the mask itself. 2-byte payload: a reserved lead byte
-        // (0x00 in every observed capture) followed by the disable mask.
-        uint8_t reserved = clear_len == 2 ? sm_data[0] : 0x00;
-        uint8_t mask = sm_data[clear_len - 1];
-        const uint8_t valid_mask =
-            DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1 | DFC_SM_DISABLE_EV2_CHAINED_WRITE;
+        uint8_t reserved = sm_data[0];
+        uint8_t mask = sm_data[1];
+        const uint8_t valid_mask = DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1 |
+                                   DFC_SM_DISABLE_EV2_CHAINED_WRITE;
         if(reserved != 0x00 || (mask & (uint8_t)~valid_mask) != 0) {
             dfc_secure_wipe(clear, sizeof(clear));
             dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PARAMETER_ERROR);
             return;
         }
-        if(!emulator->credential->picc_has_sm_disable ||
-           emulator->credential->picc_sm_disable != mask) {
-            emulator->credential->picc_sm_disable = mask;
-            emulator->credential->picc_has_sm_disable = true;
+        DfcApplication* app = dfc_emulator_current_app(emulator);
+        uint8_t key_settings_2 = app ? app->key_settings_2 :
+                                       emulator->credential->picc_key_settings_2;
+        uint8_t key_type = key_settings_2 & DFC_KEY_TYPE_MASK;
+        size_t master_key_len = emulator_key_len(emulator);
+        bool ev1_disabled = (mask & DFC_SM_DISABLE_EV1) != 0;
+        bool d40_and_ev1_disabled = (mask & (DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1)) ==
+                                    (DFC_SM_DISABLE_D40 | DFC_SM_DISABLE_EV1);
+        bool supports_ev1_disable =
+            key_type == DFC_KEY_TYPE_AES ||
+            (key_type == DFC_KEY_TYPE_DES_2K3DES && master_key_len == DFC_AES_KEY_LENGTH);
+        if((d40_and_ev1_disabled && key_type != DFC_KEY_TYPE_AES) ||
+           (ev1_disabled && !supports_ev1_disable)) {
+            dfc_secure_wipe(clear, sizeof(clear));
+            dfc_bytebuf_append_byte(tx_buffer, DFC_STATUS_PERMISSION_DENIED);
+            return;
+        }
+        uint8_t* stored_mask = app ? &app->sm_disable : &emulator->credential->picc_sm_disable;
+        bool* has_stored_mask = app ? &app->has_sm_disable :
+                                      &emulator->credential->picc_has_sm_disable;
+        uint8_t combined = (uint8_t)((*has_stored_mask ? *stored_mask : 0) | mask);
+        if(!*has_stored_mask || *stored_mask != combined) {
+            *stored_mask = combined;
+            *has_stored_mask = true;
             dfc_credential_mark_dirty(emulator->credential);
         }
         dfc_secure_wipe(clear, sizeof(clear));

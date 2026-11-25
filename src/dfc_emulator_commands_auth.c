@@ -10,6 +10,17 @@
 #define emulator_num_keys            dfc_emulator_num_keys
 #define d40_receive_plain            dfc_emulator_d40_receive_plain
 
+static bool authentication_family_disabled(DfcEmulator* emulator, uint8_t cipher) {
+    DfcApplication* app = dfc_emulator_current_app(emulator);
+    uint8_t disabled =
+        emulator->credential->picc_has_sm_disable ? emulator->credential->picc_sm_disable : 0;
+    if(app && app->has_sm_disable) disabled |= app->sm_disable;
+    if(cipher == DFC_CMD_AUTHENTICATE_LEGACY) return (disabled & DFC_SM_DISABLE_D40) != 0;
+    if(cipher == DFC_CMD_AUTHENTICATE_ISO || cipher == DFC_CMD_AUTHENTICATE_AES)
+        return (disabled & DFC_SM_DISABLE_EV1) != 0;
+    return false;
+}
+
 static void
     reject_authentication_start(DfcEmulator* emulator, DfcByteBuf* tx_buffer, uint8_t status) {
     dfc_emulator_clear_active_authentication(emulator);
@@ -390,7 +401,11 @@ void dfc_emulator_command_authenticate_step1(
         // not a missing key: the two statuses say different things and the key
         // number here is perfectly valid.
         DFC_LOG_W(TAG, "Authenticate: cipher %02X not this key type's", cipher);
-        reject_authentication_start(emulator, tx_buffer, DFC_STATUS_AUTHENTICATION_ERR);
+        reject_authentication_start(
+            emulator,
+            tx_buffer,
+            authentication_family_disabled(emulator, cipher) ? DFC_STATUS_PERMISSION_DENIED :
+                                                               DFC_STATUS_AUTHENTICATION_ERR);
         return;
     }
 

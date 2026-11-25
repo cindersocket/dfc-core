@@ -2172,6 +2172,20 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev3_2k_change_key_c4_ev2.vec",
+      "sha256": "c4ec2defe46fcbf6d8ee5d4928c81ed60cf66ace8760732c950d2c8fa640fc16",
+      "size": 4664,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K standard ChangeKey under EV2",
+        "case-id": "hardware-physical-ev3-2k-change-key-c4-ev2",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 42
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_2k_create_comm_bytes.vec",
       "sha256": "d10888d33de734e4bbb10af1a0ac1beb9664bd38e352ad9abd49275d9b77cf51",
       "size": 3986,
@@ -2183,6 +2197,34 @@
         "origin": "physical-card",
         "replayable": true,
         "steps": 50
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_ev2_full_backup_commit_readback.vec",
+      "sha256": "2a2a9578504f09ae981da2ec34c0eb6b5da4f9e0f14519b260b10c7ccea53c2f",
+      "size": 3541,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K EV2 Full BackupData commit and readback",
+        "case-id": "hardware-physical-ev3-2k-ev2-full-backup-commit-readback",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 23
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_ev2_full_native_chaining.vec",
+      "sha256": "4b5b40a733a1107d78f37f8fc0bb0c0939ca17949a1a3d3b8e34bc8ca1e6197b",
+      "size": 4430,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K EV2 Full native write chaining",
+        "case-id": "hardware-physical-ev3-2k-ev2-full-native-chaining",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 36
       }
     },
     {
@@ -2270,6 +2312,90 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev3_2k_proximity_ev2_session.vec",
+      "sha256": "8ab557123c23e5efe415b11d82e69733ace1023d034c947150faf887596a6add",
+      "size": 3131,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K proximity behavior during EV2",
+        "case-id": "hardware-physical-ev3-2k-proximity-ev2-session",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 33
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_proximity_wrong_verify_random.vec",
+      "sha256": "8a5f78862dfacdab5cf60f32938b3e243404c6ded14eced45b86ed17d1c5e7fe",
+      "size": 2870,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K wrong VerifyPC responses are fresh and retire EV2",
+        "case-id": "hardware-physical-ev3-2k-proximity-wrong-verify-random",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 31
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_select_application_ev2.vec",
+      "sha256": "cb4d72b818c9af14a0d85a4c37c1fa983e6742501e57e29acc6ace37637f185a",
+      "size": 1720,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K SelectApplication during EV2",
+        "case-id": "hardware-physical-ev3-2k-select-application-ev2",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 16
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_sm_disable_application.vec",
+      "sha256": "12ffac70f96705072c8ee97fccd130cf6f8c0bf47776ea1e5fa74e6374998ca8",
+      "size": 4144,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K application secure-messaging disable",
+        "case-id": "hardware-physical-ev3-2k-sm-disable-application",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 40
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_sm_disable_ev2_chained_write.vec",
+      "sha256": "51e1c4b844ce1378851934a57b29344a4d82c52f21fcdc10d42d53b9e2ce9094",
+      "size": 2952,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K disables EV2 chained StandardData writes",
+        "case-id": "hardware-physical-ev3-2k-sm-disable-ev2-chained-write",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 20
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_sm_disable_ev2_iso_dep_write.vec",
+      "sha256": "5f131324b25ce329678ded5ccec70d42111addbe5ae3ed69da5244de0ab347c8",
+      "size": 3955,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 2K EV2 chained-write disable does not block ISO-DEP segmentation",
+        "case-id": "hardware-physical-ev3-2k-sm-disable-ev2-iso-dep-write",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": false,
+        "steps": 23
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_2k_terminal_configuration.vec",
       "sha256": "289242669ff9b8b16ae9bb6e2a736adf7103c3c8b4b69483523462f7732fd3c0",
       "size": 2250,
@@ -2281,6 +2407,20 @@
         "origin": "physical-card",
         "replayable": true,
         "steps": 37
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_2k_user_ats_boundaries.vec",
+      "sha256": "794f6e6614f47f7d0500790908572c0bbd54ac809e61cbaf4ddf75f17f83253a",
+      "size": 2235,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "physical EV3 2K user ATS boundary behavior",
+        "case-id": "hardware-physical-ev3-2k-user-ats-boundaries",
+        "source": "physical-card-pcsc",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 21
       }
     },
     {
@@ -2677,8 +2817,8 @@
     },
     {
       "path": "v6/synthetic/delegated-format-disabled.vec",
-      "sha256": "56c11c8c6c0185380e3d82fbfc3a21b1cb747cddff56f5050b03a7ef0e36388b",
-      "size": 3102,
+      "sha256": "c5b8153088ec8d84128b37032589ea91395043612aa6195fa98b5aae8e1f1ece",
+      "size": 3086,
       "role": "emulator-vector",
       "metadata": {
         "name": "delegated application format disabled",
@@ -2691,8 +2831,8 @@
     },
     {
       "path": "v6/synthetic/delegated-format-scope.vec",
-      "sha256": "0bcb7a8cce97de7d59f2d02a5ff6023b7b4adeee77470a03b0c92b1322f1b44e",
-      "size": 4441,
+      "sha256": "d9aa87daac20234d8168bc893689f45950966d458f21e9cebad7c325d7450e7a",
+      "size": 4425,
       "role": "emulator-vector",
       "metadata": {
         "name": "delegated format authentication and scope",

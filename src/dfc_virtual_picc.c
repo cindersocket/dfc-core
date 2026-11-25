@@ -14,27 +14,10 @@ static const uint8_t DfcVirtualPiccProtocol[] = {0x02, 0x02};
 // used by cards that do not carry explicit activation overrides.
 // anything recording what a credential presents records the same, so a stored
 // record and the card a reader meets cannot describe different cards.
-//
-// ATS bit rate advertisement (TA1):
-// An operational multi-application reader REJECTS a card whose ATS advertises
-// 106 kbit/s only -- it DESELECTs right after the ATS when TA1 is absent/0x00.
-// A genuine DESFire chip advertises TA1=0x77 (212/424/848) and the reader then
-// runs the full session; sniffing a genuine blank written from a credential
-// showed that reader completing SelectApplication + AuthenticateEV2First +
-// ReadData entirely at 106 kbit/s, with NO PPS to a higher rate. So advertise
-// TA1=0x77 to clear the reader's gate while the tag modulation stays 106 kbit/s
-// (all this transport can do). Keep EV1 FWI/SFGI (TB1=0x81), CID (TC1=0x02) and
-// the historical byte (0x80); TL/T0 grow by one for the added TA1.
-// Fallback: if a given reader instead PPSes to a rate the tag cannot enter on
-// seeing TA1, build with DFC_PICC_ATS_ADVERTISE_TA1=0 for the old 106-only ATS.
-#ifndef DFC_PICC_ATS_ADVERTISE_TA1
-#define DFC_PICC_ATS_ADVERTISE_TA1 1
-#endif
-#if DFC_PICC_ATS_ADVERTISE_TA1
-static const uint8_t DfcVirtualPiccAts[] = {0x06, 0x75, 0x77, 0x81, 0x02, 0x80};
-#else
+// The emulator transport supports 106 kbit/s only, so its default ATS must not
+// advertise rates it cannot enter. Credentials can still carry a measured ATS
+// override for transports that support rate negotiation.
 static const uint8_t DfcVirtualPiccAts[] = {0x05, 0x65, 0x81, 0x02, 0x80};
-#endif
 static const uint8_t DfcVirtualPiccAtqa[] = {0x44, 0x03};
 static const uint8_t DfcVirtualPiccRandomIdAtqa[] = {0x04, 0x03};
 static const uint8_t DfcVirtualPiccRfDetail[] = {0x01, 0x51, 0x57};
@@ -2167,6 +2150,35 @@ static DfcVirtualPiccStatus handle_native_exchange_inner(
     session->pending_response_offset = 0;
     session->pending_response_prefix_len = 0;
 #if DFC_ENABLE_EV2_SECURE_MESSAGING
+    {
+        DfcByteBuf* rejection_tx = session->emulator->tx_buffer;
+        if(rejection_tx) {
+            dfc_bytebuf_reset(rejection_tx);
+            if(command_len > 0 &&
+               dfc_emulator_reject_after_proximity_failure(
+                   session->emulator, command[0], rejection_tx)) {
+                const uint8_t* rejected = dfc_bytebuf_get_data(rejection_tx);
+                size_t rejected_len = dfc_bytebuf_get_size_bytes(rejection_tx);
+                status = (iso_wrapped ?
+                              dfc_wrap_native_response_as_iso7816(
+                                  rejected,
+                                  rejected_len,
+                                  0,
+                                  response,
+                                  response_capacity,
+                                  response_len) :
+                              write_response(
+                                  rejected,
+                                  rejected_len,
+                                  response,
+                                  response_capacity,
+                                  response_len)) ?
+                             DfcVirtualPiccStatusOk :
+                             DfcVirtualPiccStatusBufferTooSmall;
+                goto cleanup;
+            }
+        }
+    }
     // Join a reader->card native ADDITIONAL_FRAME command chain (a large
     // enciphered WriteData/WriteRecord/UpdateRecord under an EV2 session) before
     // the envelope verifies its MAC and decrypts over the whole secured command.

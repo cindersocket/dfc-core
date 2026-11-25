@@ -219,6 +219,11 @@ typedef struct {
     bool delegated_creation_pending;
     uint8_t delegated_creation_header[DFC_DELEGATED_CREATE_MAX_HEADER_LENGTH];
 #endif
+#if DFC_ENABLE_PROXIMITY_CHECK
+    // Keep the activation-scoped failure latch in existing tail padding so
+    // adding it does not move any previously published structure field.
+    bool proximity_failed;
+#endif
 } DfcEmulator;
 
 #if DFC_ENABLE_ISO7816_AUTH
@@ -276,6 +281,10 @@ bool dfc_emulator_handle_command_secured(
     size_t buffer_len,
     DfcByteBuf* tx_buffer,
     void* context);
+bool dfc_emulator_reject_after_proximity_failure(
+    DfcEmulator* emulator,
+    uint8_t command,
+    DfcByteBuf* tx_buffer);
 #endif
 
 #endif // DFC_ENABLE_EMULATOR

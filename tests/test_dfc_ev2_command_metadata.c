@@ -65,10 +65,16 @@ static DfcEv2CommandMetadata expected_metadata(uint8_t command) {
         break;
     case DFC_CMD_SELECT_APPLICATION:
         // SelectApplication is always CommMode.Plain and terminates any active
-        // authentication, so the emulator must not verify an EV2 command MAC on
-        // it (the reader appends none). Mirrors dfc_ev2_command_metadata().
-        expected.flags |= DfcEv2CommandEmulatorBypass;
+        // authentication. Neither side applies an EV2 command MAC.
+        expected.flags |= DfcEv2CommandReaderBypass | DfcEv2CommandEmulatorBypass;
         break;
+#if DFC_ENABLE_PROXIMITY_CHECK
+    case DFC_CMD_PREPARE_PROXIMITY_CHECK:
+    case DFC_CMD_PROXIMITY_CHECK:
+    case DFC_CMD_VERIFY_PROXIMITY_CHECK:
+        expected.flags |= DfcEv2CommandReaderBypass | DfcEv2CommandEmulatorBypass;
+        break;
+#endif
     case DFC_CMD_CREATE_DELEGATED_APPLICATION:
         expected.flags |= DfcEv2CommandReaderBypass;
 #if DFC_ENABLE_DELEGATED_APPLICATIONS

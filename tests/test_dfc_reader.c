@@ -659,6 +659,52 @@ static MunitResult test_random_failures_are_atomic(const MunitParameter params[]
     munit_assert_size(proximity_response_len, ==, 0);
     assert_emulator_unchanged(&before_proximity, &link);
     dfc_host_clear_random_buffer();
+
+    // A failed draw for the opaque bad-verification response must not consume
+    // the prepared transcript or expose a partial response.
+    uint8_t proximity_random[DFC_PROXIMITY_RANDOM_LENGTH] = {0};
+    dfc_host_set_random_buffer(proximity_random, sizeof(proximity_random));
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            proximity,
+            sizeof(proximity),
+            proximity_response,
+            sizeof(proximity_response),
+            &proximity_response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    const uint8_t proximity_round[] = {
+        0x90, DFC_CMD_PROXIMITY_CHECK, 0, 0, 9, 8, 0, 1, 2, 3, 4, 5, 6, 7, 0};
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            proximity_round,
+            sizeof(proximity_round),
+            proximity_response,
+            sizeof(proximity_response),
+            &proximity_response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    DfcEmulator before_bad_verify = *link.picc->emulator;
+    dfc_host_set_random_buffer(short_random, DFC_WIRE_MAC_LENGTH - 1);
+    const uint8_t bad_verify[] = {
+        0x90, DFC_CMD_VERIFY_PROXIMITY_CHECK, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    proximity_response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link.picc,
+            bad_verify,
+            sizeof(bad_verify),
+            proximity_response,
+            sizeof(proximity_response),
+            &proximity_response_len),
+        ==,
+        DfcVirtualPiccStatusProtocolError);
+    munit_assert_size(proximity_response_len, ==, 0);
+    munit_assert_true(dfc_random_failure_is_retryable());
+    assert_emulator_unchanged(&before_bad_verify, &link);
+    dfc_host_clear_random_buffer();
     link_close(&link);
 
     // Exercise the same failure through ISO-DEP while EV1 secure messaging is
@@ -1828,6 +1874,140 @@ static MunitResult test_ev2_chained_enciphered_write(const MunitParameter params
     // The specific hardware failure is an INTEGRITY_ERROR on the C4's command MAC.
     munit_assert_uint8(ck_resp[ck_resp_len - 1], !=, DFC_STATUS_INTEGRITY_ERROR);
 
+    link_close(&link);
+    return MUNIT_OK;
+}
+
+static uint8_t send_ev2_chained_write_first_frame(
+    Link* link,
+    uint8_t file_number,
+    uint32_t length) {
+    uint8_t apdu[48] = {
+        0x90,
+        DFC_CMD_WRITE_DATA,
+        0x00,
+        0x00,
+        32,
+        file_number,
+        0x00,
+        0x00,
+        0x00,
+        (uint8_t)length,
+        (uint8_t)(length >> 8),
+        (uint8_t)(length >> 16),
+    };
+    size_t apdu_len = 5 + apdu[4];
+    apdu[apdu_len++] = 0x00;
+    uint8_t response[64];
+    size_t response_len = 0;
+    munit_assert_int(
+        dfc_virtual_picc_iso_dep_exchange(
+            link->picc, apdu, apdu_len, response, sizeof(response), &response_len),
+        ==,
+        DfcVirtualPiccStatusOk);
+    munit_assert_size(response_len, >=, 2);
+    munit_assert_uint8(response[response_len - 2], ==, 0x91);
+    return response[response_len - 1];
+}
+
+static MunitResult test_ev2_chained_standard_write_disable(
+    const MunitParameter params[],
+    void* data) {
+    (void)params;
+    (void)data;
+    static Link link;
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    add_data_file(&link.credential, 0, 9, DFC_COMM_ENCIPHERED, 250);
+    add_data_file(&link.credential, 0, 10, DFC_COMM_ENCIPHERED, 250);
+    add_data_file(&link.credential, 0, 11, DFC_COMM_PLAIN, 250);
+    DfcFile* backup = dfc_credential_find_file_in_app(&link.credential, 0, 10);
+    munit_assert_not_null(backup);
+    backup->type = DFC_FILE_TYPE_BACKUP_DATA;
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+    DfcApplication* app = &link.credential.apps[link.picc->emulator->selected_app_index];
+    const uint8_t disable_chained_write[] = {0x00, DFC_SM_DISABLE_EV2_CHAINED_WRITE};
+    DfcCommand config;
+    DfcReaderExchange config_exchange;
+    munit_assert_int(
+        dfc_command_set_configuration(
+            &config, 0x04, disable_chained_write, sizeof(disable_chained_write)),
+        ==,
+        DfcCommandOk);
+    munit_assert_int(
+        link_send(&link, &config, DFC_COMM_ENCIPHERED, &config_exchange), ==, DfcReaderOk);
+    munit_assert_true(app->has_sm_disable);
+    munit_assert_uint8(app->sm_disable, ==, DFC_SM_DISABLE_EV2_CHAINED_WRITE);
+    const uint8_t clear_disable_mask[] = {0x00, 0x00};
+    munit_assert_int(
+        dfc_command_set_configuration(&config, 0x04, clear_disable_mask, sizeof(clear_disable_mask)),
+        ==,
+        DfcCommandOk);
+    munit_assert_int(
+        link_send(&link, &config, DFC_COMM_ENCIPHERED, &config_exchange), ==, DfcReaderOk);
+    munit_assert_uint8(app->sm_disable, ==, DFC_SM_DISABLE_EV2_CHAINED_WRITE);
+
+    // Exercise the persisted setting in a new secure session, rather than
+    // relying on the session that installed it.
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+
+    uint8_t short_payload[16];
+    for(size_t i = 0; i < sizeof(short_payload); i++) short_payload[i] = (uint8_t)(0xA0 + i);
+    DfcReaderExchange exchange;
+    munit_assert_int(
+        dfc_reader_write_data_begin(
+            &exchange,
+            &link.session,
+            link.framing,
+            9,
+            0,
+            short_payload,
+            sizeof(short_payload),
+            DFC_COMM_ENCIPHERED),
+        ==,
+        DfcReaderOk);
+    munit_assert_int(link_run(&link, &exchange), ==, DfcReaderOk);
+    DfcFile* standard = dfc_credential_find_file_in_app(&link.credential, 0, 9);
+    munit_assert_not_null(standard);
+    munit_assert_memory_equal(
+        sizeof(short_payload), dfc_file_data(&link.credential, standard), short_payload);
+
+    // The setting is deliberately narrow: BackupData and Plain StandardData
+    // still start a chain, while a protected StandardData chain is refused.
+    munit_assert_uint8(
+        send_ev2_chained_write_first_frame(&link, 10, 200),
+        ==,
+        DFC_CMD_ADDITIONAL_FRAME);
+    dfc_emulator_discard_command_chain(link.picc->emulator);
+    munit_assert_uint8(
+        send_ev2_chained_write_first_frame(&link, 11, 200),
+        ==,
+        DFC_CMD_ADDITIONAL_FRAME);
+    dfc_emulator_discard_command_chain(link.picc->emulator);
+    munit_assert_uint8(
+        send_ev2_chained_write_first_frame(&link, 9, 200),
+        ==,
+        DFC_STATUS_PERMISSION_DENIED);
+    munit_assert_false(link.picc->emulator->command_chain_active);
+    munit_assert_false(link.picc->emulator->ev2_session_active);
+    link_close(&link);
+
+    // PICC-scoped policy still applies while an application is selected and
+    // covers MAC mode as well as Full mode.
+    link_open(&link, DfcGenerationEv3, DfcReaderFramingIso7816);
+    add_data_file(&link.credential, 0, 9, DFC_COMM_MAC, 250);
+    link.credential.picc_has_sm_disable = true;
+    link.credential.picc_sm_disable = DFC_SM_DISABLE_EV2_CHAINED_WRITE;
+    select_app(&link, AID_AES);
+    munit_assert_int(authenticate_ev2(&link, true, 0, AES_KEY_0), ==, DfcReaderOk);
+    munit_assert_uint8(
+        send_ev2_chained_write_first_frame(&link, 9, 200),
+        ==,
+        DFC_STATUS_PERMISSION_DENIED);
+    munit_assert_false(link.picc->emulator->command_chain_active);
+    munit_assert_false(link.picc->emulator->ev2_session_active);
     link_close(&link);
     return MUNIT_OK;
 }
@@ -5041,6 +5221,12 @@ static MunitTest tests[] = {
      NULL},
     {"/ev2-chained-enciphered-write",
      test_ev2_chained_enciphered_write,
+     NULL,
+     NULL,
+     MUNIT_TEST_OPTION_NONE,
+     NULL},
+    {"/ev2-chained-standard-write-disable",
+     test_ev2_chained_standard_write_disable,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

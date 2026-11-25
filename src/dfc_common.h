@@ -157,7 +157,8 @@ extern const uint8_t DFC_ISO_AID[7];
 
 #define DFC_STATUS_OK                     0x00
 #define DFC_STATUS_NO_CHANGES             0x0C
-#define DFC_STATUS_PROXIMITY_KEY_DISABLED 0x0B
+#define DFC_STATUS_UNEXPECTED_COMMAND     0x0B
+#define DFC_STATUS_PROXIMITY_KEY_DISABLED DFC_STATUS_UNEXPECTED_COMMAND
 #define DFC_STATUS_OUT_OF_EEPROM          0x0E
 #define DFC_STATUS_ILLEGAL_COMMAND_CODE   0x1C // command code not supported/recognized
 #define DFC_STATUS_INTEGRITY_ERROR        0x1E

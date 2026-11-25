@@ -656,7 +656,7 @@ static MunitResult
     expect_plain_special_response(
         session, oracle, prepare, sizeof(prepare), published, sizeof(published));
     const uint8_t malformed[] = {0x90, DFC_CMD_PROXIMITY_CHECK, 0, 0, 1, 0, 0};
-    expect_plain_status(session, malformed, sizeof(malformed), DFC_STATUS_LENGTH_ERROR);
+    expect_plain_status(session, malformed, sizeof(malformed), DFC_STATUS_NO_CHANGES);
     const uint8_t get_card_uid[] = {0x90, DFC_CMD_GET_CARD_UID, 0, 0, 0};
     expect_plain_status(
         session, get_card_uid, sizeof(get_card_uid), DFC_STATUS_AUTHENTICATION_ERR);
