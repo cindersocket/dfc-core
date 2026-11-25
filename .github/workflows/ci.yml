@@ -72,6 +72,8 @@ jobs:
         run: python3 tests/test_rust_target_init.py
       - name: Test host-suite Makefile contract
         run: python3 tests/test_makefile_contract.py
+      - name: Test native coverage evidence split
+        run: python3 tests/test_native_coverage.py
       - name: Test formatting tool isolation
         run: python3 tests/test_format_tooling.py
       - name: Test generated FFI contract
@@ -174,6 +176,25 @@ jobs:
           name: credential-fuzz-artifacts
           path: build-fuzz/artifacts
           if-no-files-found: ignore
+
+  native-coverage:
+    name: Native emulator coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the coverage toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm libmbedtls-dev
+      - name: Measure unit, synthetic, and physical-vector coverage
+        run: ./scripts/run-native-coverage.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-emulator-coverage
+          path: build-native-coverage
+          if-no-files-found: error
 
   cmake-configuration:
     name: CMake build configuration
