@@ -1,0 +1,52 @@
+# PROVENANCE: measured from genuine DESFire EV3 4K UID 047CCFF2CF1890 over Proxmark3.
+# Capture journal SHA-256: bad9d2c3bbe143636e6825ae92bfbb61d6b9d8573c517b53608dcf966429d6b7.
+# The temporary application was deleted, then the card was formatted and originality-checked.
+name: genuine EV3 4K ISO SELECT extended length boundaries
+case-id: hardware-physical-ev3-4k-iso-select-extended-boundaries
+origin: physical-card
+feature-version: 6
+source: physical-card-proxmark3
+replayable: true
+requires: ev3,auth-aes
+uid: 047CCFF2CF1890
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+picc-hardware-version: 04010133001805
+picc-software-version: 04010103001805
+
+inject-random B16F9B2B9A5F7B802049018E20425DB5
+exchange native-apdu 90AA0000010000 => 5B4CA7931488D62FAF5429C140258A9591AF
+exchange native-apdu 90AF0000206A5610233BF9B34C8438D4473CF4AE9541C99EEAC24D0FF0BEB19CA66783156600 => 7DAE54C951DEFF79B9A94BE0A9FE345B9100
+exchange native-apdu 90CA00000E00E0EE0FA100E0D276000085010100 => DB97DA55F7C5E5409100
+field-off
+
+# Exact extended Lc, no Le.
+exchange iso-apdu 00A4040C000007D2760000850101 => 9000
+field-off
+
+# Declared Lc is seven, but only six data bytes follow.
+exchange iso-apdu 00A4040C000007D27600008501 => 6700
+field-off
+
+# Exact data plus only one byte of an extended Le.
+exchange iso-apdu 00A4040C000007D276000085010100 => 6700
+field-off
+
+# Legal two-byte extended Le encodings.
+exchange iso-apdu 00A4040C000007D27600008501010000 => 9000
+field-off
+exchange iso-apdu 00A4040C000007D27600008501010001 => 9000
+field-off
+exchange iso-apdu 00A4040C000007D27600008501010100 => 9000
+field-off
+
+# Short Lc with one-byte Le encodings.
+exchange iso-apdu 00A4040C07D276000085010100 => 9000
+field-off
+exchange iso-apdu 00A4040C07D276000085010101 => 9000
+field-off

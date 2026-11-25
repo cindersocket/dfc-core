@@ -1,0 +1,61 @@
+# PROVENANCE: measured from genuine DESFire EV3 4K UID 047CCFF2CF1890 over Proxmark3.
+# Capture journal SHA-256: 3b8bc67ee39c2219050b28d916217609526ca55ac668a5afe7a5ca470fb23593.
+# The temporary application was deleted, then the card was formatted and originality-checked.
+name: genuine EV3 4K EEE000 preselection lifecycle
+case-id: hardware-physical-ev3-4k-eee000-preselection-lifecycle
+origin: physical-card
+feature-version: 6
+source: physical-card-proxmark3
+replayable: true
+requires: ev3,auth-aes
+uid: 047CCFF2CF1890
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 81
+picc-auth-mode: AES
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+picc-hardware-version: 04010133001805
+picc-software-version: 04010103001805
+
+inject-random 041AF6540627D2C9CDBC0B3BAB957CE2
+exchange native-apdu 90AA0000010000 => 34FCCA13FBBB3289708176077E221A3C91AF
+exchange native-apdu 90AF0000200A831DEA32448FA847D9120F0851AAE89BDBAA16AAE7672EAB3D9667DEF344FA00 => 10B2675AAA5E9BE073B60A694500F29F9100
+exchange native-apdu 90CA00000E00E0EE0FA100E0D276000085010100 => 170EB84445C788689100
+field-off
+
+exchange native-apdu 905A00000300E0EE00 => 9100
+inject-random 963FB7CD5A95B08A03D68E318211C83D
+exchange native-apdu 90AA0000010000 => 6080F81C65DEDDC5A4C026D4E02AD2F191AF
+exchange native-apdu 90AF000020CFF943DECC45E595D0B44F7E7B377470B91B87D07BB820E59EFB53C9D579620500 => 482343BFAF514FFFECD43FC089E7F3C59100
+exchange native-apdu 90CD0000090001E000E0EE2C010000 => 4EC34608067A62FD9100
+field-off
+
+# EEE000 is the native application immediately after a new activation.
+exchange native-apdu 906F000000 => 009100
+exchange native-apdu 905A00000300000000 => 9100
+exchange native-apdu 906A000000 => 00E0EE9100
+field-off
+
+# Authentication after another new activation targets EEE000. A PICC-only
+# operation is refused even though application key 0 and PICC key 0 are equal.
+inject-random 010084C835C0942466743CE93BF023C4
+exchange native-apdu 90AA0000010000 => F96DDC42736CD62962E11E209550A5F291AF
+exchange native-apdu 90AF00002018767CE5564D02B393CD52B64A1172E3AF15EE9A22E3CDB7C062058C782C0AF800 => 8E445E25C4E6F6DDE03D0B3DDB59DAE99100
+exchange native-apdu 90FC000000 => 919D
+field-off
+
+# The same automatically selected application can authenticate and delete
+# itself. A later activation is back at PICC level, where formatting succeeds.
+inject-random 90532D07FB644E9A47867E0A308406CB
+exchange native-apdu 90AA0000010000 => 3A0E0C00C137997F93ED8ACF3829FC2391AF
+exchange native-apdu 90AF000020E4D7B7D7C58F7584FEB88DF34F0B7EA407FB5412DD4AA93E396257A83C19507100 => 6937A6E63CEE550F00DCD7580BFCA96D9100
+exchange native-apdu 90DA00000300E0EE00 => 9100
+field-off
+
+inject-random 5214AFF02D16D275280784BC2106B3FD
+exchange native-apdu 90AA0000010000 => 6948B45C39E672B95763B8CBD3BE292D91AF
+exchange native-apdu 90AF000020510E3C41963CADAE3EA6DB518C640EB22FCD909D1F8CF694E8A91B29F4E3C23300 => A5D421F04308F5F8614331CE29B228AB9100
+exchange native-apdu 90FC000000 => 9578BD31AEDBD8E79100
+field-off

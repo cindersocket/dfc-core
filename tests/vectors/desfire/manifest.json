@@ -2564,6 +2564,20 @@
       }
     },
     {
+      "path": "v6/hardware/hardware_physical_ev3_4k_eee000_preselection_lifecycle.vec",
+      "sha256": "f9c7c56fc2dce110bb4e2344c715efe8f8ed4a57aa2299917d24a6cfcbd31855",
+      "size": 3003,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 4K EEE000 preselection lifecycle",
+        "case-id": "hardware-physical-ev3-4k-eee000-preselection-lifecycle",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 30
+      }
+    },
+    {
       "path": "v6/hardware/hardware_physical_ev3_4k_ev2_first_nonfirst.vec",
       "sha256": "d8f58609127b462a3c31d63c1b51fb5408b83724e1390af265460ea3d2dc8be7",
       "size": 1079,
@@ -2575,6 +2589,20 @@
         "origin": "physical-card",
         "replayable": true,
         "steps": 10
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_ev2_lifecycle.vec",
+      "sha256": "fd82a9ea24d5ef9cece0f58e77778d609ce399ea468b51f84c56aa36df43fadd",
+      "size": 3172,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 4K EV2 destructive lifecycle",
+        "case-id": "hardware-physical-ev3-4k-ev2-lifecycle",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 31
       }
     },
     {
@@ -2729,6 +2757,48 @@
         "origin": "physical-card",
         "replayable": true,
         "steps": 8
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_select_extended_boundaries.vec",
+      "sha256": "2f068f89853d9bab2ddd5392047c2e7665f9e1391049f5eab58fa7518ddb4fe8",
+      "size": 1879,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 4K ISO SELECT extended length boundaries",
+        "case-id": "hardware-physical-ev3-4k-iso-select-extended-boundaries",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 21
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_iso_selection_extended_read.vec",
+      "sha256": "1fa80047e8ce62d6ba9c85d009a5d1ac38d016e78a6041d767cbc4b0bf0fe6f2",
+      "size": 3147,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 4K ISO selection and extended read matrix",
+        "case-id": "hardware-physical-ev3-4k-iso-selection-extended-read",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 22
+      }
+    },
+    {
+      "path": "v6/hardware/hardware_physical_ev3_4k_lifecycle_success.vec",
+      "sha256": "a0e71142e89a34e76ea579a8efec89dffff0646d9c01c5a0789b9fa439c9ce53",
+      "size": 4026,
+      "role": "emulator-vector",
+      "metadata": {
+        "name": "genuine EV3 4K application file deletion and format lifecycle",
+        "case-id": "hardware-physical-ev3-4k-lifecycle-success",
+        "source": "physical-card-proxmark3",
+        "origin": "physical-card",
+        "replayable": true,
+        "steps": 54
       }
     },
     {
