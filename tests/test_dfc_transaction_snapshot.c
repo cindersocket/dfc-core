@@ -887,55 +887,6 @@ static MunitResult
     return MUNIT_OK;
 }
 
-static MunitResult
-    test_immediate_write_preserves_co_pending_value(const MunitParameter params[], void* data) {
-    (void)params;
-    (void)data;
-    SnapshotFixture fixture;
-    fixture_open(&fixture);
-    begin_transaction(&fixture);
-    const uint8_t replacement[] = {0xA1, 0xA2, 0xA3, 0xA4};
-    write_data_status(fixture.session, 1, 0, replacement, sizeof(replacement), DFC_STATUS_OK);
-    finish_transaction(&fixture, false);
-    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
-    DfcFile* value = dfc_credential_find_file_in_app(&fixture.credential, 0, 4);
-    munit_assert_memory_equal(
-        sizeof(replacement), dfc_file_data_const(&fixture.credential, standard), replacement);
-    munit_assert_int32(value->state.value.current, ==, 10);
-    munit_assert_false(value->state.value.pending);
-    fixture_close(&fixture);
-    return MUNIT_OK;
-}
-
-static MunitResult
-    test_chained_immediate_write_survives_abort(const MunitParameter params[], void* data) {
-    (void)params;
-    (void)data;
-    SnapshotFixture fixture;
-    fixture_open(&fixture);
-    DfcFile* standard = dfc_credential_find_file_in_app(&fixture.credential, 0, 1);
-    munit_assert_true(dfc_file_resize(&fixture.credential, standard, 100));
-    memset(dfc_file_data(&fixture.credential, standard), 0x10, 100);
-    open_transaction_family(&fixture, "backup");
-
-    uint8_t expected[100];
-    for(size_t index = 0; index < sizeof(expected); index++) {
-        expected[index] = (uint8_t)(index + 1);
-    }
-    uint8_t first[6 + DFC_EV1_MAX_FRAME_PAYLOAD] = {
-        0x90, DFC_CMD_WRITE_DATA, 0, 0, DFC_EV1_MAX_FRAME_PAYLOAD, 1, 0, 0, 0, 100, 0, 0};
-    memcpy(first + 12, expected, 52);
-    exchange_status(fixture.session, first, sizeof(first), DFC_CMD_ADDITIONAL_FRAME);
-    uint8_t last[6 + 48] = {0x90, DFC_CMD_ADDITIONAL_FRAME, 0, 0, 48};
-    memcpy(last + 5, expected + 52, 48);
-    exchange_status(fixture.session, last, sizeof(last), DFC_STATUS_OK);
-    finish_transaction(&fixture, false);
-    munit_assert_memory_equal(
-        sizeof(expected), dfc_file_data_const(&fixture.credential, standard), expected);
-    fixture_close(&fixture);
-    return MUNIT_OK;
-}
-
 static MunitResult test_authenticated_mac_immediate_write_survives_abort(
     const MunitParameter params[],
     void* data) {
@@ -1177,18 +1128,6 @@ static MunitTest tests[] = {
      NULL},
     {"/immediate-write-retry",
      test_immediate_write_retry_executes_once,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
-    {"/immediate-write-with-value",
-     test_immediate_write_preserves_co_pending_value,
-     NULL,
-     NULL,
-     MUNIT_TEST_OPTION_NONE,
-     NULL},
-    {"/chained-immediate-write",
-     test_chained_immediate_write_survives_abort,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

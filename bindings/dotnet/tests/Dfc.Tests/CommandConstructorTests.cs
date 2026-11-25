@@ -10,6 +10,39 @@ using NUnit.Framework;
 public sealed class CommandConstructorTests
 {
     [Test]
+    public void IsoAppendRecordAndResponseHelpersPreserveTwoByteStatus()
+    {
+        foreach (var line in File.ReadLines(Path.Combine(TestContext.CurrentContext.TestDirectory, "iso7816-helper-vectors.txt")))
+        {
+            if (line.Length == 0 || line.StartsWith('#'))
+            {
+                continue;
+            }
+            var fields = line.Split('|');
+            if (fields[0] == "append-record")
+            {
+                Assert.That(
+                    DfcIso7816.BuildAppendRecord(
+                        byte.Parse(fields[2], CultureInfo.InvariantCulture),
+                        Convert.FromHexString(fields[1])
+                    ),
+                    Is.EqualTo(Convert.FromHexString(fields[3]))
+                );
+            }
+            else
+            {
+                Assert.That(fields[0], Is.EqualTo("parse-response"));
+                var parsed = DfcIso7816.ParseResponse(Convert.FromHexString(fields[1]));
+                Assert.That(parsed.Data.ToArray(), Is.EqualTo(Convert.FromHexString(fields[2])));
+                Assert.That(
+                    parsed.StatusWord,
+                    Is.EqualTo(ushort.Parse(fields[3], NumberStyles.HexNumber, CultureInfo.InvariantCulture))
+                );
+            }
+        }
+    }
+
+    [Test]
     public void ConstructorsMatchSharedVectors()
     {
         foreach (var line in File.ReadLines(Path.Combine(TestContext.CurrentContext.TestDirectory, "command-constructor-vectors.txt")))
@@ -89,10 +122,24 @@ public sealed class CommandConstructorTests
             "clear-record-file" => DfcCommand.ClearRecordFile(number()),
             "get-value" => DfcCommand.GetValue(number()),
             "read-data" => ReadData(arguments),
-            "write-data" => WriteRange(arguments, DfcCommand.WriteData),
+            "read-data-iso-chaining" => ReadData(arguments, true),
+            "write-data" => WriteRange(
+                arguments,
+                (file, offset, data) => DfcCommand.WriteData(file, offset, data)
+            ),
+            "write-data-iso-chaining" => WriteRange(
+                arguments,
+                (file, offset, data) => DfcCommand.WriteData(file, offset, data, true)
+            ),
             "read-records" => ReadRecords(arguments),
+            "read-records-iso-chaining" => ReadRecords(arguments, true),
             "write-record" => WriteRange(arguments, (file, offset, data) => DfcCommand.WriteRecord(file, offset, data)),
+            "write-record-iso-chaining" => WriteRange(
+                arguments,
+                (file, offset, data) => DfcCommand.WriteRecord(file, offset, data, true)
+            ),
             "update-record" => UpdateRecord(arguments),
+            "update-record-iso-chaining" => UpdateRecord(arguments, true),
             "credit" => ValueOperation(arguments, DfcCommand.Credit),
             "debit" => ValueOperation(arguments, DfcCommand.Debit),
             "limited-credit" => ValueOperation(arguments, DfcCommand.LimitedCredit),
@@ -104,10 +151,10 @@ public sealed class CommandConstructorTests
         };
     }
 
-    private static DfcCommand ReadData(string arguments)
+    private static DfcCommand ReadData(string arguments, bool isoChaining = false)
     {
         var fields = Array.ConvertAll(arguments.Split(','), value => uint.Parse(value, CultureInfo.InvariantCulture));
-        return Fixtures.Ok(DfcCommand.ReadData((byte)fields[0], fields[1], fields[2]));
+        return Fixtures.Ok(DfcCommand.ReadData((byte)fields[0], fields[1], fields[2], isoChaining));
     }
 
     private delegate CSharpFunctionalExtensions.Result<DfcCommand, DfcProtocolError> RangeEncoder(
@@ -128,13 +175,15 @@ public sealed class CommandConstructorTests
         );
     }
 
-    private static DfcCommand ReadRecords(string arguments)
+    private static DfcCommand ReadRecords(string arguments, bool isoChaining = false)
     {
         var fields = Array.ConvertAll(arguments.Split(','), value => uint.Parse(value, CultureInfo.InvariantCulture));
-        return Fixtures.Ok(DfcCommand.ReadRecords((byte)fields[0], fields[1], fields[2]));
+        return Fixtures.Ok(
+            DfcCommand.ReadRecords((byte)fields[0], fields[1], fields[2], isoChaining)
+        );
     }
 
-    private static DfcCommand UpdateRecord(string arguments)
+    private static DfcCommand UpdateRecord(string arguments, bool isoChaining = false)
     {
         var fields = arguments.Split(',');
         return Fixtures.Ok(
@@ -142,7 +191,8 @@ public sealed class CommandConstructorTests
                 byte.Parse(fields[0], CultureInfo.InvariantCulture),
                 uint.Parse(fields[1], CultureInfo.InvariantCulture),
                 uint.Parse(fields[2], CultureInfo.InvariantCulture),
-                Convert.FromHexString(fields[3])
+                Convert.FromHexString(fields[3]),
+                isoChaining
             )
         );
     }

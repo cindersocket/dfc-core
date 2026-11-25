@@ -2,7 +2,7 @@
 
 DfcEv2CommandMetadata dfc_ev2_command_metadata(uint8_t command) {
     DfcEv2CommandMetadata metadata = {.encrypted_header_length = DfcEv2NoEncryptedHeader};
-    uint8_t base = dfc_record_command_base(command);
+    uint8_t base = dfc_file_command_base(command);
 
     switch(base) {
     case DFC_CMD_READ_DATA:
@@ -68,9 +68,8 @@ DfcEv2CommandMetadata dfc_ev2_command_metadata(uint8_t command) {
     case DFC_CMD_SELECT_APPLICATION:
         // SelectApplication is always sent in CommMode.Plain and terminates any
         // active authentication; the emulator must not try to verify an EV2
-        // command MAC on it (the reader appends none). The handler resets the
-        // session. [ported fix #6]
-        metadata.flags |= DfcEv2CommandEmulatorBypass;
+        // command MAC on it. The handler resets the session.
+        metadata.flags |= DfcEv2CommandReaderBypass | DfcEv2CommandEmulatorBypass;
         break;
     case DFC_CMD_CREATE_DELEGATED_APPLICATION:
         metadata.flags |= DfcEv2CommandReaderBypass;

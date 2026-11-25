@@ -4,7 +4,6 @@ case-id: random-failure-preserves-activation
 origin: synthetic
 feature-version: 6
 source: generated activation failure-injection regression
-requires: ev3
 uid: 04223344556677
 picc-generation: EV3
 picc-storage: 4096

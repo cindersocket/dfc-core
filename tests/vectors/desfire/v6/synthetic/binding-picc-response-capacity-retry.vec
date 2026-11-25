@@ -5,7 +5,6 @@ origin: synthetic
 feature-version: 6
 source: generated retained-response retry regression
 issues: https://github.com/cindersocket/dfc-core/issues/107
-requires: ev3
 uid: 04112233445566
 picc-generation: EV3
 picc-storage: 4096

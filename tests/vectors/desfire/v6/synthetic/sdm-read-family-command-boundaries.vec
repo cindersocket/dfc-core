@@ -1,0 +1,62 @@
+# PROVENANCE: Synthetic lifecycle regression derived from the genuine EV3 SDM native/ISO setup.
+name: SDM read families and logical command boundaries
+case-id: ev3-sdm-read-family-command-boundaries
+origin: synthetic
+feature-version: 6
+source: derived from hardware-genuine-ev3-sdm-picc-native-iso setup and SDM continuation captures
+requires: ev3,sdm
+uid: 0483B4F2CF1890
+picc-generation: EV3
+picc-storage: 4096
+
+scan
+exchange native-apdu 90CA00000FE8E8E80FB1043812D276000085010400 => 9100
+exchange native-apdu 905A000003E8E8E800 => 9100
+exchange native-apdu 90CD00000902030140EEEE80000000 => 9100
+exchange native-apdu 905F00000A0240EEEE41FEEF00000000 => 9100
+exchange native-apdu 90CD00000903040100EEEE04000000 => 9100
+exchange native-apdu 90C100000C04050100EEEE02000002000000 => 9100
+exchange native-apdu 903B000008040000000100005A00 => 9100
+exchange native-apdu 90C7000000 => 9100
+
+# Slices in one native family reuse the rendered SDM image.
+exchange native-apdu 90BD0000070200000003000000 => 3030309100
+exchange native-apdu 90BD0000070203000003000000 => 3030319100
+exchange native-apdu 90F60000010200 => 01000000009100
+
+# Switching from BD to alternate AD starts a fresh logical read.
+exchange native-apdu 90AD0000070200000006000000 => 3030303030329100
+exchange native-apdu 90F60000010200 => 02000000009100
+
+# Switching back from AD to BD starts another fresh logical read.
+exchange native-apdu 90BD0000070200000006000000 => 3030303030339100
+exchange native-apdu 90F60000010200 => 03000000009100
+
+# A successfully accepted non-read command retires the continuation.
+exchange native-apdu 906F000000 => 0203049100
+exchange native-apdu 90BD0000070200000006000000 => 3030303030349100
+exchange native-apdu 90F60000010200 => 04000000009100
+
+# Standard ISO reads have their own family, while slices within it reuse one image.
+exchange iso-apdu 00A4040007D276000085010400 => 9000
+exchange iso-apdu 00A4020002010300 => 9000
+exchange iso-apdu 00B0000003 => 3030309000
+exchange iso-apdu 00B0000303 => 3030359000
+exchange native-apdu 90F60000010200 => 05000000009100
+
+# Returning to native starts a fresh image; the counter increments once.
+exchange native-apdu 90BD0000070200000006000000 => 3030303030369100
+exchange native-apdu 90F60000010200 => 06000000009100
+
+# READ BINARY on a selected non-SDM file retires the native SDM continuation.
+exchange iso-apdu 00A4020002010400 => 9000
+exchange native-apdu 90BD0000070200000006000000 => 3030303030379100
+exchange iso-apdu 00B0000004 => 000000009000
+exchange native-apdu 90BD0000070200000006000000 => 3030303030389100
+
+# READ RECORD on another file is also a logical-command boundary.
+exchange iso-apdu 00A4020002010500 => 9000
+exchange native-apdu 90BD0000070200000006000000 => 3030303030399100
+exchange iso-apdu 00B2010402 => 5A009000
+exchange native-apdu 90BD0000070200000006000000 => 3030303030419100
+field-off

@@ -1,0 +1,165 @@
+# PROVENANCE: measured from a genuine DESFire EV3 2K with Proxmark3 on 2026-11-01 (the second
+# genuine EV3 2K used for the other hardware_physical_ev3_2k_* captures; random UID).
+# PROVISIONAL BATCH "iso-write-2026-11-01": every vector of this batch carries
+# `capture-batch: iso-write-2026-11-01` and `capture-status: provisional`. If the card
+# turns out to be faulty these captures can be thrown away together: the append-only gate
+# allows deleting a provisional capture (and nothing else about it). To find them all:
+#   grep -l 'capture-batch: iso-write-2026-11-01' tests/vectors/desfire/v*/*/*.vec
+# and see docs/capture-batches.md.
+#
+# What this measures: how an open (staged, not yet committed) native transaction interacts
+# with ISO 7816 commands on the same application. Card file 3 is a free linear record file
+# (ISO id 1003, four 4-byte records); each section first empties it (ClearRecordFile +
+# CommitTransaction) so sections replay independently. Observed on the card:
+#   * A staged native WriteRecord survives other successful commands (native commands,
+#     ISO SELECT, a successful ISO READ RECORD) and CommitTransaction publishes it.
+#   * Any FAILING command (a native error, an ISO READ RECORD answering 6985) discards the
+#     staged write: CommitTransaction then answers 0C (nothing to commit).
+#   * A successful ISO APPEND RECORD writes its record at once and does NOT publish the
+#     staged native write; the staged write is discarded (Abort and Commit both answer 0C).
+# The ATS line (E080 => ...) is copied from the sibling captures of this card: this
+# Proxmark3 session performs RATS itself, so the card's ATS answer was not on the wire log.
+name: genuine EV3 2K ISO commands versus a staged native transaction (provisional batch)
+case-id: hardware-physical-ev3-2k-iso-write-transaction
+origin: physical-card
+capture-batch: iso-write-2026-11-01
+capture-status: provisional
+feature-version: 6
+source: physical-card-proxmark3
+requires: record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# Equivalent freely provisioned replay fixture: application 123456 with ISO file ids and
+# linear record file 3 (ISO id 1003, four 4-byte records, free access).
+scan
+status 905A00000300000000 => 00
+status 90CA0000071234560F2100E100 => 00
+status 905A00000312345600 => 00
+status 90C100000C03031000EEEE04000004000000 => 00
+
+# control: AbortTransaction discards a staged native WriteRecord
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 03903B00000B03000000040000AABBCCDD00 => 039100
+frame-exchange 0290A7000000 => 029100
+frame-exchange 0390F50000010300 => 030300EEEE0400000400000000009100
+frame-exchange 0290BB0000070300000000000000 => 0291BE
+
+# ISO APPEND RECORD after a staged native WriteRecord, then AbortTransaction
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4000C021003 => 039000
+frame-exchange 02903B00000B03000000040000AABBCCDD00 => 029100
+frame-exchange 0300E200000411223344 => 039000
+frame-exchange 0290A7000000 => 02910C
+frame-exchange 0390F50000010300 => 030300EEEE0400000400000100009100
+frame-exchange 0290BB0000070300000000000000 => 02112233449100
+
+# ISO APPEND RECORD after a staged native WriteRecord, then CommitTransaction
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4000C021003 => 039000
+frame-exchange 02903B00000B03000000040000AABBCCDD00 => 029100
+frame-exchange 0300E200000411223344 => 039000
+frame-exchange 0290C7000000 => 02910C
+frame-exchange 0390F50000010300 => 030300EEEE0400000400000100009100
+frame-exchange 0290BB0000070300000000000000 => 02112233449100
+
+# control: a staged native WriteRecord survives another successful native command
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 03903B00000B03000000040000AABBCCDD00 => 039100
+frame-exchange 0290F50000010300 => 020300EEEE0400000400000000009100
+frame-exchange 0390C7000000 => 039100
+frame-exchange 0290BB0000070300000000000000 => 02AABBCCDD9100
+
+# control: a staged native WriteRecord survives an ISO SELECT
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 03903B00000B03000000040000AABBCCDD00 => 039100
+frame-exchange 0200A4000C021003 => 029000
+frame-exchange 0390C7000000 => 039100
+frame-exchange 0290BB0000070300000000000000 => 02AABBCCDD9100
+
+# a failing ISO READ RECORD (empty file) discards the staged native WriteRecord
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4000C021003 => 039000
+frame-exchange 02903B00000B03000000040000AABBCCDD00 => 029100
+frame-exchange 0300B2000400 => 036985
+frame-exchange 0290C7000000 => 02910C
+frame-exchange 0390F50000010300 => 030300EEEE0400000400000000009100
+
+# a failing native command (absent file) discards the staged native WriteRecord
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 03903B00000B03000000040000AABBCCDD00 => 039100
+frame-exchange 0290F50000010900 => 0291F0
+frame-exchange 0390C7000000 => 03910C
+frame-exchange 0290F50000010300 => 020300EEEE0400000400000000009100
+
+# a successful ISO READ RECORD leaves the staged native WriteRecord alone
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 03903B00000B030000000400000102030400 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4000C021003 => 039000
+frame-exchange 02903B00000B03000000040000AABBCCDD00 => 029100
+frame-exchange 0300B2010400 => 03010203049000
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0390F50000010300 => 030300EEEE0400000400000200009100
+frame-exchange 0290BB0000070300000000000000 => 0201020304AABBCCDD9100
+
+# ISO APPEND RECORD commits at once; a native WriteRecord staged after it commits too
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390EB0000010300 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0300A4000C021003 => 039000
+frame-exchange 0200E200000411223344 => 029000
+frame-exchange 03903B00000B03000000040000AABBCCDD00 => 039100
+frame-exchange 0290C7000000 => 029100
+frame-exchange 0390F50000010300 => 030300EEEE0400000400000200009100
+frame-exchange 0290BB0000070300000000000000 => 0211223344AABBCCDD9100

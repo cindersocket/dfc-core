@@ -63,13 +63,15 @@ public sealed record DfcVersion(DfcVersionPart Hardware, DfcVersionPart Software
 /// <param name="LowerLimit">Value-file lower limit, or <see langword="null"/> for other file types.</param>
 /// <param name="UpperLimit">Value-file upper limit, or <see langword="null"/> for other file types.</param>
 /// <param name="LimitedCreditValue">Value-file limited-credit amount, or <see langword="null"/> for other file types.</param>
+/// <param name="LimitedCreditOptions">Raw value-file limited-credit option bits, or <see langword="null"/> for other file types.</param>
 /// <param name="LimitedCreditEnabled">Whether limited credit is enabled, or <see langword="null"/> for other file types.</param>
 /// <param name="RecordSize">Record size in bytes, or <see langword="null"/> for non-record files.</param>
 /// <param name="MaxRecords">Maximum record count, or <see langword="null"/> for non-record files.</param>
 /// <param name="CurrentRecords">Current record count, or <see langword="null"/> for non-record files.</param>
 public sealed record DfcFileSettings(DfcFileType Type, DfcCommunicationMode CommunicationMode, int AccessRightsRaw,
     DfcAccessRights Access, int? Size = null, int? LowerLimit = null, int? UpperLimit = null,
-    int? LimitedCreditValue = null, bool? LimitedCreditEnabled = null, int? RecordSize = null,
+    int? LimitedCreditValue = null, int? LimitedCreditOptions = null,
+    bool? LimitedCreditEnabled = null, int? RecordSize = null,
     int? MaxRecords = null, int? CurrentRecords = null);
 
 /// <summary>Contains decoded application or PICC key settings.</summary>
@@ -214,7 +216,8 @@ public static unsafe class DfcResponseDecoders
                     LowerLimit: BinaryPrimitives.ReadInt32LittleEndian(value.AsSpan(FileTypeSpecificOffset)),
                     UpperLimit: BinaryPrimitives.ReadInt32LittleEndian(value.AsSpan(FileTypeSpecificOffset + 4)),
                     LimitedCreditValue: BinaryPrimitives.ReadInt32LittleEndian(value.AsSpan(FileTypeSpecificOffset + 8)),
-                    LimitedCreditEnabled: value[FileTypeSpecificOffset + 12] != 0);
+                    LimitedCreditOptions: value[FileTypeSpecificOffset + 12],
+                    LimitedCreditEnabled: (value[FileTypeSpecificOffset + 12] & 0x01) != 0);
             return new DfcFileSettings(type, communicationMode, raw, rights,
                 RecordSize: BinaryPrimitives.ReadInt32LittleEndian(value.AsSpan(FileTypeSpecificOffset)),
                 MaxRecords: BinaryPrimitives.ReadInt32LittleEndian(value.AsSpan(FileTypeSpecificOffset + 4)),

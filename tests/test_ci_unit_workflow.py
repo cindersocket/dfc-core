@@ -44,6 +44,37 @@ def matrix_rows(job: str) -> list[tuple[str, ...]]:
 
 
 class UnitWorkflowTests(unittest.TestCase):
+    def test_the_append_only_gate_is_wired_into_every_change(self) -> None:
+        text = workflow_text()
+        # Both entry points must run the gate against the real base, and neither
+        # may be disabled; pointing it at HEAD would always pass.
+        self.assertIn(
+            'check-physical-vectors-append-only.py "origin/${{ github.base_ref }}"',
+            text,
+        )
+        self.assertIn('check-physical-vectors-append-only.py "${{ github.event.before }}"', text)
+        self.assertNotRegex(text, r"(?m)^\s*if:\s*(?:false|\$\{\{\s*false\s*\}\})\s*$")
+        self.assertIn("fetch-depth: 0", text)
+
+    def test_the_append_only_steps_are_exact_and_cannot_be_softened(self) -> None:
+        text = workflow_text()
+        start = text.index("name: Reject edits to genuine captures in a pull request")
+        end = text.index("  format-docs:", start)
+        steps = text[start:end]
+        expected = (
+            "name: Reject edits to genuine captures in a pull request\n"
+            "        if: github.event_name == 'pull_request'\n"
+            '        run: python3 scripts/check-physical-vectors-append-only.py "origin/${{ github.base_ref }}"\n'
+            "      - name: Reject edits to genuine captures in a push\n"
+            "        if: github.event_name == 'push' && github.event.before != "
+            "'0000000000000000000000000000000000000000'\n"
+            '        run: python3 scripts/check-physical-vectors-append-only.py "${{ github.event.before }}"\n'
+        )
+        self.assertEqual(steps, expected)
+        # The job itself may not be made non-blocking either.
+        job = steps_job = text[text.rindex("\n  ", 0, start - 1) : start]
+        self.assertNotIn("continue-on-error", job + steps_job + steps)
+
     def test_fuzz_job_installs_the_matching_clang_runtime(self) -> None:
         workflow = workflow_text()
         fuzz = re.search(r"(?ms)^  fuzz:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", workflow)
@@ -58,7 +89,10 @@ class UnitWorkflowTests(unittest.TestCase):
         self.assertIn(
             "concurrency:\n"
             "  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}\n"
-            "  cancel-in-progress: true\n",
+            "  # Never cancel a run on master: a later push would otherwise skip the\n"
+            "  # provenance check of the earlier one. Pull requests are checked cumulatively,\n"
+            "  # so cancelling superseded PR runs is safe.\n"
+            "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n",
             workflow,
         )
 

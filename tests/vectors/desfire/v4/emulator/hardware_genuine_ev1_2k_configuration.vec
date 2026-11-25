@@ -1,0 +1,23 @@
+# Captured over RF from a physical EV1 2K card with a Proxmark3 after
+# FormatPICC. The PICC key is the all-zero test key. The recorder verified the
+# card's final authentication proof and the response MAC. Configuration 00/00
+# leaves the card's format and random-ID settings unchanged.
+name: physical EV1 2K protected PICC configuration
+case-id: hardware-genuine-ev1-2k-configuration
+origin: physical-card
+source: Proxmark3 RF capture, physical EV1 2K
+requires: ev1,auth-iso
+uid: 043793CA677680
+picc-generation: EV1
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: ISO
+picc-key-len: 16
+picc-key: 00000000000000000000000000000000
+
+scan
+inject-random C202FDE82ACBBE10
+exchange native-apdu 901A0000010000 => EE4E607898C489F191AF
+exchange native-apdu 90AF00001051BECDB4F15857C0643EAE21433F5F3C00 => A8D89558BE600CD49100
+exchange native-apdu 905C00000900C35030C533F9E9E100 => A7C7654582E092099100

@@ -4,7 +4,7 @@ case-id: iso-update-binary-publishes-active-transaction
 origin: synthetic
 feature-version: 6
 source: generated ISO UPDATE BINARY transaction regression
-requires: ev3,backup-files,record-files
+requires: record-files
 uid: 04112233445566
 picc-generation: EV3
 picc-storage: 4096

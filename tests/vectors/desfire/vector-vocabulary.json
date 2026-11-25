@@ -87,6 +87,8 @@
     "picc-storage",
     "replayable",
     "requires",
+    "capture-batch",
+    "capture-status",
     "source",
     "target-key-number",
     "target-key-set",

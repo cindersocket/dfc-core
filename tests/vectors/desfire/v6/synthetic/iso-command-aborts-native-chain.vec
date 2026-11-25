@@ -4,7 +4,6 @@ case-id: iso-command-aborts-native-chain
 origin: synthetic
 feature-version: 6
 source: generated native-chain state regression
-requires: ev3
 uid: 0442381AD31090
 picc-generation: EV3
 picc-storage: 4096

@@ -1,0 +1,21 @@
+# Converted from tests/test_dfc_ev1_conformance.c test /record-iso-file-id-collision (now removed): the literal
+# APDUs and statuses the unit test asserted are replayed here byte for byte,
+# and the engine's answers are the ones the test required. Two linear record files with the same ISO file ID: the second is a duplicate.
+
+name: vecB ev1: record file ISO FID collision
+case-id: vecb-ev1-record-iso-file-id-collision
+origin: synthetic
+requires: record-files
+source: tests/test_dfc_ev1_conformance.c /record-iso-file-id-collision
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050102030F2100 => 00
+status   905A00000301020300 => 00
+status   90C100000C01341200EEEE01000002000000 => 00
+status   90C100000C02341200EEEE01000002000000 => DE
+assert   credential.num_files = 1

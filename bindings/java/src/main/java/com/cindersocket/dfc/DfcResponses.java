@@ -100,15 +100,17 @@ public final class DfcResponses {
    * @param lowerLimit value-file lower limit
    * @param upperLimit value-file upper limit
    * @param limitedCreditValue value-file limited-credit bound
+   * @param limitedCreditOptions raw value-file limited-credit option bits
    * @param limitedCreditEnabled whether limited credit is enabled
    * @param recordSize record size in bytes
    * @param maxRecords record capacity
    * @param currentRecords current record count
    */
-  public record FileSettings(FileType type, DfcReader.Communication communicationMode,
-      int accessRightsRaw, AccessRights access, Integer size, Integer lowerLimit,
-      Integer upperLimit, Integer limitedCreditValue, Boolean limitedCreditEnabled,
-      Integer recordSize, Integer maxRecords, Integer currentRecords) {}
+  public record
+      FileSettings(FileType type, DfcReader.Communication communicationMode, int accessRightsRaw,
+          AccessRights access, Integer size, Integer lowerLimit, Integer upperLimit,
+          Integer limitedCreditValue, Integer limitedCreditOptions, Boolean limitedCreditEnabled,
+          Integer recordSize, Integer maxRecords, Integer currentRecords) {}
   /**
    * Decoded application or PICC key settings.
    * @param settings1 first settings byte
@@ -181,22 +183,23 @@ public final class DfcResponses {
 
   private static FileSettings dataFileSettings(FileType type,
       DfcReader.Communication communicationMode, int rawRights, AccessRights rights, int size) {
-    return new FileSettings(
-        type, communicationMode, rawRights, rights, size, null, null, null, null, null, null, null);
+    return new FileSettings(type, communicationMode, rawRights, rights, size, null, null, null,
+        null, null, null, null, null);
   }
 
   private static FileSettings valueFileSettings(FileType type,
       DfcReader.Communication communicationMode, int rawRights, AccessRights rights, int lowerLimit,
-      int upperLimit, int limitedCredit, boolean limitedCreditEnabled) {
+      int upperLimit, int limitedCredit, int limitedCreditOptions) {
     return new FileSettings(type, communicationMode, rawRights, rights, null, lowerLimit,
-        upperLimit, limitedCredit, limitedCreditEnabled, null, null, null);
+        upperLimit, limitedCredit, limitedCreditOptions, (limitedCreditOptions & 0x01) != 0, null,
+        null, null);
   }
 
   private static FileSettings recordFileSettings(FileType type,
       DfcReader.Communication communicationMode, int rawRights, AccessRights rights, int recordSize,
       int maxRecords, int currentRecords) {
     return new FileSettings(type, communicationMode, rawRights, rights, null, null, null, null,
-        null, recordSize, maxRecords, currentRecords);
+        null, null, recordSize, maxRecords, currentRecords);
   }
 
   /**
@@ -230,7 +233,7 @@ public final class DfcResponses {
       return dataFileSettings(type, communicationMode, rawRights, rights, little.getInt(14));
     if (type == FileType.VALUE)
       return valueFileSettings(type, communicationMode, rawRights, rights, little.getInt(14),
-          little.getInt(18), little.getInt(22), value[26] != 0);
+          little.getInt(18), little.getInt(22), value[26] & 0xff);
     return recordFileSettings(type, communicationMode, rawRights, rights, little.getInt(14),
         little.getInt(18), little.getInt(22));
   }

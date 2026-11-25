@@ -88,6 +88,7 @@ python3 tests/test_binding_documentation_ci.py
 
 Required CI jobs (exact IDs):
 
+- `vector-provenance`
 - `format-docs`
 - `source-archives`
 - `fuzz`
@@ -95,6 +96,7 @@ Required CI jobs (exact IDs):
 - `embedded-footprint`
 - `unit`
 - `native`
+- `dotnet-macos-arm64`
 - `mismatch-native`
 - `dotnet`
 - `java`

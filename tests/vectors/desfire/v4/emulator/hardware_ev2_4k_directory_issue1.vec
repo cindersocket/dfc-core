@@ -3,7 +3,6 @@
 name: captured EV2 application directory and file settings
 case-id: hardware-ev2-4k-directory-issue1
 origin: physical-card
-requires: ev2
 source: dfc-core issue 1 card capture
 uid: 0442381AD31090
 picc-generation: EV2

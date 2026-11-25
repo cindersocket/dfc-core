@@ -405,7 +405,7 @@ static MunitResult
     return MUNIT_OK;
 }
 
-static MunitResult test_iso_update_failures_preserve_complete_transaction(
+static MunitResult test_iso_update_buffer_too_small_preserves_complete_transaction(
     const MunitParameter params[],
     void* data) {
     (void)params;
@@ -417,34 +417,10 @@ static MunitResult test_iso_update_failures_preserve_complete_transaction(
     uint8_t response[2] = {0};
     size_t response_len = SIZE_MAX;
 
-    const uint8_t malformed[] = {0, DFC_ISO7816_INS_UPDATE_BINARY, 0, 1, 2, 0xA5};
-    munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(
-            fixture.session,
-            malformed,
-            sizeof(malformed),
-            response,
-            sizeof(response),
-            &response_len),
-        ==,
-        DfcVirtualPiccStatusOk);
-    munit_assert_memory_equal(2, response, ((uint8_t[]){0x6A, 0x86}));
-    assert_transaction_still_pending(&fixture);
-
-    const uint8_t out_of_bounds[] = {0, DFC_ISO7816_INS_UPDATE_BINARY, 0, 7, 2, 0xA5, 0x5A};
-    munit_assert_int(
-        dfc_virtual_picc_iso_dep_exchange(
-            fixture.session,
-            out_of_bounds,
-            sizeof(out_of_bounds),
-            response,
-            sizeof(response),
-            &response_len),
-        ==,
-        DfcVirtualPiccStatusOk);
-    munit_assert_memory_equal(2, response, ((uint8_t[]){0x6A, 0x86}));
-    assert_transaction_still_pending(&fixture);
-
+    // A failing ISO UPDATE BINARY discards the open transaction; that is measured on a genuine
+    // card and replayed from hardware_physical_ev3_2k_iso_update_binary_transaction.vec.
+    // What stays here is the part no vector can express: an answer that does not fit the
+    // caller's buffer leaves the transaction pending until the exact retry succeeds.
     const uint8_t valid[] = {0, DFC_ISO7816_INS_UPDATE_BINARY, 0, 1, 2, 0xA5, 0x5A};
     response_len = SIZE_MAX;
     munit_assert_int(
@@ -545,6 +521,8 @@ static MunitResult test_current_key_change_preserves_complete_transaction(
     if(strcmp(munit_parameters_get(params, "finish"), "invalid") == 0) {
         // Truncate the cryptogram so no new key material can be installed.
         change_key[4]--;
+        // The truncated frame still ends with the Le byte the card requires.
+        change_key[4 + payload_len] = 0;
         expect_native_status(
             fixture.session, change_key, 5 + payload_len, DFC_STATUS_LENGTH_ERROR);
         assert_transaction_rolled_back(&fixture);
@@ -635,6 +613,8 @@ static MunitResult test_d40_current_key_change_preserves_complete_transaction(
     if(strcmp(munit_parameters_get(params, "finish"), "invalid") == 0) {
         // Truncate the cryptogram so no new key material can be installed.
         change_key[4]--;
+        // The truncated frame still ends with the Le byte the card requires.
+        change_key[4 + payload_len] = 0;
         expect_native_status(
             fixture.session, change_key, 5 + payload_len, DFC_STATUS_LENGTH_ERROR);
         assert_transaction_rolled_back(&fixture);
@@ -881,11 +861,16 @@ static MunitResult
     return MUNIT_OK;
 }
 
+// A command the emulator does not answer must leave an open transaction exactly
+// as it was. A bare AUTHENTICATE with no key number is such a command: the call
+// reports "not handled" and writes no response. (A truncated SELECT APPLICATION
+// used to be the example, but the card answers that one with a length error, so
+// it now has an answer and is covered by the bad-commands physical vector.)
 static MunitResult
     test_internal_no_response_keeps_transaction(const MunitParameter params[], void* data) {
     (void)params;
     (void)data;
-    const uint8_t truncated_select[] = {DFC_CMD_SELECT_APPLICATION};
+    const uint8_t truncated_authenticate[] = {DFC_CMD_AUTHENTICATE_LEGACY};
 
     SelectionFixture fixture;
     fixture_open(&fixture);
@@ -893,8 +878,8 @@ static MunitResult
     dfc_bytebuf_reset(fixture.session->emulator->tx_buffer);
     munit_assert_false(dfc_emulator_handle_command(
         fixture.session->emulator,
-        truncated_select,
-        sizeof(truncated_select),
+        truncated_authenticate,
+        sizeof(truncated_authenticate),
         fixture.session->emulator->tx_buffer,
         NULL));
     munit_assert_size(dfc_bytebuf_get_size_bytes(fixture.session->emulator->tx_buffer), ==, 0);
@@ -1406,8 +1391,8 @@ static MunitTest tests[] = {
      NULL,
      MUNIT_TEST_OPTION_NONE,
      NULL},
-    {"/iso-update-failures-preserve-complete-transaction",
-     test_iso_update_failures_preserve_complete_transaction,
+    {"/iso-update-buffer-too-small-preserves-complete-transaction",
+     test_iso_update_buffer_too_small_preserves_complete_transaction,
      NULL,
      NULL,
      MUNIT_TEST_OPTION_NONE,

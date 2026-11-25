@@ -1,0 +1,24 @@
+# Genuine card captures and the checks that protect them need an owner's review:
+# a change to one of these is a change to what the emulator is held to.
+/tests/vectors/desfire/*/hardware/                       @mistial-dev
+/scripts/check-physical-vectors-append-only.py           @mistial-dev
+/tests/check_iso_dep_block_numbers.py                    @mistial-dev
+/tests/check_virtual_picc_staging.py                     @mistial-dev
+/.github/workflows/ci.yml                                @mistial-dev
+/.github/CODEOWNERS                                      @mistial-dev
+/tests/vectors/desfire/v4/emulator/                      @mistial-dev
+/tests/vectors/desfire/v5/emulator/                      @mistial-dev
+/tests/Makefile                                          @mistial-dev
+/tests/test_dfc_conformance_vectors.c                    @mistial-dev
+/tests/test_check_iso_dep_block_numbers.py               @mistial-dev
+/tests/test_check_virtual_picc_staging.py                @mistial-dev
+/tests/test_check_physical_vectors.py                    @mistial-dev
+/tests/test_dfc_iso_dep_frame_properties.c               @mistial-dev
+/tests/test_makefile_contract.py                         @mistial-dev
+/tests/test_ci_unit_workflow.py                          @mistial-dev
+/tests/check_desfire_vectors.py                          @mistial-dev
+/tests/vectors/desfire/manifest.json                     @mistial-dev
+/tests/vectors/desfire/vector-vocabulary.json            @mistial-dev
+/tests/vectors/desfire/v*/coverage.json                  @mistial-dev
+/tests/vectors/desfire/v*/synthetic/                     @mistial-dev
+/.github/workflows/                                      @mistial-dev

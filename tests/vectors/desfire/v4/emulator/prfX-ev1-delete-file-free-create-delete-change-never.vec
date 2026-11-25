@@ -1,0 +1,27 @@
+# Closes a mutation gap left when tests/test_dfc_ev1_conformance.c test
+# /delete-file-free-create-delete (access rights 0xEEEF, ChangeAccess nibble F
+# = never) was replaced by ev1_delete-file-free-create-delete.vec, which creates
+# its file with wire bytes EE EF and so gives it ChangeAccess E (free). Wire
+# order is first octet = low octet of the stored rights, so the original's
+# 0xEEEF is sent as EF EE. An application with free create/delete lets an
+# unauthenticated session delete a file whose ChangeAccess is "never";
+# DeleteFile is governed by the application key setting, not the file's rights.
+
+name: prfX ev1: DeleteFile under free create/delete ignores ChangeAccess never
+case-id: prfx-ev1-delete-file-free-create-delete-change-never
+origin: synthetic
+source: tests/test_dfc_ev1_conformance.c /delete-file-free-create-delete
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+
+scan
+status   90CA0000050102030F0100 => 00
+status   905A00000301020300 => 00
+status   90CD0000070100EFEE04000000 => 00
+status   905A00000301020300 => 00
+exchange native-apdu 906F000000 => 019100
+status   90DF0000010100 => 00
+exchange native-apdu 906F000000 => 9100

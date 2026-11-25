@@ -4,7 +4,7 @@ case-id: ev2-full-command-error-retires-session
 origin: synthetic
 feature-version: 6
 source: generated secure-command error regression
-requires: ev3,ev2-secure-messaging
+requires: ev2-secure-messaging
 uid: 04112233445566
 picc-generation: EV3
 picc-storage: 4096

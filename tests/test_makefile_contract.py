@@ -46,6 +46,65 @@ class MakefileContractTests(unittest.TestCase):
 
         self.assertIn("vector-profiles", dependencies.replace("\\\n\t", " ").split())
 
+    def test_every_vector_directory_is_replayed(self) -> None:
+        # Dropping the hardware directory would silently stop replaying every
+        # genuine-card capture, so the list is pinned.
+        text = makefile_text().replace("\\\n\t", " ")
+        line = next(row for row in text.splitlines() if row.startswith("VECTOR_DIRS"))
+        for kind in ("emulator", "hardware", "synthetic"):
+            self.assertIn(f"vectors/desfire/v*/{kind}", line)
+
+    def test_the_safety_checks_stay_in_the_default_suite(self) -> None:
+        # Deleting these from the aggregate would stop the lint, the block-number
+        # model and the property test from ever running, and nothing else notices.
+        dependencies, _recipe = target(makefile_text(), "test")
+        names = dependencies.replace("\\\n\t", " ").split()
+        for required in ("check-virtual-picc-staging", "check-iso-dep-block-numbers"):
+            self.assertIn(required, names)
+        tests = assignment(makefile_text(), "TESTS")
+        self.assertIn("test_dfc_iso_dep_frame_properties", tests.split())
+
+    def test_every_vector_file_is_in_a_replayed_directory(self) -> None:
+        # The Makefile replays vectors/desfire/v*/{emulator,hardware,synthetic}/*.vec,
+        # one level deep. A vector anywhere else would be accepted by the catalogue
+        # checks and never replayed.
+        root = ROOT / "tests" / "vectors" / "desfire"
+        stray = [
+            str(path.relative_to(root))
+            for path in root.rglob("*.vec")
+            if not (
+                re.fullmatch(r"v\d+", path.relative_to(root).parts[0])
+                and len(path.relative_to(root).parts) == 3
+                and path.relative_to(root).parts[1] in ("emulator", "hardware", "synthetic")
+            )
+        ]
+        self.assertEqual(stray, [])
+
+    def test_the_wiring_runs_what_it_names(self) -> None:
+        text = makefile_text()
+        dependencies, _recipe = target(text, "test")
+        names = dependencies.replace("\\\n\t", " ").split()
+        # The plain vector replay (which includes every genuine capture) is part of
+        # the default suite, not only the reduced-profile replay.
+        self.assertIn("vectors", names)
+        # Each safety check's recipe must actually run its script, not just exist.
+        for name, script in (
+            ("check-virtual-picc-staging", "check_virtual_picc_staging.py"),
+            ("check-iso-dep-block-numbers", "check_iso_dep_block_numbers.py"),
+        ):
+            _deps, recipe = target(text, name)
+            self.assertEqual(recipe.strip(), f"python3 {script}")
+        # TESTS may only ever grow: removing a test with filter-out would stop it
+        # running without touching the list the other pins read.
+        self.assertNotRegex(text, r"TESTS\s*[:+]?=\s*\$\(filter-out[^)]*\bTESTS\b")
+        # The vector directory list is pinned exactly, so wrapping it in a filter
+        # that drops the genuine-card captures is noticed.
+        self.assertIn(
+            "VECTOR_DIRS := $(wildcard vectors/desfire/v*/emulator "
+            "vectors/desfire/v*/hardware \\\n\tvectors/desfire/v*/synthetic)",
+            text,
+        )
+
     def test_reduced_tests_share_one_complete_aggregate(self) -> None:
         text = makefile_text()
         reduced_tests = re.findall(r"(?m)^(REDUCED_[A-Z_]+_TEST)\s*:=", text)

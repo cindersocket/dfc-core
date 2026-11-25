@@ -1,0 +1,25 @@
+# PROVENANCE: Synthetic regression converted from the former unit test
+# test_unknown_native_aid_returns_to_picc_level. Selecting an application that
+# does not exist reports APPLICATION_NOT_FOUND and leaves the card at the PICC
+# level, so application-scoped commands are refused and GetKeySettings reports
+# the PICC master key settings again.
+name: Selecting a missing application returns to the PICC level
+case-id: vecc-select-missing-application-returns-to-picc
+origin: synthetic
+feature-version: 6
+source: converted from tests/test_dfc_virtual_picc_core.c#/unknown-native-aid-returns-to-picc-level
+requires: ev3
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+scan
+exchange native-apdu 90CA0000054F49D30F8100 => 9100
+exchange native-apdu 905A0000034F49D300 => 9100
+assert emulator.selected_application = 2
+exchange native-apdu 905A000003EFBEAD00 => 91A0
+assert emulator.selected_application = 1
+exchange native-apdu 906F000000 => 919D
+exchange native-apdu 9045000000 => 0F019100
+field-off

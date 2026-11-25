@@ -5,7 +5,7 @@
 name: EV3 record files expose newest-first ordering and transactional update and clear
 origin: synthetic
 case-id: ev3-record-order-update-clear
-requires: ev3,record-files
+requires: record-files
 source: generated behavioral regression
 uid: 04112233445566
 picc-generation: EV3

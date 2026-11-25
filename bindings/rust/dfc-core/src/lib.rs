@@ -44,7 +44,7 @@ pub use crypto::{DiversificationAlgorithm, diversify_key};
 #[cfg(not(feature = "role-target"))]
 pub use reader::{
     AuthenticationMode, Command, CommunicationMode, Framing, Reader, ReaderError, ReaderState,
-    Response, Transport,
+    Response, Transport, iso_append_record_apdu, parse_iso7816_response,
 };
 #[cfg(not(feature = "role-target"))]
 pub use responses::{

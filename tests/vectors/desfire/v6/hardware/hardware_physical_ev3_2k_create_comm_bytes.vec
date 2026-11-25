@@ -1,0 +1,97 @@
+# PROVENANCE: measured from a factory-fresh genuine DESFire EV3 2K with Proxmark3 on 2026-11-01
+# (random UID). Same card and batch as hardware_physical_ev3_2k_value_rights.vec.
+# PROVISIONAL BATCH "value-rights-2026-11-01": carries `capture-batch: value-rights-2026-11-01` and
+# `capture-status: provisional`, so it can be thrown away with the rest of the batch if the card
+# proves faulty (see docs/capture-batches.md).
+#
+# What this measures: how CreateStdDataFile, CreateBackupDataFile, CreateLinearRecordFile and
+# CreateValueFile treat each unusual communication byte, then what GetFileSettings reports for
+# the files the card agreed to create (no authentication: the application allows free creation).
+# Observed:
+#   * 0x40 and 0x43 (the SDM flag set at creation) are refused: 9D for a standard data file, 9E
+#     for the other three types.
+#   * 0x04 (a reserved mode bit) is refused with 9E on every type.
+#   * 0x02 (mode 2) is accepted on every type and reported back as 02.
+#   * 0x80 (the additional-access-rights flag) is accepted on every type and reported back as 80,
+#     with one extra zero byte, the count of additional access rights, after the settings.
+name: genuine EV3 2K file creation with unusual communication bytes (provisional batch)
+case-id: hardware-physical-ev3-2k-create-comm-bytes
+origin: physical-card
+capture-batch: value-rights-2026-11-01
+capture-status: provisional
+feature-version: 6
+source: physical-card-proxmark3
+requires: backup-files,record-files
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# fixture: application 123456 with two keys
+field-off
+scan
+exchange native CA1234560F02 => 00
+exchange native 5A123456 => 00
+
+# CreateFile with communication byte 40: standard data, backup data, linear record and value files
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native CD0140EEEE100000 => 9D
+exchange native CB0240EEEE100000 => 9E
+exchange native C10340EEEE040000020000 => 9E
+exchange native CC0440EEEE00000000E80300006400000000 => 9E
+
+# CreateFile with communication byte 43: standard data, backup data, linear record and value files
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native CD0543EEEE100000 => 9D
+exchange native CB0643EEEE100000 => 9E
+exchange native C10743EEEE040000020000 => 9E
+exchange native CC0843EEEE00000000E80300006400000000 => 9E
+
+# CreateFile with communication byte 04: standard data, backup data, linear record and value files
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native CD0904EEEE100000 => 9E
+exchange native CB0A04EEEE100000 => 9E
+exchange native C10B04EEEE040000020000 => 9E
+exchange native CC0C04EEEE00000000E80300006400000000 => 9E
+
+# CreateFile with communication byte 80: standard data, backup data, linear record and value files
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native CD0D80EEEE100000 => 00
+exchange native CB0E80EEEE100000 => 00
+exchange native C10F80EEEE040000020000 => 00
+exchange native CC1080EEEE00000000E80300006400000000 => 00
+
+# CreateFile with communication byte 02: standard data, backup data, linear record and value files
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native CD1102EEEE100000 => 00
+exchange native CB1202EEEE100000 => 00
+exchange native C11302EEEE040000020000 => 00
+exchange native CC1402EEEE00000000E80300006400000000 => 00
+
+# GetFileSettings of every file the card agreed to create
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native F50D => 000080EEEE10000000
+exchange native F50E => 000180EEEE10000000
+exchange native F50F => 000380EEEE04000002000000000000
+exchange native F510 => 000280EEEE00000000E8030000000000000000
+exchange native F511 => 000002EEEE100000
+exchange native F512 => 000102EEEE100000
+exchange native F513 => 000302EEEE040000020000000000
+exchange native F514 => 000202EEEE00000000E80300000000000000

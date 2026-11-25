@@ -33,7 +33,7 @@ name: genuine EV3 4K, linear and cyclic record files under an ISO 2K3DES session
 case-id: hardware-physical-ev3-4k-records-iso
 origin: physical-card
 source: captured hardware trace
-requires: auth-iso,ev3,record-files
+requires: record-files
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

@@ -9,7 +9,6 @@
 name: ev1 conformance: authenticate-wrong-algorithm
 case-id: ev1-authenticate-wrong-algorithm
 origin: synthetic
-requires: auth-aes
 source: tests/test_dfc_ev1_conformance.c /authenticate-wrong-algorithm
 uid: 04A1B2C3D4E5F6
 picc-key-settings-1: 0F

@@ -79,10 +79,13 @@ jobs:
           - { rid: linux-x64, classifier: linux-x86_64, os: ubuntu-24.04, lib: libdfc.so, jni: libdfc_jni.so }
           - { rid: linux-arm64, classifier: linux-aarch64, os: ubuntu-24.04-arm, lib: libdfc.so, jni: libdfc_jni.so }
           - { rid: osx-x64, classifier: osx-x86_64, os: macos-15-intel, lib: libdfc.dylib, jni: libdfc_jni.dylib }
-          - { rid: osx-arm64, classifier: osx-aarch64, os: macos-14, lib: libdfc.dylib, jni: libdfc_jni.dylib }
+          - { rid: osx-arm64, classifier: osx-aarch64, os: macos-15, lib: libdfc.dylib, jni: libdfc_jni.dylib }
           - { rid: win-x64, classifier: windows-x86_64, os: windows-2022, lib: Release/libdfc.dll, jni: Release/dfc_jni.dll, arch: -A x64 }
           - { rid: win-arm64, classifier: windows-aarch64, os: windows-2022, lib: Release/libdfc.dll, jni: Release/dfc_jni.dll, arch: -A ARM64 }
     runs-on: ${{ matrix.os }}
+    env:
+      # The macOS libraries load on macOS 11 and later, whatever the runner image is.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -250,7 +253,7 @@ jobs:
           - { id: linux-x64, os: ubuntu-24.04 }
           - { id: linux-arm64, os: ubuntu-24.04-arm }
           - { id: osx-x64, os: macos-15-intel }
-          - { id: osx-arm64, os: macos-14 }
+          - { id: osx-arm64, os: macos-15 }
           - { id: win-x64, os: windows-2022 }
     runs-on: ${{ matrix.os }}
     steps:
@@ -260,7 +263,7 @@ jobs:
           version: "0.13.5"
       - name: Stage self-contained Python package
         run: python3 scripts/stage-python-package.py build/python-package
-      - uses: pypa/cibuildwheel@b9e566a2b284570af229f6c2a33673410d0389a3 # v4.3.4
+      - uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e # v4.3.5
         env:
           CIBW_BUILD: cp311-* cp312-* cp313-* cp314-*
           CIBW_SKIP: "*-musllinux_*"
@@ -314,7 +317,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "10.0.x"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

@@ -134,7 +134,7 @@ def main() -> None:
 
     native_exchange = virtual_picc[
         virtual_picc.index(
-            "static DfcVirtualPiccStatus handle_native_exchange("
+            "static DfcVirtualPiccStatus handle_native_exchange_inner("
         ) : virtual_picc.index("static DfcVirtualPiccStatus virtual_picc_iso_dep_exchange(")
     ]
     native_required = {

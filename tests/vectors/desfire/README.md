@@ -24,6 +24,10 @@ Validate vector structure and the SHA-256 manifest with:
 python3 tests/check_desfire_vectors.py
 ```
 
+Every language binding replays the same vectors from generated plans; see
+"Replay plans" in the format document below. After changing a vector, run
+`make -C tests replay-plans` and commit the result.
+
 The format is documented in
 [`docs/conformance-vector-format.md`](../../../docs/conformance-vector-format.md).
 The corpus is licensed with dfc-core under `GPL-2.0-or-later`.

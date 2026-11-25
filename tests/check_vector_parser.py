@@ -84,6 +84,17 @@ def main() -> int:
             "exchange native-apdu 9060000000 => 0401010100160591AF tolerance 7+2 0",
             succeeds=True,
         )
+        run(
+            runner,
+            directory,
+            "ignored-s-block",
+            "frame-exchange E080 => 0565810280\n"
+            "frame-exchange 1200A4 => A2\n"
+            "expect-error protocol-error frame-exchange F201\n"
+            "frame-exchange 13040007D276 => A3\n"
+            "frame-exchange 020000850100 => 029000",
+            succeeds=True,
+        )
         malformed = {
             "overflow-tolerance": (
                 "exchange native-apdu 9060000000 => 0401010100160591AF "
@@ -125,6 +136,10 @@ def main() -> int:
             "indexed-leaf-junk": "assert apps[0].keys[0]junk = 00000000000000000000000000000000",
             "roll-index-sign": "roll-model-key-set -1 0",
             "roll-index-extra": "roll-model-key-set 0 0 junk",
+            "protocol-error-exchange": (
+                "expect-error protocol-error exchange native-apdu 9060000000"
+            ),
+            "protocol-error-extra": ("expect-error protocol-error frame-exchange 1200A4 junk"),
         }
         for name, body in malformed.items():
             run(runner, directory, name, body)

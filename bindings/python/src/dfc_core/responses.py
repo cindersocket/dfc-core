@@ -117,6 +117,7 @@ class FileSettings:
         lower_limit: Signed lower limit for a value file.
         upper_limit: Signed upper limit for a value file.
         limited_credit_value: Signed limited-credit amount for a value file.
+        limited_credit_options: Raw limited-credit option bits for a value file.
         limited_credit_enabled: Whether limited credit is enabled.
         record_size: Record size in bytes.
         max_records: Configured record capacity.
@@ -131,6 +132,7 @@ class FileSettings:
     lower_limit: int | None = None
     upper_limit: int | None = None
     limited_credit_value: int | None = None
+    limited_credit_options: int | None = None
     limited_credit_enabled: bool | None = None
     record_size: int | None = None
     max_records: int | None = None
@@ -298,7 +300,8 @@ def decode_file_settings(response: bytes) -> FileSettings:
             lower_limit=int.from_bytes(data[14:18], "little", signed=True),
             upper_limit=int.from_bytes(data[18:22], "little", signed=True),
             limited_credit_value=int.from_bytes(data[22:26], "little", signed=True),
-            limited_credit_enabled=bool(data[26]),
+            limited_credit_options=data[26],
+            limited_credit_enabled=bool(data[26] & 0x01),
         )
     return FileSettings(
         file_type,

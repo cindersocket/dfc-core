@@ -161,6 +161,11 @@ uv run --project bindings/python pytest bindings/python/tests
 python3 scripts/check-docs.py
 ```
 
+
+## Conformance vectors
+
+The DESFire conformance vectors replay through this binding's virtual card: `pytest bindings/python/tests/test_replay_plans.py -s`. It reports how many vectors it replayed and skipped. See [Replay plans](../../docs/conformance-vector-format.md#replay-plans).
+
 ## Secret lifetime
 
 Ordinary card snapshots exclude session keys. The private conformance helper

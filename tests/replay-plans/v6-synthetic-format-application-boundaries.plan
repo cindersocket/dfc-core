@@ -1,0 +1,37 @@
+plan 1
+source v6-synthetic-format-application-boundaries
+random os
+credential 6043800106A11380010381021000820704112233445566830100A22780010F81018182011CA91A3018800100811000000000000000000000000000000000820100AA00A300
+step scan
+step exchange 90CA0000050100000F8100 9100
+step exchange 905A00000301000000 9100
+step exchange 90CD0000070100EEEE04000000 9100
+step exchange 903D00000B01000000040000A1A2A3A400 9100
+step exchange 90BD0000070100000004000000 A1A2A3A49100
+step clear-dirty
+step exchange 90FC000001AA00 917E
+step assert emulator.selected_application 2
+step assert credential.num_apps 1
+step assert apps[0].aid 000001
+step assert apps[0].key_settings_1 15
+step assert apps[0].key_settings_2 129
+step assert apps[0].keys[0] 00000000000000000000000000000000
+step assert credential.num_files 1
+step assert files[0].number 1
+step assert files[0].data_len 4
+step assert files[0].data A1A2A3A4
+step assert credential.dirty 0
+step exchange 90FC000000 919D
+step assert emulator.selected_application 2
+step assert credential.num_apps 1
+step assert apps[0].aid 000001
+step assert apps[0].key_settings_1 15
+step assert apps[0].key_settings_2 129
+step assert apps[0].keys[0] 00000000000000000000000000000000
+step assert credential.num_files 1
+step assert files[0].number 1
+step assert files[0].data_len 4
+step assert files[0].data A1A2A3A4
+step assert credential.dirty 0
+step exchange 90BD0000070100000004000000 A1A2A3A49100
+final 60818E800106A11380010381021000820704112233445566830100A22780010F81018182011CA91A3018800100811000000000000000000000000000000000820100AA00A34B3049800300000183010F84018185013CA61A3018800100811000000000000000000000000000000000820100A71D301B8001018101008201008302EEEEA50C8001048104A1A2A3A48201FF

@@ -256,10 +256,10 @@ static MunitResult test_serialized_domain_sweeps(const MunitParameter params[], 
         DfcCredential candidate;
         dfc_credential_copy_model(&candidate, &source);
         candidate.files[0].comm_settings = (uint8_t)value;
-        uint8_t mode = (uint8_t)value & DFC_COMM_MODE_MASK;
-        bool valid =
-            (value & ~DFC_COMM_MODE_MASK) == 0 &&
-            (mode == DFC_COMM_PLAIN || mode == DFC_COMM_MAC || mode == DFC_COMM_ENCIPHERED);
+        // A genuine EV3 stores every mode value 0-3 and the additional-access-rights flag
+        // (bit 7); the SDM flag (bit 6) is valid only together with SDM state, which this
+        // plain file does not have (hardware_physical_ev3_2k_create_comm_bytes.vec).
+        bool valid = (value & ~(DFC_COMM_MODE_MASK | DFC_FILE_OPTION_ADDITIONAL_RIGHTS)) == 0;
         munit_assert_int(
             dfc_credential_validate_model(&candidate), ==, valid ? DfcModelOk : DfcModelMalformed);
     }

@@ -315,7 +315,7 @@ static MunitResult
     uint8_t response[DFC_VIRTUAL_PICC_MAX_BLOCK_SIZE];
     size_t response_len = 0;
     while(fixture.session->pending_response_len > 0) {
-        uint8_t ack = (uint8_t)(DFC_ISO_DEP_R_BLOCK | fixture.session->expected_pcd_sequence);
+        uint8_t ack = (uint8_t)(DFC_ISO_DEP_R_BLOCK | fixture.session->picc_sequence);
         munit_assert_int(
             dfc_virtual_picc_iso_dep_frame_exchange(
                 fixture.session, &ack, sizeof(ack), response, sizeof(response), &response_len),

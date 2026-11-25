@@ -107,6 +107,18 @@ class DesfireVectorGrammarTests(unittest.TestCase):
             with self.subTest(step=step), self.assertRaises(ValueError):
                 CHECKER.validate_step(step, {"native-apdu"})
 
+    def test_protocol_error_is_limited_to_raw_frame_exchange(self) -> None:
+        CHECKER.validate_step("expect-error protocol-error frame-exchange 1200A4", {"native-apdu"})
+        for step in (
+            "expect-error protocol-error scan",
+            "expect-error protocol-error exchange native-apdu 9060000000",
+            "expect-error protocol-error frame-exchange",
+            "expect-error protocol-error frame-exchange 1200A4 junk",
+            "expect-error unknown frame-exchange 1200A4",
+        ):
+            with self.subTest(step=step), self.assertRaises(ValueError):
+                CHECKER.validate_step(step, {"native-apdu"})
+
     def test_catalog_rejects_duplicate_identity_and_names_both_files(self) -> None:
         first = self.write_vector("v4/emulator/first.vec", name="Repeated name", case_id="first")
         second = self.write_vector(

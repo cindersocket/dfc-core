@@ -1,0 +1,390 @@
+# PROVENANCE: measured from a factory-fresh genuine DESFire EV3 2K with Proxmark3 on 2026-11-01
+# (random UID; PICC master key left at its all-zero default, format left enabled).
+# PROVISIONAL BATCH "value-rights-2026-11-01": every capture of this batch carries
+# `capture-batch: value-rights-2026-11-01` and `capture-status: provisional`, so the whole batch can
+# be thrown away together if the card proves faulty (see docs/capture-batches.md).
+#
+# What this measures: which access right each value-file command needs, on one value file whose
+# rights are changed section by section (ChangeFileSettings, change right free), with every command
+# tried unauthenticated, authenticated as application key 0, and as key 1. The application has two
+# keys, both at their zero default; authentication is real DES (legacy) with the card's own random
+# recovered from its first answer, replayed with `inject-random`.
+# Observed, for Read / Write / Read&Write rights each free (E), denied (F), key 0 or key 1:
+#   * GetValue works with any one of the Read, Write or Read&Write rights.
+#   * Debit works with any one of the Read, Write or Read&Write rights.
+#   * LimitedCredit works with the Write or Read&Write right; Read alone is denied.
+#   * Credit needs the Read&Write right; Read or Write alone is denied.
+#   * A command that no right can ever allow answers 9D; one that a key could allow answers AE
+#     until that key authenticates.
+# Each case runs its commands with the value put back by AbortTransaction after a success, so every
+# case starts from the same balance and the same LimitedCredit allowance (one committed Debit of 30).
+name: genuine EV3 2K value-file rights for GetValue, Credit, Debit and LimitedCredit (provisional batch)
+case-id: hardware-physical-ev3-2k-value-rights
+origin: physical-card
+capture-batch: value-rights-2026-11-01
+capture-status: provisional
+feature-version: 6
+source: physical-card-proxmark3
+requires: auth-d40
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# fixture: application 123456 with two keys, value file 4, one committed Debit of 30
+field-off
+scan
+exchange native CA1234560F02 => 00
+exchange native 5A123456 => 00
+exchange native CC0400EEEE00000000E80300006400000001 => 00
+exchange native DC041E000000 => 00
+exchange native C7 => 00
+exchange native 6C04 => 0046000000
+
+# rights nobody: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400FEFF => 00
+exchange native F504 => 000200FEFF00000000E80300001E00000001
+exchange native 6C04 => 9D
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 9D
+exchange native 1C0405000000 => 9D
+inject-random 333E42BF71779C4A
+exchange native 0A00 => AFBDC42E795252CE73
+exchange native AFCEAD373DB80EABF8466CC7444075AB9C => 00FB796C9AAFBF71D3
+exchange native 6C04 => 9D
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 9D
+exchange native 1C0405000000 => 9D
+exchange native 5A123456 => 00
+inject-random 696010803E0563DA
+exchange native 0A01 => AFBBFBCDC24326D5B3
+exchange native AFCEAD373DB80EABF86A76FC7E0CBB463B => 00FB796C9AAFBF71D3
+exchange native 6C04 => 9D
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 9D
+exchange native 1C0405000000 => 9D
+
+# rights read key0: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400FE0F => 00
+exchange native F504 => 000200FE0F00000000E80300001E00000001
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => 9D
+inject-random BD7337543919796E
+exchange native 0A00 => AF338B077E8E7E96AA
+exchange native AFCEAD373DB80EABF8B88516D402844A43 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 9D
+exchange native 5A123456 => 00
+inject-random CDE0E5DD9DF36957
+exchange native 0A01 => AF484CB8ECCEFFD022
+exchange native AFCEAD373DB80EABF85F11CDC6AAC44E3F => 00FB796C9AAFBF71D3
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => 9D
+
+# rights write key0: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400FEF0 => 00
+exchange native F504 => 000200FEF000000000E80300001E00000001
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+inject-random 309382C23CBEC23E
+exchange native 0A00 => AFD099653F22FC3F12
+exchange native AFCEAD373DB80EABF8C4C80CC90A20443F => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random 141343BDC637A3F2
+exchange native 0A01 => AF305DFBD8A9970739
+exchange native AFCEAD373DB80EABF883A8D086B0DC6242 => 00FB796C9AAFBF71D3
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+
+# rights read&write key0: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F04000EFF => 00
+exchange native F504 => 0002000EFF00000000E80300001E00000001
+exchange native 6C04 => AE
+exchange native 0C0405000000 => AE
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+inject-random F71FB2150C0E61BE
+exchange native 0A00 => AFDB49845C2D05743A
+exchange native AFCEAD373DB80EABF81378891603E55431 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random 7AF83E141B47FF3B
+exchange native 0A01 => AF928D9B60A65C4933
+exchange native AFCEAD373DB80EABF8B2214DDD64C5A6B1 => 00FB796C9AAFBF71D3
+exchange native 6C04 => AE
+exchange native 0C0405000000 => AE
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+
+# rights free read: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400FEEF => 00
+exchange native F504 => 000200FEEF00000000E80300001E00000001
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 9D
+inject-random 1466BD5FEB56A534
+exchange native 0A00 => AFB181A77AF3DA1B09
+exchange native AFCEAD373DB80EABF8BD037789332CA431 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 9D
+exchange native 5A123456 => 00
+inject-random 6EF7B3A91CAAA3C9
+exchange native 0A01 => AF84D8704E7A539820
+exchange native AFCEAD373DB80EABF860C1B2CAB85F567F => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 9D
+
+# rights free write: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400FEFE => 00
+exchange native F504 => 000200FEFE00000000E80300001E00000001
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+inject-random 9CC1926160453B87
+exchange native 0A00 => AFD8D1E159B75D2521
+exchange native AFCEAD373DB80EABF88EF612CEBB88DC48 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random C7D4D5B2B1F4DAEE
+exchange native 0A01 => AF645C8CBEACA4E983
+exchange native AFCEAD373DB80EABF83E0878B2865BB2C3 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+
+# rights free read&write: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400EEFF => 00
+exchange native F504 => 000200EEFF00000000E80300001E00000001
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+inject-random 7C512A2794657F7E
+exchange native 0A00 => AF64AE30257F34AA56
+exchange native AFCEAD373DB80EABF86C40388E4D9975B2 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random 99079E0DCD293A1C
+exchange native 0A01 => AF0256DB5C89A25A5D
+exchange native AFCEAD373DB80EABF89A0F5331BFC2A382 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+
+# rights all free: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400EEEE => 00
+exchange native F504 => 000200EEEE00000000E80300001E00000001
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+inject-random 68DD24094E7641A9
+exchange native 0A00 => AFDB0F603A4D63680F
+exchange native AFCEAD373DB80EABF8CFB0F0F076E3C723 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+exchange native 5A123456 => 00
+inject-random EEFD7232AD44C1FF
+exchange native 0A01 => AF420B5C8E8203BEE5
+exchange native AFCEAD373DB80EABF8E74D8B0140EF8341 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+
+# rights read key1: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400FE1F => 00
+exchange native F504 => 000200FE1F00000000E80300001E00000001
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => 9D
+inject-random 7EE1DF5392068AF5
+exchange native 0A00 => AF24E97C1D1B741345
+exchange native AFCEAD373DB80EABF84DF904554B87E1E1 => 00FB796C9AAFBF71D3
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => 9D
+exchange native 5A123456 => 00
+inject-random AE127D24D6377172
+exchange native 0A01 => AF53C5C95E0E5B46A5
+exchange native AFCEAD373DB80EABF8908A410052CBB190 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 9D
+
+# rights write key1: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F0400FEF1 => 00
+exchange native F504 => 000200FEF100000000E80300001E00000001
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+inject-random 246BC3D0CDDB8FC6
+exchange native 0A00 => AF1FCEE7B111287D57
+exchange native AFCEAD373DB80EABF88F2BFC3753911B92 => 00FB796C9AAFBF71D3
+exchange native 6C04 => AE
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+exchange native 5A123456 => 00
+inject-random 6AFF9B9D31B5F38B
+exchange native 0A01 => AF9CCE19C030CC1091
+exchange native AFCEAD373DB80EABF809BE86305429C7D9 => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 9D
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00
+
+# rights read&write key1: unauthenticated, then key 0, then key 1
+field-off
+scan
+exchange native 5A123456 => 00
+exchange native 5F04001EFF => 00
+exchange native F504 => 0002001EFF00000000E80300001E00000001
+exchange native 6C04 => AE
+exchange native 0C0405000000 => AE
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+inject-random 06AC2FDC4AF8653E
+exchange native 0A00 => AFCF9B7D83DA7D7E7A
+exchange native AFCEAD373DB80EABF81CB7F46EE8681CD5 => 00FB796C9AAFBF71D3
+exchange native 6C04 => AE
+exchange native 0C0405000000 => AE
+exchange native DC0405000000 => AE
+exchange native 1C0405000000 => AE
+exchange native 5A123456 => 00
+inject-random 5888EA2059F4EB50
+exchange native 0A01 => AFDF407DEC68294FDB
+exchange native AFCEAD373DB80EABF86ECE590A1CF14E1D => 00FB796C9AAFBF71D3
+exchange native 6C04 => 0046000000
+exchange native A7 => 0C
+exchange native 0C0405000000 => 00
+exchange native A7 => 00
+exchange native DC0405000000 => 00
+exchange native A7 => 00
+exchange native 1C0405000000 => 00
+exchange native A7 => 00

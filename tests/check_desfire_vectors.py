@@ -241,9 +241,17 @@ def validate_step(line: str, dialects: set[str]) -> None:
             parse_hex(value)
         return
     if verb == "expect-error":
-        if len(words) < 3 or words[1] != "random-source":
+        if len(words) < 3:
             raise ValueError("malformed expect-error")
+        error_class = words[1]
         operation = words[2]
+        if error_class == "protocol-error":
+            if operation != "frame-exchange" or len(words) != 4:
+                raise ValueError("malformed protocol-error operation")
+            parse_hex(words[3])
+            return
+        if error_class != "random-source":
+            raise ValueError("malformed expect-error")
         if operation == "scan":
             if len(words) != 3:
                 raise ValueError("malformed expect-error scan")
@@ -336,6 +344,10 @@ def validate_vector(path: Path, vocabulary: dict[str, object]) -> VectorMetadata
                 raise ValueError(f"{location}: unknown header {key!r}")
             if not value:
                 raise ValueError(f"{location}: empty header {key!r}")
+            if key == "capture-status" and value != "provisional":
+                raise ValueError(f"{location}: capture-status must be 'provisional'")
+            if key == "capture-batch" and (not value.isprintable() or " " in value):
+                raise ValueError(f"{location}: capture-batch must be one printable word")
             if key in values:
                 raise ValueError(f"{location}: duplicate header {key!r}")
             validate_header(location, key, value)
@@ -365,6 +377,15 @@ def validate_vector(path: Path, vocabulary: dict[str, object]) -> VectorMetadata
     for required in sorted(REQUIRED_HEADERS):
         if required not in values:
             raise ValueError(f"{path.relative_to(ROOT)}: missing {required} header")
+    if "capture-status" in values and (
+        "capture-batch" not in values or values["origin"] != "physical-card"
+    ):
+        raise ValueError(
+            f"{path.relative_to(ROOT)}: a provisional capture must be origin physical-card "
+            "and name its capture-batch"
+        )
+    if "capture-batch" in values and "capture-status" not in values:
+        raise ValueError(f"{path.relative_to(ROOT)}: capture-batch without capture-status")
     version = int(path.relative_to(VECTOR_ROOT).parts[0][1:])
     if int(values.get("feature-version", version)) != version:
         raise ValueError(f"{path.relative_to(ROOT)}: feature-version does not match directory")

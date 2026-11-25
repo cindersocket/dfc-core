@@ -12,6 +12,38 @@ const MAX_UPDATE_DATA: usize = 255 - 10;
 // header bytes and Le; native framing needs less space than this same bound.
 const MAX_OUTPUT_CAPACITY: usize = 261;
 
+/// Builds a standard ISO/IEC 7816 APPEND RECORD command APDU.
+pub fn iso_append_record_apdu(short_file_id: u8, data: &[u8]) -> Result<Vec<u8>, Error> {
+    if short_file_id > 0x1e || data.is_empty() || data.len() > u16::MAX as usize {
+        return Err(Error::InvalidArgument);
+    }
+    let header_len = if data.len() <= u8::MAX as usize { 5 } else { 7 };
+    let mut apdu = Vec::new();
+    apdu.try_reserve_exact(header_len + data.len())
+        .map_err(|_| Error::OutOfMemory)?;
+    apdu.extend_from_slice(&[0x00, 0xe2, 0x00, short_file_id << 3]);
+    if header_len == 5 {
+        apdu.push(data.len() as u8);
+    } else {
+        apdu.push(0x00);
+        apdu.extend_from_slice(&(data.len() as u16).to_be_bytes());
+    }
+    apdu.extend_from_slice(data);
+    Ok(apdu)
+}
+
+/// Splits a standard ISO response APDU into its data and two-byte status word.
+pub fn parse_iso7816_response(response: &[u8]) -> Result<(&[u8], u16), Error> {
+    if response.len() < 2 {
+        return Err(Error::InvalidArgument);
+    }
+    let data_len = response.len() - 2;
+    Ok((
+        &response[..data_len],
+        u16::from_be_bytes([response[data_len], response[data_len + 1]]),
+    ))
+}
+
 fn native_auth_challenge_length(cipher: u8, key_length: usize) -> Option<usize> {
     match (cipher, key_length) {
         (0x0a, 8 | 16) | (0x1a, 8 | 16) => Some(8),
@@ -244,6 +276,15 @@ impl Command {
 
     /// Builds ReadData with little-endian unsigned 24-bit fields.
     pub fn read_data(file_number: u8, offset: u32, length: u32) -> Result<Self, Error> {
+        Self::read_data_with_instruction(0xbd, file_number, offset, length)
+    }
+
+    fn read_data_with_instruction(
+        instruction: u8,
+        file_number: u8,
+        offset: u32,
+        length: u32,
+    ) -> Result<Self, Error> {
         if file_number > MAX_FILE_NUMBER || offset > MAX_U24 || length > MAX_U24 {
             return Err(Error::InvalidArgument);
         }
@@ -251,10 +292,16 @@ impl Command {
         data.push(file_number);
         data.extend_from_slice(&offset.to_le_bytes()[..3]);
         data.extend_from_slice(&length.to_le_bytes()[..3]);
-        Ok(Self {
-            instruction: 0xbd,
-            data,
-        })
+        Ok(Self { instruction, data })
+    }
+
+    /// Builds ReadData with ISO-DEP command chaining.
+    pub fn read_data_iso_chaining(
+        file_number: u8,
+        offset: u32,
+        length: u32,
+    ) -> Result<Self, Error> {
+        Self::read_data_with_instruction(0xad, file_number, offset, length)
     }
 
     fn range_with_data(
@@ -282,6 +329,15 @@ impl Command {
         Self::range_with_data(0x3d, file_number, offset, data)
     }
 
+    /// Builds WriteData with ISO-DEP command chaining.
+    pub fn write_data_iso_chaining(
+        file_number: u8,
+        offset: u32,
+        data: &[u8],
+    ) -> Result<Self, Error> {
+        Self::range_with_data(0x8d, file_number, offset, data)
+    }
+
     /// Builds ReadRecords.
     pub fn read_records(file_number: u8, record_number: u32, count: u32) -> Result<Self, Error> {
         let mut command = Self::read_data(file_number, record_number, count)?;
@@ -289,9 +345,29 @@ impl Command {
         Ok(command)
     }
 
+    /// Builds ReadRecords with ISO-DEP response chaining.
+    pub fn read_records_iso_chaining(
+        file_number: u8,
+        record_number: u32,
+        count: u32,
+    ) -> Result<Self, Error> {
+        let mut command = Self::read_data(file_number, record_number, count)?;
+        command.instruction = 0xab;
+        Ok(command)
+    }
+
     /// Builds WriteRecord.
     pub fn write_record(file_number: u8, offset: u32, data: &[u8]) -> Result<Self, Error> {
         Self::range_with_data(0x3b, file_number, offset, data)
+    }
+
+    /// Builds WriteRecord with ISO-DEP command chaining.
+    pub fn write_record_iso_chaining(
+        file_number: u8,
+        offset: u32,
+        data: &[u8],
+    ) -> Result<Self, Error> {
+        Self::range_with_data(0x8b, file_number, offset, data)
     }
 
     /// Builds UpdateRecord.
@@ -301,18 +377,38 @@ impl Command {
         offset: u32,
         data: &[u8],
     ) -> Result<Self, Error> {
+        Self::update_record_with_instruction(0xdb, file_number, record_number, offset, data)
+    }
+
+    fn update_record_with_instruction(
+        instruction: u8,
+        file_number: u8,
+        record_number: u32,
+        offset: u32,
+        data: &[u8],
+    ) -> Result<Self, Error> {
         if record_number > MAX_U24 || data.len() > MAX_UPDATE_DATA {
             return Err(Error::InvalidArgument);
         }
-        let tail = Self::range_with_data(0xdb, file_number, offset, data)?.data;
+        let tail = Self::range_with_data(instruction, file_number, offset, data)?.data;
         let mut command_data = Vec::with_capacity(tail.len() + 3);
         command_data.push(file_number);
         command_data.extend_from_slice(&record_number.to_le_bytes()[..3]);
         command_data.extend_from_slice(&tail[1..]);
         Ok(Self {
-            instruction: 0xdb,
+            instruction,
             data: command_data,
         })
+    }
+
+    /// Builds UpdateRecord with ISO-DEP command chaining.
+    pub fn update_record_iso_chaining(
+        file_number: u8,
+        record_number: u32,
+        offset: u32,
+        data: &[u8],
+    ) -> Result<Self, Error> {
+        Self::update_record_with_instruction(0xba, file_number, record_number, offset, data)
     }
 
     fn value_operation(instruction: u8, file_number: u8, amount: i32) -> Result<Self, Error> {

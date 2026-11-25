@@ -38,27 +38,29 @@ public final class DfcCommandRangeTest {
       case "delete-file" -> DfcCommand.deleteFile(number.getAsInt());
       case "clear-record-file" -> DfcCommand.clearRecordFile(number.getAsInt());
       case "get-value" -> DfcCommand.getValue(number.getAsInt());
-      case "read-data" -> {
+      case "read-data", "read-data-iso-chaining" -> {
         String[] fields = arguments.split(",");
-        yield DfcCommand.readData(
-            Integer.parseInt(fields[0]), Integer.parseInt(fields[1]), Integer.parseInt(fields[2]));
+        yield DfcCommand.readData(Integer.parseInt(fields[0]), Integer.parseInt(fields[1]),
+            Integer.parseInt(fields[2]), name.equals("read-data-iso-chaining"));
       }
-      case "write-data", "write-record" -> {
+      case "write-data", "write-data-iso-chaining", "write-record", "write-record-iso-chaining" -> {
         String[] fields = arguments.split(",");
         int file = Integer.parseInt(fields[0]);
         int offset = Integer.parseInt(fields[1]);
-        yield name.equals("write-data") ? DfcCommand.writeData(file, offset, hex(fields[2]))
-                                        : DfcCommand.writeRecord(file, offset, hex(fields[2]));
+        boolean isoChaining = name.endsWith("-iso-chaining");
+        yield name.startsWith("write-data")
+            ? DfcCommand.writeData(file, offset, hex(fields[2]), isoChaining)
+            : DfcCommand.writeRecord(file, offset, hex(fields[2]), isoChaining);
       }
-      case "read-records" -> {
+      case "read-records", "read-records-iso-chaining" -> {
         String[] fields = arguments.split(",");
-        yield DfcCommand.readRecords(
-            Integer.parseInt(fields[0]), Integer.parseInt(fields[1]), Integer.parseInt(fields[2]));
+        yield DfcCommand.readRecords(Integer.parseInt(fields[0]), Integer.parseInt(fields[1]),
+            Integer.parseInt(fields[2]), name.equals("read-records-iso-chaining"));
       }
-      case "update-record" -> {
+      case "update-record", "update-record-iso-chaining" -> {
         String[] fields = arguments.split(",");
         yield DfcCommand.updateRecord(Integer.parseInt(fields[0]), Integer.parseInt(fields[1]),
-            Integer.parseInt(fields[2]), hex(fields[3]));
+            Integer.parseInt(fields[2]), hex(fields[3]), name.equals("update-record-iso-chaining"));
       }
       case "credit", "debit", "limited-credit" -> {
         String[] fields = arguments.split(",");

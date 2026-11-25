@@ -4,7 +4,7 @@ case-id: finite-random-reset
 origin: synthetic
 feature-version: 6
 source: generated replay-source reset regression
-requires: ev3,iso7816-auth
+requires: iso7816-auth
 uid: 04223344556677
 picc-generation: EV3
 picc-storage: 4096

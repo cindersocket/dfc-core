@@ -6,8 +6,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 ALIASES_NORMALIZED_BEFORE_DISPATCH = {
+    "DFC_CMD_READ_DATA_ISO",
+    "DFC_CMD_WRITE_DATA_ISO",
     "DFC_CMD_READ_RECORDS_ISO",
     "DFC_CMD_WRITE_RECORD_ISO",
+    "DFC_CMD_UPDATE_RECORD_ISO",
 }
 
 

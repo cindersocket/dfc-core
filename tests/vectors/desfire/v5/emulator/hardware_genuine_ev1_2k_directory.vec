@@ -1,0 +1,57 @@
+# Captured over RF from a physical EV1 2K card with a Proxmark3. The card was
+# formatted under its all-zero test key before this session. The version bytes,
+# directory responses, file settings, and error statuses below are measurements.
+# Free-memory accounting is chip-specific and is compared with a tolerance.
+name: physical EV1 2K directory and five file types
+case-id: hardware-genuine-ev1-2k-directory
+origin: physical-card
+source: Proxmark3 RF capture, physical EV1 2K
+feature-version: 5
+requires: ev1,backup-files,record-files
+uid: 043793CA677680
+picc-generation: EV1
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-hardware-version: 04010101001605
+picc-software-version: 04010101041605
+
+scan
+exchange native-apdu 9060000000 => 0401010100160591AF
+exchange native-apdu 90AF000000 => 0401010104160591AF
+# The measured batch and production bytes were B90C224D903922. The model does
+# not store them, so only those seven bytes are wildcarded.
+exchange native-apdu 90AF000000 => 043793CA677680??????????????9100
+exchange native-apdu 9045000000 => 0F019100
+exchange native-apdu 906A000000 => 9100
+exchange native-apdu 906E000000 => 0009009100 tolerance 0+3 512
+exchange native-apdu 9051000000 => 91AE
+
+status 90CA000005F1C0010F0200 => 00
+exchange native-apdu 906A000000 => F1C0019100
+exchange native-apdu 906D000000 => 9100
+status 905A000003F1C00100 => 00
+exchange native-apdu 9045000000 => 0F029100
+exchange native-apdu 90640000010000 => 009100
+exchange native-apdu 90640000010100 => 009100
+status 90CD0000070100E0EE08000000 => 00
+status 90CB0000070200E0EE04000000 => 00
+status 90CC0000110300E0EE00000000E8030000640000000100 => 00
+status 90C100000A0400E0EE08000004000000 => 00
+status 90C000000A0500E0EE08000003000000 => 00
+exchange native-apdu 906F000000 => 01020304059100
+exchange native-apdu 9061000000 => 91F0
+exchange native-apdu 906E000000 => 2007009100 tolerance 0+3 512
+
+exchange native-apdu 90F50000010100 => 0000E0EE0800009100
+exchange native-apdu 90F50000010200 => 0100E0EE0400009100
+exchange native-apdu 90F50000010300 => 0200E0EE00000000E803000000000000019100
+exchange native-apdu 90F50000010400 => 0300E0EE0800000400000000009100
+exchange native-apdu 90F50000010500 => 0400E0EE0800000300000000009100
+exchange native-apdu 90F50000010600 => 91F0
+exchange native-apdu 90BD0000070600000001000000 => 91F0
+exchange native-apdu 905C0000010000 => 91AE
+exchange native-apdu 905F0000040100E0EE00 => 91AE
+exchange native-apdu 90CD0000070100E0EE08000000 => 91DE

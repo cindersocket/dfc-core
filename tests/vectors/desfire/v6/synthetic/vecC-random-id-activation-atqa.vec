@@ -1,0 +1,19 @@
+# PROVENANCE: Synthetic regression converted from the former unit test
+# test_random_id_uses_single_size_atqa. A random-ID card presents a single-size
+# NFCID1, so its default ATQA announces a 4-byte UID (0403 rather than 4403).
+name: Random ID activation advertises a single-size ATQA
+case-id: vecc-random-id-activation-atqa
+origin: synthetic
+feature-version: 6
+source: converted from tests/test_dfc_virtual_picc_core.c#/random-id-uses-single-size-atqa
+requires: ev3
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-random-id: 1
+
+inject-random AABBCC
+scan
+assert activation.uid_len = 4
+assert activation.atqa = 0403
+field-off

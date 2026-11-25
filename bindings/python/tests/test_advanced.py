@@ -36,6 +36,9 @@ def test_diversification_and_typed_decoders() -> None:
     assert settings.size == 128
     assert settings.access.read.kind is AccessKind.FREE
     assert settings.access.write.kind is AccessKind.DENIED
+    value_settings = decode_file_settings(bytes.fromhex("0200EEEE9CFFFFFF640000000B00000002"))
+    assert value_settings.limited_credit_options == 2
+    assert value_settings.limited_credit_enabled is False
     with pytest.raises(ResponseDecodeError):
         decode_file_settings(b"\0")
 

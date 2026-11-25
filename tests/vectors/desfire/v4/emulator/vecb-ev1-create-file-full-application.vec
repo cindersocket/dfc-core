@@ -1,0 +1,56 @@
+# Converted from tests/test_dfc_ev1_conformance.c test /create-file-count-matrix (now removed): the literal
+# APDUs and statuses the unit test asserted are replayed here byte for byte,
+# and the engine's answers are the ones the test required. Scenario: the selected application already holds all 32 file numbers, so a file number that is taken is a duplicate before the pool is considered. Each of the standard data, linear record and value create commands is refused the same way.
+
+name: vecB ev1: create-file-full-application
+case-id: vecb-ev1-create-file-full-application
+origin: synthetic
+requires: record-files
+source: tests/test_dfc_ev1_conformance.c /create-file-count-matrix
+uid: 04A1B2C3D4E5F6
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-auth-mode: D40
+picc-key-len: 16
+picc-storage: 4096
+scan
+status   90CA0000050102030F0100 => 00
+status   90CA0000050405060F0100 => 00
+status   905A00000301020300 => 00
+status   90CD0000070000EEEE01000000 => 00
+status   90CD0000070100EEEE01000000 => 00
+status   90CD0000070200EEEE01000000 => 00
+status   90CD0000070300EEEE01000000 => 00
+status   90CD0000070400EEEE01000000 => 00
+status   90CD0000070500EEEE01000000 => 00
+status   90CD0000070600EEEE01000000 => 00
+status   90CD0000070700EEEE01000000 => 00
+status   90CD0000070800EEEE01000000 => 00
+status   90CD0000070900EEEE01000000 => 00
+status   90CD0000070A00EEEE01000000 => 00
+status   90CD0000070B00EEEE01000000 => 00
+status   90CD0000070C00EEEE01000000 => 00
+status   90CD0000070D00EEEE01000000 => 00
+status   90CD0000070E00EEEE01000000 => 00
+status   90CD0000070F00EEEE01000000 => 00
+status   90CD0000071000EEEE01000000 => 00
+status   90CD0000071100EEEE01000000 => 00
+status   90CD0000071200EEEE01000000 => 00
+status   90CD0000071300EEEE01000000 => 00
+status   90CD0000071400EEEE01000000 => 00
+status   90CD0000071500EEEE01000000 => 00
+status   90CD0000071600EEEE01000000 => 00
+status   90CD0000071700EEEE01000000 => 00
+status   90CD0000071800EEEE01000000 => 00
+status   90CD0000071900EEEE01000000 => 00
+status   90CD0000071A00EEEE01000000 => 00
+status   90CD0000071B00EEEE01000000 => 00
+status   90CD0000071C00EEEE01000000 => 00
+status   90CD0000071D00EEEE01000000 => 00
+status   90CD0000071E00EEEE01000000 => 00
+status   90CD0000071F00EEEE01000000 => 00
+status   905A00000301020300 => 00
+status   90CD0000070000EEEE01000000 => DE
+status   90C100000A0000EEEE01000002000000 => DE
+status   90CC0000110000EEEE0000000001000000000000000000 => DE
+assert   credential.num_files = 32

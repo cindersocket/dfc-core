@@ -134,6 +134,11 @@ layout compiled into JNI before constructing a handle. Java and Android
 initialization fails clearly if any shared field or binding-visible numeric
 constant differs.
 
+
+## Conformance vectors
+
+The DESFire conformance vectors replay through this binding's virtual card: compile `tests/java/DfcReplayPlanTest.java` with the binding and run it with `-Djava.library.path=build-jni`, passing `tests/replay-plans`. It reports how many vectors it replayed and skipped. See [Replay plans](../../docs/conformance-vector-format.md#replay-plans).
+
 ## Secret lifetime
 
 Card snapshots exclude session keys. JNI clears native snapshot, credential,

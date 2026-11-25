@@ -26,7 +26,7 @@ name: genuine EV3 4K, chained read under an AES session
 case-id: hardware-physical-ev3-4k-chaining
 origin: physical-card
 source: captured hardware trace
-requires: auth-aes,ev3
+requires: auth-aes
 uid: 048222F2CF1890
 picc-key-settings-1: 0F
 picc-key-settings-2: 01

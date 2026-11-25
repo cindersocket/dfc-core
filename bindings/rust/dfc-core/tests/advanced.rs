@@ -31,6 +31,20 @@ fn diversification_and_response_decoding_use_native_core() {
     assert_eq!(settings.read, Access::Free);
     assert_eq!(settings.write, Access::Denied);
     assert_eq!(settings.kind, FileSettingsKind::Data { size: 128 });
+    let value_settings = decode_file_settings(&[
+        0x02, 0x00, 0xee, 0xee, 0x9c, 0xff, 0xff, 0xff, 0x64, 0, 0, 0, 0x0b, 0, 0, 0, 0x02,
+    ])
+    .unwrap();
+    assert_eq!(
+        value_settings.kind,
+        FileSettingsKind::Value {
+            lower_limit: -100,
+            upper_limit: 100,
+            limited_credit_value: 11,
+            limited_credit_options: 2,
+            limited_credit_enabled: false,
+        }
+    );
     assert_eq!(decode_version(&[0; 27]), Err(DecodeError::Malformed));
     assert_eq!(
         decode_file_settings(&[0xff, 0, 0, 0]),

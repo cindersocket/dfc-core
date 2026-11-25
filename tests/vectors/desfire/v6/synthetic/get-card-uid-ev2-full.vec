@@ -5,7 +5,7 @@ origin: synthetic
 feature-version: 6
 source: generated GetCardUID response-protection regression
 issues: https://github.com/cindersocket/dfc-core/issues/126
-requires: ev3,ev2-secure-messaging
+requires: ev2-secure-messaging
 uid: 04112233445566
 picc-generation: EV3
 picc-storage: 4096

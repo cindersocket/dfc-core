@@ -145,6 +145,11 @@ The native core refuses a larger value, and a value that does not fit the native
 `int32_t` is refused before the call, both as `Error::InvalidArgument`; the
 session stays usable.
 
+
+## Conformance vectors
+
+The DESFire conformance vectors replay through this binding's virtual card: `cargo test -p dfc-core --test replay_plans -- --nocapture`. It reports how many vectors it replayed and skipped. See [Replay plans](../../docs/conformance-vector-format.md#replay-plans).
+
 ## Secret lifetime
 
 Ordinary card snapshots exclude session keys. `DiagnosticSnapshot` exists for

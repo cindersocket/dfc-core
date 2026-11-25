@@ -1,0 +1,55 @@
+# PROVENANCE: synthetic regression for the rule measured in the genuine EV3 2K
+# PM3 raw-frame trace hardware_physical_ev3_2k_iso_dep_request_chaining.vec.
+# The card keeps one block number per activation. It starts at 0 and toggles
+# on every I-block or R(ACK) the card sends, so in an undisturbed exchange it
+# matches the reader and it only diverges after a duplicate reader block, as
+# the genuine 03 -> 02 response shows. tests/check_iso_dep_block_numbers.py
+# checks this file against an independent model of the same rule.
+name: ISO-DEP card block number toggles on every transmitted block
+case-id: iso-dep-card-block-number-toggle
+origin: synthetic
+feature-version: 6
+source: genuine EV3 PM3 trace distilled regression
+uid: 04112233445566
+picc-generation: EV3
+picc-storage: 4096
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+
+# Provision an application with one 128-byte standard file and deterministic
+# contents so a raw AD read must produce three PICC I-blocks.
+scan
+status 905A00000300000000 => 00
+status 90CA0000071234564FA100E100 => 00
+status 905A00000312345600 => 00
+status 90CD00000901011000EEEE80000000 => 00
+exchange native-apdu 908D00008701000000800000000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F00 => 9100
+
+# Without CID the reader alternates BN0, BN1, BN0 and the card answers in step.
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 0390F50000010100 => 030000EEEE8000009100
+frame-exchange 02906F000000 => 02019100
+
+# A 128-byte response starts at the card's current number (1) and alternates
+# 1, 0, 1. An R(ACK) repeating the last transmitted number retransmits that
+# block; the other number requests the next one.
+frame-exchange 0390AD0000070100000080000000 => 13000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F
+frame-exchange A3 => 13000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F
+frame-exchange A2 => 12303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F
+frame-exchange A2 => 12303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F
+frame-exchange A3 => 03606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F9100
+
+# The completed response chain does not consume a PCD command sequence number.
+frame-exchange 02906F000000 => 02019100
+
+# CID changes the frame prefix only. The card keeps its own number and echoes
+# CID 1; the activation started over at RATS, so the card is back at BN0.
+field-off
+scan
+frame-exchange E081 => 0565810280
+frame-exchange 0A01905A00000312345600 => 0A019100
+frame-exchange 0B0190F50000010100 => 0B010000EEEE8000009100
+frame-exchange 0A01906F000000 => 0A01019100
+field-off

@@ -166,9 +166,16 @@ DfcResponseDecodeStatus dfc_response_decode_file_settings(
     }
     // SDM-enabled responses append fields whose presence depends on the SDM
     // options. Do not publish an incomplete typed result for that layout.
-    if((response[1] & (uint8_t)~DFC_COMM_MODE_MASK) != 0) return DfcResponseDecodeUnsupported;
+    if((response[1] & (uint8_t)~(DFC_COMM_MODE_MASK | DFC_FILE_OPTION_ADDITIONAL_RIGHTS)) != 0)
+        return DfcResponseDecodeUnsupported;
+    if((response[1] & DFC_FILE_OPTION_ADDITIONAL_RIGHTS) != 0) {
+        if(response_len < required_len + 1) return DfcResponseDecodeMalformed;
+        if(response[required_len] != 0) return DfcResponseDecodeUnsupported;
+        required_len++;
+    }
     if(response_len != required_len) return DfcResponseDecodeMalformed;
     uint8_t communication_mode = response[1] & DFC_COMM_MODE_MASK;
+    if(communication_mode == 0x02u) communication_mode = DFC_COMM_PLAIN;
     if(communication_mode != DFC_COMM_PLAIN && communication_mode != DFC_COMM_MAC &&
        communication_mode != DFC_COMM_ENCIPHERED)
         return DfcResponseDecodeUnsupported;
@@ -185,8 +192,9 @@ DfcResponseDecodeStatus dfc_response_decode_file_settings(
         decoded.settings.value.lower_limit = read_i32_le(response + 4);
         decoded.settings.value.upper_limit = read_i32_le(response + 8);
         decoded.settings.value.limited_credit_value = read_i32_le(response + 12);
-        if(response[16] > 1) return DfcResponseDecodeUnsupported;
-        decoded.settings.value.limited_credit_enabled = response[16] != 0;
+        if((response[16] & (uint8_t)~0x03u) != 0) return DfcResponseDecodeUnsupported;
+        decoded.settings.value.limited_credit_options = response[16];
+        decoded.settings.value.limited_credit_enabled = (response[16] & 0x01u) != 0;
     } else {
         decoded.settings.records.record_size = read_u24_le(response + 4);
         decoded.settings.records.max_records = read_u24_le(response + 7);

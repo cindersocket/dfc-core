@@ -2,7 +2,7 @@
 name: genuine EV3 identity, version chain, and copyable static signature
 case-id: hardware-genuine-ev3-4k-identity
 origin: physical-card
-requires: ev3,static-signature
+requires: static-signature
 source: captured hardware behavior
 uid: 0483B4F2CF1890
 picc-generation: EV3

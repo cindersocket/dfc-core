@@ -5,7 +5,7 @@ origin: synthetic
 feature-version: 6
 source: generated failure-injection regression
 issues: https://github.com/cindersocket/dfc-core/issues/131
-requires: ev3,iso7816-auth,ev2-secure-messaging
+requires: ev2-secure-messaging
 uid: 048222F2CF1890
 picc-generation: EV3
 picc-storage: 4096

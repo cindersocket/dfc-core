@@ -1,0 +1,81 @@
+# PROVENANCE: measured from the attached genuine DESFire EV3 2K with Proxmark3.
+# The card was formatted under its published all-zero test key, then provisioned
+# only with synthetic application data and published all-zero application keys.
+name: genuine EV3 2K ISO-DEP request chaining boundaries
+case-id: hardware-physical-ev3-2k-iso-dep-request-chaining
+origin: physical-card
+feature-version: 6
+source: physical-card-proxmark3
+requires: record-files
+uid: 04304C4A281F90
+picc-generation: EV3
+picc-storage: 2048
+picc-key-settings-1: 0F
+picc-key-settings-2: 01
+picc-key-len: 16
+picc-auth-mode: D40
+picc-hardware-version: 04010133001605
+picc-software-version: 04010103001605
+
+# Build an equivalent freely provisioned replay fixture. File 1 is a 256-byte
+# standard file; file 4 holds three 300-byte linear records.
+scan
+status 905A00000300000000 => 00
+status 90CA0000071234564FA100E100 => 00
+status 905A00000312345600 => 00
+status 90CD00000901011000EEEE00010000 => 00
+status 90C100000C04041000EEEE2C010003000000 => 00
+
+# The genuine card accepts an extended-length ISO Append Record split at the
+# FSD 64 boundary. The first INF contains the seven-byte APDU header and 54
+# data bytes; each middle INF contains 61 bytes.
+exchange iso-apdu 00A4020C021004 => 9000
+frame-exchange E080 => 0565810280
+frame-exchange 1200E20000000100000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435 => A2
+frame-exchange 13363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636465666768696A6B6C6D6E6F707172 => A3
+frame-exchange 12737475767778797A7B7C7D7E7F808182838485868788898A8B8C8D8E8F909192939495969798999A9B9C9D9E9FA0A1A2A3A4A5A6A7A8A9AAABACADAEAF => A2
+frame-exchange 13B0B1B2B3B4B5B6B7B8B9BABBBCBDBEBFC0C1C2C3C4C5C6C7C8C9CACBCCCDCECFD0D1D2D3D4D5D6D7D8D9DADBDCDDDEDFE0E1E2E3E4E5E6E7E8E9EAEBEC => A3
+frame-exchange 02EDEEEFF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF => 029000
+exchange iso-apdu 00B2010400 => 000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F808182838485868788898A8B8C8D8E8F909192939495969798999A9B9C9D9E9FA0A1A2A3A4A5A6A7A8A9AAABACADAEAFB0B1B2B3B4B5B6B7B8B9BABBBCBDBEBFC0C1C2C3C4C5C6C7C8C9CACBCCCDCECFD0D1D2D3D4D5D6D7D8D9DADBDCDDDEDFE0E1E2E3E4E5E6E7E8E9EAEBECEDEEEFF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF00000000000000000000000000000000000000000000000000000000000000000000000000000000000000009000
+
+# A duplicate old-sequence fragment is not appended twice. Silicon replies
+# with the next expected block number, then rejects the deliberately short
+# extended APDU with ISO 6700. The committed record remains the only record.
+field-off
+scan
+status 905A00000312345600 => 00
+exchange iso-apdu 00A4020C021004 => 9000
+frame-exchange E080 => 0565810280
+frame-exchange 1200E20000000100000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F => A2
+frame-exchange 1200E20000000100000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F => A3
+frame-exchange 03202122 => 026700
+assert files[1].record_count = 1
+
+# Starting a wrapped 3D command inside the final INF of a partial wrapped 8D
+# request produces native 917E. The partial 8D never mutates file 1.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 13908D00002F01000000280000000102030405060708090A0B0C0D0E0F => A3
+frame-exchange 02903D00000F01000000080000AABBCCDDEEFF001100 => 02917E
+exchange native-apdu 90AD0000070100000008000000 => 00000000000000009100
+
+# Field loss also retires the same partial 8D request. A fresh activation reads
+# the original zero-filled file rather than the staged fragment.
+field-off
+scan
+frame-exchange E080 => 0565810280
+frame-exchange 02905A00000312345600 => 029100
+frame-exchange 13908D00002F01000000280000000102030405060708090A0B0C0D0E0F => A3
+field-off
+scan
+status 905A00000312345600 => 00
+exchange native-apdu 90AD0000070100000008000000 => 00000000000000009100
+field-off
+
+# Additional measured FSD64 characterization is intentionally provenance-only.
+# While an AD response chain was active, a new I-block produced no immediate
+# response. The following A3 restarted the first response block after the new
+# INF had overwritten its first five bytes. The replay model preserves response
+# storage instead of reproducing that unsafe silicon buffer-aliasing behavior.
